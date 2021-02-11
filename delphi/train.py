@@ -11,25 +11,14 @@ import config
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy
 from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST
 
-if int(os.environ.get("NOTEBOOK_MODE", 0)) == 1:
-    from tqdm import tqdm_notebook as tqdm
-else:
-    from tqdm import tqdm as tqdm
 
-try:
-    from apex import amp
-except Exception as e:
-    warnings.warn('Could not import amp.')
+from tqdm import tqdm as tqdm
 
 
 def make_optimizer_and_schedule(model, checkpoint, params):
     param_list = model.parameters() if params is None else params
 
     optimizer = SGD(param_list, config.args.lr, momentum=config.args.momentum, weight_decay=config.args.weight_decay)
-    
-    if config.args.mixed_precision:
-        model.cuda()
-        model, optimizer = amp.initialize(model, optimizer, 'O1')
         
     # Make schedule
     schedule = None
@@ -62,14 +51,6 @@ def make_optimizer_and_schedule(model, checkpoint, params):
                   f' Stepping {steps_to_take} times instead...')
             for i in range(steps_to_take):
                 schedule.step()
-        
-        if 'amp' in checkpoint and checkpoint['amp'] not in [None, 'N/A']:
-            amp.load_state_dict(checkpoint['amp'])
-
-        # TODO: see if there's a smarter way to do this
-        # TODO: see what's up with loading fp32 weights and then MP training
-        if config.args.mixed_precision:
-            model.load_state_dict(checkpoint['model'])
     return optimizer, schedule
 
 

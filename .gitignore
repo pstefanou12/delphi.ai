@@ -1,0 +1,15 @@
+# aribitrary folders
+.DS_Store 
+__pycache__
+.idea
+algos.ipynb
+.ipynb_checkpoints
+pytrunc.log
+data
+local
+lib
+__pycache__
+share
+list
+include
+lightning_logs/

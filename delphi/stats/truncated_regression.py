@@ -52,8 +52,8 @@ class truncated_regression(stats):
             'eps': eps,
             'momentum': 0.9,
             'weight_decay': 5e-4,
-            'step_lr': 2,
-            'step_lr_gamma': .95,
+            'step_lr': 10,
+            'step_lr_gamma': .9,
             'device': device,
         })
         self._lin_reg = None
