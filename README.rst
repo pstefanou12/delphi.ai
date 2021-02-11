@@ -19,8 +19,8 @@ regression with a union of interval truncation set. Instructions for running the
 
 The jupyter notebook called 'Istanbul Stock Exchange Data Experiment.ipynb',
 contains the code for the semi-synthetic data experiment. For this experiment, we use the 
-`ISTANBUL STOCK EXCHANGE Data Set <https://archive.ics.uci.edu/ml/datasets/ISTANBUL+STOCK+EXCHANGE>` from the '. `UCI 
-Machine Learning Repository <https://archive.ics.uci.edu/ml/index.php>`. Note that you will need to download 
+`ISTANBUL STOCK EXCHANGE Data Set <https://archive.ics.uci.edu/ml/datasets/ISTANBUL+STOCK+EXCHANGE>`_ from the '. `UCI 
+Machine Learning Repository <https://archive.ics.uci.edu/ml/index.php>`_. Note that you will need to download 
 the data in order to run the notebook. Read through notebook to see adjust hyperparameters, and provide user-specific inputs.
 
 
