@@ -72,8 +72,9 @@ Note
 
 There will be additional instructions within the notebooks on how to run experiments.
 
-Additional parameters can be adjusted by updating hyperparameters in the ``delphi/stats/truncated_regression.py`` file.
-The lr drop frequency, momentum, and weight-decay of the algorithm can all be modified there.
+Additional parameters can be changed by adjusting the ``args`` hyperparameters object
+in the ``delphi/stats/truncated_regression.py`` file (hyperparameters that can be changed include
+lr drop frequency, momentum, and weight-decay). 
 
 
 
