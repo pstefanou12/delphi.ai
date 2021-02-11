@@ -5,12 +5,19 @@ Efficient Truncated Regression with Unknown Noise Variance
 Code to accompany experiments in paper
 --------------------------------------
 
+`CNN <http://cnn.com>`_
+
+Get the latest news at `CNN`_.
+
+
 Introduction
 ============
 
 This repository contains three jupyter notebooks to run the experiments mentioned
-in the paper. The jupyter notebook with the name Istanbul Stock Exchange Data Experiment,
-contains the code for the semi-synthetic data experiment. The jupyter notebook with the name
+in the paper. The jupyter notebook with the name 'Istanbul Stock Exchange Data Experiment.ipynb',
+contains the code for the semi-synthetic data experiment. For this experiment, we use code from the UCI 
+
+The jupyter notebook with the name
 Union of Interval Truncated Regression contains the code for the union of interval regression experiment.
 Lastly, the notebook with the name Varying C contains the code for the experiment with varying truncation
 parameter C.
