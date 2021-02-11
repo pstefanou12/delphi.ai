@@ -30,7 +30,21 @@ run by executing the cells in order. Further, if there are dependency issues, tr
 and install dependencies with 'pip install -r requirements.txt'.
 
 
+First create a virtual environment for this repository.
+
 .. code-block:: bash
 
    python3 -m virtualenv /path/to/environment/trunc-reg 
+
+
+Next activate 
+
+Next install a jupyter kernel. This will install a kernel inside the environment, to use to run in the Jupyter notebook there.
+
+.. code-block:: bash
+
+   ipython kernel install --user --name=trunc-reg 
+
+
+
 
