@@ -23,16 +23,14 @@ contains the code for the semi-synthetic data experiment. For this experiment, w
 Machine Learning Repository <https://archive.ics.uci.edu/ml/index.php>`_. Note that you will need to download 
 the data in order to run the notebook. Read through notebook to see adjust hyperparameters, and provide user-specific inputs.
 
-
-Notes
------
+Download
+--------
 
 To run this notebook you will need to download all of the files from this anonymous repository.
 
-You will need to download the data from the UCI repository to run the Istanbul Stock Exchange notebook.
 
-If you are having trouble running the experiments, within your own environment, run the following commands to 
-set up the repository's dependencies.
+Dependency Setup
+------------------
 
 Here are step-by-step instructions to install the correct dependencies for running the experiments. 
 
@@ -61,6 +59,13 @@ Here are step-by-step instructions to install the correct dependencies for runni
 .. code-block:: bash
 
    pip install -r requirements.txt
+
+
+Data
+-----
+
+You will need to download the `ISTANBUL STOCK EXCHANGE Data Set <https://archive.ics.uci.edu/ml/datasets/ISTANBUL+STOCK+EXCHANGE>`_
+data from the UCI repository to run the ``Istanbul Stock Exchange Data Experiment.ipynb``.
 
 
 

@@ -50,9 +50,9 @@ class truncated_regression(stats):
             'bias': bias,
             'clamp': clamp,
             'eps': eps,
-            'momentum': 0.9,
-            'weight_decay': 5e-4,
-            'step_lr': 10,
+            'momentum': 0.0,
+            'weight_decay': 0.0,
+            'step_lr': 20,
             'step_lr_gamma': .9,
             'device': device,
         })
@@ -117,8 +117,9 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance 
         factor
         """
-        return lambda_*(z - targ) / pred.size(0), targ / pred.size(0),\
-                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / pred.size(0)
+        out = (z - targ)
+        return lambda_*out / (out.nonzero(as_tuple=False).size(0) + 1e-5), targ / (out.nonzero(as_tuple=False).size(0) + 1e-5),\
+                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + 1e-5)
 
 
 class TruncatedMSE(ch.autograd.Function):
