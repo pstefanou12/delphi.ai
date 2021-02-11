@@ -57,6 +57,7 @@ Here are step-by-step instructions to install the correct dependencies for runni
    ipython kernel install --user --name=trunc-reg 
 
 4. Install packages in root directory of repository.
+
 .. code-block:: bash
 
    pip install -r requirements.txt
