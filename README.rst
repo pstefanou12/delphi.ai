@@ -1,9 +1,9 @@
 **********************************************************
 Efficient Truncated Regression with Unknown Noise Variance
 **********************************************************
---------------------------------------
-ICML 2021 Supplmentary Code Submission
---------------------------------------
+---------------------------------------
+ICML 2021 Supplementary Code Submission
+---------------------------------------
 
 Introduction
 ============
@@ -30,7 +30,7 @@ To run this notebook you will need to download all of the files from this anonym
 
 
 Dependency Setup
-------------------
+----------------
 
 Here are step-by-step instructions to install the correct dependencies for running the experiments. 
 
@@ -62,10 +62,16 @@ Here are step-by-step instructions to install the correct dependencies for runni
 
 
 Data
------
+----
 
 You will need to download the `ISTANBUL STOCK EXCHANGE Data Set <https://archive.ics.uci.edu/ml/datasets/ISTANBUL+STOCK+EXCHANGE>`_
-data from the UCI repository to run the ``Istanbul Stock Exchange Data Experiment.ipynb``.
+from the UCI repository to run the ``Istanbul Stock Exchange Data Experiment.ipynb``.
+
+Note
+----
+
+Additional parameters can be adjusted by updating hyperparameters in the ``delphi/stats/truncated_regression.py`` file.
+The lr drop frequency, momentum, and weight-decay of the algorithm can all be modified there.
 
 
 
