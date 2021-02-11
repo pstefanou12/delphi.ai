@@ -52,7 +52,7 @@ class truncated_regression(stats):
             'eps': eps,
             'momentum': 0.0,
             'weight_decay': 0.0,
-            'step_lr': 20,
+            'step_lr': 10,
             'step_lr_gamma': .9,
             'device': device,
         })
