@@ -26,7 +26,7 @@ the data in order to run the notebook. Read through notebook to see adjust hyper
 Download
 --------
 
-To run this notebook you will need to download all of the files from this anonymous repository.
+To run these notebooks, you will need to download all of the files from this anonymous repository.
 
 
 Dependency Setup
@@ -69,6 +69,8 @@ from the UCI repository to run the ``Istanbul Stock Exchange Data Experiment.ipy
 
 Note
 ----
+
+There will be additional instructions within the notebooks on how to run experiments.
 
 Additional parameters can be adjusted by updating hyperparameters in the ``delphi/stats/truncated_regression.py`` file.
 The lr drop frequency, momentum, and weight-decay of the algorithm can all be modified there.
