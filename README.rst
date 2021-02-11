@@ -28,3 +28,9 @@ Note
 The notebooks are located within the notebooks directory of the repository. They have instructions on how to execute the experiments. The experiments should
 run by executing the cells in order. Further, if there are dependency issues, try creating a virutal environment 
 and install dependencies with 'pip install -r requirements.txt'.
+
+
+.. code-block:: bash
+
+   python3 -m virtualenv /path/to/environment/trunc-reg 
+
