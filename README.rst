@@ -29,21 +29,33 @@ The notebooks are located within the notebooks directory of the repository. They
 run by executing the cells in order. Further, if there are dependency issues, try creating a virutal environment 
 and install dependencies with 'pip install -r requirements.txt'.
 
+Here are step-by-step instructions to install the correct dependencies for running the experiments. 
 
-First create a virtual environment for this repository.
+
+Enumerated lists:
+1. Create a virtual environment for this repository.
 
 .. code-block:: bash
 
    python3 -m virtualenv /path/to/environment/trunc-reg 
 
 
-Next activate 
+2. Activate virtual environment. 
 
-Next install a jupyter kernel. This will install a kernel inside the environment, to use to run in the Jupyter notebook there.
+.. code-block:: bash
+
+   source /path/to/environment/trunc-reg/bin/activate
+
+
+3. Install a jupyter kernel. This will install a kernel inside the environment, to use to run in the Jupyter notebook there.
 
 .. code-block:: bash
 
    ipython kernel install --user --name=trunc-reg 
+
+
+
+
 
 
 
