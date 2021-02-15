@@ -32,7 +32,7 @@ class TruncatedRegressionProjectionSet:
             pass
 
 
-class TruncatedUnknownVarianceProjectionSet:
+class TruncatedRegressionUnknownVarianceProjectionSet:
     """
     Project parameter estimation back into domain of expected results for censored normal distributions.
     """

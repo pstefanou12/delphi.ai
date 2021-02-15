@@ -1,4 +1,9 @@
+"""
+Module for functional gradient components
+"""
 
+
+import torch as ch
 
 
 class TruncatedMSE(ch.autograd.Function):
@@ -16,13 +21,13 @@ class TruncatedMSE(ch.autograd.Function):
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
         # make args.num_samples copies of pred, N x B x 1
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(args.num_samples, 1, 1)
         # add random noise to each copy
         noised = stacked + ch.randn_like(stacked)
         # filter out copies where pred is in bounds
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
+        filtered = ch.stack([args.phi(batch).unsqueeze(1) for batch in noised]).float()
         # average across truncated indices
-        out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + args.eps)
         return (out - targ) / pred.size(0), targ / pred.size(0)
         
 
@@ -40,13 +45,13 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     def backward(ctx, grad_output):
         pred, targ, lambda_ = ctx.saved_tensors
         # calculate std deviation of noise distribution estimate
-        sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
+        sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(args.device)
 
         for i in range(pred.size(0)):
             # add random noise to logits
-            noised = pred[i] + sigma*ch.randn(ch.Size([config.args.num_samples, 1])).to(config.args.device)
+            noised = pred[i] + sigma*ch.randn(ch.Size([args.num_samples, 1])).to(args.device)
             # filter out copies within truncation set
-            filtered = config.args.phi(noised).bool()
+            filtered = args.phi(noised).bool()
             z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]]) if ch.any(filtered) else ch.cat([z, pred[i].unsqueeze(0)])
         """
         multiply the v gradient by lambda, because autograd computes

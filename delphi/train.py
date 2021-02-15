@@ -64,7 +64,7 @@ def make_optimizer_and_schedule(model, checkpoint, params):
     return optimizer, schedule
 
 
-def train_model(model, loaders *, required_args=None, checkpoint=None,
+def train_model(model, loaders, *, required_args=None, checkpoint=None,
     device="cpu", tensorboard=True, dp_device_ids=None, store=None,
     update_params=None, disable_no_grad=False):
 

@@ -3,18 +3,16 @@ This module is used to set up arguments and defaults.
 """
 
 import torch as ch
-from torch import Tensor
-
-from .tools import
+from torch import Tensor 
 
 BY_CLASS = 'varies by class'
 REQ = 'REQUIRED'
 
-ALGORITHM_DEFAULTS = {
+REGRESSION_DEFAULTS = {
     'trunc_reg': {
         'epochs': 50,
         'lr': 1e-1,
-        'num_samples', 100,
+        'num_samples': 100,
         'bias': True,
         'clamp': True,
         'eps': 1e-5,
@@ -27,7 +25,7 @@ ALGORITHM_DEFAULTS = {
         'epochs': 50,
         'lr': 1e-1,
         'var_lr': 1e-2,
-        'num_samples', 100,
+        'num_samples': 100,
         'bias': True,
         'clamp': True,
         'eps': 1e-5,
@@ -61,7 +59,6 @@ BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
 
 
 MODEL_LOADER_ARGS = [
-    ['dataset', list(datasets.DATASETS.keys()), '', BY_CLASS],
     ['data', str, 'path to the dataset', None],
     ['arch', str, 'architecture (see {cifar,imagenet}_models/', BY_CLASS],
     ['batch-size', int, 'batch size for data loading', BY_CLASS],
@@ -128,13 +125,13 @@ def check_and_fill_args(args, arg_list, ds_class):
     return args
 
 
-def setup_args(args, class):
+def setup_args(args, class_):
     '''
     Fill the args object with reasonable defaults from
     :mod:`robustness.defaults`, and also perform a sanity check to make sure no
     args are missing.
     '''
-    args = check_and_fill_args(args, defaults.MODEL_LOADER_ARGS, class)
+    args = check_and_fill_args(args, defaults.MODEL_LOADER_ARGS, class_)
     if args.eval_only: assert args.resume is not None, \
             "Must provide a resume path if only evaluating"
     return args

@@ -13,8 +13,7 @@ from sklearn.linear_model import LinearRegression
 
 from ..Function import TruncatedMSE, TruncatedUnknownVarianceMSE
 from ..projection_set import TruncatedRegressionProjectionSet, TruncatedRegressionUnknownVarianceProjectionSet
-from ..defaults import REGRESSION_DEFAULTS
-from ..main import main
+from ..defaults import REGRESSION_DEFAULTS, setup_args
 from ..train import train_model
 from ..utils.helpers import Bounds, setup_store_with_metadata, LinearUnknownVariance
 
@@ -26,7 +25,7 @@ def truncated_regression(args, X, y, known=False, store=None):
     # setup model and training procedure
     if known:
         # check all parameters
-        args = setup_args(args)
+        args = setup_args(args, REGRESSION_DEFAULTS['known'])
         setattr(args, 'custom_criterion', TruncatedMSE.apply)
         trunc_reg = Linear(in_features=X.size(1), out_features=1, bias=args.bias)
         # assign emprical estimates
@@ -38,7 +37,7 @@ def truncated_regression(args, X, y, known=False, store=None):
         setattr('projection_set', TruncatedRegressioinProjectionSet)
     else:
         # check all parameters
-        args = setup_args(args)
+        args = setup_args(args, REGRESSION_DEFAULTS['unknown'])
         setattr(args, 'custom_criterion', TruncatedUnknownVarianceMSE.apply)
         trunc_reg = LinearUnknownVariance(in_features=X.size(0), bias=args.bias)
         # assign emprical estimates
@@ -47,6 +46,7 @@ def truncated_regression(args, X, y, known=False, store=None):
         trunc_reg.lambda_ = ch.var(Tensor(lin_reg.predict(X)) - y, dim=0).unsqueeze(0).inverse()
         trunc_reg.v = lin_reg.coef_*trunc_reg.lambda_
         if args.bias: trunc_reg.bias = lin_reg.intercept_*trunc_reg.lambda_
+        # can use different learning rate for unknown noise variance
         params = [
             {'params': trunc_reg.v},
             {'params': trunc_reg.bias},
@@ -60,7 +60,7 @@ def truncated_regression(args, X, y, known=False, store=None):
     if store:
         store = setup_store_with_metadata(args)
 
-    # train model 
+    # perform truncated regression procedure 
     return train_model(trunc_reg, (S, None), update_params=params, device=args.device)
 
 
