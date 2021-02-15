@@ -6,82 +6,127 @@ import torch as ch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Linear
+from torch.nn import init
 from torch.utils.data import DataLoader
 from cox.utils import Parameters
-import config
+from sklearn.linear_model import LinearRegression
 
-from .stats import stats
-from .defaults import REGRESSION_DEFAULTS
+from ..Function import TruncatedMSE, TruncatedUnknownVarianceMSE
+from ..defaults import REGRESSION_DEFAULTS
+from ..main import main
 from ..train import train_model
-from ..utils.helpers import Bounds
+from ..utils.helpers import Bounds, setup_store_with_metadata
 
 
-class truncated_regression(stats):
+def truncated_regression(args, X, y, known=False, store=None):
     """
+    Truncated regression module with known and unknown noise variance.
     """
-    def __init__(self, args):
+    # setup model and training procedure
+    if known:
+        # check all parameters
+        args = setup_args(args)
+        setattr(args, 'custom_criterion', TruncatedMSE.apply)
+        trunc_reg = Lienar(in_features=X.size(1), out_features=1, bias=args.bias)
+        # assign emprical estimates
+        lin_reg = LinearRegression(intercept_=args.bias)
+        lin_reg.fit(X, y)
+        trunc_reg.weight = lin_reg.coef_
+        if args.bias: trunc_reg.bias = lin_reg.intercept_
+        params = None
+    else:
+        # check all parameters
+        args = setup_args(args)
+        setattr(args, 'custom_criterion', TruncatedUnknownVarianceMSE.apply)
+        trunc_reg = LinearUnknownVariance(in_features=X.size(0), bias=args.bias)
+        # assign emprical estimates
+        lin_reg = LinearRegression(intercept_=args.bias)
+        lin_reg.fit(X, y)
+        trunc_reg.lambda_ = ch.var(Tensor(lin_reg.predict(X)) - y, dim=0).unsqueeze(0).inverse()
+        trunc_reg.v = lin_reg.coef_*trunc_reg.lambda_
+        if args.bias: trunc_reg.bias = lin_reg.intercept_*trunc_reg.lambda_
+        params = [
+            {'params': trunc_reg.v},
+            {'params': trunc_reg.bias},
+            {'params': trunc_reg.lambda_, 'lr': args.var_lr}]
+
+    # dataset
+    dataset = TensorDataset(X, y)
+    S = DataLoader(dataset, num_workers=args.num_workers, batch_size=args.batch_size, shuffle=args.shuffle)
+
+    if store:
+        store = setup_store_with_metadata(args)
+
+    return train_model(trunc_reg, (S, None), update_params=params, device=args.device)
+
+
+
+class LinearUnknownVariance(nn.Module):
+    """
+    Linear layer with unknown noise variance. Used for regression models.
+    """
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    weight: Tensor
+
+    def __init__(self, in_features: int, out_features: int, bias: bool=True):
         """
+        :param lambda_: 1/empirical variance
+        :param v: empirical weight*lambda_ estimate
+        :param bias: (optional) empirical bias*lambda_ estimate
         """
-        super().__init__()
-        # check algorithm hyperparameters
-        self._lin_reg = None
-        # intialize loss function and add custom criterion to hyperparameters
-        if not config.args.var:
-            self.criterion = TruncatedUnknownVarianceMSE.apply
+        super(LinearUnknownVariance, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.v = Parameter(Tensor(out_features, in_features))
+        self.lambda_ = Parameter(Tensor(out_features))
+        if bias:
+            self.bias = Parameter(Tensor(out_features))
         else:
-            self.criterion = TruncatedMSE.apply
-        config.args.__setattr__('custom_criterion', self.criterion)
+            self.register_parameter('bias', None)
 
-    def fit(
-            self,
-            S: DataLoader):
-        """
-        """
-        # initialize model with empirical estimates
-        if config.args.var:
-            self._lin_reg = Linear(in_features=S.dataset.w.size(0), out_features=1, bias=config.args.bias)
-            self._lin_reg.weight.data = S.dataset.w
-            self._lin_reg.bias = S.dataset.w0 if config.args.bias else None
-            self.projection_set = TruncatedRegressionProjectionSet(self._lin_reg)
-            update_params = None
-        else:
-            self._lin_reg = LinearUnknownVariance(S.dataset.v, S.dataset.lambda_, bias=S.dataset.v0)
-            self.projection_set = TruncatedUnknownVarianceProjectionSet(self._lin_reg)
-            update_params = [
-                    {'params': self._lin_reg.v},
-                    {'params': self._lin_reg.bias},
-                    {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
+    def forward(self, x):
+        var = self.lambda_.clone().detach().inverse()
+        w = self.v*var
+        if self.bias.nelement() > 0:
+            return x.matmul(w) + self.bias * var
+        return x.matmul(w)
 
-        config.args.__setattr__('iteration_hook', self.projection_set)
-        # run PGD for parameter estimation
-        return train_model(self._lin_reg, (S, None), update_params=update_params, device=config.args.device)
-
+def pretrain_hook(args, trunc_reg):
+    # initialize model with empirical estimates
+    if args.var:
+        projection_set = TruncatedRegressionProjectionSet(trunc_reg)
+    else:
+        projection_set = TruncatedUnknownVarianceProjectionSet(trunc_reg)
+    args.__setattr__('iteration_hook', projection_set)
 
 
 class TruncatedRegressionProjectionSet:
     """
     Project to domain for linear regression with known variance
     """
-    def __init__(self, emp_lin_reg):
-        self.emp_weight = emp_lin_reg.weight.data
-        self.emp_bias = emp_lin_reg.bias.data if config.args.bias else None
-        self.radius = config.args.radius * (4.0 * ch.log(2.0 / config.args.alpha) + 7.0)
-        if config.args.clamp:
-            self.weight_bounds = Bounds(self.emp_weight.flatten() - config.args.radius,
-                                        self.emp_weight.flatten() + config.args.radius)
-            self.bias_bounds = Bounds(self.emp_bias.flatten() - config.args.radius,
-                                      self.emp_bias.flatten() + config.args.radius) if config.args.bias else None
+    def __init__(self, trunc_reg, radius, alpha, clamp):
+        self.emp_weight = trunc_reg.weight.data
+        self.emp_bias = trunc_reg.bias.data if trunc_reg.bias else None
+        self.radius = radius * (4.0 * ch.log(2.0 / alpha) + 7.0)
+        self.clamp = clamp
+        if self.clamp:
+            self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
+                                        self.emp_weight.flatten() + self.radius)
+            self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
+                                      self.emp_bias.flatten() + self.radius) if trunc_reg.bias is not None else None
         else:
             pass
 
-    def __call__(self, M, i, loop_type, inp, target):
-        if config.args.clamp:
-            M.weight.data = ch.stack(
-                [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
-                 range(M.weight.size(0))])
-            if config.args.bias:
-                M.bias.data = ch.clamp(M.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
-                    M.bias.size())
+    def __call__(self, trunc_reg, i, loop_type, inp, target):
+        if self.clamp:
+            trunc_reg.weight.data = ch.stack(
+                [ch.clamp(trunc_reg.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
+                 range(trunc_reg.weight.size(0))])
+            if trunc_reg.bias is not None:
+                trunc_reg.bias.data = ch.clamp(trunc_reg.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
+                    trunc_reg.bias.size())
         else:
             pass
 
@@ -91,62 +136,40 @@ class TruncatedUnknownVarianceProjectionSet:
     Project parameter estimation back into domain of expected results for censored normal distributions.
     """
 
-    def __init__(self, emp_lin_reg):
+    def __init__(self, trunc_reg, radius, alpha, clamp):
         """
         :param emp_lin_reg: empirical regression with unknown noise variance
         """
-        self.emp_var = emp_lin_reg.lambda_.data.inverse()
-        self.emp_weight = emp_lin_reg.v.data * self.emp_var
-        self.emp_bias = emp_lin_reg.bias.data * self.emp_var if config.args.bias else None
-        self.param_radius = config.args.radius * (12.0 + 4.0 * ch.log(2.0 / config.args.alpha))
-
-        if config.args.clamp:
-            self.weight_bounds, self.var_bounds = Bounds(self.emp_weight.flatten() - self.param_radius,
-                                                         self.emp_weight.flatten() + self.param_radius), Bounds(
-                self.emp_var.flatten() / config.args.radius, (self.emp_var.flatten()) / config.args.alpha.pow(2))
-            self.bias_bounds = Bounds(self.emp_bias.flatten() - self.param_radius,
-                                      self.emp_bias.flatten() + self.param_radius) if config.args.bias else None
+        self.emp_var = turnc_reg.lambda_.data.inverse()
+        self.emp_weight = trunc_reg.v.data * self.emp_var
+        self.emp_bias = trunc_reg.bias.data * self.emp_var if trunc_reg.bias is not None else None
+        self.radius = radius * (12.0 + 4.0 * ch.log(2.0 / config.args.alpha))
+        self.clamp = clamp
+        if self.clamp:
+            self.weight_bounds, self.var_bounds = Bounds(self.emp_weight.flatten() - self.radius,
+                                                         self.emp_weight.flatten() + self.radius), Bounds(
+                self.emp_var.flatten() / radius, (self.emp_var.flatten()) / alpha.pow(2))
+            self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
+                                      self.emp_bias.flatten() + self.radius) if trunc_reg.bias else None
         else:
             pass
 
-    def __call__(self, M, i, loop_type, inp, target):
-        var = M.lambda_.inverse()
-        weight = M.v.data * var
+    def __call__(self, trunc_reg, i, loop_type, inp, target):
+        # reparameterize
+        var = trunc_reg.lambda_.inverse()
+        weight = trunc_reg.v.data * var
 
-        if config.args.clamp:
+        if self.clamp:
             # project noise variance
-            M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
+            trunc_reg.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
             # project weights
-            M.v.data = ch.cat(
+            trunc_reg.v.data = ch.cat(
                 [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
                           float(self.weight_bounds.upper[i]))
-                 for i in range(weight.size(0))]) * M.lambda_
+                 for i in range(weight.size(0))]) * trunc_reg.lambda_
             # project bias
-            if config.args.bias:
-                bias = M.bias * var
-                M.bias.data = ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_
+            if trunc_reg.bias is not None:
+                bias = trunc_reg.bias * var
+                trunc_reg.bias.data = ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_
         else:
             pass
-
-
-class LinearUnknownVariance(nn.Module):
-    """
-    Linear layer with unknown noise variance.
-    """
-    def __init__(self, v, lambda_, bias=None):
-        """
-        :param lambda_: 1/empirical variance
-        :param v: empirical weight*lambda_ estimate
-        :param bias: (optional) empirical bias*lambda_ estimate
-        """
-        super(LinearUnknownVariance, self).__init__()
-        self.register_parameter(name='v', param=ch.nn.Parameter(v))
-        self.register_parameter(name='lambda_', param=ch.nn.Parameter(lambda_))
-        self.register_parameter(name='bias', param=ch.nn.Parameter(bias))
-
-    def forward(self, x):
-        var = self.lambda_.clone().detach().inverse()
-        w = self.v*var
-        if self.bias.nelement() > 0:
-            return x.matmul(w) + self.bias * var
-        return x.matmul(w)

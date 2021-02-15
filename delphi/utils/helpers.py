@@ -179,3 +179,27 @@ def init_process(args, backend='nccl'):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=args.rank, world_size=args.size)
+
+
+def setup_store_with_metadata(args):
+    '''
+    Sets up a store for training according to the arguments object. See the
+    argparse object above for options.
+    '''
+    # Add git commit to args
+    try:
+        repo = git.Repo(path=os.path.dirname(os.path.realpath(__file__)),
+                            search_parent_directories=True)
+        version = repo.head.object.hexsha
+    except git.exc.InvalidGitRepositoryError:
+        version = __version__
+    args.version = version
+
+    # Create the store
+    store = cox.store.Store(args.out_dir, args.exp_name)
+    args_dict = args.__dict__
+    schema = cox.store.schema_from_dict(args_dict)
+    store.add_table('metadata', schema)
+    store['metadata'].append_row(args_dict)
+
+    return store
