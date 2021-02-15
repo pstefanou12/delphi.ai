@@ -174,6 +174,39 @@ class Exp_h:
         return ch.exp(cov_term - trace_term - loc_term + self.pi_const)
 
 
+class LinearUnknownVariance(nn.Module):
+    """
+    Linear layer with unknown noise variance. Used for regression models.
+    """
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    weight: Tensor
+
+    def __init__(self, in_features: int, out_features: int, bias: bool=True):
+        """
+        :param lambda_: 1/empirical variance
+        :param v: empirical weight*lambda_ estimate
+        :param bias: (optional) empirical bias*lambda_ estimate
+        """
+        super(LinearUnknownVariance, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.v = Parameter(Tensor(out_features, in_features))
+        self.lambda_ = Parameter(Tensor(out_features))
+        if bias:
+            self.bias = Parameter(Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, x):
+        var = self.lambda_.clone().detach().inverse()
+        w = self.v*var
+        if self.bias.nelement() > 0:
+            return x.matmul(w) + self.bias * var
+        return x.matmul(w)
+
+
 def init_process(args, backend='nccl'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'

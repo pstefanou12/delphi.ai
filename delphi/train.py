@@ -75,9 +75,9 @@ def train_model(model, loaders *, required_args=None, checkpoint=None,
     # create tensorboard and store
     writer = store.tensorboard if store and tensorboard else None
 
-    # pretrain HOOK
-
-    
+    # initialize projection set and add iteration hook
+    if has_attr(args, 'projection_set'):
+        setattr(args, 'iteration_hook', args.projection_set(M, args.radius, args.alpha, args.clamp))
 
     # data loaders
     train_loader, val_loader = loaders
@@ -242,7 +242,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         iterator.refresh()
 
         # USER-DEFINED HOOK
-        if has_attr(config.args, 'iteration_hook'):
+        if has_attr(args, 'iterationd_hook'):
             config.args.iteration_hook(model, i, loop_type, inp, target)
 
     if writer is not None:
