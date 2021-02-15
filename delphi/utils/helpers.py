@@ -9,7 +9,7 @@ from torch import nn
 import cox
 from typing import NamedTuple
 import os
-# import git
+import git
 
 
 from .constants import CKPT_NAME
@@ -58,7 +58,7 @@ def accuracy(output, target, topk=(1,), exact=False):
         Computes the top-k accuracy for the specified values of k
 
         Args:
-            output (ch.Tensor) : model output (N, classes) or (N, attributes) 
+            output (ch.Tensor) : model output (N, classes) or (N, attributes)
                 for sigmoid/multitask binary classification
             target (ch.Tensor) : correct labels (N,) [multiclass] or (N,
                 attributes) [multitask binary]
@@ -75,7 +75,7 @@ def accuracy(output, target, topk=(1,), exact=False):
         if len(target.shape) > 1:
             assert output.shape == target.shape, \
                 "Detected binary classification but output shape != target shape"
-            return [ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean()], [-1.0] 
+            return [ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean()], [-1.0]
 
         maxk = max(topk)
         batch_size = target.size(0)
@@ -152,7 +152,7 @@ def cov(m, rowvar=False):
     return fact * m_.matmul(mt)
 
 
-class Bounds(NamedTuple): 
+class Bounds(NamedTuple):
     lower: Tensor
     upper: Tensor
 
@@ -179,5 +179,3 @@ def init_process(args, backend='nccl'):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=args.rank, world_size=args.size)
-
-

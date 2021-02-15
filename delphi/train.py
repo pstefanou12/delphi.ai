@@ -6,7 +6,6 @@ import numpy as np
 import torch as ch
 from torch.optim import SGD
 from torch.optim import lr_scheduler
-import config
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy
 from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST
@@ -14,12 +13,23 @@ from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_
 
 from tqdm import tqdm as tqdm
 
+def check_required_args(args, required_args=None):
+    """
+    Check that the required training arguments are present.
+    Args:
+        args (argparse object): the arguments to check
+        required_args (List): arguments to check for
+    """
+    if required_args is not None:
+        # check for all of the args in args object
+        for arg in required_args:
+            assert has_attr(args, arg), f"Missing argument {arg}"
 
 def make_optimizer_and_schedule(model, checkpoint, params):
     param_list = model.parameters() if params is None else params
 
     optimizer = SGD(param_list, config.args.lr, momentum=config.args.momentum, weight_decay=config.args.weight_decay)
-        
+
     # Make schedule
     schedule = None
     if config.args.custom_lr_multiplier == 'cyclic':
@@ -39,7 +49,7 @@ def make_optimizer_and_schedule(model, checkpoint, params):
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
     elif config.args.step_lr:
         schedule = lr_scheduler.StepLR(optimizer, step_size=config.args.step_lr, gamma=config.args.step_lr_gamma)
-        
+
     # Fast-forward the optimizer and the scheduler if resuming
     if checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -54,18 +64,25 @@ def make_optimizer_and_schedule(model, checkpoint, params):
     return optimizer, schedule
 
 
-def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
-                store=None, update_params=None, disable_no_grad=False):
-    
-    if store is not None: 
+def train_model(model, loaders *, required_args=None, checkpoint=None,
+    device="cpu", tensorboard=True, dp_device_ids=None, store=None,
+    update_params=None, disable_no_grad=False):
+
+    # create store with metadata for experiment
+    if store is not None:
         setup_store_with_metadata(config.args, store)
         store.add_table(LOGS_TABLE, LOGS_SCHEMA)
-    writer = store.tensorboard if store else None
+    # create tensorboard and store
+    writer = store.tensorboard if store and tensorboard else None
+
+    # pretrain HOOK
+
     
+
     # data loaders
     train_loader, val_loader = loaders
     optimizer, schedule = make_optimizer_and_schedule(model, checkpoint, update_params)
-    
+
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
     model.to(device)
@@ -78,10 +95,10 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
     # keep track of the start time
     start_time = time.time()
-    
+
     for epoch in range(start_epoch, config.args.epochs):
         train_prec1, train_loss = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
-        
+
         last_epoch = (epoch == (config.args.epochs - 1))
 
         # if neural network passed through framework, use log performance
@@ -133,29 +150,29 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
                 # Update the latest and best checkpoints (overrides old one)
                 save_checkpoint(CKPT_NAME_LATEST)
                 if is_best: save_checkpoint(CKPT_NAME_BEST)
-        
+
         # update lr
-        if schedule: schedule.step()            
+        if schedule: schedule.step()
     return model
-            
-            
+
+
 def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
-    # check loop type 
-    if not loop_type in ['train', 'val']: 
+    # check loop type
+    if not loop_type in ['train', 'val']:
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
         raise ValueError(err_msg)
     is_train = (loop_type == 'train')
-    
+
     loop_msg = 'Train' if is_train else 'Val'
-    
+
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
-    
+
     # check for custom criterion
     has_custom_criterion = has_attr(config.args, 'custom_criterion')
     criterion = config.args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
-    
+
     iterator = tqdm(enumerate(loader), total=len(loader))
     for i, batch in iterator:
         inp, target, output = None, None, None
@@ -173,12 +190,12 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                 loss = criterion(output, target)
 
 
-        # regularizer option 
+        # regularizer option
         reg_term = 0.0
         if has_attr(config.args, "regularizer") and isinstance(model, ch.nn.Module):
             reg_term = config.args.regularizer(model, inp, target)
         loss = loss + reg_term
-        
+
         # perform backprop and take optimizer step
         if is_train:
             optimizer.zero_grad()
@@ -220,24 +237,20 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
                     'Reg term: {reg} ||'.format(epoch, loop_msg,
                     loss=losses, reg=reg_term))
-        
+
         iterator.set_description(desc)
         iterator.refresh()
-    
+
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):
             config.args.iteration_hook(model, i, loop_type, inp, target)
-    
+
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
         vals = [losses, top1, top5]
         for d, v in zip(descs, vals):
             writer.add_scalar('_'.join([loop_type, d]), v.avg,
                               epoch)
-    
+
     # LOSS AND ACCURACY
-    return top1.avg, losses.avg   
-
-
-
-
+    return top1.avg, losses.avg
