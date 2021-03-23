@@ -113,6 +113,7 @@ class TruncatedMultivariateNormalDataset(Dataset):
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
         return self.S[idx], self.loc_grad[idx], self.cov_grad[idx]
+<<<<<<< HEAD
 
     @property
     def loc(self):
@@ -155,11 +156,18 @@ class TruncatedLogisticRegressionDataset(Dataset):
     @property
     def log_reg(self):
         return copy.deepcopy(self._log_reg)
+=======
+>>>>>>> f755064f78cb17b7eb89d0f9905217ef89b44571
 
     @property
-    def w(self):
-        return self._log_reg.linear.weight.data.clone()
+    def loc(self):
+        return self._loc.clone()
 
     @property
+<<<<<<< HEAD
     def w0(self):
         return self._log_reg.linear.weight.bias.clone()
+=======
+    def covariance_matrix(self):
+        return self._covariance_matrix.clone()
+>>>>>>> f755064f78cb17b7eb89d0f9905217ef89b44571

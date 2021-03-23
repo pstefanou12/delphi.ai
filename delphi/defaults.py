@@ -3,50 +3,77 @@ This module is used to set up arguments and defaults.
 """
 
 import torch as ch
-from torch import Tensor
+from torch import Tensor 
 
-from .Function import TruncatedMSE, TruncatedUnknownVarianceMSE
-
-BY_DATASET = 'varies by dataset'
+BY_CLASS = 'varies by class'
 REQ = 'REQUIRED'
 
 REGRESSION_DEFAULTS = {
-    'known': {
-        'custom_criterion': TruncatedMSE.apply,
+    'trunc_reg': {
         'epochs': 50,
         'lr': 1e-1,
-        'num_samples', 100,
+        'num_samples': 100,
         'bias': True,
         'clamp': True,
         'eps': 1e-5,
         'momentum': 0.0,
         'weight_decay': 0.0,
         'step_lr': 10,
-        'step_lr_gamma', .1,
         'device': 'cpu',
     },
-    'unknown': {
-        'custom_criterion': TruncatedUnknownVarianceMSE.apply,
+    'trunc_reg_unknown': {
         'epochs': 50,
         'lr': 1e-1,
         'var_lr': 1e-2,
-        'num_samples', 100,
+        'num_samples': 100,
         'bias': True,
         'clamp': True,
         'eps': 1e-5,
         'momentum': 0.0,
         'weight_decay': 0.0,
         'step_lr': 10,
-        'step_lr_gamma', .1,
         'device': 'cpu'
     },
 }
 
 
-CONFIG_ARGS = [
-    ['config-path', str, 'config path for loading in parameters', None],
-    ['exp-name', str, 'where to save in (inside out_dir)', None]
+TRAINING_ARGS = [
+    ['out-dir', str, 'where to save training logs and checkpoints', REQ],
+    ['epochs', int, 'number of epochs to train for', BY_CLASS],
+    ['lr', float, 'initial learning rate for training', 1e-1],
+    ['weight-decay', float, 'SGD weight decay parameter', BY_CLASS],
+    ['momentum', float, 'SGD momentum parameter', 0.9],
+    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_CLASS],
+    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
+    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
+    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
+    ['log-iters', int, 'how frequently (in epochs) to log', 5],
+    ['save-ckpt-iters', int, 'how frequently (epochs) to save \
+            (-1 for none, only saves best and last)', -1]
 ]
+"""
+Arguments essential for the `train_model` function.
+*Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
+BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
+"""
+
+
+MODEL_LOADER_ARGS = [
+    ['data', str, 'path to the dataset', None],
+    ['arch', str, 'architecture (see {cifar,imagenet}_models/', BY_CLASS],
+    ['batch-size', int, 'batch size for data loading', BY_CLASS],
+    ['workers', int, '# data loading workers', 30],
+    ['resume', str, 'path to checkpoint to resume from', None],
+    ['resume-optimizer', [0, 1], 'whether to also resume optimizers', 0],
+    ['data-aug', [0, 1], 'whether to use data augmentation', 1],
+    ['mixed-precision', [0, 1], 'whether to use MP training (faster)', 0],
+]
+"""
+Arguments essential for constructing the model and dataloaders that will be fed
+into :meth:`robustness.train.train_model` or :meth:`robustness.train.eval_model`
+*Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
+BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
+"""
 
 
 def add_args_to_parser(arg_list, parser):
@@ -69,7 +96,7 @@ def add_args_to_parser(arg_list, parser):
             'help': f"{arg_help} (default: {arg_default})"
         }
         if has_choices: kwargs['choices'] = arg_type
-        parser.add_argument(f'--{arg_name}', **kwargs)
+        setattr(args, arg_name, **kwargs)
     return parser
 
 
@@ -95,4 +122,16 @@ def check_and_fill_args(args, arg_list, ds_class):
             setattr(args, name, TRAINING_DEFAULTS[ds_class][name])
         elif arg_default is not None:
             setattr(args, name, arg_default)
+    return args
+
+
+def setup_args(args, class_):
+    '''
+    Fill the args object with reasonable defaults from
+    :mod:`robustness.defaults`, and also perform a sanity check to make sure no
+    args are missing.
+    '''
+    args = check_and_fill_args(args, defaults.MODEL_LOADER_ARGS, class_)
+    if args.eval_only: assert args.resume is not None, \
+            "Must provide a resume path if only evaluating"
     return args

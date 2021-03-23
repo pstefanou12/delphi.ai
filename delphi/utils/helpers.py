@@ -174,8 +174,65 @@ class Exp_h:
         return ch.exp(cov_term - trace_term - loc_term + self.pi_const)
 
 
+class LinearUnknownVariance(nn.Module):
+    """
+    Linear layer with unknown noise variance. Used for regression models.
+    """
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    weight: Tensor
+
+    def __init__(self, in_features: int, out_features: int, bias: bool=True):
+        """
+        :param lambda_: 1/empirical variance
+        :param v: empirical weight*lambda_ estimate
+        :param bias: (optional) empirical bias*lambda_ estimate
+        """
+        super(LinearUnknownVariance, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.v = Parameter(Tensor(out_features, in_features))
+        self.lambda_ = Parameter(Tensor(out_features))
+        if bias:
+            self.bias = Parameter(Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, x):
+        var = self.lambda_.clone().detach().inverse()
+        w = self.v*var
+        if self.bias.nelement() > 0:
+            return x.matmul(w) + self.bias * var
+        return x.matmul(w)
+
+
 def init_process(args, backend='nccl'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=args.rank, world_size=args.size)
+
+
+def setup_store_with_metadata(args):
+    '''
+    Sets up a store for training according to the arguments object. See the
+    argparse object above for options.
+    '''
+    # Add git commit to args
+    try:
+        repo = git.Repo(path=os.path.dirname(os.path.realpath(__file__)),
+                            search_parent_directories=True)
+        version = repo.head.object.hexsha
+    except git.exc.InvalidGitRepositoryError:
+        version = __version__
+    args.version = version
+
+    # Create the store
+    store = cox.store.Store(args.out_dir, args.exp_name)
+    args_dict = args.__dict__
+    schema = cox.store.schema_from_dict(args_dict)
+    store.add_table('metadata', schema)
+    store['metadata'].append_row(args_dict)
+
+    return store
