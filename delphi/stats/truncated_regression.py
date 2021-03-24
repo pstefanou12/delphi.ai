@@ -52,9 +52,11 @@ class truncated_regression(stats):
             'eps': eps,
             'momentum': 0.0,
             'weight_decay': 0.0,
-            'step_lr': 10,
+            # 'step_lr': 10,
             'step_lr_gamma': .9,
             'device': device,
+            'custom_lr_multiplier': 'cyclic',
+
         })
         self._lin_reg = None
         self.projection_set = None
@@ -74,7 +76,7 @@ class truncated_regression(stats):
         if config.args.var:
             self._lin_reg = Linear(in_features=S.dataset.w.size(0), out_features=1, bias=config.args.bias)
             self._lin_reg.weight.data = S.dataset.w
-            self._lin_reg.bias = S.dataset.w0 if config.args.bias else None
+            self._lin_reg.bias = ch.nn.Parameter(S.dataset.w0) if config.args.bias else None
             self.projection_set = TruncatedRegressionProjectionSet(self._lin_reg)
             update_params = None
         else:
@@ -107,19 +109,29 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
 
         for i in range(pred.size(0)):
+            # while True:
             # add random noise to logits
             noised = pred[i] + sigma*ch.randn(ch.Size([config.args.num_samples, 1])).to(config.args.device)
             # filter out copies within truncation set
             filtered = config.args.phi(noised).bool()
+
             z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]]) if ch.any(filtered) else ch.cat([z, pred[i].unsqueeze(0)])
+                # if ch.any(filtered):
+                #     z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]])
+                #     break
+                # else:
+                #     continue
+
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance 
         factor
         """
         out = (z - targ)
-        return lambda_*out / (out.nonzero(as_tuple=False).size(0) + 1e-5), targ / (out.nonzero(as_tuple=False).size(0) + 1e-5),\
-                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + 1e-5)
+        return lambda_ * out / (out.nonzero(as_tuple=False).size(0)), targ / (out.nonzero(as_tuple=False).size(0)),\
+                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0))
+        # return lambda_ * out / (out.nonzero(as_tuple=False).size(0) + 1e-5), targ / (out.nonzero(as_tuple=False).size(0) + 1e-5),\
+        #         (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + 1e-5)
 
 
 class TruncatedMSE(ch.autograd.Function):
@@ -169,7 +181,7 @@ class TruncatedRegressionProjectionSet:
                 [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
                  range(M.weight.size(0))])
             if config.args.bias:
-                M.bias.data = ch.clamp(M.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
+                M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
                     M.bias.size())
         else:
             pass

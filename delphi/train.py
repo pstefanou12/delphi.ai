@@ -7,12 +7,10 @@ import torch as ch
 from torch.optim import SGD
 from torch.optim import lr_scheduler
 import config
+from tqdm import tqdm as tqdm
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy
 from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST
-
-
-from tqdm import tqdm as tqdm
 
 
 def make_optimizer_and_schedule(model, checkpoint, params):
