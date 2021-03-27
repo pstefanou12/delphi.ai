@@ -142,7 +142,7 @@ class TruncatedMSE(ch.autograd.Function):
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
-        noised = stacked + ch.sqrt(config.args.var)*ch.randn(stacked.size())
+        noised = stacked + (ch.sqrt(config.args.var)*ch.randn(stacked.size())).to(config.args.device)
         # filter out copies where pred is in bounds
         filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
         # average across truncated indices
