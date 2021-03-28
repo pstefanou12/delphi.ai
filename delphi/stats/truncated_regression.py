@@ -111,7 +111,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
             noised = pred[i] + sigma*ch.randn(ch.Size([config.args.num_samples, 1])).to(config.args.device)
             # filter out copies within truncation set
             filtered = config.args.phi(noised).bool()
-            z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]]) if ch.any(filtered) else ch.cat([z, pred[i].unsqueeze(0)])
+            z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]]) if ch.any(filtered) else ch.cat([z, targ[i].unsqueeze(0)])
 
         """
         multiply the v gradient by lambda, because autograd computes 
@@ -119,8 +119,8 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         factor
         """
         out = (z - targ)
-        return lambda_ * out / (out.nonzero(as_tuple=False).size(0)), targ / (out.nonzero(as_tuple=False).size(0)),\
-                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0))
+        return lambda_ * out / (out.nonzero(as_tuple=False).size(0) + config.args.eps), targ / (out.nonzero(as_tuple=False).size(0) + config.args.eps),\
+                (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + config.args.eps)
 
 
 class TruncatedMSE(ch.autograd.Function):
