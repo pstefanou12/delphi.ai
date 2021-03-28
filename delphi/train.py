@@ -218,7 +218,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             top1_acc = top1.avg
             top5_acc = top5.avg
             # ITERATOR
-            desc = ('Epoch:{0} | Score {score.avg} \n | Loss {loss.avg:.4f} | '
+            desc = ('Epoch:{0} | Score {score.avg} \n | Loss {loss.avg:.4f} '
                  '||'.format(epoch, loop_msg, score=score, loss=losses))
         except Exception as e:
             if isinstance(model, ch.nn.Module):
