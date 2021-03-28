@@ -32,7 +32,8 @@ class truncated_regression(stats):
             radius: float=2.0,
             clamp: bool=True,
             eps: float=1e-10,
-            device="cpu",
+            tol: float=1e-1,
+            device: str="cpu",
             **kwargs):
         """
         """
@@ -52,7 +53,7 @@ class truncated_regression(stats):
             'eps': eps,
             'momentum': 0.0,
             'weight_decay': 0.0,
-            'step_lr_gamma': .9,
+            'tol': tol,
             'device': device,
             'custom_lr_multiplier': 'cyclic',
 

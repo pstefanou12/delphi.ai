@@ -78,8 +78,12 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     start_time = time.time()
     
     for epoch in range(start_epoch, config.args.epochs):
-        train_prec1, train_loss = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
-        
+        train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
+
+        # check score tolerance
+        if ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
+            return model
+
         last_epoch = (epoch == (config.args.epochs - 1))
 
         # if neural network passed through framework, use log performance
@@ -105,7 +109,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
                 # log + get best
                 ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
                 with ctx:
-                    val_prec1, val_loss = model_loop(config.args, 'val', val_loader, model,
+                    val_prec1, val_loss, score = model_loop('val', val_loader, model,
                             None, epoch + 1, writer, device=device)
 
                 # remember best prec@1 and save checkpoint
@@ -172,7 +176,6 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             except:
                 loss = criterion(output, target)
 
-
         # regularizer option 
         reg_term = 0.0
         if has_attr(config.args, "regularizer") and isinstance(model, ch.nn.Module):
@@ -194,7 +197,10 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         top5_acc = float('nan')
         try:
             # score
-            score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0))
+            if not config.args.var:
+                score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0))
+            else:
+                score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
 
             # loss
             losses.update(loss.item(), inp.size(0))
@@ -214,7 +220,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             # ITERATOR
             desc = ('Epoch:{0} | Score {score.avg} \n | Loss {loss.avg:.4f} | '
                  '||'.format(epoch, loop_msg, score=score, loss=losses))
-        except:
+        except Exception as e:
             if isinstance(model, ch.nn.Module):
                 warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
@@ -223,11 +229,15 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         
         iterator.set_description(desc)
         iterator.refresh()
+
+        # CHECK SCORE TOLERANCE
+        if config.args.tol and ch.all(ch.where(ch.abs(score.avg) < config.args.tol, 1, 0).bool()):
+            return top1.avg, losses.avg, score.avg
     
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):
             config.args.iteration_hook(model, i, loop_type, inp, target)
-    
+
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
         vals = [losses, top1, top5]
@@ -236,7 +246,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                               epoch)
     
     # LOSS AND ACCURACY
-    return top1.avg, losses.avg   
+    return top1.avg, losses.avg, score.avg
 
 
 
