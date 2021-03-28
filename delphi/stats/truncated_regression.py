@@ -106,9 +106,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         pred, targ, lambda_ = ctx.saved_tensors
         # calculate std deviation of noise distribution estimate
         sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
-
         for i in range(pred.size(0)):
-            # while True:
             # add random noise to logits
             noised = pred[i] + sigma*ch.randn(ch.Size([config.args.num_samples, 1])).to(config.args.device)
             # filter out copies within truncation set

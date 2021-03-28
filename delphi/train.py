@@ -145,10 +145,12 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
     is_train = (loop_type == 'train')
     
     loop_msg = 'Train' if is_train else 'Val'
-    
+
+    # algorithm metrics
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    score = AverageMeter()
     
     # check for custom criterion
     has_custom_criterion = has_attr(config.args, 'custom_criterion')
@@ -191,6 +193,9 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         top1_acc = float('nan')
         top5_acc = float('nan')
         try:
+            # score
+            score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0))
+
             # loss
             losses.update(loss.item(), inp.size(0))
 
@@ -207,17 +212,14 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             top1_acc = top1.avg
             top5_acc = top5.avg
             # ITERATOR
-            desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
-                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                'Reg term: {reg} ||'.format(epoch, loop_msg,
-                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+            desc = ('Epoch:{0} | Score {score.avg} \n | Loss {loss.avg:.4f} | '
+                 '||'.format(epoch, loop_msg, score=score, loss=losses))
         except:
             if isinstance(model, ch.nn.Module):
                 warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
             desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
-                    'Reg term: {reg} ||'.format(epoch, loop_msg,
-                    loss=losses, reg=reg_term))
+                    '||'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
         iterator.refresh()
