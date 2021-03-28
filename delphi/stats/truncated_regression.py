@@ -31,7 +31,7 @@ class truncated_regression(stats):
             num_samples: int=100,
             radius: float=2.0,
             clamp: bool=True,
-            eps: float=1e-10,
+            eps: float=1e-5,
             tol: float=1e-1,
             device: str="cpu",
             **kwargs):
