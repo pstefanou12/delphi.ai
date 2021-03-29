@@ -7,7 +7,9 @@ import torch as ch
 from torch.optim import SGD
 from torch.optim import lr_scheduler
 import config
-from tqdm import tqdm as tqdm
+
+
+from tqdm.autonotebook import tqdm as tqdm
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy
 from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST
@@ -76,7 +78,6 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
     # keep track of the start time
     start_time = time.time()
-    
     for epoch in range(start_epoch, config.args.epochs):
         train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
@@ -137,7 +138,8 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
                 if is_best: save_checkpoint(CKPT_NAME_BEST)
         
         # update lr
-        if schedule: schedule.step()            
+        if schedule: schedule.step()
+    tqdm._instances.clear()
     return model
             
             
@@ -228,7 +230,6 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                     '||'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
-        iterator.refresh()
 
         # CHECK SCORE TOLERANCE
         if config.args.tol and ch.all(ch.where(ch.abs(score.avg) < config.args.tol, 1, 0).bool()):
