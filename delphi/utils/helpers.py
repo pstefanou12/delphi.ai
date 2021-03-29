@@ -5,7 +5,6 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
-from torch import nn
 import cox
 from typing import NamedTuple
 import os

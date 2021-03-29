@@ -1,7 +1,6 @@
 import torch as ch
 from torch import Tensor
 from torch.nn import Linear
-from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
 from torch import sigmoid as sig
 from torch.distributions import Uniform

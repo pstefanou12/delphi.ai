@@ -77,7 +77,11 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
-    model.to(device)
+    if isinstance(model, ch.distributions.Distribution):
+        model.loc.to(device)
+        model.covariance_matrix.to(device)
+    else:
+        model.to(device)
 
     best_prec1, start_epoch = (0, 0)
     if checkpoint:
@@ -209,8 +213,11 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         top5_acc = float('nan')
         try:
             # score
-            if not config.args.var:
-                score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0))
+            if isinstance(model, ch.distributions.Distribution):
+                score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]), model.loc.size(0) +
+                             model.covariance_matrix.flatten().size(0))
+            elif not config.args.var:
+                score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
             else:
                 score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
 
