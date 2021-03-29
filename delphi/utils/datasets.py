@@ -3,7 +3,7 @@ from torch import Tensor
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import Dataset, DataLoader, TensorDataset
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 import copy
 import warnings
 
@@ -193,23 +193,14 @@ class TruncatedLogisticRegressionDataset(Dataset):
             self,
             X: Tensor,
             y: Tensor,
-            bias: bool=True,
-            batch_size: int=100,
-            num_workers: int=2,
-            min_epochs: int=10,
-            max_epochs: int=20):
+            bias: bool=True):
         self.X = X
         self.y = y
         self.bias = bias
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.min_epochs, self.max_epochs = min_epochs, max_epochs
 
         # empirical estimates for dataset
-        self._log_reg = LogisticRegression(input_dim=self.X.size(1), num_classes=2, bias=self.bias)
-        trainer = pl.Trainer(min_epochs=self.min_epochs, max_epochs=self.max_epochs)
-        trainer.fit(self._log_reg, DataLoader(TensorDataset(self.X, self.y), batch_size=self.batch_size,
-                                          num_workers=self.num_workers, shuffle=True))
+        self._log_reg = LogisticRegression()
+        self._log_reg.fit(self.X, self.y.flatten())
 
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
@@ -223,9 +214,9 @@ class TruncatedLogisticRegressionDataset(Dataset):
 
     @property
     def w(self):
-        return self._log_reg.linear.weight.data.clone()
+        return Tensor(self._log_reg.coef_)
 
     @property
     def w0(self):
-        return self._log_reg.linear.weight.bias.clone()
+        return Tensor(self._log_reg.intercept_)
 

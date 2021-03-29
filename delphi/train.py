@@ -148,7 +148,8 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
         
         # update lr
         if schedule: schedule.step()
-    tqdm._instances.clear()
+
+        tqdm._instances.clear()
     return model
             
             
@@ -184,7 +185,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             # lambda parameter used for regression with unknown noise variance
             try:
                 loss = criterion(output, target, model.lambda_)
-            except:
+            except Exception as e:
                 loss = criterion(output, target)
 
         # regularizer option 
