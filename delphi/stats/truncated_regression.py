@@ -27,7 +27,7 @@ class truncated_regression(stats):
             var: float = None,
             epochs: int=50,
             lr: float=1e-1,
-            var_lr: float=1e-3,
+            var_lr: float=1e-2,
             num_samples: int=100,
             radius: float=2.0,
             clamp: bool=True,
@@ -55,7 +55,7 @@ class truncated_regression(stats):
             'weight_decay': 0.0,
             'tol': tol,
             'device': device,
-            'custom_lr_multiplier': 'cyclic',
+            'custom_lr_multiplier': 'cosine',
 
         })
         self._lin_reg = None

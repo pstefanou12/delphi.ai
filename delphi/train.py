@@ -10,7 +10,6 @@ import config
 import IPython
 
 
-
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
 from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, TERMINAL, IPYTHON
 
@@ -21,17 +20,21 @@ if script == JUPYTER:
 else:
     from tqdm import tqdm
 
+
 def make_optimizer_and_schedule(model, checkpoint, params):
     param_list = model.parameters() if params is None else params
 
     optimizer = SGD(param_list, config.args.lr, momentum=config.args.momentum, weight_decay=config.args.weight_decay)
-        
+
     # Make schedule
     schedule = None
     if config.args.custom_lr_multiplier == 'cyclic':
         eps = config.args.epochs
         lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+    elif config.args.custom_lr_multiplier == 'cosine':
+        eps = config.args.epochs
+        schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
     elif config.args.custom_lr_multiplier:
         cs = config.args.custom_lr_multiplier
         periods = eval(cs) if type(cs) is str else cs
