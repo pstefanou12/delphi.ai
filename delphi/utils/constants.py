@@ -1,3 +1,8 @@
+
+JUPYTER = 'jupyter'
+TERMINAL = 'terminal'
+IPYTHON = 'ipython'
+
 LOGS_SCHEMA = {
     'epoch':int,
     'val_prec1':float,

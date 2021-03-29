@@ -7,13 +7,19 @@ import torch as ch
 from torch.optim import SGD
 from torch.optim import lr_scheduler
 import config
+import IPython
 
 
-from tqdm.autonotebook import tqdm as tqdm
 
-from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy
-from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST
+from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
+from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, TERMINAL, IPYTHON
 
+# determine running environment
+script = type_of_script()
+if script == JUPYTER:
+    from tqdm.autonotebook import tqdm as tqdm
+else:
+    from tqdm import tqdm
 
 def make_optimizer_and_schedule(model, checkpoint, params):
     param_list = model.parameters() if params is None else params
@@ -238,6 +244,10 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):
             config.args.iteration_hook(model, i, loop_type, inp, target)
+
+    # clear jupyter/ipython output after each iteration
+    if script == JUPYTER or script == IPYTHON:
+        IPython.display.clear_output()
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']

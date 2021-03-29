@@ -12,7 +12,7 @@ import os
 # import git
 
 
-from .constants import CKPT_NAME
+from .constants import CKPT_NAME, JUPYTER, TERMINAL, IPYTHON
 
 
 def censored_sample_nll(x):
@@ -179,5 +179,17 @@ def init_process(args, backend='nccl'):
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=args.rank, world_size=args.size)
+
+
+# function to check where code is running
+def type_of_script():
+    try:
+        ipy_str = str(type(get_ipython()))
+        if 'zmqshell' in ipy_str:
+            return JUPYTER
+        if 'terminal' in ipy_str:
+            return IPYTHON
+    except:
+        return TERMINAL
 
 
