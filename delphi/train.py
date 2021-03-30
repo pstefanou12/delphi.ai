@@ -99,9 +99,6 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     for epoch in range(start_epoch, config.args.epochs):
         train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
-        # print("TOP 1 AVG: {}".format(train_prec1))
-        # print("LOSS AVG: {}".format(train_loss))
-        print("SCORE AVG: {}".format(score))
         # check score tolerance
         if ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
             break
@@ -165,7 +162,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
     # model results
     if isinstance(score, Tensor):
-        print("avg score: \n {}".format(score))
+        print("avg score: \n {}".format([round(x, 4) for x in score.avg.tolist()]))
     if train_loss != 0:
         print("avg loss: {}".format(train_loss))
     if train_prec1 != 0:
@@ -264,7 +261,6 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                     desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
                         epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses.avg))
         except Exception as e:
-            print(e)
             if isinstance(model, ch.nn.Module):
                 warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
