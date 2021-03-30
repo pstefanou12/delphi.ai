@@ -4,15 +4,15 @@ import warnings
 import dill
 import numpy as np
 import torch as ch
+from torch import Tensor
 from torch.optim import SGD
 from torch.optim import lr_scheduler
 import config
 import IPython
-import warnings
-
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
-from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, TERMINAL, IPYTHON
+from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, TERMINAL, \
+    IPYTHON, LINEAR, CYCLIC, COSINE
 
 # determine running environment
 script = type_of_script()
@@ -29,17 +29,17 @@ def make_optimizer_and_schedule(model, checkpoint, params):
 
     # Make schedule
     schedule = None
-    if config.args.custom_lr_multiplier == 'cyclic':
+    if config.args.custom_lr_multiplier == CYCLIC:
         eps = config.args.epochs
         lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif config.args.custom_lr_multiplier == 'cosine':
+    elif config.args.custom_lr_multiplier == COSINE:
         eps = config.args.epochs
         schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
     elif config.args.custom_lr_multiplier:
         cs = config.args.custom_lr_multiplier
         periods = eval(cs) if type(cs) is str else cs
-        if config.args.lr_interpolation == 'linear':
+        if config.args.lr_interpolation == LINEAR:
             lr_func = lambda t: np.interp([t], *zip(*periods))[0]
         else:
             def lr_func(ep):
@@ -66,7 +66,11 @@ def make_optimizer_and_schedule(model, checkpoint, params):
 
 def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
                 store=None, update_params=None, disable_no_grad=False):
-    
+
+    # clear jupyter/ipython output before each training run
+    if script == JUPYTER or script == IPYTHON:
+        IPython.display.clear_output()
+
     if store is not None: 
         setup_store_with_metadata(config.args, store)
         store.add_table(LOGS_TABLE, LOGS_SCHEMA)
@@ -95,10 +99,12 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     for epoch in range(start_epoch, config.args.epochs):
         train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
+        # print("TOP 1 AVG: {}".format(train_prec1))
+        # print("LOSS AVG: {}".format(train_loss))
+        # print("SCORE AVG: {}".format(score))
         # check score tolerance
         if ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
-            print("avg score: \n".format(score.flatten()))
-            return model
+            break
 
         last_epoch = (epoch == (config.args.epochs - 1))
 
@@ -156,6 +162,14 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
         if schedule: schedule.step()
 
         tqdm._instances.clear()
+
+    # model results
+    if isinstance(score, Tensor):
+        print("avg score: \n {}".format(score))
+    if train_loss != 0:
+        print("avg loss: {}".format(train_loss))
+    if train_prec1 != 0:
+        print("avg top 1: {}".format(train_prec1))
     return model
             
             
@@ -177,6 +191,10 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
     # check for custom criterion
     has_custom_criterion = has_attr(config.args, 'custom_criterion')
     criterion = config.args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
+
+    # clear jupyter/ipython output before each iteration
+    if script == JUPYTER or script == IPYTHON:
+        IPython.display.clear_output()
     
     iterator = tqdm(enumerate(loader), total=len(loader))
     for i, batch in iterator:
@@ -218,7 +236,8 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             # censored, truncated distributions
             if isinstance(model, ch.distributions.Distribution):
                 score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]), model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Epoch:{0} | Score: {score.avg} \n ||'.format(epoch, loop_msg, score=score))
+                desc = ('Epoch:{0} | Score: {score.avg} \n |'.format(epoch, loop_msg, score=score))
+                metrics = []
             # regression with unknown variance
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
@@ -238,33 +257,24 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                 # ITERATOR
                 if not config.args.var: # unknown variance
                     score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} ||'.format(
+                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} |'.format(
                         epoch, loop_msg, score=score, loss=losses.avg))
                 # regression with known variance
                 else: # known variance
                     score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
-                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} ||'.format(
+                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} |'.format(
                         epoch, loop_msg, score=score, loss=losses.avg))
         except Exception as e:
             if isinstance(model, ch.nn.Module):
                 warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
-            desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
-                    '||'.format(epoch, loop_msg, loss=losses))
+            desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
-
-        # # CHECK SCORE TOLERANCE
-        # if config.args.tol and ch.all(ch.where(ch.abs(score.avg) < config.args.tol, 1, 0).bool()):
-        #     break
     
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):
             config.args.iteration_hook(model, i, loop_type, inp, target)
-
-    # clear jupyter/ipython output after each iteration
-    if script == JUPYTER or script == IPYTHON:
-        IPython.display.clear_output()
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']

@@ -4,6 +4,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
+from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
@@ -25,6 +26,9 @@ class censored_multivariate_normal(stats):
             radius: float=2.0,
             clamp: bool=True,
             tol: float=1e-1,
+            custom_lr_multiplier: Any=None,
+            step_lr: int=10,
+            gamma: float=.9,
             **kwargs):
         """
         """
@@ -41,6 +45,9 @@ class censored_multivariate_normal(stats):
             'momentum': 0.0,
             'weight_decay': 0.0,
             'tol': tol,
+            'custom_lr_multiplier': custom_lr_multiplier,
+            'step_lr': step_lr,
+            'gamma': gamma
         })
         self._multivariate_normal = None
         self.projection_set = None

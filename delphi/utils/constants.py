@@ -12,6 +12,12 @@ LOGS_SCHEMA = {
     'time':float
 }
 
+# scheduler constants
+CYCLIC='cyclic'
+COSINE='cosine'
+LINEAR='linear'
+
+
 LOGS_TABLE = 'logs'
 
 CKPT_NAME = 'checkpoint.pt'
