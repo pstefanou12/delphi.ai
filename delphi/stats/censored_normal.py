@@ -45,6 +45,7 @@ class censored_normal(stats):
             'momentum': 0.0,
             'weight_decay': 0.0,
             'tol': tol,
+            'custom_lr_multiplier': 'cosine',
         })
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters

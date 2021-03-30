@@ -250,7 +250,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
 
         # CHECK SCORE TOLERANCE
         if config.args.tol and ch.all(ch.where(ch.abs(score.avg) < config.args.tol, 1, 0).bool()):
-            return top1.avg, losses.avg, score.avg
+            break
     
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):

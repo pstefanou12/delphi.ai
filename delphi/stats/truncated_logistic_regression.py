@@ -53,6 +53,7 @@ class truncated_logistic_regression(stats):
             'tol': tol,
             'eps': eps,
             'device': device,
+            'custom_lr_multiplier': 'cosine',
         })
         self._lin_reg = None
         self.projection_set = None
