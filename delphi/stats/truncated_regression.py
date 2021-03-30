@@ -59,7 +59,7 @@ class truncated_regression(stats):
             'eps': eps,
             'tol': tol,
             'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr': step_lr,
+            'step_lr_gamma': step_lr,
             'gamma': gamma,
             'device': device,
             'momentum': weight_decay,

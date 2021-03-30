@@ -48,7 +48,7 @@ class truncated_normal(stats):
             'clamp': clamp,
             'tol': tol,
             'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr': step_lr,
+            'step_lr_gamma': step_lr,
             'gamma': gamma,
             'momentum': weight_decay,
             'weight_decay': momentum,
