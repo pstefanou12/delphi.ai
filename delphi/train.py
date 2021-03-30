@@ -101,7 +101,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
         # print("TOP 1 AVG: {}".format(train_prec1))
         # print("LOSS AVG: {}".format(train_loss))
-        # print("SCORE AVG: {}".format(score))
+        print("SCORE AVG: {}".format(score))
         # check score tolerance
         if ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
             break
@@ -235,8 +235,8 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             # score
             # censored, truncated distributions
             if isinstance(model, ch.distributions.Distribution):
-                score.update(list(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()])), model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Epoch:{0} | Score: {score.avg} \n |'.format(epoch, loop_msg, score=score))
+                score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]), model.loc.size(0) + model.covariance_matrix.flatten().size(0))
+                desc = ('Epoch:{0} | Score: {score} \n |'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()]))
             # regression with unknown variance
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
@@ -255,15 +255,16 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                 top5_acc = top5.avg
                 # ITERATOR
                 if not config.args.var: # unknown variance
-                    score.update(list(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten()), inp.size(0) + 1)
-                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=score, loss=losses.avg))
+                    score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
+                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses.avg))
                 # regression with known variance
                 else: # known variance
-                    score.update(list(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten()), inp.size(0))
-                    desc = ('Epoch:{0} | Score: {score.avg} \n | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=score, loss=losses.avg))
+                    score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
+                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses.avg))
         except Exception as e:
+            print(e)
             if isinstance(model, ch.nn.Module):
                 warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
