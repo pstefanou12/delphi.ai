@@ -66,7 +66,6 @@ def make_optimizer_and_schedule(model, checkpoint, params):
 
 def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
                 store=None, update_params=None, disable_no_grad=False):
-
     # clear jupyter/ipython output before each training run
     if script == JUPYTER or script == IPYTHON:
         IPython.display.clear_output()
@@ -79,7 +78,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     # data loaders
     train_loader, val_loader = loaders
     optimizer, schedule = make_optimizer_and_schedule(model, checkpoint, update_params)
-    
+
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
     if isinstance(model, ch.distributions.Distribution):
@@ -162,7 +161,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
     # model results
     if isinstance(score, Tensor):
-        print("avg score: \n {}".format([round(x, 4) for x in score.avg.tolist()]))
+        print("avg score: \n {}".format([round(x, 4) for x in score.tolist()]))
     if train_loss != 0:
         print("avg loss: {}".format(train_loss))
     if train_prec1 != 0:
@@ -229,42 +228,55 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         top1_acc = float('nan')
         top5_acc = float('nan')
         try:
-            # score
+            # calculate score
             # censored, truncated distributions
             if isinstance(model, ch.distributions.Distribution):
-                score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]), model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Epoch:{0} | Score: {score} \n |'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()]))
+                score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
+                             model.loc.size(0) + model.covariance_matrix.flatten().size(0))
+                desc = ('Epoch:{0} | Score: {score} \n |'.format(epoch, loop_msg,
+                                                                 score=[round(x, 4) for x in score.avg.tolist()]))
             # regression with unknown variance
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
-
-                # accuracy
-                maxk = min(5, model_logits.shape[-1])
-                if has_attr(config.args, "custom_accuracy"):
-                    prec1, prec5 = config.args.custom_accuracy(model_logits, target)
-                else:
-                    prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
-                    prec1, prec5 = prec1[0], prec5[0]
-
-                top1.update(prec1, inp.size(0))
-                top5.update(prec5, inp.size(0))
-                top1_acc = top1.avg
-                top5_acc = top5.avg
-                # ITERATOR
-                if not config.args.var: # unknown variance
-                    score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses.avg))
+                # calculate score
+                if not config.args.var and config.args.score:  # unknown variance
+                    if config.args.bias:
+                        score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
+                    else:
+                        score.update(ch.cat([model.v.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
                 # regression with known variance
-                else: # known variance
-                    score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
+                elif config.args.score:  # known variance
+                    if config.args.bias:
+                        score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
+                    else:
+                        score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
+                # # accuracy
+                # maxk = min(5, model_logits.shape[-1])
+                # if has_attr(config.args, "custom_accuracy"):
+                #     prec1, prec5 = config.args.custom_accuracy(model_logits, target)
+                # else:
+                #     prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
+                #     prec1, prec5 = prec1[0], prec5[0]
+                #
+                # top1.update(prec1, inp.size(0))
+                # top5.update(prec5, inp.size(0))
+                # top1_acc = top1.avg
+                # top5_acc = top5.avg
+
+                # ITERATOR
+                if config.args.score:
                     desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses.avg))
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                else:
+                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+
         except Exception as e:
-            if isinstance(model, ch.nn.Module):
-                warnings.warn('Failed to calculate the accuracy.')
+            warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
-            desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(epoch, loop_msg, loss=losses))
+            if config.args.score:
+                desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                    epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
         
         iterator.set_description(desc)
     

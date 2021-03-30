@@ -1,5 +1,5 @@
 """
-Censored normal distribution with oracle access (ie. known truncation set)
+Truncated normal distribution without oracle access (ie. unknown truncation set)
 """
 
 import torch as ch
@@ -13,18 +13,18 @@ from typing import Any
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
-from ..utils.helpers import Bounds, censored_sample_nll
+from ..utils.helpers import Bounds, Exp_h
 
 
-class censored_normal(stats):
+class truncated_normal(stats):
     """
-    Censored normal distribution class.
+    Truncated normal distribution class.
     """
     def __init__(
             self,
             phi: oracle,
             alpha: float,
-            epochs: int=10,
+            epochs: int=50,
             lr: float=1e-1,
             num_samples: int=100,
             radius: float=2.0,
@@ -35,12 +35,9 @@ class censored_normal(stats):
             gamma: float = .9,
             weight_decay: float = 0.0,
             momentum: float = 0.0,
-            device: str = "cpu",
+            device: str = 'cpu',
             **kwargs):
-        """
-        """
-        super(censored_normal, self).__init__()
-        # initialize hyperparameters for algorithm
+        super(truncated_normal, self).__init__()
         config.args = Parameters({
             'phi': phi,
             'epochs': epochs,
@@ -59,76 +56,75 @@ class censored_normal(stats):
         })
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
-        self.criterion = CensoredMultivariateNormalNLL.apply
+        self.criterion = TruncatedMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
 
     def fit(
             self,
             S: DataLoader):
-        """
-        """
         # initialize model with empiricial estimates
         self._normal = MultivariateNormal(S.dataset.loc, S.dataset.var.unsqueeze(0))
         # keep track of gradients for mean and covariance matrix
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
-        self.projection_set = CensoredNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
+        self.projection_set = TruncatedNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
+        # exponent class
+        self.exp_h = Exp_h(S.dataset.loc, S.dataset.var.unsqueeze(0))
+        config.args.__setattr__('exp_h', self.exp_h)
         # run PGD to predict actual estimates
         return train_model(self._normal, (S, None),
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
 
 
-class CensoredMultivariateNormalNLL(ch.autograd.Function):
+class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
-    Computes the negative population log likelihood for censored multivariate normal distribution.
+    Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
     """
 
     @staticmethod
-    def forward(ctx, loc, covariance_matrix, x):
-        ctx.save_for_backward(loc, covariance_matrix, x)
-        return ch.zeros(1)
+    def forward(ctx, u, B, x, loc_grad, cov_grad):
+        ctx.save_for_backward(u, B, x, loc_grad, cov_grad)
+        return ch.ones(1)
 
     @staticmethod
     def backward(ctx, grad_output):
-        loc, covariance_matrix, x = ctx.saved_tensors
-        # reparameterize distribution
-        T = covariance_matrix.inverse()
-        v = T.matmul(loc.unsqueeze(1)).flatten()
-        # rejection sampling
-        y = Tensor([])
-        M = MultivariateNormal(v, T)
-        while y.size(0) < x.size(0):
-            s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
-            y = ch.cat([y, s[config.args.phi(s).nonzero(as_tuple=False).flatten()]])
-        # calculate gradient
-        grad = (-x + censored_sample_nll(y[:x.size(0)])).mean(0)
-        return grad[loc.size(0) ** 2:], grad[:loc.size(0) ** 2].reshape(covariance_matrix.size()), None
+        u, B, x, loc_grad, cov_grad = ctx.saved_tensors
+        exp = config.args.exp_h(u, B, x)
+        psi = config.args.phi.psi_k(x).unsqueeze(1)
+        return (loc_grad * exp * psi).mean(0), ((cov_grad.flatten(1) * exp * psi).unflatten(1, B.size())).mean(
+            0), None, None, None
 
 
-class CensoredNormalProjectionSet:
+class TruncatedNormalProjectionSet:
     """
-    Censored normal distribution projection set
+    Truncated normal distribution with unknown truncation projection set.
     """
+
     def __init__(self, emp_loc, emp_scale):
         """
         Args:
             emp_loc (torch.Tensor): empirical mean
             emp_scale (torch.Tensor): empirical variance
         """
-        self.emp_loc = emp_loc.clone().detach()
-        self.emp_scale = emp_scale.clone().detach()
-        self.radius = config.args.radius*(ch.log(1.0/config.args.alpha)/ch.square(config.args.alpha))
-        # parameterize projection set
+        # projection set parameters
+        self.emp_loc = emp_loc
+        self.emp_scale = emp_scale
+        self.radius = config.args.radius * ch.sqrt(ch.log(1.0 / config.args.alpha))
+
+        # upper and lower bounds
         if config.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
-             Bounds(ch.max(ch.square(config.args.alpha/12.0), self.emp_scale - self.radius), self.emp_scale + self.radius)
+            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc - self.radius, self.emp_loc + self.radius), \
+                                                 Bounds(ch.max(config.args.alpha.pow(2) / 12,
+                                                               self.emp_scale - self.radius),
+                                                        self.emp_scale + self.radius)
         else:
             pass
 
     def __call__(self, M, i, loop_type, inp, target):
         if config.args.clamp:
             M.loc.data = ch.clamp(M.loc.data, float(self.loc_bounds.lower), float(self.loc_bounds.upper))
-            M.covariance_matrix.data = ch.clamp(M.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
+            M.covariance_matrix.data = ch.clamp(M.covariance_matrix.data, float(self.scale_bounds.lower),
+                                                float(self.scale_bounds.upper))
         else:
             pass

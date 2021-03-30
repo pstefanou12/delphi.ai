@@ -5,6 +5,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal, _batch_m
 from abc import ABC
 from decimal import Decimal
 from orthnet import Hermite
+import math
 
 from .utils.helpers import Bounds
 

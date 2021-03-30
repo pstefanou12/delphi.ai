@@ -9,6 +9,7 @@ from torch.nn import Linear
 from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
+from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
@@ -33,6 +34,11 @@ class truncated_regression(stats):
             clamp: bool=True,
             eps: float=1e-5,
             tol: float=1e-1,
+            custom_lr_multiplier: Any = None,
+            step_lr: int = 10,
+            gamma: float = .9,
+            weight_decay: float = 0.0,
+            momentum: float = 0.0,
             device: str="cpu",
             **kwargs):
         """
@@ -51,12 +57,14 @@ class truncated_regression(stats):
             'bias': bias,
             'clamp': clamp,
             'eps': eps,
-            'momentum': 0.0,
-            'weight_decay': 0.0,
             'tol': tol,
+            'custom_lr_multiplier': custom_lr_multiplier,
+            'step_lr': step_lr,
+            'gamma': gamma,
             'device': device,
-            'custom_lr_multiplier': 'cosine',
-
+            'momentum': weight_decay,
+            'weight_decay': momentum,
+            'score': True,  # update score after each gradient step
         })
         self._lin_reg = None
         self.projection_set = None

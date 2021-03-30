@@ -8,6 +8,7 @@ from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 from cox.utils import Parameters
 import config
+from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
@@ -29,9 +30,14 @@ class truncated_logistic_regression(stats):
             num_samples: int=100,
             radius: float=2.0,
             clamp: bool=True,
-            eps: float = 1e-5,
-            tol: float = 1e-1,
-            device: str = "cpu",
+            eps: float=1e-5,
+            tol: float=1e-1,
+            custom_lr_multiplier: Any=None,
+            step_lr: int=10,
+            gamma: float=.9,
+            weight_decay: float = 0.0,
+            momentum: float = 0.0,
+            device: str="cpu",
             **kwargs):
         """
         """
@@ -48,13 +54,17 @@ class truncated_logistic_regression(stats):
             'bias': bias,
             'clamp': clamp,
             'var': Tensor([1.0]),
-            'momentum': 0.0,
-            'weight_decay': 0.0,
             'tol': tol,
             'eps': eps,
+            'custom_lr_multiplier': custom_lr_multiplier,
+            'step_lr': step_lr,
+            'gamma': gamma,
+            'momentum': weight_decay,
+            'weight_decay': momentum,
             'device': device,
-            'custom_lr_multiplier': 'cosine',
+            'score': True,  # update score after each gradient step
         })
+
         self._lin_reg = None
         self.projection_set = None
         # intialize loss function and add custom criterion to hyperparameters
