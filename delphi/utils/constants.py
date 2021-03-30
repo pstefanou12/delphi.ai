@@ -1,3 +1,4 @@
+from torch import Tensor
 
 JUPYTER = 'jupyter'
 TERMINAL = 'terminal'
@@ -29,4 +30,22 @@ CKPT_NAME_BEST = CKPT_NAME + BEST_APPEND
 CIFAR_LABELS = {
     0: 'airplane', 1: 'automobile', 2: 'bird', 3: 'cat', 4: 'deer',
     5: 'dog', 6: 'frog', 7: 'horse', 8: 'ship', 9: 'truck',
+}
+
+
+# CIFAR10 dataset information
+_CIFAR10_STATS = {'mean': [0.4914, 0.4822, 0.4465],
+                  'std': [0.2023, 0.1994, 0.2010]}
+
+# IMAGENET dataset information
+_IMAGENET_STATS = {'mean': [0.485, 0.456, 0.406],
+                   'std': [0.229, 0.224, 0.225]}
+
+_IMAGENET_PCA = {
+    'eigval': Tensor([0.2175, 0.0188, 0.0045]),
+    'eigvec': Tensor([
+        [-0.5675,  0.7192,  0.4009],
+        [-0.5808, -0.0045, -0.8140],
+        [-0.5836, -0.6948,  0.4203],
+    ])
 }

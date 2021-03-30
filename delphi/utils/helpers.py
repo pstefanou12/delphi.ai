@@ -5,10 +5,12 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
+from torchvision import transforms
 import cox
 from typing import NamedTuple
 import os
-# import git
+from .constants import _IMAGENET_STATS
+import git
 
 
 from .constants import CKPT_NAME, JUPYTER, TERMINAL, IPYTHON
@@ -160,8 +162,7 @@ class Exp_h:
     def __init__(self, emp_loc, emp_cov):
         self.emp_loc = emp_loc
         self.emp_cov = emp_cov
-        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(
-            2.0 * Tensor([ch.acos(ch.zeros(1)).item() * 2]).unsqueeze(0))
+        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(2.0 * Tensor([ch.acos(ch.zeros(1)).item() * 2]).unsqueeze(0))
 
     def __call__(self, u, B, x):
         """
@@ -190,5 +191,42 @@ def type_of_script():
             return IPYTHON
     except:
         return TERMINAL
+
+
+# DATA AUGMENTATION TOOLS
+def cifar_autoaugment(input_size, scale_size=None, padding=None, normalize=_IMAGENET_STATS):
+    scale_size = scale_size or input_size
+    T = transforms.Compose([
+        transforms.RandomCrop(scale_size, padding=padding),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+    ])
+    if normalize:
+        T.transforms.insert(-1, transforms.Normalize(**normalize))
+    if input_size != scale_size:
+        T.transforms.insert(1, transforms.Resize(input_size))
+    return T
+
+
+class Lighting(object):
+    """
+    Lighting noise (see https://git.io/fhBOc)
+    """
+    def __init__(self, alphastd, eigval, eigvec):
+        self.alphastd = alphastd
+        self.eigval = eigval
+        self.eigvec = eigvec
+
+    def __call__(self, img):
+        if self.alphastd == 0:
+            return img
+
+        alpha = img.new().resize_(3).normal_(0, self.alphastd)
+        rgb = self.eigvec.type_as(img).clone()\
+            .mul(alpha.view(1, 3).expand(3, 3))\
+            .mul(self.eigval.view(1, 3).expand(3, 3))\
+            .sum(1).squeeze()
+
+        return img.add(rgb.view(3, 1, 1).expand_as(img))
 
 

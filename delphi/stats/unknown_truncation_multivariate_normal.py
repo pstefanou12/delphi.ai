@@ -65,7 +65,7 @@ class truncated_multivariate_normal(stats):
             self,
             S: DataLoader):
         # initialize model with empiricial estimates
-        self._multivariate_normal = MultivariateNormal(S.dataset.loc, S.dataset.covariance_matrix.unsqueeze(0))
+        self._multivariate_normal = MultivariateNormal(S.dataset.loc, S.dataset.covariance_matrix)
         # keep track of gradients for mean and covariance matrix
         self._multivariate_normal.loc.requires_grad, self._multivariate_normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
@@ -100,10 +100,10 @@ class TruncatedMultivariateNormalProjectionSet(TruncatedNormalProjectionSet):
         if config.args.clamp:
             u, s, v = M.covariance_matrix.svd()  # decompose covariance estimate
             M.loc.data = ch.cat(
-                [ch.clamp(M.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in
+                [ch.clamp(M.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
                  range(M.loc.shape[0])])
             M.covariance_matrix.data = u.matmul(ch.diag(ch.cat(
-                [ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in
+                [ch.clamp(s[i], float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
                  range(s.shape[0])]))).matmul(v.t())
         else:
             pass

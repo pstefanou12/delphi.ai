@@ -81,7 +81,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
 
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
-    if isinstance(model, ch.distributions.Distribution):
+    if isinstance(model, ch.distributions.distribution.Distribution):
         model.loc.to(device)
         model.covariance_matrix.to(device)
     else:
@@ -222,7 +222,10 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
 
         if len(loss.size()) > 0: loss = loss.mean()
 
-        model_logits = output[0] if isinstance(output, tuple) else output
+        #
+        model_logits = None
+        if not isinstance(model, ch.distributions.distribution.Distribution):
+            model_logits = output[0] if isinstance(output, tuple) else output
 
         # measure accuracy and record loss
         top1_acc = float('nan')
@@ -230,7 +233,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         try:
             # calculate score
             # censored, truncated distributions
-            if isinstance(model, ch.distributions.Distribution):
+            if isinstance(model, ch.distributions.distribution.Distribution):
                 score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
                              model.loc.size(0) + model.covariance_matrix.flatten().size(0))
                 desc = ('Epoch:{0} | Score: {score} \n |'.format(epoch, loop_msg,
@@ -250,26 +253,34 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                         score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
                     else:
                         score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
-                # # accuracy
-                # maxk = min(5, model_logits.shape[-1])
-                # if has_attr(config.args, "custom_accuracy"):
-                #     prec1, prec5 = config.args.custom_accuracy(model_logits, target)
-                # else:
-                #     prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
-                #     prec1, prec5 = prec1[0], prec5[0]
-                #
-                # top1.update(prec1, inp.size(0))
-                # top5.update(prec5, inp.size(0))
-                # top1_acc = top1.avg
-                # top5_acc = top5.avg
 
-                # ITERATOR
-                if config.args.score:
-                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                if model_logits is not None:
+                    # accuracy
+                    maxk = min(5, model_logits.shape[-1])
+                    if has_attr(config.args, "custom_accuracy"):
+                        prec1, prec5 = config.args.custom_accuracy(model_logits, target)
+                    else:
+                        prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
+                        prec1, prec5 = prec1[0], prec5[0]
+
+                    top1.update(prec1, inp.size(0))
+                    top5.update(prec5, inp.size(0))
+                    top1_acc = top1.avg
+                    top5_acc = top5.avg
+
+                    # ITERATOR
+                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
+                            '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                            'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                        loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                 else:
-                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    # ITERATOR
+                    if config.args.score:
+                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    else:
+                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(
+                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
 
         except Exception as e:
             warnings.warn('Failed to calculate the accuracy.')
@@ -277,6 +288,8 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             if config.args.score:
                 desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} |'.format(
                     epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+            else:
+                desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
     
