@@ -73,7 +73,7 @@ class censored_multivariate_normal(stats):
                                                                       self._multivariate_normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(self._multivariate_normal, (S, None),
+        return train_model(config.args, self._multivariate_normal, (S, None),
                            update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
 
 

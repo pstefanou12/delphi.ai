@@ -84,7 +84,7 @@ class truncated_logistic_regression(stats):
         self.projection_set = TruncatedLogisticRegression(self._log_reg)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(self._log_reg, (S, None))
+        return train_model(config.args, self._log_reg, (S, None))
 
 
 # define logistic distribution

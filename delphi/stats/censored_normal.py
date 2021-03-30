@@ -75,7 +75,7 @@ class censored_normal(stats):
         self.projection_set = CensoredNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(self._normal, (S, None),
+        return train_model(config.args, self._normal, (S, None),
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
 
 

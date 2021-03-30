@@ -76,7 +76,7 @@ class truncated_multivariate_normal(stats):
         self.exp_h = Exp_h(S.dataset.loc, S.dataset.covariance_matrix)
         config.args.__setattr__('exp_h', self.exp_h)
         # run PGD to predict actual estimates
-        return train_model(self._multivariate_normal, (S, None),
+        return train_model(config.args, self._multivariate_normal, (S, None),
                            update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
 
 

@@ -73,7 +73,7 @@ class truncated_normal(stats):
         self.exp_h = Exp_h(S.dataset.loc, S.dataset.var.unsqueeze(0))
         config.args.__setattr__('exp_h', self.exp_h)
         # run PGD to predict actual estimates
-        return train_model(self._normal, (S, None),
+        return train_model(config.args, self._normal, (S, None),
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
 
 

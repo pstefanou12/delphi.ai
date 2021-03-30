@@ -64,7 +64,7 @@ def make_optimizer_and_schedule(model, checkpoint, params):
     return optimizer, schedule
 
 
-def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
+def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
                 store=None, update_params=None, disable_no_grad=False):
     # clear jupyter/ipython output before each training run
     if script == JUPYTER or script == IPYTHON:
@@ -91,22 +91,22 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     if checkpoint:
         start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop('val', val_loader, model, None, start_epoch-1, writer=None, device=device)[0]
+            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, writer=None, device=device)[0]
 
     # keep track of the start time
     start_time = time.time()
-    for epoch in range(start_epoch, config.args.epochs):
-        train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
+    for epoch in range(start_epoch, args.epochs):
+        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
         # check score tolerance
-        if config.args.score and ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
+        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, 1, 0).bool()):
             break
 
-        last_epoch = (epoch == (config.args.epochs - 1))
+        last_epoch = (epoch == (args.epochs - 1))
 
         # if neural network passed through framework, use log performance
-        print("should save checkpoint: {}".format(config.args.should_save_ckpt))
-        if config.args.should_save_ckpt:
+        print("should save checkpoint: {}".format(args.should_save_ckpt))
+        if args.should_save_ckpt:
             # evaluate on validation set
             sd_info = {
                 'model':model.state_dict(),
@@ -116,19 +116,19 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
             }
 
             def save_checkpoint(filename):
-                ckpt_save_path = os.path.join(config.args.out_dir if not store else \
+                ckpt_save_path = os.path.join(args.out_dir if not store else \
                                               store.path, filename)
                 ch.save(sd_info, ckpt_save_path, pickle_module=dill)
 
-            save_its = config.args.save_ckpt_iters
+            save_its = args.save_ckpt_iters
             should_save_ckpt = (epoch % save_its == 0) and (save_its > 0)
-            should_log = (epoch % config.args.log_iters == 0)
+            should_log = (epoch % args.log_iters == 0)
 
             if should_log or last_epoch or should_save_ckpt:
                 # log + get best
                 ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
                 with ctx:
-                    val_prec1, val_loss, score = model_loop('val', val_loader, model,
+                    val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
                             None, epoch + 1, writer, device=device)
 
                 # remember best prec@1 and save checkpoint
@@ -174,7 +174,7 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
     return model
             
             
-def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
+def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -191,7 +191,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
     
     # check for custom criterion
     has_custom_criterion = has_attr(config.args, 'custom_criterion')
-    criterion = config.args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
+    criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
 
     # clear jupyter/ipython output before each iteration
     if script == JUPYTER or script == IPYTHON:
@@ -216,7 +216,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         # regularizer option 
         reg_term = 0.0
         if has_attr(config.args, "regularizer") and isinstance(model, ch.nn.Module):
-            reg_term = config.args.regularizer(model, inp, target)
+            reg_term = args.regularizer(model, inp, target)
         loss = loss + reg_term
         
         # perform backprop and take optimizer step
@@ -247,14 +247,14 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
                 # calculate score
-                if not config.args.var and config.args.score:  # unknown variance
-                    if config.args.bias:
+                if not args.var and args.score:  # unknown variance
+                    if args.bias:
                         score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
                     else:
                         score.update(ch.cat([model.v.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
                 # regression with known variance
-                elif config.args.score:  # known variance
-                    if config.args.bias:
+                elif args.score:  # known variance
+                    if args.bias:
                         score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
                     else:
                         score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
@@ -263,7 +263,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                     # accuracy
                     maxk = min(5, model_logits.shape[-1])
                     if has_attr(config.args, "custom_accuracy"):
-                        prec1, prec5 = config.args.custom_accuracy(model_logits, target)
+                        prec1, prec5 = args.custom_accuracy(model_logits, target)
                     else:
                         prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
                         prec1, prec5 = prec1[0], prec5[0]
@@ -280,7 +280,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                                                         loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                 else:
                     # ITERATOR
-                    if config.args.score:
+                    if args.score:
                         desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
                             epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
                     else:
@@ -290,7 +290,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
         except Exception as e:
             warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
-            if config.args.score:
+            if args.score:
                 desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
                     epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
             else:
@@ -300,7 +300,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
     
         # USER-DEFINED HOOK
         if has_attr(config.args, 'iteration_hook'):
-            config.args.iteration_hook(model, i, loop_type, inp, target)
+            args.iteration_hook(model, i, loop_type, inp, target)
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']

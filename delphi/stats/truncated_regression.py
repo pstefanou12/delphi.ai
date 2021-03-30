@@ -97,7 +97,7 @@ class truncated_regression(stats):
 
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD for parameter estimation
-        return train_model(self._lin_reg, (S, None), update_params=update_params, device=config.args.device)
+        return train_model(config.args, self._lin_reg, (S, None), update_params=update_params, device=config.args.device)
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
