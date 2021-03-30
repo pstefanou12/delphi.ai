@@ -99,12 +99,13 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
         train_prec1, train_loss, score = model_loop('train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
         # check score tolerance
-        if ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
+        if config.args.score and ch.all(ch.where(ch.abs(score) < config.args.tol, 1, 0).bool()):
             break
 
         last_epoch = (epoch == (config.args.epochs - 1))
 
         # if neural network passed through framework, use log performance
+        print("should save checkpoint: {}".format(config.args.should_save_ckpt))
         if config.args.should_save_ckpt:
             # evaluate on validation set
             sd_info = {
@@ -166,6 +167,10 @@ def train_model(model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=
         print("avg loss: {}".format(train_loss))
     if train_prec1 != 0:
         print("avg top 1: {}".format(train_prec1))
+
+    # close store at end of training
+    if store is not None:
+        store.close()
     return model
             
             
@@ -236,7 +241,7 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
             if isinstance(model, ch.distributions.distribution.Distribution):
                 score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
                              model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Epoch:{0} | Score: {score} \n |'.format(epoch, loop_msg,
+                desc = ('Epoch:{0} | Score: {score} \n ||'.format(epoch, loop_msg,
                                                                  score=[round(x, 4) for x in score.avg.tolist()]))
             # regression with unknown variance
             elif inp is not None:
@@ -276,20 +281,20 @@ def model_loop(loop_type, loader, model, optimizer, epoch, writer, device):
                 else:
                     # ITERATOR
                     if config.args.score:
-                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
                             epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
                     else:
-                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(
+                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
                             epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
 
         except Exception as e:
             warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
             if config.args.score:
-                desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} |'.format(
+                desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
                     epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
             else:
-                desc = ('Epoch:{0} | Loss {loss.avg:.4f} |'.format(epoch, loop_msg, loss=losses))
+                desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
     
