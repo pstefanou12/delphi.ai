@@ -5,23 +5,59 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
-from torchvision import transforms
+import torch.nn as nn
 import cox
 from typing import NamedTuple
 import os
-from .constants import _IMAGENET_STATS
 import git
 
-
-from .constants import CKPT_NAME, JUPYTER, TERMINAL, IPYTHON
+from . import constants as consts
 
 
 def censored_sample_nll(x):
     return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
 
+def calc_est_grad(func, x, y, rad, num_samples):
+    B, *_ = x.shape
+    Q = num_samples//2
+    N = len(x.shape) - 1
+    with ch.no_grad():
+        # Q * B * C * H * W
+        extender = [1]*N
+        queries = x.repeat(Q, *extender)
+        noise = ch.randn_like(queries)
+        norm = noise.view(B*Q, -1).norm(dim=-1).view(B*Q, *extender)
+        noise = noise / norm
+        noise = ch.cat([-noise, noise])
+        queries = ch.cat([queries, queries])
+        y_shape = [1] * (len(y.shape) - 1)
+        l = func(queries + rad * noise, y.repeat(2*Q, *y_shape)).view(-1, *extender)
+        grad = (l.view(2*Q, B, *extender) * noise.view(2*Q, B, *noise.shape[1:])).mean(dim=0)
+    return grad
+
+
+class InputNormalize(ch.nn.Module):
+    '''
+    A module (custom layer) for normalizing the input to have a fixed
+    mean and standard deviation (user-specified).
+    '''
+    def __init__(self, new_mean, new_std):
+        super(InputNormalize, self).__init__()
+        new_std = new_std[..., None, None]
+        new_mean = new_mean[..., None, None]
+
+        self.register_buffer("new_mean", new_mean)
+        self.register_buffer("new_std", new_std)
+
+    def forward(self, x):
+        x = ch.clamp(x, 0, 1)
+        x_normalized = (x - self.new_mean)/self.new_std
+        return x_normalized
+
+
 def ckpt_at_epoch(num):
-    return '%s_%s' % (num, CKPT_NAME)
+    return '%s_%s' % (num, consts.CKPT_NAME)
 
 
 def setup_store_with_metadata(args, store):
@@ -186,47 +222,37 @@ def type_of_script():
     try:
         ipy_str = str(type(get_ipython()))
         if 'zmqshell' in ipy_str:
-            return JUPYTER
+            return consts.JUPYTER
         if 'terminal' in ipy_str:
-            return IPYTHON
+            return consts.IPYTHON
     except:
-        return TERMINAL
+        return consts.TERMINAL
 
 
-# DATA AUGMENTATION TOOLS
-def cifar_autoaugment(input_size, scale_size=None, padding=None, normalize=_IMAGENET_STATS):
-    scale_size = scale_size or input_size
-    T = transforms.Compose([
-        transforms.RandomCrop(scale_size, padding=padding),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ])
-    if normalize:
-        T.transforms.append(transforms.Normalize(**normalize))
-    if input_size != scale_size:
-        T.transforms.append(transforms.Resize(input_size))
-    return T
+class FakeReLU(ch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        return input.clamp(min=0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
 
 
-class Lighting(object):
-    """
-    Lighting noise (see https://git.io/fhBOc)
-    """
-    def __init__(self, alphastd, eigval, eigvec):
-        self.alphastd = alphastd
-        self.eigval = eigval
-        self.eigvec = eigvec
+class FakeReLUM(nn.Module):
+    def forward(self, x):
+        return FakeReLU.apply(x)
 
-    def __call__(self, img):
-        if self.alphastd == 0:
-            return img
 
-        alpha = img.new().resize_(3).normal_(0, self.alphastd)
-        rgb = self.eigvec.type_as(img).clone()\
-            .mul(alpha.view(1, 3).expand(3, 3))\
-            .mul(self.eigval.view(1, 3).expand(3, 3))\
-            .sum(1).squeeze()
-
-        return img.add(rgb.view(3, 1, 1).expand_as(img))
+class SequentialWithArgs(ch.nn.Sequential):
+    def forward(self, input, *args, **kwargs):
+        vs = list(self._modules.values())
+        l = len(vs)
+        for i in range(l):
+            if i == l-1:
+                input = vs[i](input, *args, **kwargs)
+            else:
+                input = vs[i](input)
+        return input
 
 

@@ -10,11 +10,11 @@ from torch.optim import lr_scheduler
 import IPython
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
-from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, EVAL_LOGS_SCHEMA, EVAL_LOGS_TABLE, IPYTHON, LINEAR, CYCLIC, COSINE
+from .utils import constants as consts
 
 # determine running environment
 script = type_of_script()
-if script == JUPYTER:
+if script == consts.JUPYTER:
     from tqdm.autonotebook import tqdm as tqdm
 else:
     from tqdm import tqdm
@@ -27,17 +27,17 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
 
     # Make schedule
     schedule = None
-    if args.custom_lr_multiplier == CYCLIC:
+    if args.custom_lr_multiplier == consts.CYCLIC:
         eps = args.epochs
         lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.custom_lr_multiplier == COSINE:
+    elif args.custom_lr_multiplier == consts.COSINE:
         eps = args.epochs
         schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
     elif args.custom_lr_multiplier:
         cs = args.custom_lr_multiplier
         periods = eval(cs) if type(cs) is str else cs
-        if args.lr_interpolation == LINEAR:
+        if args.lr_interpolation == consts.LINEAR:
             lr_func = lambda t: np.interp([t], *zip(*periods))[0]
         else:
             def lr_func(ep):
@@ -76,15 +76,15 @@ def eval_model(args, model, loader, store):
     start_time = time.time()
 
     if store is not None:
-        store.add_table(EVAL_LOGS_TABLE, EVAL_LOGS_SCHEMA)
+        store.add_table(consts.EVAL_LOGS_TABLE, consts.EVAL_LOGS_SCHEMA)
     writer = store.tensorboard if store else None
 
     # put model on device
     model.to(args.device)
 
     assert not hasattr(model, "module"), "model is already in DataParallel."
-    # if next(model.parameters()).is_cuda:
-    #     model = ch.nn.DataParallel(model)
+    if next(model.parameters()).is_cuda and False:
+        model = ch.nn.DataParallel(model)
 
     test_prec1, test_loss, score = model_loop(args, 'val', loader,
                                         model, None, 0, writer, args.device)
@@ -96,19 +96,19 @@ def eval_model(args, model, loader, store):
     }
 
     # Log info into the logs table
-    if store: store[EVAL_LOGS_TABLE].append_row(log_info)
+    if store: store[consts.EVAL_LOGS_TABLE].append_row(log_info)
     return log_info
 
 
 def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
                 store=None, update_params=None, disable_no_grad=False):
     # clear jupyter/ipython output before each training run
-    if script == JUPYTER or script == IPYTHON:
+    if script == consts.JUPYTER or script == consts.IPYTHON:
         IPython.display.clear_output()
 
     if store is not None: 
         setup_store_with_metadata(args, store)
-        store.add_table(LOGS_TABLE, LOGS_SCHEMA)
+        store.add_table(consts.LOGS_TABLE, consts.LOGS_SCHEMA)
     writer = store.tensorboard if store else None
     
     # data loaders
@@ -182,13 +182,13 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
                 }
 
                 # Log info into the logs table
-                if store: store[LOGS_TABLE].append_row(log_info)
+                if store: store[consts.LOGS_TABLE].append_row(log_info)
                 # If we are at a saving epoch (or the last epoch), save a checkpoint
                 if should_save_ckpt or last_epoch: save_checkpoint(ckpt_at_epoch(epoch))
 
                 # Update the latest and best checkpoints (overrides old one)
-                save_checkpoint(CKPT_NAME_LATEST)
-                if is_best: save_checkpoint(CKPT_NAME_BEST)
+                save_checkpoint(consts.CKPT_NAME_LATEST)
+                if is_best: save_checkpoint(consts.CKPT_NAME_BEST)
         
         # update lr
         if schedule: schedule.step()
@@ -210,6 +210,10 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
             
             
 def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device):
+    # clear jupyter/ipython output before each iteration
+    if script == consts.JUPYTER or script == consts.IPYTHON:
+        IPython.display.clear_output()
+
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -228,10 +232,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     has_custom_criterion = has_attr(args, 'custom_criterion')
     criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
 
-    # clear jupyter/ipython output before each iteration
-    if script == JUPYTER or script == IPYTHON:
-        IPython.display.clear_output()
-    
     iterator = tqdm(enumerate(loader), total=len(loader))
     for i, batch in iterator:
         inp, target, output = None, None, None
@@ -242,6 +242,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
             output = model(inp)
+            # attacker model returns both output anf final input
+            if isinstance(output, tuple):
+                output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
             try:
                 loss = criterion(output, target, model.lambda_)
