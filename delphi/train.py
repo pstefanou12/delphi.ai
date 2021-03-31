@@ -10,8 +10,7 @@ from torch.optim import lr_scheduler
 import IPython
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
-from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, TERMINAL, \
-    IPYTHON, LINEAR, CYCLIC, COSINE
+from .utils.constants import LOGS_SCHEMA, LOGS_TABLE, CKPT_NAME_BEST, CKPT_NAME_LATEST, JUPYTER, EVAL_LOGS_SCHEMA, EVAL_LOGS_TABLE, IPYTHON, LINEAR, CYCLIC, COSINE
 
 # determine running environment
 script = type_of_script()
@@ -61,6 +60,44 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
             for i in range(steps_to_take):
                 schedule.step()
     return optimizer, schedule
+
+
+def eval_model(args, model, loader, store):
+    """
+    Evaluate a model for standard (and optionally adversarial) accuracy.
+    Args:
+        args (object) : A list of arguments---should be a python object
+            implementing ``getattr()`` and ``setattr()``.
+        model (AttackerModel) : model to evaluate
+        loader (iterable) : a dataloader serving `(input, label)` batches from
+            the validation set
+        store (cox.Store) : store for saving results in (via tensorboardX)
+    """
+    start_time = time.time()
+
+    if store is not None:
+        store.add_table(EVAL_LOGS_TABLE, EVAL_LOGS_SCHEMA)
+    writer = store.tensorboard if store else None
+
+    # put model on device
+    model.to(args.device)
+
+    assert not hasattr(model, "module"), "model is already in DataParallel."
+    # if next(model.parameters()).is_cuda:
+    #     model = ch.nn.DataParallel(model)
+
+    test_prec1, test_loss, score = model_loop(args, 'val', loader,
+                                        model, None, 0, writer, args.device)
+
+    log_info = {
+        'test_prec1': test_prec1,
+        'test_loss': test_loss,
+        'time': time.time() - start_time
+    }
+
+    # Log info into the logs table
+    if store: store[EVAL_LOGS_TABLE].append_row(log_info)
+    return log_info
 
 
 def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,

@@ -13,6 +13,12 @@ LOGS_SCHEMA = {
     'time':float
 }
 
+EVAL_LOGS_SCHEMA = {
+    'test_prec1':float,
+    'test_loss':float,
+    'time':float
+}
+
 # scheduler constants
 CYCLIC='cyclic'
 COSINE='cosine'
@@ -20,6 +26,7 @@ LINEAR='linear'
 
 
 LOGS_TABLE = 'logs'
+EVAL_LOGS_TABLE = 'eval'
 
 CKPT_NAME = 'checkpoint.pt'
 BEST_APPEND = '.best'
