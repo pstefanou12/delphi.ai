@@ -7,7 +7,6 @@ import torch as ch
 from torch import Tensor
 from torch.optim import SGD
 from torch.optim import lr_scheduler
-import config
 import IPython
 
 from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
@@ -105,7 +104,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
         last_epoch = (epoch == (args.epochs - 1))
 
         # if neural network passed through framework, use log performance
-        print("should save checkpoint: {}".format(args.should_save_ckpt))
         if args.should_save_ckpt:
             # evaluate on validation set
             sd_info = {
