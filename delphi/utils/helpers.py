@@ -202,9 +202,9 @@ def cifar_autoaugment(input_size, scale_size=None, padding=None, normalize=_IMAG
         transforms.ToTensor(),
     ])
     if normalize:
-        T.transforms.insert(-1, transforms.Normalize(**normalize))
+        T.transforms.append(transforms.Normalize(**normalize))
     if input_size != scale_size:
-        T.transforms.insert(1, transforms.Resize(input_size))
+        T.transforms.append(transforms.Resize(input_size))
     return T
 
 

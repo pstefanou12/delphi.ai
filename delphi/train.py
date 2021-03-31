@@ -22,24 +22,24 @@ else:
     from tqdm import tqdm
 
 
-def make_optimizer_and_schedule(model, checkpoint, params):
+def make_optimizer_and_schedule(args, model, checkpoint, params):
     param_list = model.parameters() if params is None else params
 
-    optimizer = SGD(param_list, config.args.lr, momentum=config.args.momentum, weight_decay=config.args.weight_decay)
+    optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Make schedule
     schedule = None
-    if config.args.custom_lr_multiplier == CYCLIC:
-        eps = config.args.epochs
+    if args.custom_lr_multiplier == CYCLIC:
+        eps = args.epochs
         lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif config.args.custom_lr_multiplier == COSINE:
-        eps = config.args.epochs
+    elif args.custom_lr_multiplier == COSINE:
+        eps = args.epochs
         schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
-    elif config.args.custom_lr_multiplier:
-        cs = config.args.custom_lr_multiplier
+    elif args.custom_lr_multiplier:
+        cs = args.custom_lr_multiplier
         periods = eval(cs) if type(cs) is str else cs
-        if config.args.lr_interpolation == LINEAR:
+        if args.lr_interpolation == LINEAR:
             lr_func = lambda t: np.interp([t], *zip(*periods))[0]
         else:
             def lr_func(ep):
@@ -47,8 +47,8 @@ def make_optimizer_and_schedule(model, checkpoint, params):
                     if ep >= milestone: return lr
                 return 1.0
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif config.args.step_lr:
-        schedule = lr_scheduler.StepLR(optimizer, step_size=config.args.step_lr, gamma=config.args.step_lr_gamma)
+    elif args.step_lr:
+        schedule = lr_scheduler.StepLR(optimizer, step_size=args.step_lr, gamma=args.step_lr_gamma)
         
     # Fast-forward the optimizer and the scheduler if resuming
     if checkpoint:
@@ -71,13 +71,13 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
         IPython.display.clear_output()
 
     if store is not None: 
-        setup_store_with_metadata(config.args, store)
+        setup_store_with_metadata(args, store)
         store.add_table(LOGS_TABLE, LOGS_SCHEMA)
     writer = store.tensorboard if store else None
     
     # data loaders
     train_loader, val_loader = loaders
-    optimizer, schedule = make_optimizer_and_schedule(model, checkpoint, update_params)
+    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params)
 
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
@@ -190,7 +190,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     score = AverageMeter()
     
     # check for custom criterion
-    has_custom_criterion = has_attr(config.args, 'custom_criterion')
+    has_custom_criterion = has_attr(args, 'custom_criterion')
     criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
 
     # clear jupyter/ipython output before each iteration
@@ -215,7 +215,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
 
         # regularizer option 
         reg_term = 0.0
-        if has_attr(config.args, "regularizer") and isinstance(model, ch.nn.Module):
+        if has_attr(args, "regularizer") and isinstance(model, ch.nn.Module):
             reg_term = args.regularizer(model, inp, target)
         loss = loss + reg_term
         
@@ -262,7 +262,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
                 if model_logits is not None:
                     # accuracy
                     maxk = min(5, model_logits.shape[-1])
-                    if has_attr(config.args, "custom_accuracy"):
+                    if has_attr(args, "custom_accuracy"):
                         prec1, prec5 = args.custom_accuracy(model_logits, target)
                     else:
                         prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
@@ -299,7 +299,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         iterator.set_description(desc)
     
         # USER-DEFINED HOOK
-        if has_attr(config.args, 'iteration_hook'):
+        if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, i, loop_type, inp, target)
 
     if writer is not None:
