@@ -171,6 +171,8 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
                 best_prec1 = max(val_prec1, best_prec1)
                 sd_info['prec1'] = val_prec1
 
+                # TODO: add custom logging hook
+
                 # log every checkpoint
                 log_info = {
                     'epoch':epoch + 1,
@@ -194,6 +196,9 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
         if schedule: schedule.step()
 
         tqdm._instances.clear()
+
+
+    # TODO: add end training hook
 
     # model results
     if isinstance(score, Tensor):
