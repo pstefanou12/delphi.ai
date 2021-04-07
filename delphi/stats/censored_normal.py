@@ -13,7 +13,8 @@ from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
 from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
-    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredNormalDataSet
+    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredNormal
+from ..utils import defaults
 from ..utils.helpers import Bounds, censored_sample_nll
 
 
@@ -21,46 +22,20 @@ class censored_normal(stats):
     """
     Censored normal distribution class.
     """
-    def __init__(
-            self,
-            phi: oracle,
-            alpha: float,
-            epochs: int=10,
-            workers: int=2,
-            lr: float=1e-1,
-            num_samples: int=100,
-            radius: float=2.0,
-            clamp: bool=True,
-            tol: float = 1e-1,
-            custom_lr_multiplier: Any = None,
-            step_lr: int = 10,
-            gamma: float = .9,
-            weight_decay: float = 0.0,
-            momentum: float = 0.0,
-            device: str = "cpu",
-            **kwargs):
+    def __init__(self,
+                 phi: oracle,
+                 alpha: Tensor,
+                 args: Parameters):
         """
+        Args:
+            
         """
         super(censored_normal, self).__init__()
-        # initialize hyperparameters for algorithm
-        config.args = Parameters({
-            'phi': phi,
-            'epochs': epochs,
-            'lr': lr,
-            'num_samples': num_samples,
-            'alpha': Tensor([alpha]),
-            'radius': Tensor([radius]),
-            'clamp': clamp,
-            'tol': tol,
-            'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr_gamma': step_lr,
-            'gamma': gamma,
-            'momentum': weight_decay,
-            'weight_decay': momentum,
-            'device': device,
-            'workers': workers,
-            'score': True,
-        })
+        # check that algorithm hyperparameters
+        config.args = defaults.check_and_fill_args(args, defaults.TRAINING_ARGS, CensoredNormal)
+        # add oracle and survival prob to parameters
+        config.args.__setattr__('phi', phi)
+        config.args.__setattr__('alpha', alpha)
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
@@ -75,7 +50,7 @@ class censored_normal(stats):
         ds_kwargs = {
             'custom_class_args': {
                 'S': S},
-            'custom_class': CensoredNormalDataSet,
+            'custom_class': CensoredNormal,
             'transform_train': None,
             'transform_test': None,
             'label_mapping': None}

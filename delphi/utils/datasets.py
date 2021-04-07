@@ -209,7 +209,7 @@ class CIFAR(DataSet):
         return cifar_models.__dict__[arch](num_classes=self.num_classes)
 
 
-class CensoredNormalDataSet(ch.utils.data.Dataset):
+class CensoredNormal(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
@@ -232,7 +232,7 @@ class CensoredNormalDataSet(ch.utils.data.Dataset):
         return self._var.clone()
     
     
-class CensoredMultivariateNormalDataSet(ch.utils.data.Dataset):
+class CensoredMultivariateNormal(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = S.mean(0)
@@ -255,7 +255,7 @@ class CensoredMultivariateNormalDataSet(ch.utils.data.Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedNormalDataSet(ch.utils.data.Dataset):
+class TruncatedNormal(ch.utils.data.Dataset):
     def __init__(self, S):
         self.S = S
         # samples 
@@ -284,7 +284,7 @@ class TruncatedNormalDataSet(ch.utils.data.Dataset):
         return self._var.clone()
 
 
-class TruncatedMultivariateNormalDataSet(ch.utils.data.Dataset):
+class TruncatedMultivariateNormal(ch.utils.data.Dataset):
     def __init__(self, S):
         # samples 
         self.S = S
@@ -314,7 +314,7 @@ class TruncatedMultivariateNormalDataSet(ch.utils.data.Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedRegressionDataSet(ch.utils.data.Dataset):
+class TruncatedRegression(ch.utils.data.Dataset):
     def __init__(self, X, y, bias=True, unknown=True):
         self.X = X
         self.y = y
@@ -372,7 +372,7 @@ class TruncatedRegressionDataSet(ch.utils.data.Dataset):
             warnings.warn("variance is known, so v0 is not defined")
 
 
-class TruncatedLogisticRegressionDataSet(ch.utils.data.Dataset):
+class TruncatedLogisticRegression(ch.utils.data.Dataset):
     def __init__(self, X, y, bias=True):
         self.X = X
         self.y = y
