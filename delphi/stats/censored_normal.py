@@ -13,6 +13,7 @@ from typing import Any
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
+from ..utils.datasets import CensoredNormalDataset
 from ..utils.helpers import Bounds, censored_sample_nll
 
 
@@ -64,7 +65,7 @@ class censored_normal(stats):
 
     def fit(
             self,
-            S: DataLoader):
+            S: Tensor):
         """
         """
         # initialize model with empiricial estimates

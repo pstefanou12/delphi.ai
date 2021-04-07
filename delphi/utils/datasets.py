@@ -9,7 +9,7 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import Dataset, DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 from sklearn.linear_model import LinearRegression, LogisticRegression
 import copy
@@ -27,6 +27,13 @@ from . import loaders
 ## - CIFAR
 ###
 
+# required and optional arguments for datasets
+CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
+                         'transform_train', 'transform_test']
+CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
+
+CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = [], []
+
 
 class DataSet(object):
     '''
@@ -34,7 +41,7 @@ class DataSet(object):
     subclasses implementing the `get_model` function.
     '''
 
-    def __init__(self, ds_name, data_path, **kwargs):
+    def __init__(self, ds_name, data_path, required_args, optional_args, **kwargs):
         """
         Args:
             ds_name (str) : string identifier for the dataset
@@ -42,10 +49,10 @@ class DataSet(object):
             num_classes (int) : *required kwarg*, the number of classes in
                 the dataset
             mean (ch.tensor) : *required kwarg*, the mean to normalize the
-                dataset with (e.g.  :samp:`ch.tensor([0.4914, 0.4822,
+                dataset with (e.g.  :samp:`Tensor([0.4914, 0.4822,
                 0.4465])` for CIFAR-10)
             std (ch.tensor) : *required kwarg*, the standard deviation to
-                normalize the dataset with (e.g. :samp:`ch.tensor([0.2023,
+                normalize the dataset with (e.g. :samp:`Tensor([0.2023,
                 0.1994, 0.2010])` for CIFAR-10)
             custom_class (type) : *required kwarg*, a
                 :samp:`torchvision.models` class corresponding to the
@@ -60,10 +67,6 @@ class DataSet(object):
                 transforms to apply to the validation images from the
                 dataset
         """
-        required_args = ['num_classes', 'mean', 'std',
-                         'transform_train', 'transform_test']
-        optional_args = ['custom_class', 'label_mapping', 'custom_class_args']
-
         missing_args = set(required_args) - set(kwargs.keys())
         if len(missing_args) > 0:
             raise ValueError("Missing required args %s" % missing_args)
@@ -191,7 +194,7 @@ class CIFAR(DataSet):
             'transform_test': da.TEST_TRANSFORMS_DEFAULT(32)
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(CIFAR, self).__init__('cifar', data_path, **ds_kwargs)
+        super(CIFAR, self).__init__('cifar', data_path, CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, **ds_kwargs)
 
     def get_model(self, arch, pretrained):
         """
@@ -202,14 +205,15 @@ class CIFAR(DataSet):
 
 
 class CensoredNormalDataset(Dataset):
-    def __init__(
-            self,
-            S: Tensor):
+    def __init__(self, S, **kwargs):
+
+        ds_kwargs = {}
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
         self._var = ch.var(S, dim=0)
-        # normalize data and apply gradient
+        # apply gradient
         self.S = censored_sample_nll(S) 
+        super(CensoredNormalDataset, self).__init__(**kwargs)
 
     def __len__(self): 
         return self.S.size(0)
@@ -227,9 +231,7 @@ class CensoredNormalDataset(Dataset):
     
     
 class CensoredMultivariateNormalDataset(Dataset):
-    def __init__(
-            self,
-            S: Tensor):
+    def __init__(self, S):
         # empirical mean and variance
         self._loc = S.mean(0)
         self._covariance_matrix = cov(S)
@@ -252,9 +254,7 @@ class CensoredMultivariateNormalDataset(Dataset):
 
 
 class TruncatedNormalDataset(Dataset): 
-    def __init__(
-            self,
-            S: Tensor):
+    def __init__(self, S):
         self.S = S
         # samples 
         self._loc = ch.mean(S, dim=0)
@@ -283,9 +283,7 @@ class TruncatedNormalDataset(Dataset):
 
 
 class TruncatedMultivariateNormalDataset(Dataset):
-    def __init__(
-            self,
-            S: Tensor):
+    def __init__(self, S):
         # samples 
         self.S = S
         self._loc = ch.mean(S, dim=0)
@@ -315,17 +313,10 @@ class TruncatedMultivariateNormalDataset(Dataset):
 
 
 class TruncatedRegressionDataset(Dataset):
-    def __init__(
-            self,
-            X: Tensor,
-            y: Tensor,
-            bias: bool=True,
-            batch_size: int=100,
-            unknown: bool=True):
+    def __init__(self, X, y, bias=True, unknown=True):
         self.X = X
         self.y = y
         self.bias = bias
-        self.batch_size = batch_size
         self.unknown = unknown
 
         # empirical estimates for dataset
@@ -380,11 +371,7 @@ class TruncatedRegressionDataset(Dataset):
 
 
 class TruncatedLogisticRegressionDataset(Dataset):
-    def __init__(
-            self,
-            X: Tensor,
-            y: Tensor,
-            bias: bool=True):
+    def __init__(self, X, y, bias=True):
         self.X = X
         self.y = y
         self.bias = bias
