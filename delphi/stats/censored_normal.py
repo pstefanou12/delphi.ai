@@ -26,6 +26,7 @@ class censored_normal(stats):
             phi: oracle,
             alpha: float,
             epochs: int=10,
+            workers: int=2,
             lr: float=1e-1,
             num_samples: int=100,
             radius: float=2.0,
@@ -57,6 +58,8 @@ class censored_normal(stats):
             'momentum': weight_decay,
             'weight_decay': momentum,
             'device': device,
+            'workers': workers,
+            'score': True,
         })
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
@@ -68,13 +71,16 @@ class censored_normal(stats):
     def fit(self, S: Tensor):
         """
         """
-        # create dataset and dataLoader
+        # create dataset and dataloader
         ds_kwargs = {
             'custom_class_args': {
                 'S': S},
-            'custom_class': CensoredNormalDataSet}
-        ds = DataSet('censored_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, ds_kwargs)
-        loaders = ds.make_loaders(workers=config.args.num_workers, batch_size=config.args.batch_size)
+            'custom_class': CensoredNormalDataSet,
+            'transform_train': None,
+            'transform_test': None,
+            'label_mapping': None}
+        ds = DataSet('censored_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # determine empirical estimates and initialize distribution
         self.emp_loc, self.emp_var = S.mean(0), S.var(0).unsqueeze(0)
         self._normal = MultivariateNormal(self.emp_loc, self.emp_var)

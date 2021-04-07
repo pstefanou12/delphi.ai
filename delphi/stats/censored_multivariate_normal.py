@@ -52,6 +52,7 @@ class censored_multivariate_normal(stats):
             'momentum': weight_decay,
             'weight_decay': momentum,
             'device': device,
+            'score': True,
         })
         self._multivariate_normal = None
         self.projection_set = None
@@ -59,9 +60,7 @@ class censored_multivariate_normal(stats):
         self.criterion = CensoredMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
 
-    def fit(
-            self,
-            S: DataLoader):
+    def fit(self, S: Tensor):
         """
         """
         # initialize model with empiricial estimates

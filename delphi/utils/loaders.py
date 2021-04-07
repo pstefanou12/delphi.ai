@@ -59,6 +59,25 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
         if val:
             test_set = folder.ImageFolder(root=test_path, transform=transform_test,
                                           label_mapping=label_mapping)
+
+        if train:
+            attrs = ["samples", "train_data", "data"]
+            vals = {attr: hasattr(train_set, attr) for attr in attrs}
+            assert any(vals.values()), f"dataset must expose one of {attrs}"
+            train_sample_count = len(getattr(train_set, [k for k in vals if vals[k]][0]))
+
+        if (train and not val) and (subset is not None) and (subset <= train_sample_count):
+            assert train and not val
+            if subset_type == 'rand':
+                rng = np.random.RandomState(seed)
+                subset = rng.choice(list(range(train_sample_count)), size=subset + subset_start, replace=False)
+                subset = subset[subset_start:]
+            elif subset_type == 'first':
+                subset = np.arange(subset_start, subset_start + subset)
+            else:
+                subset = np.arange(train_sample_count - subset, train_sample_count)
+
+            train_set = Subset(train_set, subset)
     else:
         if custom_class_args is None: custom_class_args = {}
         if data_path is not None:
@@ -70,25 +89,6 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
                                         transform=transform_test, **custom_class_args)
         # TODO: figure out way for validation dataset too
         train_set = custom_class(**custom_class_args)
-
-    if train:
-        attrs = ["samples", "train_data", "data"]
-        vals = {attr: hasattr(train_set, attr) for attr in attrs}
-        assert any(vals.values()), f"dataset must expose one of {attrs}"
-        train_sample_count = len(getattr(train_set,[k for k in vals if vals[k]][0]))
-
-    if (train and not val) and (subset is not None) and (subset <= train_sample_count):
-        assert train and not val
-        if subset_type == 'rand':
-            rng = np.random.RandomState(seed)
-            subset = rng.choice(list(range(train_sample_count)), size=subset+subset_start, replace=False)
-            subset = subset[subset_start:]
-        elif subset_type == 'first':
-            subset = np.arange(subset_start, subset_start + subset)
-        else:
-            subset = np.arange(train_sample_count - subset, train_sample_count)
-
-        train_set = Subset(train_set, subset)
 
     if train_set is not None:
         train_loader = DataLoader(train_set, batch_size=batch_size,

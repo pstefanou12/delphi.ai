@@ -31,8 +31,7 @@ CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
                          'transform_train', 'transform_test', 'data_path']
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
-CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = \
-    ['ds_train', 'custom_class', 'custom_class_args'], ['ds_val']
+CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 
 
 class DataSet(object):
@@ -68,6 +67,9 @@ class DataSet(object):
                 transforms to apply to the validation images from the
                 dataset
         """
+        print("kwargs: {}".format(kwargs))
+        print("kwarg keys: {}".format(kwargs.keys()))
+
         missing_args = set(required_args) - set(kwargs.keys())
         if len(missing_args) > 0:
             raise ValueError("Missing required args %s" % missing_args)
@@ -111,7 +113,7 @@ class DataSet(object):
 
     def make_loaders(self, workers, batch_size, data_aug=True, subset=None,
                      subset_start=0, subset_type='rand', val_batch_size=None,
-                     only_val=False, shuffle_train=True, shuffle_val=True, subset_seed=None):
+                     train=True, val=True, shuffle_train=True, shuffle_val=True, subset_seed=None):
         '''
         Args:
             workers (int) : number of workers for data fetching (*required*).
@@ -157,7 +159,8 @@ class DataSet(object):
                                     subset=subset,
                                     subset_start=subset_start,
                                     subset_type=subset_type,
-                                    only_val=only_val,
+                                    val=val,
+                                    train=train,
                                     seed=subset_seed,
                                     shuffle_train=shuffle_train,
                                     shuffle_val=shuffle_val,
