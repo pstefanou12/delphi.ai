@@ -9,7 +9,6 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 from sklearn.linear_model import LinearRegression, LogisticRegression
 import copy
@@ -29,10 +28,11 @@ from . import loaders
 
 # required and optional arguments for datasets
 CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
-                         'transform_train', 'transform_test']
+                         'transform_train', 'transform_test', 'data_path']
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
-CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = [], []
+CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = \
+    ['ds_train', 'custom_class', 'custom_class_args'], ['ds_val']
 
 
 class DataSet(object):
@@ -41,23 +41,24 @@ class DataSet(object):
     subclasses implementing the `get_model` function.
     '''
 
-    def __init__(self, ds_name, data_path, required_args, optional_args, **kwargs):
+    def __init__(self, ds_name, required_args, optional_args, data_path=None, **kwargs):
         """
         Args:
             ds_name (str) : string identifier for the dataset
-            data_path (str) : path to the dataset
-            num_classes (int) : *required kwarg*, the number of classes in
+            data_path (str) : *optional argument, but required for CNNs* path to the dataset
+            num_classes (int) : *required kwarg for CNN*, the number of classes in
                 the dataset
-            mean (ch.tensor) : *required kwarg*, the mean to normalize the
+            mean (ch.tensor) : *required kwarg for CNN*, the mean to normalize the
                 dataset with (e.g.  :samp:`Tensor([0.4914, 0.4822,
                 0.4465])` for CIFAR-10)
-            std (ch.tensor) : *required kwarg*, the standard deviation to
+            std (ch.tensor) : *required kwarg for CNN*, the standard deviation to
                 normalize the dataset with (e.g. :samp:`Tensor([0.2023,
                 0.1994, 0.2010])` for CIFAR-10)
+
             custom_class (type) : *required kwarg*, a
                 :samp:`torchvision.models` class corresponding to the
                 dataset, if it exists (otherwise :samp:`None`)
-            label_mapping (dict[int,str]) : *required kwarg*, a dictionary
+            label_mapping (dict[int,str]) : *required kwarg for CNN*, a dictionary
                 mapping from class numbers to human-interpretable class
                 names (can be :samp:`None`)
             transform_train (torchvision.transforms) : *required kwarg*,
@@ -185,16 +186,17 @@ class CIFAR(DataSet):
         """
         """
         ds_kwargs = {
+            'data_path': data_path,
             'num_classes': 10,
             'mean': ch.tensor([0.4914, 0.4822, 0.4465]),
             'std': ch.tensor([0.2023, 0.1994, 0.2010]),
             'custom_class': datasets.CIFAR10,
             'label_mapping': None,
             'transform_train': da.TRAIN_TRANSFORMS_DEFAULT(32),
-            'transform_test': da.TEST_TRANSFORMS_DEFAULT(32)
+            'transform_test': da.TEST_TRANSFORMS_DEFAULT(32),
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(CIFAR, self).__init__('cifar', data_path, CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, **ds_kwargs)
+        super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, **ds_kwargs)
 
     def get_model(self, arch, pretrained):
         """
@@ -204,16 +206,13 @@ class CIFAR(DataSet):
         return cifar_models.__dict__[arch](num_classes=self.num_classes)
 
 
-class CensoredNormalDataset(Dataset):
-    def __init__(self, S, **kwargs):
-
-        ds_kwargs = {}
+class CensoredNormalDataSet(ch.utils.data.Dataset):
+    def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
         self._var = ch.var(S, dim=0)
         # apply gradient
-        self.S = censored_sample_nll(S) 
-        super(CensoredNormalDataset, self).__init__(**kwargs)
+        self.S = censored_sample_nll(S)
 
     def __len__(self): 
         return self.S.size(0)
@@ -230,7 +229,7 @@ class CensoredNormalDataset(Dataset):
         return self._var.clone()
     
     
-class CensoredMultivariateNormalDataset(Dataset):
+class CensoredMultivariateNormalDataSet(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = S.mean(0)
@@ -253,7 +252,7 @@ class CensoredMultivariateNormalDataset(Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedNormalDataset(Dataset): 
+class TruncatedNormalDataSet(ch.utils.data.Dataset):
     def __init__(self, S):
         self.S = S
         # samples 
@@ -282,7 +281,7 @@ class TruncatedNormalDataset(Dataset):
         return self._var.clone()
 
 
-class TruncatedMultivariateNormalDataset(Dataset):
+class TruncatedMultivariateNormalDataSet(ch.utils.data.Dataset):
     def __init__(self, S):
         # samples 
         self.S = S
@@ -312,7 +311,7 @@ class TruncatedMultivariateNormalDataset(Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedRegressionDataset(Dataset):
+class TruncatedRegressionDataSet(ch.utils.data.Dataset):
     def __init__(self, X, y, bias=True, unknown=True):
         self.X = X
         self.y = y
@@ -370,7 +369,7 @@ class TruncatedRegressionDataset(Dataset):
             warnings.warn("variance is known, so v0 is not defined")
 
 
-class TruncatedLogisticRegressionDataset(Dataset):
+class TruncatedLogisticRegressionDataSet(ch.utils.data.Dataset):
     def __init__(self, X, y, bias=True):
         self.X = X
         self.y = y

@@ -5,7 +5,6 @@ Censored normal distribution with oracle access (ie. known truncation set)
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
 from typing import Any
@@ -13,7 +12,8 @@ from typing import Any
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
-from ..utils.datasets import CensoredNormalDataset
+from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
+    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredNormalDataSet
 from ..utils.helpers import Bounds, censored_sample_nll
 
 
@@ -62,21 +62,29 @@ class censored_normal(stats):
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
+        # create instance variables for empirical estimates
+        self.emp_loc, self.emp_var = None, None
 
-    def fit(
-            self,
-            S: Tensor):
+    def fit(self, S: Tensor):
         """
         """
-        # initialize model with empiricial estimates
-        self._normal = MultivariateNormal(S.dataset.loc, S.dataset.var.unsqueeze(0))
+        # create dataset and dataLoader
+        ds_kwargs = {
+            'custom_class_args': {
+                'S': S},
+            'custom_class': CensoredNormalDataSet}
+        ds = DataSet('censored_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.num_workers, batch_size=config.args.batch_size)
+        # determine empirical estimates and initialize distribution
+        self.emp_loc, self.emp_var = S.mean(0), S.var(0).unsqueeze(0)
+        self._normal = MultivariateNormal(self.emp_loc, self.emp_var)
         # keep track of gradients for mean and covariance matrix
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
-        self.projection_set = CensoredNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
+        self.projection_set = CensoredNormalProjectionSet(self.emp_loc, self.emp_var)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(config.args, self._normal, (S, None),
+        return train_model(config.args, self._normal, loaders,
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
 
 

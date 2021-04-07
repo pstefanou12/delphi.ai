@@ -15,10 +15,10 @@ else:
     from tqdm import tqdm
 
 
-def make_loaders(workers, batch_size, transforms, data_path, tensor=False, data_aug=True,
-                custom_class=None, dataset="", label_mapping=None, subset=None,
+def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
+                 custom_class=None, dataset="", label_mapping=None, subset=None,
                 subset_type='rand', subset_start=0, val_batch_size=None,
-                only_train=False, only_val=False, shuffle_train=True, shuffle_val=True, seed=1,
+                train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
                 custom_class_args=None):
     '''
     **INTERNAL FUNCTION**
@@ -30,6 +30,12 @@ def make_loaders(workers, batch_size, transforms, data_path, tensor=False, data_
     >>> # train_loader and val_loader are just PyTorch dataloaders
     '''
     print(f"==> Preparing dataset {dataset}..")
+    # check that at least a train loader or validation loader specified to be created
+    if not train and not val:
+        raise ValueError("Neither training loader nor validation loader specified")
+    # initialize loader variables
+    train_set, test_set = None, None
+    train_loader, test_loader = None, None
     transform_train, transform_test = transforms
     if not data_aug:
         transform_train = transform_test
@@ -37,37 +43,42 @@ def make_loaders(workers, batch_size, transforms, data_path, tensor=False, data_
     if not val_batch_size:
         val_batch_size = batch_size
 
-    if not custom_class:
+    if data_path is not None:
         train_path = os.path.join(data_path, 'train')
         test_path = os.path.join(data_path, 'val')
         if not os.path.exists(test_path):
             test_path = os.path.join(data_path, 'test')
 
+    if not custom_class:
         if not os.path.exists(test_path):
             raise ValueError("Test data must be stored in dataset/test or {0}".format(test_path))
 
-        if not only_val:
+        if train:
             train_set = folder.ImageFolder(root=train_path, transform=transform_train,
                                            label_mapping=label_mapping)
-        test_set = folder.ImageFolder(root=test_path, transform=transform_test,
-                                      label_mapping=label_mapping)
+        if val:
+            test_set = folder.ImageFolder(root=test_path, transform=transform_test,
+                                          label_mapping=label_mapping)
     else:
         if custom_class_args is None: custom_class_args = {}
-        if not only_val:
-            train_set = custom_class(root=data_path, train=True, download=True,
-                                transform=transform_train, **custom_class_args) if not tensor else custom_class(**custom_class_args)
-        if not only_train: 
-            test_set = custom_class(root=data_path, train=False, download=True,
-                                    transform=transform_test, **custom_class_args) if not tensor else custom_class(**custom_class_args)
+        if data_path is not None:
+            if train:
+                train_set = custom_class(root=train_path, train=True, download=True,
+                                    transform=transform_train, **custom_class_args)
+            if val:
+                test_set = custom_class(root=test_path, train=False, download=True,
+                                        transform=transform_test, **custom_class_args)
+        # TODO: figure out way for validation dataset too
+        train_set = custom_class(**custom_class_args)
 
-    if not only_val:
+    if train:
         attrs = ["samples", "train_data", "data"]
         vals = {attr: hasattr(train_set, attr) for attr in attrs}
         assert any(vals.values()), f"dataset must expose one of {attrs}"
         train_sample_count = len(getattr(train_set,[k for k in vals if vals[k]][0]))
 
-    if (not only_val) and (subset is not None) and (subset <= train_sample_count):
-        assert not only_val
+    if (train and not val) and (subset is not None) and (subset <= train_sample_count):
+        assert train and not val
         if subset_type == 'rand':
             rng = np.random.RandomState(seed)
             subset = rng.choice(list(range(train_sample_count)), size=subset+subset_start, replace=False)
@@ -79,15 +90,13 @@ def make_loaders(workers, batch_size, transforms, data_path, tensor=False, data_
 
         train_set = Subset(train_set, subset)
 
-    if not only_val:
+    if train_set is not None:
         train_loader = DataLoader(train_set, batch_size=batch_size,
             shuffle=shuffle_train, num_workers=workers, pin_memory=True)
 
-    test_loader = DataLoader(test_set, batch_size=val_batch_size,
-            shuffle=shuffle_val, num_workers=workers, pin_memory=True)
-
-    if only_val:
-        return None, test_loader
+    if test_set is not None:
+        test_loader = DataLoader(test_set, batch_size=val_batch_size,
+                shuffle=shuffle_val, num_workers=workers, pin_memory=True)
 
     return train_loader, test_loader
 
@@ -188,7 +197,7 @@ def TransformedLoader(loader, func, transforms, workers=None,
     transformation to the output from the loader *once*.
     For instance, you could use for applications such as assigning
     random labels to all the images (before training).
-    The TransformedLoader also supports the application of addiotional
+    The TransformedLoader also supports the application of additional
     transformations (such as standard data augmentation) after the fixed
     function.
     For more information see :ref:`our detailed walkthrough <using-custom-loaders>`
