@@ -1,15 +1,20 @@
+"""
+Censored multivariate normal distribution with oracle access (ie. known truncation set).
+"""
+
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
-from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
-from .censored_normal import CensoredMultivariateNormalNLL, CensoredNormalProjectionSet
 from ..train import train_model
+from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
+    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredMultivariateNormal
+from .censored_normal import CensoredMultivariateNormalNLL, CensoredNormalProjectionSet
+from ..utils import defaults
 
 
 class censored_multivariate_normal(stats):
@@ -19,52 +24,44 @@ class censored_multivariate_normal(stats):
     def __init__(
             self,
             phi: oracle,
-            alpha: float,
-            epochs: int=10,
-            lr: float=1e-1,
-            num_samples: int=100,
-            radius: float=2.0,
-            clamp: bool=True,
-            tol: float=1e-1,
-            custom_lr_multiplier: Any=None,
-            step_lr: int=10,
-            gamma: float=.9,
-            weight_decay: float = 0.0,
-            momentum: float = 0.0,
-            device: str='cpu',
+            alpha: Tensor,
+            args: Parameters,
+            device: str = 'cpu',
             **kwargs):
         """
         """
-        super().__init__()
-        # initialize hyperparameters for algorithm
-        config.args = Parameters({
-            'phi': phi,
-            'epochs': epochs,
-            'lr': lr,
-            'num_samples': num_samples,
-            'alpha': Tensor([alpha]),
-            'radius': Tensor([radius]),
-            'clamp': clamp,
-            'tol': tol,
-            'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr_gamma': step_lr,
-            'gamma': gamma,
-            'momentum': weight_decay,
-            'weight_decay': momentum,
-            'device': device,
-            'score': True,
-        })
+        super(censored_multivariate_normal, self).__init__()
+        # check that algorithm hyperparameters
+        config.args = defaults.check_and_fill_args(args, defaults.CENSOR_ARGS, CensoredMultivariateNormal)
+        # add oracle and survival prob to parameters
+        config.args.__setattr__('phi', phi)
+        config.args.__setattr__('alpha', alpha)
+        config.args.__setattr__('device', device)
         self._multivariate_normal = None
-        self.projection_set = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
+        # create instance variables for empirical estimates
+        self.emp_loc, self.emp_covariance_matrix = None, None
+        self.projection_set = None
 
     def fit(self, S: Tensor):
         """
         """
+        # create dataset and dataloader
+        ds_kwargs = {
+            'custom_class_args': {
+                'S': S},
+            'custom_class': CensoredMultivariateNormal,
+            'transform_train': None,
+            'transform_test': None,
+            'label_mapping': None}
+        ds = DataSet('censored_multivariate_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
+                     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
+        self.emp_loc, self.emp_covariance_matrix = ds.loc, ds.covariance_matrix
         # initialize model with empiricial estimates
-        self._multivariate_normal = MultivariateNormal(S.dataset.loc, S.dataset.covariance_matrix)
+        self._multivariate_normal = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
         # keep track of gradients for mean and covariance matrix
         self._multivariate_normal.loc.requires_grad, self._multivariate_normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
@@ -72,8 +69,8 @@ class censored_multivariate_normal(stats):
                                                                       self._multivariate_normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(config.args, self._multivariate_normal, (S, None),
-                           update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
+        return train_model(config.args, self._multivariate_normal, loaders,
+                           update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix], device=config.args.device)
 
 
 class CensoredMultivariateNormalProjectionSet(CensoredNormalProjectionSet):

@@ -6,15 +6,15 @@ import torch as ch
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Linear
-from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
-from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
 from ..utils.helpers import Bounds
+from ..utils import defaults
+from ..utils.datasets import DataSet, TRUNC_REG_OPTIONAL_ARGS, TRUNC_REG_REQUIRED_ARGS, TruncatedRegression
 
 
 class truncated_regression(stats):
@@ -24,48 +24,23 @@ class truncated_regression(stats):
             self,
             phi: oracle,
             alpha: float,
+            args: Parameters,
             bias: bool=True,
             var: float = None,
-            epochs: int=50,
-            lr: float=1e-1,
-            var_lr: float=1e-2,
-            num_samples: int=100,
-            radius: float=2.0,
-            clamp: bool=True,
-            eps: float=1e-5,
-            tol: float=1e-1,
-            custom_lr_multiplier: Any = None,
-            step_lr: int = 10,
-            gamma: float = .9,
-            weight_decay: float = 0.0,
-            momentum: float = 0.0,
             device: str="cpu",
             **kwargs):
         """
         """
-        super().__init__()
-        # initialize hyperparameters for algorithm
-        config.args = Parameters({
-            'phi': phi,
-            'epochs': epochs,
-            'lr': lr,
-            'var_lr': var_lr,
-            'num_samples': num_samples,
-            'alpha': Tensor([alpha]),
-            'radius': Tensor([radius]),
-            'var': Tensor([var]) if var else None,
-            'bias': bias,
-            'clamp': clamp,
-            'eps': eps,
-            'tol': tol,
-            'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr_gamma': step_lr,
-            'gamma': gamma,
-            'device': device,
-            'momentum': weight_decay,
-            'weight_decay': momentum,
-            'score': True,  # update score after each gradient step
-        })
+        super(truncated_regression).__init__()
+        # check algorithm hyperparameters
+        config.args = defaults.check_and_fill_args(args, defaults.REGRESSION_ARGS, TruncatedRegression)
+        # add oracle and survival prob to parameters
+        config.args.__setattr__('phi', phi)
+        config.args.__setattr__('alpha', alpha)
+        config.args.__setattr__('device', device)
+        config.args.__setattr__('bias', bias)
+        config.args.__setattr__('var', var)
+
         self._lin_reg = None
         self.projection_set = None
         # intialize loss function and add custom criterion to hyperparameters
@@ -73,22 +48,33 @@ class truncated_regression(stats):
             self.criterion = TruncatedUnknownVarianceMSE.apply
         else:
             self.criterion = TruncatedMSE.apply
+        self._emp_lin_reg = None
         config.args.__setattr__('custom_criterion', self.criterion)
 
-    def fit(
-            self,
-            S: DataLoader):
+    def fit(self, X: Tensor, y: Tensor):
         """
         """
+        # create dataset and dataloader
+        ds_kwargs = {
+            'custom_class_args': {
+                'X': X, 'y': y, 'bias': config.args.bias, 'unknown': config.args.var},
+            'custom_class': TruncatedRegression,
+            'transform_train': None,
+            'transform_test': None,
+        }
+        ds = DataSet('truncated_regression', TRUNC_REG_REQUIRED_ARGS, TRUNC_REG_OPTIONAL_ARGS, data_path=None,
+                     **ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # initialize model with empirical estimates
         if config.args.var:
-            self._lin_reg = Linear(in_features=S.dataset.w.size(0), out_features=1, bias=config.args.bias)
-            self._lin_reg.weight.data = S.dataset.w.t()
-            self._lin_reg.bias = ch.nn.Parameter(S.dataset.w0) if config.args.bias else None
+            self._emp_lin_reg = Linear(in_features=loaders[0].dataset.w.size(0), out_features=1, bias=config.args.bias)
+            self._emp_lin_reg.weight.data = loaders[0].dataset.w.t()
+            self._emp_lin_reg.bias = ch.nn.Parameter(loaders[0].dataset.w.w0) if config.args.bias else None
             self.projection_set = TruncatedRegressionProjectionSet(self._lin_reg)
             update_params = None
         else:
-            self._lin_reg = LinearUnknownVariance(S.dataset.v, S.dataset.lambda_, bias=S.dataset.v0)
+            self._emp_lin_reg = LinearUnknownVariance(loaders[0].dataset.v, loaders[0].dataset.lambda_,
+                                                      bias=loaders[0].dataset.v0)
             self.projection_set = TruncatedUnknownVarianceProjectionSet(self._lin_reg)
             update_params = [
                     {'params': self._lin_reg.v},
@@ -97,7 +83,7 @@ class truncated_regression(stats):
 
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD for parameter estimation
-        return train_model(config.args, self._lin_reg, (S, None), update_params=update_params, device=config.args.device)
+        return train_model(config.args, self._lin_reg, loaders, update_params=update_params, device=config.args.device)
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -128,8 +114,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         factor
         """
         out = (z - targ)
-        if ch.all(z == targ):
-            print("out: {}".format(out))
         return lambda_ * out / (out.nonzero(as_tuple=False).size(0) + config.args.eps), targ / (out.nonzero(as_tuple=False).size(0) + config.args.eps),\
                 (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + config.args.eps)
 

@@ -32,6 +32,7 @@ CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
+TRUNC_REG_REQUIRED_ARGS, TRUNC_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 
 
 class DataSet(object):
@@ -67,9 +68,6 @@ class DataSet(object):
                 transforms to apply to the validation images from the
                 dataset
         """
-        print("kwargs: {}".format(kwargs))
-        print("kwarg keys: {}".format(kwargs.keys()))
-
         missing_args = set(required_args) - set(kwargs.keys())
         if len(missing_args) > 0:
             raise ValueError("Missing required args %s" % missing_args)

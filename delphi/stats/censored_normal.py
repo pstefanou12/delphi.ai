@@ -7,7 +7,6 @@ from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 from cox.utils import Parameters
 import config
-from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
@@ -25,23 +24,28 @@ class censored_normal(stats):
     def __init__(self,
                  phi: oracle,
                  alpha: Tensor,
-                 args: Parameters):
+                 args: Parameters,
+                 device: str='cpu',
+                 **kwargs):
         """
         Args:
             
         """
         super(censored_normal, self).__init__()
-        # check that algorithm hyperparameters
-        config.args = defaults.check_and_fill_args(args, defaults.TRAINING_ARGS, CensoredNormal)
+        # check algorithm hyperparameters
+        config.args = defaults.check_and_fill_args(args, defaults.CENSOR_ARGS, CensoredNormal)
         # add oracle and survival prob to parameters
         config.args.__setattr__('phi', phi)
         config.args.__setattr__('alpha', alpha)
+        config.args.__setattr__('device', device)
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
         # create instance variables for empirical estimates
         self.emp_loc, self.emp_var = None, None
+        # initialize projection set
+        self.projection_set = None
 
     def fit(self, S: Tensor):
         """
@@ -54,10 +58,11 @@ class censored_normal(stats):
             'transform_train': None,
             'transform_test': None,
             'label_mapping': None}
-        ds = DataSet('censored_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
+        ds = DataSet('censored_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
+                     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
-        # determine empirical estimates and initialize distribution
-        self.emp_loc, self.emp_var = S.mean(0), S.var(0).unsqueeze(0)
+        # get empirical estimates from dataset and initialize distribution
+        self.emp_loc, self.emp_var = ds.loc, ds.var
         self._normal = MultivariateNormal(self.emp_loc, self.emp_var)
         # keep track of gradients for mean and covariance matrix
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
@@ -66,7 +71,7 @@ class censored_normal(stats):
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
-                           update_params=[self._normal.loc, self._normal.covariance_matrix])
+                           update_params=[self._normal.loc, self._normal.covariance_matrix], device=config.args.device)
 
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
