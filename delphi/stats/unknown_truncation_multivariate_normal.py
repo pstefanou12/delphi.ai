@@ -6,16 +6,17 @@ Truncated multivariate normal distribution without oracle access (ie. unknown tr
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
-from typing import Any
 
 from .stats import stats
 from .unknown_truncation_normal import TruncatedMultivariateNormalNLL, TruncatedNormalProjectionSet
 from ..oracle import oracle
 from ..train import train_model
 from ..utils.helpers import Exp_h
+from ..utils.datasets import TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, \
+    TruncatedMultivariateNormal, DataSet
+from ..utils import defaults
 
 
 class truncated_multivariate_normal(stats):
@@ -26,46 +27,35 @@ class truncated_multivariate_normal(stats):
             self,
             phi: oracle,
             alpha: float,
-            epochs: int=50,
-            lr: float=1e-1,
-            num_samples: int=100,
-            radius: float=2.0,
-            clamp: bool=True,
-            tol: float = 1e-1,
-            custom_lr_multiplier: Any = None,
-            step_lr: int = 1,
-            gamma: float = .9,
-            weight_decay: float = 0.0,
-            momentum: float = 0.0,
+            args: Parameters,
             device: str = 'cpu',
             **kwargs):
         super(truncated_multivariate_normal, self).__init__()
-        config.args = Parameters({
-            'phi': phi,
-            'epochs': epochs,
-            'lr': lr,
-            'num_samples': num_samples,
-            'alpha': Tensor([alpha]),
-            'radius': Tensor([radius]),
-            'clamp': clamp,
-            'tol': tol,
-            'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr': step_lr,
-            'step_lr_gamma': gamma,
-            'momentum': weight_decay,
-            'weight_decay': momentum,
-            'device': device,
-        })
+        # check algorithm hyperparameters
+        config.args = defaults.check_and_fill_args(args, defaults.HERMITE_ARGS, TruncatedMultivariateNormal)
+        # add oracle and survival prob to parameters
+        config.args.__setattr__('phi', phi)
+        config.args.__setattr__('alpha', alpha)
+        config.args.__setattr__('device', device)
         self._multivariate_normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = TruncatedMultivariateNormalNLL.apply
         config.args.__setattr__('custom_criterion', self.criterion)
 
-    def fit(
-            self,
-            S: DataLoader):
+    def fit(self, S: Tensor):
+        # create dataset and dataloader
+        ds_kwargs = {
+            'custom_class_args': {
+                'S': S},
+            'custom_class': TruncatedMultivariateNormal,
+            'transform_train': None,
+            'transform_test': None,
+            'label_mapping': None}
+        ds = DataSet('truncated_normal', TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
+                     TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # initialize model with empiricial estimates
-        self._multivariate_normal = MultivariateNormal(S.dataset.loc, S.dataset.covariance_matrix)
+        self._multivariate_normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.covariance_matrix)
         # keep track of gradients for mean and covariance matrix
         self._multivariate_normal.loc.requires_grad, self._multivariate_normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
@@ -76,7 +66,7 @@ class truncated_multivariate_normal(stats):
         self.exp_h = Exp_h(S.dataset.loc, S.dataset.covariance_matrix)
         config.args.__setattr__('exp_h', self.exp_h)
         # run PGD to predict actual estimates
-        return train_model(config.args, self._multivariate_normal, (S, None),
+        return train_model(config.args, self._multivariate_normal, loaders,
                            update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
 
 

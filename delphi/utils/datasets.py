@@ -32,6 +32,7 @@ CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
+TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 TRUNC_REG_REQUIRED_ARGS, TRUNC_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 
 
@@ -220,13 +221,13 @@ class CensoredNormal(ch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         return [self.S[idx],]
-    
+
     @property
-    def loc(self): 
+    def loc(self):
         return self._loc.clone()
-    
+
     @property
-    def var(self): 
+    def var(self):
         return self._var.clone()
     
     

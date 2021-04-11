@@ -40,6 +40,30 @@ TRAINING_DEFAULTS = {
         "score": True,
         "tol": 1e-2,
     },
+    datasets.TruncatedNormal: {
+        "epochs": 10,
+        "batch_size": 10,
+        "weight_decay": 5e-4,
+        "momentum": 0.0,
+        "num_samples": 100,
+        "radius": 2.0,
+        "step_lr": 10,
+        "score": True,
+        "tol": 1e-2,
+        "d": 100,
+    },
+    datasets.TruncatedMultivariateNormal: {
+        "epochs": 10,
+        "batch_size": 10,
+        "weight_decay": 5e-4,
+        "momentum": 0.0,
+        "num_samples": 100,
+        "radius": 2.0,
+        "step_lr": 10,
+        "score": True,
+        "tol": 1e-2,
+        "d": 100,
+    },
     datasets.TruncatedRegression: {
         "epochs": 10,
         "batch_size": 10,
@@ -92,6 +116,22 @@ CENSOR_ARGS = [
     ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
 ]
 
+# default arguments for unknown truncation algorithm
+HERMITE_ARGS = [
+    ['epochs', int, 'number of epochs to train for', BY_DATASET],
+    ['lr', float, 'initial learning rate for training', 0.1],
+    ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
+    ['momentum', float, 'SGD momentum parameter', BY_DATASET],
+    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
+    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
+    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
+    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
+    ['radius', float, 'initial radius size for PSGD', BY_DATASET],
+    ['score', bool, 'determine convergence based off of score', BY_DATASET],
+    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
+    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
+]
+
 # default arguments for truncated regression algorithm
 REGRESSION_ARGS = [
     ['epochs', int, 'number of epochs to train for', BY_DATASET],
@@ -107,8 +147,6 @@ REGRESSION_ARGS = [
     ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
     ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
 ]
-
-
 
 """
 Arguments essential for the `train_model` function.
