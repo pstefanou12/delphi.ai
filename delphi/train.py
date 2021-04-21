@@ -134,7 +134,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
     # keep track of the start time
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
-        print("starting epoch 1")
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
         # check score tolerance
@@ -152,8 +151,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
                 'schedule':(schedule and schedule.state_dict()),
                 'epoch': epoch+1,
             }
-
-            print("trying to save")
 
             def save_checkpoint(filename):
                 ckpt_save_path = os.path.join(args.out_dir if not store else \
@@ -248,6 +245,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         loss = 0.0
         if isinstance(model, ch.distributions.distribution.Distribution):
             loss = criterion(*optimizer.param_groups[0]['params'], *batch)
+            print("getting loss herd: {}".format(loss))
         elif isinstance(model, ch.nn.Module):
             inp, target = batch
             inp, target = inp.to(device), target.to(device)

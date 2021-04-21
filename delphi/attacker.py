@@ -248,6 +248,7 @@ class Attacker(ch.nn.Module):
 
         return adv_ret
 
+
 class AttackerModel(ch.nn.Module):
     """
     Wrapper class for adversarial attacks on models. Given any normal
