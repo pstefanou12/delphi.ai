@@ -28,7 +28,7 @@ from . import loaders
 
 # required and optional arguments for datasets
 CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
-                         'transform_train', 'transform_test', 'data_path']
+                         'transform_train', 'transform_test']
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
@@ -188,7 +188,7 @@ class CIFAR(DataSet):
         """
         """
         ds_kwargs = {
-            'data_path': data_path,
+            # 'data_path': data_path,
             'num_classes': 10,
             'mean': ch.tensor([0.4914, 0.4822, 0.4465]),
             'std': ch.tensor([0.2023, 0.1994, 0.2010]),
@@ -198,7 +198,7 @@ class CIFAR(DataSet):
             'transform_test': da.TEST_TRANSFORMS_DEFAULT(32),
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, **ds_kwargs)
+        super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path=data_path, **ds_kwargs)
 
     def get_model(self, arch, pretrained):
         """

@@ -87,8 +87,9 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
             if val:
                 test_set = custom_class(root=test_path, train=False, download=True,
                                         transform=transform_test, **custom_class_args)
-        # TODO: figure out way for validation dataset too
-        train_set = custom_class(**custom_class_args)
+        else:
+            # TODO: figure out way for validation dataset too
+            train_set = custom_class(**custom_class_args)
 
     if train_set is not None:
         train_loader = DataLoader(train_set, batch_size=batch_size,
