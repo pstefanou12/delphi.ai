@@ -9,7 +9,7 @@ from torch.optim import SGD
 from torch.optim import lr_scheduler
 import IPython
 
-from .utils.helpers import setup_store_with_metadata, has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
 from .utils import constants as consts
 
 # determine running environment
@@ -96,7 +96,10 @@ def eval_model(args, model, loader, store):
     }
 
     # Log info into the logs table
-    if store: store[consts.EVAL_LOGS_TABLE].append_row(log_info)
+    if store:
+        store[consts.EVAL_LOGS_TABLE].append_row(log_info)
+        store.close()
+
     return log_info
 
 
@@ -106,11 +109,10 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
     if script == consts.JUPYTER or script == consts.IPYTHON:
         IPython.display.clear_output()
 
-    if store is not None: 
-        setup_store_with_metadata(args, store)
+    if store is not None:
         store.add_table(consts.LOGS_TABLE, consts.LOGS_SCHEMA)
     writer = store.tensorboard if store else None
-    
+
     # data loaders
     train_loader, val_loader = loaders
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params)
@@ -132,6 +134,7 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
     # keep track of the start time
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
+        print("starting epoch 1")
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
         # check score tolerance
@@ -149,6 +152,8 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
                 'schedule':(schedule and schedule.state_dict()),
                 'epoch': epoch+1,
             }
+
+            print("trying to save")
 
             def save_checkpoint(filename):
                 ckpt_save_path = os.path.join(args.out_dir if not store else \
@@ -175,11 +180,11 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
                 # log every checkpoint
                 log_info = {
-                    'epoch':epoch + 1,
-                    'val_prec1':val_prec1,
-                    'val_loss':val_loss,
-                    'train_prec1':train_prec1,
-                    'train_loss':train_loss,
+                    'epoch': epoch + 1,
+                    'val_prec1': val_prec1,
+                    'val_loss': val_loss,
+                    'train_prec1': train_prec1,
+                    'train_loss': train_loss,
                     'time': time.time() - start_time
                 }
 
