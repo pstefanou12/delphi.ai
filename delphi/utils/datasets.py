@@ -34,6 +34,7 @@ CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 TRUNC_REG_REQUIRED_ARGS, TRUNC_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
+TRUNC_LOG_REG_REQUIRED_ARGS, TRUNC_LOG_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 
 
 class DataSet(object):

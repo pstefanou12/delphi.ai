@@ -106,9 +106,6 @@ def eval_model(args, model, loader, store):
 def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
                 store=None, update_params=None, disable_no_grad=False):
     # clear jupyter/ipython output before each training run
-    if script == consts.JUPYTER or script == consts.IPYTHON:
-        IPython.display.clear_output()
-
     if store is not None:
         store.add_table(consts.LOGS_TABLE, consts.LOGS_SCHEMA)
     writer = store.tensorboard if store else None
@@ -199,7 +196,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
         tqdm._instances.clear()
 
-
     # TODO: add end training hook
 
     # model results
@@ -217,10 +213,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
             
             
 def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device):
-    # clear jupyter/ipython output before each iteration
-    if script == consts.JUPYTER or script == consts.IPYTHON:
-        IPython.display.clear_output()
-
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -273,7 +265,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
 
         if len(loss.size()) > 0: loss = loss.mean()
 
-        #
+        
         model_logits = None
         if not isinstance(model, ch.distributions.distribution.Distribution):
             model_logits = output[0] if isinstance(output, tuple) else output

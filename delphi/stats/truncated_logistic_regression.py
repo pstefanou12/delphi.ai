@@ -14,6 +14,8 @@ from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
 from ..utils.helpers import Bounds
+from ..utils import defaults
+from ..utils.datasets import DataSet, TRUNC_LOG_REG_OPTIONAL_ARGS, TRUNC_LOG_REG_REQUIRED_ARGS, TruncatedLogisticRegression
 
 
 class truncated_logistic_regression(stats):
@@ -23,74 +25,43 @@ class truncated_logistic_regression(stats):
             self,
             phi: oracle,
             alpha: float,
+            args: Parameters,
             bias: bool=True,
-            scale: float = 1.0,
-            epochs: int=50,
-            lr: float=1e-1,
-            num_samples: int=100,
-            radius: float=2.0,
-            clamp: bool=True,
-            eps: float=1e-5,
-            tol: float=1e-1,
-            custom_lr_multiplier: Any=None,
-            step_lr: int=10,
-            gamma: float=.9,
-            weight_decay: float = 0.0,
-            momentum: float = 0.0,
+            var: float = None,
             device: str="cpu",
             **kwargs):
         """
         """
-        super().__init__()
+        super(truncated_logistic_regression).__init__()
         # initialize hyperparameters for algorithm
-        config.args = Parameters({
-            'phi': phi,
-            'epochs': epochs,
-            'lr': lr,
-            'num_samples': num_samples,
-            'alpha': Tensor([alpha]),
-            'radius': Tensor([radius]),
-            'scale': Tensor([scale]),
-            'bias': bias,
-            'clamp': clamp,
-            'var': Tensor([1.0]),
-            'tol': tol,
-            'eps': eps,
-            'custom_lr_multiplier': custom_lr_multiplier,
-            'step_lr_gamma': step_lr,
-            'gamma': gamma,
-            'momentum': weight_decay,
-            'weight_decay': momentum,
-            'device': device,
-            'score': True,  # update score after each gradient step
-        })
 
-        self._lin_reg = None
+
+        self._emp_log_reg = None
         self.projection_set = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = TruncatedBCE.apply
         config.args.__setattr__('custom_criterion', self.criterion)
 
-    def fit(
-            self,
-            S: DataLoader):
+    def fit(self, X: Tensor, y: Tensor):
         """
         """
-        # initialize model with empiricial estimates
-        self._log_reg = Linear(in_features=S.dataset.X.size(1), out_features=1, bias=config.args.bias)
-        self._log_reg.weight = ch.nn.Parameter(Tensor(S.dataset.log_reg.coef_))
-        if config.args.bias:
-            self._log_reg.bias = ch.nn.Parameter(Tensor(S.dataset.log_reg.intercept_))
-        self.projection_set = TruncatedLogisticRegression(self._log_reg)
+        # create dataset and dataloader
+        ds_kwargs = {
+            'custom_class_args': {
+                'X': X, 'y': y, 'bias': config.args.bias},
+            'custom_class': TruncatedRegression,
+            'transform_train': None,
+            'transform_test': None,
+        }
+        ds = DataSet('truncated_logistic_regression', TRUNC_LOG_REG_REQUIRED_ARGS, TRUNC_LOG_REG_OPTIONAL_ARGS, data_path=None,
+                     **ds_kwargs)
+        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
+        # initialize model with empirical estimates
+        self._emp_log_reg = ch.nn.Linear(loaders[0].dataset.log_reg.coef_, bias=loaders[0].dataset.log_reg.intercept_)
+        self.projection_set = TruncatedLogisticRegressionProjectionSet(self._emp_log_reg)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
-        return train_model(config.args, self._log_reg, (S, None))
-
-
-# define logistic distribution
-base_distribution = Uniform(0, 1)
-transforms_ = [SigmoidTransform().inv]
-logistic = TransformedDistribution(base_distribution, transforms_)
+        return train_model(config.args, self._emp_log_reg, loaders)
 
 
 class TruncatedBCE(ch.autograd.Function):
@@ -103,6 +74,12 @@ class TruncatedBCE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
+
+        # logistic distribution
+        base_distribution = Uniform(0, 1)
+        transforms_ = [SigmoidTransform().inv]
+        logistic = TransformedDistribution(base_distribution, transforms_)
+
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add noise
         noised = stacked + logistic.sample(stacked.size())
@@ -113,7 +90,7 @@ class TruncatedBCE(ch.autograd.Function):
         return grad / pred.size(0), -grad / pred.size(0)
 
 
-class TruncatedLogisticRegression:
+class TruncatedLogisticRegressionProjectionSet:
     """
     Censored logistic regression projection set
     """
