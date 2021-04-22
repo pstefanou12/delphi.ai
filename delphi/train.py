@@ -346,6 +346,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         for d, v in zip(descs, vals):
             writer.add_scalar('_'.join([loop_type, d]), v.avg,
                               epoch)
+
+    print("weight grad: {}".format(model.weight.grad))
+    print("bias grad: {}".format(model.bias.grad))
     
     # LOSS AND ACCURACY
     return top1.avg, losses.avg, score.avg
