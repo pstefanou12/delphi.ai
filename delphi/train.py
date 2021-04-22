@@ -134,7 +134,7 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=device)
 
         # check score tolerance
-        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, 1, 0).bool()):
+        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
             break
 
         last_epoch = (epoch == (args.epochs - 1))

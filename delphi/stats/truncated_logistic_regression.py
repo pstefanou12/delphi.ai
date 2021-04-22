@@ -33,9 +33,8 @@ class truncated_logistic_regression(stats):
         """
         """
         super(truncated_logistic_regression).__init__()
+        config.args = defaults.check_and_fill_args(args, defaults.LOGISTIC_ARGS, TruncatedLogisticRegression)
         # initialize hyperparameters for algorithm
-
-
         self._emp_log_reg = None
         self.projection_set = None
         # intialize loss function and add custom criterion to hyperparameters
@@ -49,7 +48,7 @@ class truncated_logistic_regression(stats):
         ds_kwargs = {
             'custom_class_args': {
                 'X': X, 'y': y, 'bias': config.args.bias},
-            'custom_class': TruncatedRegression,
+            'custom_class': TruncatedLogisticRegression,
             'transform_train': None,
             'transform_test': None,
         }
@@ -57,7 +56,7 @@ class truncated_logistic_regression(stats):
                      **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # initialize model with empirical estimates
-        self._emp_log_reg = ch.nn.Linear(loaders[0].dataset.log_reg.coef_, bias=loaders[0].dataset.log_reg.intercept_)
+        self._emp_log_reg = ch.nn.Linear(in_features=loaders[0].dataset.log_reg.coef_.shape[1], out_features=1, bias=loaders[0].dataset.log_reg.intercept_)
         self.projection_set = TruncatedLogisticRegressionProjectionSet(self._emp_log_reg)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
