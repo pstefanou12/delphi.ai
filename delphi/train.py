@@ -231,7 +231,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     has_custom_criterion = has_attr(args, 'custom_criterion')
     criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
 
-    iterator = tqdm(enumerate(loader), total=len(loader))
+    iterator = tqdm(enumerate(loader), total=len(loader), leave=False)
     for i, batch in iterator:
         inp, target, output = None, None, None
         loss = 0.0
@@ -345,9 +345,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         for d, v in zip(descs, vals):
             writer.add_scalar('_'.join([loop_type, d]), v.avg,
                               epoch)
-
-    print("weight grad: {}".format(model.weight.grad))
-    print("bias grad: {}".format(model.bias.grad))
     
     # LOSS AND ACCURACY
     return top1.avg, losses.avg, score.avg
