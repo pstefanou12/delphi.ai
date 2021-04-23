@@ -198,14 +198,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
     # TODO: add end training hook
 
-    # model results
-    if isinstance(score, Tensor):
-        print("avg score: \n {}".format([round(x, 4) for x in score.tolist()]))
-    if train_loss != 0:
-        print("avg loss: {}".format(train_loss))
-    if train_prec1 != 0:
-        print("avg top 1: {}".format(train_prec1))
-
     # close store at end of training
     if store is not None:
         store.close()
