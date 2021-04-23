@@ -237,7 +237,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         loss = 0.0
         if isinstance(model, ch.distributions.distribution.Distribution):
             loss = criterion(*optimizer.param_groups[0]['params'], *batch)
-            print("getting loss herd: {}".format(loss))
         elif isinstance(model, ch.nn.Module):
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
