@@ -44,10 +44,16 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
         val_batch_size = batch_size
 
     if data_path is not None:
-        train_path = os.path.join(data_path, 'train')
-        test_path = os.path.join(data_path, 'val')
+        # train_path = os.path.join(data_path, 'train')
+        train_path = data_path
+
+        # test_path = os.path.join(data_path, 'val')
+        test_path = data_path
+
         if not os.path.exists(test_path):
-            test_path = os.path.join(data_path, 'test')
+            # test_path = os.path.join(data_path, 'test')
+            test_path = data_path
+
 
     if not custom_class:
         if not os.path.exists(test_path):
@@ -82,6 +88,7 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
         if custom_class_args is None: custom_class_args = {}
         if data_path is not None:
             if train:
+                print("train path: {}".format(train_path))
                 train_set = custom_class(root=train_path, train=True, download=True,
                                     transform=transform_train, **custom_class_args)
             if val:

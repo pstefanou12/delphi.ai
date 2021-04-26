@@ -3,6 +3,27 @@
 from torch import Tensor
 from torchvision import transforms
 
+class Lighting(object):
+    """
+    Lighting noise (see https://git.io/fhBOc)
+    """
+    def __init__(self, alphastd, eigval, eigvec):
+        self.alphastd = alphastd
+        self.eigval = eigval
+        self.eigvec = eigvec
+
+    def __call__(self, img):
+        if self.alphastd == 0:
+            return img
+
+        alpha = img.new().resize_(3).normal_(0, self.alphastd)
+        rgb = self.eigvec.type_as(img).clone()\
+            .mul(alpha.view(1, 3).expand(3, 3))\
+            .mul(self.eigval.view(1, 3).expand(3, 3))\
+            .sum(1).squeeze()
+
+        return img.add(rgb.view(3, 1, 1).expand_as(img))
+
 # CIFAR10 dataset info
 CIFAR_LABELS = {
     0: 'airplane', 1: 'automobile', 2: 'bird', 3: 'cat', 4: 'deer',
@@ -26,6 +47,30 @@ _IMAGENET_PCA = {
         [-0.5836, -0.6948,  0.4203],
     ])
 }
+
+# Special transforms for ImageNet(s)
+TRAIN_TRANSFORMS_IMAGENET = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(
+            brightness=0.1,
+            contrast=0.1,
+            saturation=0.1
+        ),
+        transforms.ToTensor(),
+        Lighting(0.05, _IMAGENET_PCA['eigval'], 
+                      _IMAGENET_PCA['eigvec'])
+    ])
+"""
+Standard training data augmentation for ImageNet-scale datasets: Random crop,
+Random flip, Color Jitter, and Lighting Transform (see https://git.io/fhBOc)
+"""
+
+TEST_TRANSFORMS_IMAGENET = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+    ])
 
 # Dataset training set augmentation defaults
 TRAIN_TRANSFORMS_DEFAULT = lambda size: transforms.Compose([
@@ -52,25 +97,3 @@ Generic test data transform (no augmentation) to complement
 :meth:`delphi.data_augmentation.TEST_TRANSFORMS_DEFAULT`, takes in an image
 side length.
 """
-
-
-class Lighting(object):
-    """
-    Lighting noise (see https://git.io/fhBOc)
-    """
-    def __init__(self, alphastd, eigval, eigvec):
-        self.alphastd = alphastd
-        self.eigval = eigval
-        self.eigvec = eigvec
-
-    def __call__(self, img):
-        if self.alphastd == 0:
-            return img
-
-        alpha = img.new().resize_(3).normal_(0, self.alphastd)
-        rgb = self.eigvec.type_as(img).clone()\
-            .mul(alpha.view(1, 3).expand(3, 3))\
-            .mul(self.eigval.view(1, 3).expand(3, 3))\
-            .sum(1).squeeze()
-
-        return img.add(rgb.view(3, 1, 1).expand_as(img))
