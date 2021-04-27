@@ -143,10 +143,11 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
         if args.should_save_ckpt:
             # evaluate on validation set
             sd_info = {
-                'model':model.state_dict(),
-                'optimizer':optimizer.state_dict(),
-                'schedule':(schedule and schedule.state_dict()),
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'schedule': (schedule and schedule.state_dict()),
                 'epoch': epoch+1,
+                'amp': amp.state_dict() if args.mixed_precision else None,
             }
 
             def save_checkpoint(filename):
@@ -218,12 +219,14 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     top1 = AverageMeter()
     top5 = AverageMeter()
     score = AverageMeter()
+
+    model = model.train() if is_train else model.eval()
     
     # check for custom criterion
     has_custom_criterion = has_attr(args, 'custom_criterion')
     criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
-
     iterator = tqdm(enumerate(loader), total=len(loader), leave=False)
+
     for i, batch in iterator:
         inp, target, output = None, None, None
         loss = 0.0
@@ -256,7 +259,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
 
         if len(loss.size()) > 0: loss = loss.mean()
 
-        
         model_logits = None
         if not isinstance(model, ch.distributions.distribution.Distribution):
             model_logits = output[0] if isinstance(output, tuple) else output
@@ -265,8 +267,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         top1_acc = float('nan')
         top5_acc = float('nan')
         try:
-            # calculate score
-            # censored, truncated distributions
+            # censored, truncated distributions - calculate score
             if isinstance(model, ch.distributions.distribution.Distribution):
                 score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
                              model.loc.size(0) + model.covariance_matrix.flatten().size(0))
@@ -340,7 +341,3 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     
     # LOSS AND ACCURACY
     return top1.avg, losses.avg, score.avg
-
-
-
-

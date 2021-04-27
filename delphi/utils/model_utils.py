@@ -29,7 +29,6 @@ def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
         dataset (Dataset class [see datasets.py])
         resume_path (str): optional path to checkpoint saved with the
             robustness library (ignored if ``arch`` is not a string)
-        not a string
         parallel (bool): if True, wrap the model in a DataParallel
             (defaults to False)
         pytorch_pretrained (bool): if True, try to load a standard-trained
@@ -66,7 +65,6 @@ def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
             state_dict_path = 'state_dict'
 
         sd = checkpoint[state_dict_path]
-        sd = {k[len('module.'):]: v for k, v in sd.items()}
         model.load_state_dict(sd)
         print("=> loaded checkpoint '{}' (epoch {})".format(resume_path, checkpoint['epoch']))
     elif resume_path:
