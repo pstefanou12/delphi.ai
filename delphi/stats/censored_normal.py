@@ -71,7 +71,7 @@ class censored_normal(stats):
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
-                           update_params=[self._normal.loc, self._normal.covariance_matrix], device=config.args.device)
+                           update_params=[self._normal.loc, self._normal.covariance_matrix])
 
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):

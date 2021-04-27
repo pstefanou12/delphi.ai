@@ -40,6 +40,7 @@ class truncated_regression(stats):
         config.args.__setattr__('device', device)
         config.args.__setattr__('bias', bias)
         config.args.__setattr__('var', var)
+        config.args.__setattr__('score', True)
 
         self._lin_reg = None
         self.projection_set = None
@@ -83,7 +84,7 @@ class truncated_regression(stats):
 
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD for parameter estimation
-        return train_model(config.args, self._emp_lin_reg, loaders, update_params=update_params, device=config.args.device)
+        return train_model(config.args, self._emp_lin_reg, loaders, update_params=update_params)
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -108,47 +109,14 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # filter out copies that fall outside of truncation set
         filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
         z = noised * filtered
-        lambda_grad = targ.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps) - z.pow(2).sum(dim=0) / (
-                    filtered.sum(dim=0) + config.args.eps)
+        lambda_grad = .5 * (targ.pow(2).sum(dim=0) / targ.size(0) - z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps))
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance 
         factor
         """
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), .5 * lambda_grad / pred.size(0)
-
-
-# class TruncatedUnknownVarianceMSE(ch.autograd.Function):
-#     """
-#     Computes the gradient of negative population log likelihood for truncated linear regression
-#     with unknown noise variance.
-#     """
-#     @staticmethod
-#     def forward(ctx, pred, targ, lambda_):
-#         ctx.save_for_backward(pred, targ, lambda_)
-#         return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
-#
-#     @staticmethod
-#     def backward(ctx, grad_output):
-#         pred, targ, lambda_ = ctx.saved_tensors
-#         # calculate std deviation of noise distribution estimate
-#         sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
-#         for i in range(pred.size(0)):
-#             # add random noise to logits
-#             noised = pred[i] + sigma*ch.randn(ch.Size([config.args.num_samples, 1])).to(config.args.device)
-#             # filter out copies within truncation set
-#             filtered = config.args.phi(noised).bool()
-#             z = ch.cat([z, noised[filtered.nonzero(as_tuple=False)][0]]) if ch.any(filtered) else ch.cat([z, ch.zeros(1, 1)])
-#
-#         """
-#         multiply the v gradient by lambda, because autograd computes
-#         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
-#         factor
-#         """
-#         out = (z - targ)
-#         return lambda_ * out / (out.nonzero(as_tuple=False).size(0) + config.args.eps), targ / (out.nonzero(as_tuple=False).size(0) + config.args.eps),\
-#                 (0.5 * targ.pow(2) - 0.5 * z.pow(2)) / (out.nonzero(as_tuple=False).size(0) + config.args.eps)
+        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0)
 
 
 class TruncatedMSE(ch.autograd.Function):

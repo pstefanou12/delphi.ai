@@ -70,7 +70,7 @@ class censored_multivariate_normal(stats):
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
         return train_model(config.args, self._multivariate_normal, loaders,
-                           update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix], device=config.args.device)
+                           update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
 
 
 class CensoredMultivariateNormalProjectionSet(CensoredNormalProjectionSet):

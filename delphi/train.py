@@ -23,6 +23,7 @@ else:
 def make_optimizer_and_schedule(args, model, checkpoint, params):
     param_list = model.parameters() if params is None else params
 
+    # run on mutliple GPUs
     optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Make schedule
@@ -83,7 +84,7 @@ def eval_model(args, model, loader, store):
     model.to(args.device)
 
     assert not hasattr(model, "module"), "model is already in DataParallel."
-    if next(model.parameters()).is_cuda and False:
+    if next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
 
     test_prec1, test_loss, score = model_loop(args, 'val', loader,
@@ -98,12 +99,11 @@ def eval_model(args, model, loader, store):
     # Log info into the logs table
     if store:
         store[consts.EVAL_LOGS_TABLE].append_row(log_info)
-        store.close()
 
     return log_info
 
 
-def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_device_ids=None,
+def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_device_ids=None, 
                 store=None, update_params=None, disable_no_grad=False):
     # clear jupyter/ipython output before each training run
     if store is not None:
@@ -116,22 +116,25 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
+    # run on parallel GPUs
+    if parallel:
+        model = ch.nn.DataParallel(model)
     if isinstance(model, ch.distributions.distribution.Distribution):
-        model.loc.to(device)
-        model.covariance_matrix.to(device)
+        model.loc.to(args.device)
+        model.covariance_matrix.to(args.device)
     else:
-        model.to(device)
+        model.to(args.device)
 
     best_prec1, start_epoch = (0, 0)
     if checkpoint:
         start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, writer=None, device=device)[0]
+            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, writer=None, device=args.device)[0]
 
     # keep track of the start time
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
-        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=device)
+        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=args.device)
 
         # check score tolerance
         if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
@@ -139,7 +142,7 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
         last_epoch = (epoch == (args.epochs - 1))
 
-        # if neural network passed through framework, use log performance
+        # if neural network passed through framework, log performance
         if args.should_save_ckpt:
             # evaluate on validation set
             sd_info = {
@@ -164,7 +167,7 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
                 ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
                 with ctx:
                     val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, writer, device=device)
+                            None, epoch + 1, writer, device=args.device)
 
                 # remember best prec@1 and save checkpoint
                 is_best = val_prec1 > best_prec1
@@ -199,9 +202,6 @@ def train_model(args, model, loaders, *, checkpoint=None, device="cpu", dp_devic
 
     # TODO: add end training hook
 
-    # close store at end of training
-    if store is not None:
-        store.close()
     return model
             
             
@@ -277,19 +277,21 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
                 # calculate score
-                if not args.var and args.score:  # unknown variance
-                    if args.bias:
-                        score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                    else:
-                        score.update(ch.cat([model.v.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                # regression with known variance
-                elif args.score:  # known variance
-                    if args.bias:
-                        score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
-                    else:
-                        score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
+                if args.score: 
+                    if not args.var: # unknown variance
+                        if args.bias:
+                            score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
+                        else:
+                            score.update(ch.cat([model.v.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
+                    else: 
+                        if args.bias:
+                            score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
+                        else:
+                            score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
 
-                if model_logits is not None:
+                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                elif model_logits is not None:
                     # accuracy
                     maxk = min(5, model_logits.shape[-1])
                     if has_attr(args, "custom_accuracy"):
@@ -309,13 +311,8 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
                             'Reg term: {reg} ||'.format(epoch, loop_msg,
                                                         loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                 else:
-                    # ITERATOR
-                    if args.score:
-                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-                    else:
-                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
-                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
 
         except Exception as e:
             warnings.warn('Failed to calculate the accuracy.')
