@@ -88,7 +88,6 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
         if custom_class_args is None: custom_class_args = {}
         if data_path is not None:
             if train:
-                print("train path: {}".format(train_path))
                 train_set = custom_class(root=train_path, train=True, download=True,
                                     transform=transform_train, **custom_class_args)
             if val:
