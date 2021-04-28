@@ -241,6 +241,7 @@ PySocks==1.7.1
 pyspark @ file:///home/conda/feedstock_root/build_artifacts/pyspark_1614850471305/work
 pytest==3.6.0
 python-dateutil==2.8.1
+python-git==2018.2.1
 python-jsonrpc-server @ file:///tmp/build/80754af9/python-jsonrpc-server_1600278539111/work
 python-language-server @ file:///tmp/build/80754af9/python-language-server_1600454544709/work
 pytorch-lightning==1.2.4

@@ -238,6 +238,7 @@ class ImageNet(DataSet):
     def get_model(self, arch, pretrained):
         """
         """
+        print("pretrained: {}".format(pretrained))
         return imagenet_models.__dict__[arch](num_classes=self.num_classes, 
                                         pretrained=pretrained)
 
