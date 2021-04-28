@@ -63,7 +63,7 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
     return optimizer, schedule
 
 
-def eval_model(args, model, loader, store):
+def eval_model(args, model, loader, store, table=None):
     """
     Evaluate a model for standard (and optionally adversarial) accuracy.
     Args:
@@ -77,7 +77,8 @@ def eval_model(args, model, loader, store):
     start_time = time.time()
 
     if store is not None:
-        store.add_table(consts.EVAL_LOGS_TABLE, consts.EVAL_LOGS_SCHEMA)
+        store.add_table(consts.EVAL_LOGS_TABLE if table is None else table, consts.EVAL_LOGS_SCHEMA)
+
     writer = store.tensorboard if store else None
 
     # put model on device
@@ -98,7 +99,7 @@ def eval_model(args, model, loader, store):
 
     # Log info into the logs table
     if store:
-        store[consts.EVAL_LOGS_TABLE].append_row(log_info)
+        store[consts.EVAL_LOGS_TABLE if table is None else table].append_row(log_info)
 
     return log_info
 
