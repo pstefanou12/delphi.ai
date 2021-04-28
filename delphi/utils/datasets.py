@@ -433,3 +433,13 @@ class TruncatedLogisticRegression(ch.utils.data.Dataset):
     def w0(self):
         return Tensor(self._log_reg.intercept_)
 
+DATASETS = { 
+    'imagenet': ImageNet, 
+    'cifar': CIFAR,
+    'censored_normal': CensoredNormal, 
+    'censored_multivariate_normal': CensoredMultivariateNormal, 
+    'truncated_normal': TruncatedNormal, 
+    'truncated_multivariate_normal': TruncatedMultivariateNormal, 
+    'truncated_regression': TruncatedRegression, 
+    'truncated_logistic_regression': TruncatedLogisticRegression,
+}

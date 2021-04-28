@@ -256,3 +256,41 @@ class SequentialWithArgs(ch.nn.Sequential):
         return input
 
 
+class DataPrefetcher():
+    def __init__(self, loader, stop_after=None):
+        self.loader = loader
+        self.dataset = loader.dataset
+        self.stream = ch.cuda.Stream()
+        self.stop_after = stop_after
+        self.next_input = None
+        self.next_target = None
+
+    def __len__(self):
+        return len(self.loader)
+
+    def preload(self):
+        try:
+            self.next_input, self.next_target = next(self.loaditer)
+        except StopIteration:
+            self.next_input = None
+            self.next_target = None
+            return
+        with ch.cuda.stream(self.stream):
+            self.next_input = self.next_input.cuda(non_blocking=True)
+            self.next_target = self.next_target.cuda(non_blocking=True)
+
+    def __iter__(self):
+        count = 0
+        self.loaditer = iter(self.loader)
+        self.preload()
+        while self.next_input is not None:
+            ch.cuda.current_stream().wait_stream(self.stream)
+            input = self.next_input
+            target = self.next_target
+            self.preload()
+            count += 1
+            yield input, target
+            if type(self.stop_after) is int and (count > self.stop_after):
+                break
+
+

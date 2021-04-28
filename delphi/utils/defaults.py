@@ -18,6 +18,14 @@ TRAINING_DEFAULTS = {
         "momentum": .9,
         "score": False,
     },
+    datasets.ImageNet: {
+        "epochs": 200,
+        "batch_size":256,
+        "weight_decay":1e-4,
+        "step_lr": 50, 
+        'momentum': .9,
+        "score": False,
+    },
     datasets.CensoredNormal: {
         "epochs": 10,
         "batch_size": 10,
@@ -102,14 +110,19 @@ TRAINING_ARGS = [
     ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
     ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
     ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
-    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
     ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
     ['adv-train', [0, 1], 'whether to train adversarially', REQ],
     ['adv-eval', [0, 1], 'whether to adversarially evaluate', None],
     ['log-iters', int, 'how frequently (in epochs) to log', 5],
     ['save-ckpt-iters', int, 'how frequently (epochs) to save \
-            (-1 for none, only saves best and last)', -1]
+            (-1 for none, only saves best and last)', -1],
+    ['parallel', [0, 1], 'train model on multiple GPUs', 0]
 ]
+"""
+Arguments essential for the `train_model` function.
+*Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
+BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
+"""
 
 # default arguments for censored algorithm
 CENSOR_ARGS = [
@@ -175,9 +188,31 @@ LOGISTIC_ARGS = [
     ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
 ]
 
-
+MODEL_LOADER_ARGS = [
+    ['dataset', list(datasets.DATASETS.keys()), '', REQ],
+    ['data', str, 'path to the dataset', '/tmp/'],
+    ['arch', str, 'architecture (see {cifar,imagenet}_models/', REQ],
+    ['batch-size', int, 'batch size for data loading', BY_DATASET],
+    ['workers', int, '# data loading workers', 30],
+    ['resume', str, 'path to checkpoint to resume from', None],
+    ['resume-optimizer', [0, 1], 'whether to also resume optimizers', 0],
+    ['data-aug', [0, 1], 'whether to use data augmentation', 1],
+    ['mixed-precision', [0, 1], 'whether to use MP training (faster)', 0],
+]
 """
-Arguments essential for the `train_model` function.
+Arguments essential for constructing the model and dataloaders that will be fed
+into :meth:`robustness.train.train_model` or :meth:`robustness.train.eval_model`
+*Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
+BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
+"""
+
+CONFIG_ARGS = [
+    ['config-path', str, 'config path for loading in parameters', None],
+    ['eval-only', [0, 1], 'just run evaluation (no training)', 0],
+    ['exp-name', str, 'where to save in (inside out_dir)', None]
+]
+"""
+Arguments for main.py specifically
 *Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
 BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
 """
