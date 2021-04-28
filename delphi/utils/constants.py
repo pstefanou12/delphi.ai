@@ -1,5 +1,4 @@
 # CONSTANTS
-
 JUPYTER = 'jupyter'
 TERMINAL = 'terminal'
 IPYTHON = 'ipython'
@@ -23,7 +22,6 @@ EVAL_LOGS_SCHEMA = {
 CYCLIC='cyclic'
 COSINE='cosine'
 LINEAR='linear'
-
 
 LOGS_TABLE = 'logs'
 EVAL_LOGS_TABLE = 'eval'

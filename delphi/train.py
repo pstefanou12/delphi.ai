@@ -104,10 +104,12 @@ def eval_model(args, model, loader, store):
 
 
 def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_device_ids=None, 
-                store=None, update_params=None, disable_no_grad=False):
-    # clear jupyter/ipython output before each training run
+                store=None, table=None, update_params=None, disable_no_grad=False):
+    
+    table = consts.LOGS_TABLE if table is None else table
+
     if store is not None:
-        store.add_table(consts.LOGS_TABLE, consts.LOGS_SCHEMA)
+        store.add_table(table, consts.LOGS_SCHEMA)
     writer = store.tensorboard if store else None
 
     # data loaders
@@ -187,7 +189,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
                 }
 
                 # Log info into the logs table
-                if store: store[consts.LOGS_TABLE].append_row(log_info)
+                if store: store[table].append_row(log_info)
                 # If we are at a saving epoch (or the last epoch), save a checkpoint
                 if should_save_ckpt or last_epoch: save_checkpoint(ckpt_at_epoch(epoch))
 
@@ -200,8 +202,10 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
         tqdm._instances.clear()
 
-    # TODO: add end training hook
+        if has_attr(args, 'epoch_hook'): 
+            args.epoch_hook(model, epoch)
 
+    # TODO: add end training hook
     return model
             
             
