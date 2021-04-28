@@ -10,9 +10,9 @@ To use the library, clone repository and then install dependencies using
    pip install --user -r requirements.txt
 
 
-**********************************************************
-Efficient Truncated Regression with Unknown Noise Variance
-**********************************************************
+.. **********************************************************
+.. Efficient Truncated Regression with Unknown Noise Variance
+.. **********************************************************
 .. ---------------------------------------
 .. ICML 2021 Supplementary Code Submission
 .. ---------------------------------------
