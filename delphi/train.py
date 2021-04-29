@@ -225,7 +225,8 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
     top5 = AverageMeter()
     score = AverageMeter()
 
-    model = model.train() if is_train else model.eval()
+    if not isinstance(model, ch.distributions.distribution.Distribution):   
+        model = model.train() if is_train else model.eval()
     
     # check for custom criterion
     has_custom_criterion = has_attr(args, 'custom_criterion')

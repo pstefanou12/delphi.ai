@@ -36,7 +36,6 @@ class censored_normal(stats):
         # add oracle and survival prob to parameters
         config.args.__setattr__('phi', phi)
         config.args.__setattr__('alpha', alpha)
-        config.args.__setattr__('device', device)
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
@@ -61,11 +60,11 @@ class censored_normal(stats):
                      CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # get empirical estimates from dataset and initialize distribution
-        self._normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.var)
+        self._normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.var.unsqueeze(0))
         # initialize model with empirical estimates
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
-        self.projection_set = CensoredNormalProjectionSet(self.emp_loc, self.emp_var)
+        self.projection_set = CensoredNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
