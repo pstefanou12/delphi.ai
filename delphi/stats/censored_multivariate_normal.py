@@ -15,6 +15,7 @@ from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS
     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredMultivariateNormal
 from .censored_normal import CensoredMultivariateNormalNLL, CensoredNormalProjectionSet
 from ..utils import defaults
+from ..utils.helpers import cov
 
 
 class censored_multivariate_normal(stats):
@@ -26,7 +27,6 @@ class censored_multivariate_normal(stats):
             phi: oracle,
             alpha: Tensor,
             args: Parameters,
-            device: str = 'cpu',
             **kwargs):
         """
         """
@@ -36,7 +36,6 @@ class censored_multivariate_normal(stats):
         # add oracle and survival prob to parameters
         config.args.__setattr__('phi', phi)
         config.args.__setattr__('alpha', alpha)
-        config.args.__setattr__('device', device)
         self._multivariate_normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = CensoredMultivariateNormalNLL.apply
@@ -59,9 +58,8 @@ class censored_multivariate_normal(stats):
         ds = DataSet('censored_multivariate_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
                      CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
-        self.emp_loc, self.emp_covariance_matrix = ds.loc, ds.covariance_matrix
         # initialize model with empiricial estimates
-        self._multivariate_normal = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
+        self._multivariate_normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.covariance_matrix)
         # keep track of gradients for mean and covariance matrix
         self._multivariate_normal.loc.requires_grad, self._multivariate_normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters

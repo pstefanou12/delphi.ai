@@ -9,10 +9,5 @@ To use the library, clone repository and then install dependencies using
 
    pip install --user -r requirements.txt
 
-
-
-
-
-
-
-
+Algorithms: 
+    

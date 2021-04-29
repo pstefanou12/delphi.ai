@@ -26,7 +26,6 @@ class truncated_normal(stats):
             phi: oracle,
             alpha: float,
             args: Parameters,
-            device: str = 'cpu',
             **kwargs):
         super(truncated_normal, self).__init__()
         # check algorithm hyperparameters

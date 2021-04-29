@@ -282,7 +282,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
                 # calculate score
-                if args.score: 
+                if args.score:
                     if not args.var: # unknown variance
                         if args.bias:
                             score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)

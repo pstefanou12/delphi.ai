@@ -109,6 +109,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args = cox.utils.Parameters(args.__dict__)
+    print("args: {}".format(args))
 
     args = setup_args(args)
     store = setup_store_with_metadata(args)

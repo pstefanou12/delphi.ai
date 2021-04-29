@@ -25,7 +25,6 @@ class censored_normal(stats):
                  phi: oracle,
                  alpha: Tensor,
                  args: Parameters,
-                 device: str='cpu',
                  **kwargs):
         """
         Args:
@@ -62,9 +61,8 @@ class censored_normal(stats):
                      CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # get empirical estimates from dataset and initialize distribution
-        self.emp_loc, self.emp_var = ds.loc, ds.var
-        self._normal = MultivariateNormal(self.emp_loc, self.emp_var)
-        # keep track of gradients for mean and covariance matrix
+        self._normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.var)
+        # initialize model with empirical estimates
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
         self.projection_set = CensoredNormalProjectionSet(self.emp_loc, self.emp_var)
