@@ -33,7 +33,6 @@ class truncated_normal(stats):
         # add oracle and survival prob to parameters
         config.args.__setattr__('phi', phi)
         config.args.__setattr__('alpha', alpha)
-        config.args.__setattr__('device', device)
         self._normal = None
         # intialize loss function and add custom criterion to hyperparameters
         self.criterion = TruncatedMultivariateNormalNLL.apply
@@ -56,14 +55,14 @@ class truncated_normal(stats):
                      TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # initialize model with empiricial estimates
-        self._normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.var)
+        self._normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.var.unsqueeze(0))
         # keep track of gradients for mean and covariance matrix
         self._normal.loc.requires_grad, self._normal.covariance_matrix.requires_grad = True, True
         # initialize projection set and add iteration hook to hyperparameters
         self.projection_set = TruncatedNormalProjectionSet(self._normal.loc, self._normal.covariance_matrix)
         config.args.__setattr__('iteration_hook', self.projection_set)
         # exponent class
-        self.exp_h = Exp_h(S.dataset.loc, S.dataset.var.unsqueeze(0))
+        self.exp_h = Exp_h(self._normal.loc, self._normal.covariance_matrix)
         config.args.__setattr__('exp_h', self.exp_h)
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
