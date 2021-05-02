@@ -5,6 +5,9 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
+from torch.distributions import Uniform
+from torch.distributions.transforms import SigmoidTransform
+from torch.distributions.transformed_distribution import TransformedDistribution
 import torch.nn as nn
 import cox
 from typing import NamedTuple
@@ -292,5 +295,10 @@ class DataPrefetcher():
             yield input, target
             if type(self.stop_after) is int and (count > self.stop_after):
                 break
+
+# logistic distribution
+base_distribution = Uniform(0, 1)
+transforms_ = [SigmoidTransform().inv]
+logistic = TransformedDistribution(base_distribution, transforms_)
 
 
