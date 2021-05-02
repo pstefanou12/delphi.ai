@@ -210,6 +210,9 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
             
         # increment epoch counter
         epoch += 1
+        # update number of gradient steps taken
+        if M is not None: 
+            M += len(train_loader)
 
     # TODO: add end training hook
     return model
@@ -343,7 +346,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
             # ITERATOR
             if args.score:
                 if M is not None: 
-                    desc = ('Steps: {0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                    desc = ('Steps: 00{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
                         M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
                 else:
                     desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
