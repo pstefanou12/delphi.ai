@@ -32,8 +32,7 @@ class LogisticBCE(ch.autograd.Function):
         noised_labs = noised > 0
         # filter
         mask = (noised_labs).eq(targ)
-        inner_sig = (sig(rand_noise))
-        avg = 1 - 2*((inner_sig*mask).sum(0) / (mask.sum(0) + 1e-5))
+        avg = 1 - 2*((sig(rand_noise)*mask).sum(0) / (mask.sum(0) + 1e-5))
         return avg, None
 
 class TruncatedBCE(ch.autograd.Function):
