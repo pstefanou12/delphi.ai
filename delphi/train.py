@@ -20,7 +20,7 @@ else:
     from tqdm import tqdm
 
 
-def make_optimizer_and_schedule(args, model, checkpoint, params):
+def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
     param_list = model.parameters() if params is None else params
 
     # run on mutliple GPUs
@@ -28,13 +28,11 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
 
     # Make schedule
     schedule = None
-    if args.custom_lr_multiplier == consts.CYCLIC:
-        eps = args.epochs
-        lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
+    if args.custom_lr_multiplier == consts.CYCLIC and T is not None:
+        lr_func = lambda t: np.interp([t], [0, T*4//15, T], [0, 1, 0])[0]
         schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.custom_lr_multiplier == consts.COSINE:
-        eps = args.epochs
-        schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
+    elif args.custom_lr_multiplier == consts.COSINE and T is not None:
+        schedule = lr_scheduler.CosineAnnealingLR(optimizer, T)
     elif args.custom_lr_multiplier:
         cs = args.custom_lr_multiplier
         periods = eval(cs) if type(cs) is str else cs
@@ -115,7 +113,9 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
     # data loaders
     train_loader, val_loader = loaders
-    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params)
+    # number of periods/epochs for learning rate schedulers
+    T = args.epochs if args.epochs else args.steps // len(train_loader.dataset)
+    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
 
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
@@ -128,23 +128,24 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     else:
         model.to(args.device)
 
-    best_prec1, start_epoch = (0, 0)
+    best_prec1, epoch = (0, 0)
     if checkpoint:
-        start_epoch = checkpoint['epoch']
+        epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
             else model_loop(args, 'val', val_loader, model, None, start_epoch-1, M, writer=None, device=args.device)[0]
 
     # keep track of the start time
     start_time = time.time()
-    M = 0 # number of gradient steps taken
-    for epoch in range(start_epoch, args.epochs):
+    M = 0 if args.steps else None # number of gradient steps taken
+    # do training loops until performing enough gradient steps or epochs
+    while (args.steps is not None and M < args.steps) or (args.epochs is not None and epoch < args.epochs):
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, M, writer, device=args.device)
 
         # check score tolerance
         if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
             break
 
-        last_epoch = (epoch == (args.epochs - 1))
+        last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (M >= args.steps)
 
         # if neural network passed through framework, log performance
         if args.should_save_ckpt:
@@ -163,8 +164,8 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
                 ch.save(sd_info, ckpt_save_path, pickle_module=dill)
 
             save_its = args.save_ckpt_iters
-            should_save_ckpt = (epoch % save_its == 0) and (save_its > 0)
-            should_log = (epoch % args.log_iters == 0)
+            should_save_ckpt = (epoch % save_its == 0) and (save_its > 0) if args.epochs else (M % args.log_iters == 0)
+            should_log = (epoch % args.log_iters == 0) if args.epochs else (M % args.log_iters == 0)
 
             if should_log or last_epoch or should_save_ckpt:
                 # log + get best
@@ -206,6 +207,9 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
+            
+        # increment epoch counter
+        epoch += 1
 
     # TODO: add end training hook
     return model
@@ -295,9 +299,12 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
                             score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
                         else:
                             score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
-
-                    desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    if M is not None: 
+                        desc = ('Steps: {0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                            M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    else: 
+                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
                 elif model_logits is not None:
                     # accuracy
                     maxk = min(5, model_logits.shape[-1])
@@ -313,20 +320,34 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
                     top5_acc = top5.avg
 
                     # ITERATOR
-                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
-                            '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                            'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                                        loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                    if M is not None: 
+                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
+                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                'Reg term: {reg} ||'.format(M, loop_msg,
+                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                    else: 
+                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
+                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                 else:
-                    desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    if M is not None: 
+                        desc = ('Steps: {0} | Loss {loss.avg:.4f} ||'.format(
+                            M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                    else: 
+                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
+                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
 
         except Exception as e:
             warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
             if args.score:
-                desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                    epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                if M is not None: 
+                    desc = ('Steps: {0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                        M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                else:
+                    desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
+                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
             else:
                 desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(epoch, loop_msg, loss=losses))
         
@@ -335,12 +356,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, i, loop_type, inp, target)
-
-        # increment number of gradient steps taken
-        if args.steps: 
+        # increment number of gradients
+        if M is not None: 
             M += 1
-            if args.steps == M: # took args.steps gradient steps
-                return top1.avg, losses.avg, score.avg
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
