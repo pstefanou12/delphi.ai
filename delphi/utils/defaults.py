@@ -27,7 +27,7 @@ TRAINING_DEFAULTS = {
         "score": False,
     },
     datasets.CensoredNormal: {
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -38,7 +38,7 @@ TRAINING_DEFAULTS = {
         "tol": 1e-2,
     },
     datasets.CensoredMultivariateNormal: {
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -49,7 +49,7 @@ TRAINING_DEFAULTS = {
         "tol": 1e-2,
     },
     datasets.TruncatedNormal: {
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -61,7 +61,7 @@ TRAINING_DEFAULTS = {
         "d": 100,
     },
     datasets.TruncatedMultivariateNormal: {
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -73,7 +73,7 @@ TRAINING_DEFAULTS = {
         "d": 100,
     },
     datasets.TruncatedRegression: {
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -84,7 +84,7 @@ TRAINING_DEFAULTS = {
         "tol": 1e-2,
     },
     datasets.TruncatedLogisticRegression: { 
-        "epochs": 10,
+        "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,
         "momentum": 0.0,
@@ -126,7 +126,7 @@ BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
 
 # default arguments for censored algorithm
 CENSOR_ARGS = [
-    ['epochs', int, 'number of epochs to train for', BY_DATASET],
+    ['steps', int, 'number of epochs to train for', BY_DATASET],
     ['lr', float, 'initial learning rate for training', 0.1],
     ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
     ['momentum', float, 'SGD momentum parameter', BY_DATASET],
@@ -142,7 +142,7 @@ CENSOR_ARGS = [
 
 # default arguments for unknown truncation algorithm
 HERMITE_ARGS = [
-    ['epochs', int, 'number of epochs to train for', BY_DATASET],
+    ['steps', int, 'number of epochs to train for', BY_DATASET],
     ['lr', float, 'initial learning rate for training', 0.1],
     ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
     ['momentum', float, 'SGD momentum parameter', BY_DATASET],
@@ -158,7 +158,7 @@ HERMITE_ARGS = [
 
 # default arguments for truncated regression algorithm
 REGRESSION_ARGS = [
-    ['epochs', int, 'number of epochs to train for', BY_DATASET],
+    ['steps', int, 'number of epochs to train for', BY_DATASET],
     ['lr', float, 'initial learning rate for training', 0.1],
     ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
     ['momentum', float, 'SGD momentum parameter', BY_DATASET],
@@ -174,7 +174,7 @@ REGRESSION_ARGS = [
 
 # default arguments for truncated logistic regression algorithm
 LOGISTIC_ARGS = [
-    ['epochs', int, 'number of epochs to train for', BY_DATASET],
+    ['steps', int, 'number of epochs to train for', BY_DATASET],
     ['lr', float, 'initial learning rate for training', 0.1],
     ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
     ['momentum', float, 'SGD momentum parameter', BY_DATASET],

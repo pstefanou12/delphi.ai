@@ -89,7 +89,7 @@ def eval_model(args, model, loader, store, table=None):
         model = ch.nn.DataParallel(model)
 
     test_prec1, test_loss, score = model_loop(args, 'val', loader,
-                                        model, None, 0, writer, args.device)
+                                        model, None, 0, 0, writer, args.device)
 
     log_info = {
         'test_prec1': test_prec1,
@@ -132,12 +132,13 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     if checkpoint:
         start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, writer=None, device=args.device)[0]
+            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, M, writer=None, device=args.device)[0]
 
     # keep track of the start time
     start_time = time.time()
+    M = 0 # number of gradient steps taken
     for epoch in range(start_epoch, args.epochs):
-        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, writer, device=args.device)
+        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, M, writer, device=args.device)
 
         # check score tolerance
         if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
@@ -170,7 +171,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
                 ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
                 with ctx:
                     val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, writer, device=args.device)
+                            None, epoch + 1, M, writer, device=args.device)
 
                 # remember best prec@1 and save checkpoint
                 is_best = val_prec1 > best_prec1
@@ -210,7 +211,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     return model
             
             
-def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device):
+def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, device):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -334,6 +335,12 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, writer, device)
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, i, loop_type, inp, target)
+
+        # increment number of gradient steps taken
+        if args.steps: 
+            M += 1
+            if args.steps == M: # took args.steps gradient steps
+                return top1.avg, losses.avg, score.avg
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
