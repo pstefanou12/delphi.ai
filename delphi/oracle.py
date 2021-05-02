@@ -179,3 +179,34 @@ class Unknown_Gaussian(oracle):
     @property
     def d(self):
         return self._d
+
+class DNN_Lower(oracle): 
+    """
+    Lower bound truncation on the DNN logits.
+    """
+    def __init__(self, lower): 
+        self.lower = lower
+        
+    def __call__(self, x): 
+        return (x > self.lower).float()
+    
+class DNN_Logit_Ball(oracle): 
+    """
+    Truncation ball placed on DNN logits.
+    INTUITION: logits that are neither very large nor very small insinuate
+    that the classification is not 
+    """
+    def __init__(self, lower, upper): 
+        self.lower = lower 
+        self.upper = upper
+        
+    def __call__(self, x): 
+        return ((x < self.lower) | (x > self.upper)).float()
+        
+
+class Identity(oracle): 
+    """
+    Identity membership oracle for DNNs. All logits are accepted within the truncation set.
+    """
+    def __call__(self, x): 
+        return ch.ones(x.size())
