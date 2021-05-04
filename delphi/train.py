@@ -98,7 +98,6 @@ def eval_model(args, model, loader, store, table=None):
     # Log info into the logs table
     if store:
         store[consts.EVAL_LOGS_TABLE if table is None else table].append_row(log_info)
-
     return log_info
 
 
@@ -132,20 +131,20 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     if checkpoint:
         epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, M, writer=None, device=args.device)[0]
+            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, steps, writer=None, device=args.device)[0]
 
     # keep track of the start time
     start_time = time.time()
-    M = 0 if args.steps else None # number of gradient steps taken
+    steps = 0 if args.steps else None # number of gradient steps taken
     # do training loops until performing enough gradient steps or epochs
-    while (args.steps is not None and M < args.steps) or (args.epochs is not None and epoch < args.epochs):
-        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, M, writer, device=args.device)
+    while (args.steps is not None and steps < args.steps) or (args.epochs is not None and epoch < args.epochs):
+        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device)
 
         # check score tolerance
         if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
             break
 
-        last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (M >= args.steps)
+        last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
 
         # if neural network passed through framework, log performance
         if args.should_save_ckpt:
@@ -164,15 +163,15 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
                 ch.save(sd_info, ckpt_save_path, pickle_module=dill)
 
             save_its = args.save_ckpt_iters
-            should_save_ckpt = (epoch % save_its == 0) and (save_its > 0) if args.epochs else (M % args.log_iters == 0)
-            should_log = (epoch % args.log_iters == 0) if args.epochs else (M % args.log_iters == 0)
+            should_save_ckpt = (epoch % save_its == 0) and (save_its > 0) if args.epochs else (steps % args.log_iters == 0)
+            should_log = (epoch % args.log_iters == 0) if args.epochs else (steps % args.log_iters == 0)
 
             if should_log or last_epoch or should_save_ckpt:
                 # log + get best
                 ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
                 with ctx:
                     val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, M, writer, device=args.device)
+                            None, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec@1 and save checkpoint
                 is_best = val_prec1 > best_prec1
@@ -203,35 +202,32 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
         # update lr
         if schedule: schedule.step()
 
-        tqdm._instances.clear()
-
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
             
         # increment epoch counter
         epoch += 1
         # update number of gradient steps taken
-        if M is not None: 
-            M += len(train_loader)
+        if steps is not None: 
+            steps += len(train_loader)
 
     # TODO: add end training hook
     return model
             
             
-def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, device):
+def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, device):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
         raise ValueError(err_msg)
+
+    # train or val loop
     is_train = (loop_type == 'train')
-    
     loop_msg = 'Train' if is_train else 'Val'
 
     # algorithm metrics
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
-    score = AverageMeter()
+    losses, score = AverageMeter(), AverageMeter()
+    top1, top5 = AverageMeter(), AverageMeter()
 
     if not isinstance(model, ch.distributions.distribution.Distribution):   
         model = model.train() if is_train else model.eval()
@@ -280,35 +276,23 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
         # measure accuracy and record loss
         top1_acc = float('nan')
         top5_acc = float('nan')
+
+        desc = None  # description for epoch
         try:
             # censored, truncated distributions - calculate score
             if isinstance(model, ch.distributions.distribution.Distribution):
                 score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
                              model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Epoch:{0} | Score: {score} \n ||'.format(epoch, loop_msg,
-                                                                 score=[round(x, 4) for x in score.avg.tolist()]))
+                desc = ('Steps:{0} | Score: {score} \n ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()]))
             # regression with unknown variance
             elif inp is not None:
                 losses.update(loss.item(), inp.size(0))
                 # calculate score
                 if args.score:
-                    if not args.var: # unknown variance
-                        if args.bias:
-                            score.update(ch.cat([model.v.grad, model.bias.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                        else:
-                            score.update(ch.cat([model.v.grad, model.lambda_.grad]).flatten(), inp.size(0) + 1)
-                    else: 
-                        if args.bias:
-                            score.update(ch.cat([model.weight.grad.T, model.bias.grad.unsqueeze(0)]).flatten(), inp.size(0))
-                        else:
-                            score.update(ch.cat([model.weight.grad.T]).flatten(), inp.size(0))
-                    if M is not None: 
-                        desc = ('Steps: {0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                            M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-                    else: 
-                        desc = ('Epoch:{0} | Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-                elif model_logits is not None:
+                    score.update(ch.cat([p.grad.flatten() for p in model.parameters()]), inp.size(0))
+
+                # calculate accuracy metrics
+                if args.accuracy:
                     # accuracy
                     maxk = min(5, model_logits.shape[-1])
                     if has_attr(args, "custom_accuracy"):
@@ -322,36 +306,53 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
                     top1_acc = top1.avg
                     top5_acc = top5.avg
 
-                    # ITERATOR
-                    if M is not None: 
-                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
-                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                'Reg term: {reg} ||'.format(M, loop_msg,
-                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                # ITERATOR
+                if steps is not None: 
+                    # TODO: figure out better way to pass descriptions through to iterator
+                    if args.score:
+                        if args.accuracy:  
+                            desc = ('Steps: {0} | Score: \n {score} | Loss {loss.avg:.4f} \n| '
+                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                    'Reg term: {reg} ||'.format(steps, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
+                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                        else: 
+                            desc = ('Steps: {0} | Score: {score} | Loss {loss.avg:.4f} | '
+                                    'Reg term: {reg} ||'.format(steps, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
+                                                                loss=losses, reg=reg_term))
                     else: 
-                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} | '
-                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                else:
-                    if M is not None: 
-                        desc = ('Steps: {0} | Loss {loss.avg:.4f} ||'.format(
-                            M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
+                        if args.accuracy: 
+                            desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
+                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                    'Reg term: {reg} ||'.format(steps, loop_msg,
+                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                        else: 
+                            desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
+                                    'Reg term: {reg} ||'.format(steps, loop_msg, loss=losses, reg=reg_term))
+                else: 
+                    if args.score: 
+                        if args.accuracy: 
+                            desc = ('Epoch: {0} | Score: {score} | Loss {loss.avg:.4f} | '
+                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                    'Reg term: {reg} ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
+                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                        else: 
+                            desc = ('Epoch: {0} | Score: {score} | Loss {loss.avg:.4f} | '
+                                    'Reg term: {reg} ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
+                                                                loss=losses, reg=reg_term))
                     else: 
-                        desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(
-                            epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-
+                        if args.accuracy: 
+                            desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                    'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                        else: 
+                            desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                                    'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
         except Exception as e:
-            warnings.warn('Failed to calculate the accuracy.')
             # ITERATOR
-            if args.score:
-                if M is not None: 
-                    desc = ('Steps: 00{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                        M, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-                else:
-                    desc = ('Epoch:{0} |  Score: {score} \n | Loss {loss.avg:.4f} ||'.format(
-                        epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()], loss=losses))
-            else:
+            if steps is not None:
+                desc = ('Steps: {0} | Loss {loss.avg:.4f} ||'.format(steps, loop_msg, loss=losses))
+            else: 
                 desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(epoch, loop_msg, loss=losses))
         
         iterator.set_description(desc)
@@ -360,8 +361,8 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, M, writer, devi
         if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, i, loop_type, inp, target)
         # increment number of gradients
-        if M is not None: 
-            M += 1
+        if steps is not None: 
+            steps += 1
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
