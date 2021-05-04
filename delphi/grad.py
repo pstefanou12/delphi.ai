@@ -55,7 +55,7 @@ class TruncatedBCE(ch.autograd.Function):
         # add noise
         noised = stacked + logistic.sample(stacked.size())
         # filter
-        filtered = ch.stack([config.args.phi(batch) for batch in noised]).float()
+        filtered = config.args.phi(noised).unsqueeze(-1)
         out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + 1e-5)
         grad = ch.where(ch.abs(out) > 1e-5, sig(out), targ) - targ
         return grad / pred.size(0), -grad / pred.size(0)

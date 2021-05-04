@@ -12,6 +12,7 @@ from typing import Any
 
 from .stats import stats
 from ..oracle import oracle
+from ..grad import TruncatedBCE
 from ..train import train_model
 from ..utils.helpers import Bounds
 from ..utils import defaults
@@ -57,65 +58,45 @@ class truncated_logistic_regression(stats):
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
         # initialize model with empirical estimates
         self._emp_log_reg = ch.nn.Linear(in_features=loaders[0].dataset.log_reg.coef_.shape[1], out_features=1, bias=loaders[0].dataset.log_reg.intercept_)
-        self.projection_set = TruncatedLogisticRegressionProjectionSet(self._emp_log_reg)
-        config.args.__setattr__('iteration_hook', self.projection_set)
+        self.iteration_hook = TruncLogRegIterationHook(self._emp_log_reg, config.args.alpha, config.args.radius)
+        config.args.__setattr__('iteration_hook', self.iteration_hook)
         # run PGD to predict actual estimates
         return train_model(config.args, self._emp_log_reg, loaders)
 
 
-class TruncatedBCE(ch.autograd.Function):
-    @staticmethod
-    def forward(ctx, pred, targ):
-        ctx.save_for_backward(pred, targ)
-        loss = ch.nn.BCEWithLogitsLoss()
-        return loss(pred, targ)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ = ctx.saved_tensors
-
-        # logistic distribution
-        base_distribution = Uniform(0, 1)
-        transforms_ = [SigmoidTransform().inv]
-        logistic = TransformedDistribution(base_distribution, transforms_)
-
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        # add noise
-        noised = stacked + logistic.sample(stacked.size())
-        # filter
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
-        out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        grad = ch.where(ch.abs(out) > config.args.eps, sig(out), targ) - targ
-        return grad / pred.size(0), -grad / pred.size(0)
-
-
-class TruncatedLogisticRegressionProjectionSet:
+class TruncLogRegIterationHook:
     """
     Censored logistic regression projection set
     """
-    def __init__(self, emp_log_reg):
+    def __init__(self, emp_log_reg, alpha, r, clamp=True):
         """
         Args:
             emp_log_reg (nn.Linear): empirical logistic regression weights and bias
         """
+        # instance variables
         self.emp_log_reg = emp_log_reg
-        self.radius = config.args.radius * (ch.sqrt(2.0 * ch.log(1.0 / config.args.alpha)))
-        if config.args.clamp:
-            self.weight_bounds = Bounds((self.emp_log_reg.weight.data - config.args.radius).flatten(),
-                                        (self.emp_log_reg.weight.data + config.args.radius).flatten())
+        self.alpha = alpha
+        self.r = r
+        self.clamp = clamp
+
+        # projection set radius
+        self.radius = config.args.radius * (ch.sqrt(2.0 * ch.log(1.0 / self.alpha)))
+        if self.clamp:
+            self.weight_bounds = Bounds((self.emp_log_reg.weight.data - self.r).flatten(),
+                                        (self.emp_log_reg.weight.data + self.r).flatten())
             if self.emp_log_reg.bias:
                 self.bias_bounds = Bounds(float(self.emp_log_reg.bias.data - config.args.radius),
                                           float(self.emp_log_reg.bias.data + config.args.radius))
 
-    def __call__(self, est_log_reg, i, loop_type, inp, target):
-        if config.args.clamp:
+    def __call__(self, model, i, loop_type, inp, target):
+        if self.clamp:
             # project weight coefficients
-            est_log_reg.weight.data = ch.stack([ch.clamp(est_log_reg.weight.data[i], float(self.weight_bounds.lower[i]),
+            model.weight.data = ch.stack([ch.clamp(model.weight.data[i], float(self.weight_bounds.lower[i]),
                                                          float(self.weight_bounds.upper[i])) for i in
-                                                range(est_log_reg.weight.size(0))])
+                                                range(model.weight.size(0))])
             # project bias coefficient
-            if est_log_reg.bias:
-                est_log_reg.bias.data = ch.clamp(est_log_reg.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
-                    est_log_reg.bias.size())
+            if model.bias:
+                model.bias.data = ch.clamp(model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
+                    model.bias.size())
         else:
             pass

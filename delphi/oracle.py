@@ -23,7 +23,7 @@ class oracle(ABC):
         pass
 
 
-class Interval(oracle):
+class Interval:
     """
     Interval truncation
     """
@@ -34,8 +34,8 @@ class Interval(oracle):
     def __call__(self, x):
         # check sample device
         if x.is_cuda:
-            return ((self.bounds.lower.cuda() < x).prod(dim=1) * (x < self.bounds.upper.cuda()).prod(dim=1))
-        return ((self.bounds.lower < x).prod(dim=1) * (x < self.bounds.upper).prod(dim=1))
+            return ((self.bounds.lower.cuda() < x).prod(-1) * (x < self.bounds.upper.cuda()).prod(-1))
+        return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))
 
 
 class IntervalUnion(oracle):
