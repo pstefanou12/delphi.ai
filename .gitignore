@@ -13,5 +13,5 @@ share
 list
 include
 jobs/
-._*/
+._*
 super.code-workspace

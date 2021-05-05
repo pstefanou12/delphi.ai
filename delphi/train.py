@@ -5,7 +5,7 @@ import dill
 import numpy as np
 import torch as ch
 from torch import Tensor
-from torch.optim import SGD
+from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 import IPython
 
@@ -24,7 +24,10 @@ def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
     param_list = model.parameters() if params is None else params
 
     # run on mutliple GPUs
-    optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    if args.adam: 
+        optimizer = Adam(param_list, lr=args.lr, weight_decay=args.weight_decay)
+    else: 
+        optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Make schedule
     schedule = None
@@ -141,7 +144,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device)
 
         # check score tolerance
-        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1), ch.zeros(1)).bool()):
+        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1).to(args.device), ch.zeros(1).to(args.device)).bool()):
             break
 
         last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
@@ -265,6 +268,11 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         if is_train:
             optimizer.zero_grad()
             loss.backward()
+            # normalize gradient
+            if args.norm: 
+                model.weight.grad = model.weight.grad / model.weight.grad.norm()
+                if model.bias is not None: 
+                    model.bias.grad = model.bias.grad / model.bias.grad.norm()
             optimizer.step()
 
         if len(loss.size()) > 0: loss = loss.mean()
