@@ -9,6 +9,7 @@ import os
 import cox
 from cox.utils import Parameters
 from cox.store import Store
+import config
 
 try: 
     from delphi import train
@@ -18,8 +19,11 @@ try:
     from delphi.utils import defaults
     from delphi.utils.defaults import check_and_fill_args
     from delphi.utils.helpers import setup_store_with_metadata, DataPrefetcher
+    from delphi import grad
 except: 
     raise ValueError("Error when importing packages.")
+# set environment variable so that stores can create output files
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 parser = ArgumentParser()
 parser = defaults.add_args_to_parser(defaults.CONFIG_ARGS, parser)
@@ -47,13 +51,15 @@ def main(args, store=None):
             dataset=dataset, resume_path=args.resume)
     if 'module' in dir(model): model = model.module
 
-    print(args)
     if args.eval_only:
         return eval_model(args, model, val_loader, store=store)
 
     if not args.resume_optimizer: checkpoint = None
     model = train.train_model(args, model, loaders, store=store,
                                     checkpoint=checkpoint, parallel=args.parallel)
+    # if there is a store, close it at the end of the procedure
+    if store is not None:
+        store.close()
     return model
 
 def setup_args(args):
@@ -109,17 +115,21 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args = cox.utils.Parameters(args.__dict__)
-    print("args: {}".format(args))
 
     args = setup_args(args)
     store = setup_store_with_metadata(args)
 
-    final_model = main(args, store=store)
+    args.__setattr__('custom_criterion', grad.GumbelCE.apply)
+    args.__setattr__('num_samples', 1000)
 
+    if ch.cuda.is_available(): 
+        args.__setattr__('device', 'cuda')
+    else: 
+        args.__setattr__('device', 'cpu')
 
-
-
-
+    # set global 
+    config.args = args 
+    final_model = main(config.args, store=store)
 
 
 

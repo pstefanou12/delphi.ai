@@ -75,7 +75,7 @@ class GumbelCE(ch.autograd.Function):
         # make num_samples copies of pred logits
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add gumbel noise to logits
-        rand_noise = gumbel.sample(stacked.size())
+        rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
         noised = stacked + rand_noise 
         noised_labs = noised.argmax(-1)
         # remove the logits from the trials, where the kth logit is not the largest value
@@ -97,7 +97,7 @@ class TruncatedCE(ch.autograd.Function):
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)   
+        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1).to(config.args.device)  
         # add gumbel noise to logits
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
         noised = stacked + rand_noise 
@@ -105,8 +105,8 @@ class TruncatedCE(ch.autograd.Function):
         filtered = ch.all(config.args.phi(noised).bool(), dim=2).float().unsqueeze(2).to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
-        mask = noised_labs.eq(targ)[..., None]
-        inner_exp = 1 - ch.exp(-rand_noise)
+        mask = noised_labs.eq(targ)[..., None].to(config.args.device)
+        inner_exp = (1 - ch.exp(-rand_noise)).to(config.args.device)
         # inner_exp = ch.exp(-rand_noise)
         # avg = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5)) - ((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + 1e-5))
 

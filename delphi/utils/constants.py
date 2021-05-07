@@ -23,10 +23,10 @@ CYCLIC='cyclic'
 COSINE='cosine'
 LINEAR='linear'
 
-LOGS_TABLE = 'logs'
-EVAL_LOGS_TABLE = 'eval'
+LOGS_TABLE='logs'
+EVAL_LOGS_TABLE='eval'
 
-CKPT_NAME = 'checkpoint.pt'
-BEST_APPEND = '.best'
-CKPT_NAME_LATEST = CKPT_NAME + '.latest'
-CKPT_NAME_BEST = CKPT_NAME + BEST_APPEND
+CKPT_NAME='checkpoint.pt'
+BEST_APPEND='.best'
+CKPT_NAME_LATEST=CKPT_NAME + '.latest'
+CKPT_NAME_BEST=CKPT_NAME + BEST_APPEND

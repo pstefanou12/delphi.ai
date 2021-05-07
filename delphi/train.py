@@ -77,8 +77,10 @@ def eval_model(args, model, loader, store, table=None):
     """
     start_time = time.time()
 
+    table = consts.EVAL_LOGS_TABLE if table is None else table
+
     if store is not None:
-        store.add_table(consts.EVAL_LOGS_TABLE if table is None else table, consts.EVAL_LOGS_SCHEMA)
+        store.add_table(table, consts.EVAL_LOGS_SCHEMA)
 
     writer = store.tensorboard if store else None
 
@@ -147,60 +149,58 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
         if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1).to(args.device), ch.zeros(1).to(args.device)).bool()):
             break
 
+        # check for logging/checkpoint
         last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
+        should_save_ckpt = ((epoch % args.save_ckpt_iters == 0 or last_epoch) if args.epochs else (steps % args.save_ckpt_iters == 0 or last_epoch)) if args.save_ckpt_iters else False
+        should_log = ((epoch % args.log_iters == 0 or last_epoch) if args.epochs else (steps % args.log_iters == 0 or last_epoch)) if args.log_iters else False
 
-        # if neural network passed through framework, log performance
-        if args.should_save_ckpt:
-            # evaluate on validation set
+        # validation loop
+        if should_log or should_save_ckpt: 
+            ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
+            with ctx:
+                val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
+                        None, epoch + 1, steps, writer, device=args.device)
+
+            # remember best prec_1 and save checkpoint
+            is_best = val_prec1 > best_prec1
+            best_prec1 = max(val_prec1, best_prec1)
+
+        # save model checkpoint -- for neural networks
+        if should_save_ckpt:
             sd_info = {
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'schedule': (schedule and schedule.state_dict()),
                 'epoch': epoch+1,
                 'amp': amp.state_dict() if args.mixed_precision else None,
+                'prec1': val_prec1
             }
-
+            
             def save_checkpoint(filename):
                 ckpt_save_path = os.path.join(args.out_dir if not store else \
                                               store.path, filename)
                 ch.save(sd_info, ckpt_save_path, pickle_module=dill)
 
-            save_its = args.save_ckpt_iters
-            should_save_ckpt = (epoch % save_its == 0) and (save_its > 0) if args.epochs else (steps % args.log_iters == 0)
-            should_log = (epoch % args.log_iters == 0) if args.epochs else (steps % args.log_iters == 0)
+            # If we are at a saving epoch (or the last epoch), save a checkpoint
+            save_checkpoint(ckpt_at_epoch(epoch))
+            # Update the latest and best checkpoints (overrides old one)
+            save_checkpoint(consts.CKPT_NAME_LATEST)
+            if is_best: save_checkpoint(consts.CKPT_NAME_BEST)
 
-            if should_log or last_epoch or should_save_ckpt:
-                # log + get best
-                ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
-                with ctx:
-                    val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, steps, writer, device=args.device)
+        # log results
+        if should_log: # TODO: add custom logging hook
+            # log every checkpoint
+            log_info = {
+                'epoch': epoch + 1,
+                'val_prec1': val_prec1,
+                'val_loss': val_loss,
+                'train_prec1': train_prec1,
+                'train_loss': train_loss,
+                'time': time.time() - start_time
+            }
 
-                # remember best prec@1 and save checkpoint
-                is_best = val_prec1 > best_prec1
-                best_prec1 = max(val_prec1, best_prec1)
-                sd_info['prec1'] = val_prec1
-
-                # TODO: add custom logging hook
-
-                # log every checkpoint
-                log_info = {
-                    'epoch': epoch + 1,
-                    'val_prec1': val_prec1,
-                    'val_loss': val_loss,
-                    'train_prec1': train_prec1,
-                    'train_loss': train_loss,
-                    'time': time.time() - start_time
-                }
-
-                # Log info into the logs table
-                if store: store[table].append_row(log_info)
-                # If we are at a saving epoch (or the last epoch), save a checkpoint
-                if should_save_ckpt or last_epoch: save_checkpoint(ckpt_at_epoch(epoch))
-
-                # Update the latest and best checkpoints (overrides old one)
-                save_checkpoint(consts.CKPT_NAME_LATEST)
-                if is_best: save_checkpoint(consts.CKPT_NAME_BEST)
+            # log info in log table
+            if store: store[table].append_row(log_info)
         
         # update lr
         if schedule: schedule.step()

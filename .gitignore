@@ -16,3 +16,5 @@ jobs/
 ._*
 super.code-workspace
 *.sh.*
+slurm*
+*.log*
