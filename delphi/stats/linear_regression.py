@@ -12,12 +12,13 @@ import config
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
+from ..grad import TruncatedMSE, TrunatedUnknownVarianceMSE
 from ..utils.helpers import Bounds
 from ..utils import defaults
 from ..utils.datasets import DataSet, TRUNC_REG_OPTIONAL_ARGS, TRUNC_REG_REQUIRED_ARGS, TruncatedRegression
 
 
-class truncated_regression(stats):
+class LinearRegression(stats):
     """
     """
     def __init__(
@@ -85,63 +86,6 @@ class truncated_regression(stats):
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD for parameter estimation
         return train_model(config.args, self._emp_lin_reg, loaders, update_params=update_params)
-
-
-class TruncatedUnknownVarianceMSE(ch.autograd.Function):
-    """
-    Computes the gradient of negative population log likelihood for truncated linear regression
-    with unknown noise variance.
-    """
-
-    @staticmethod
-    def forward(ctx, pred, targ, lambda_):
-        ctx.save_for_backward(pred, targ, lambda_)
-        return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ, lambda_ = ctx.saved_tensors
-        # calculate std deviation of noise distribution estimate
-        sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        # add noise to regression predictions
-        noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
-        # filter out copies that fall outside of truncation set
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
-        z = noised * filtered
-        lambda_grad = .5 * (targ.pow(2).sum(dim=0) / targ.size(0) - z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps))
-        """
-        multiply the v gradient by lambda, because autograd computes 
-        v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance 
-        factor
-        """
-        out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0)
-
-
-class TruncatedMSE(ch.autograd.Function):
-    """
-    Computes the gradient of the negative population log likelihood for censored regression
-    with known noise variance.
-    """
-
-    @staticmethod
-    def forward(ctx, pred, targ):
-        ctx.save_for_backward(pred, targ)
-        return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ = ctx.saved_tensors
-        # make args.num_samples copies of pred, N x B x 1
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        # add random noise to each copy
-        noised = stacked + (ch.sqrt(config.args.var)*ch.randn(stacked.size())).to(config.args.device)
-        # filter out copies where pred is in bounds
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
-        # average across truncated indices
-        out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return (out - targ) / pred.size(0), targ / pred.size(0)
 
 
 class TruncatedRegressionProjectionSet:

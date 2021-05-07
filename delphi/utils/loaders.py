@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch as ch
 from torch.utils.data import Subset
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 from . import folder
 from .helpers import type_of_script
@@ -53,7 +53,6 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
         if not os.path.exists(test_path):
             # test_path = os.path.join(data_path, 'test')
             test_path = data_path
-
 
     if not custom_class:
         if not os.path.exists(test_path):

@@ -118,7 +118,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     # data loaders
     train_loader, val_loader = loaders
     # number of periods/epochs for learning rate schedulers
-    T = args.epochs if args.epochs else args.steps // len(train_loader.dataset)
+    T = args.epochs if args.epochs else args.steps // len(train_loader)
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
 
     # put the model into parallel mode
@@ -155,11 +155,15 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
         should_log = ((epoch % args.log_iters == 0 or last_epoch) if args.epochs else (steps % args.log_iters == 0 or last_epoch)) if args.log_iters else False
 
         # validation loop
+        val_prec1, val_loss, val_score = 0.0, 0.0, 0.0
         if should_log or should_save_ckpt: 
             ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
-            with ctx:
-                val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                        None, epoch + 1, steps, writer, device=args.device)
+
+            # evaluate model on validation set, if there is one
+            if val_loader is not None:
+                with ctx:
+                    val_prec1, val_loss, val_score = model_loop(args, 'val', val_loader, model,
+                            None, epoch + 1, steps, writer, device=args.device)
 
             # remember best prec_1 and save checkpoint
             is_best = val_prec1 > best_prec1

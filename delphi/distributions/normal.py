@@ -9,15 +9,17 @@ from cox.utils import Parameters
 import config
 
 from .stats import stats
+
 from ..oracle import oracle
 from ..train import train_model
 from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredNormal
+from ..grad import CensoredMultivariateNormalNLL
 from ..utils import defaults
 from ..utils.helpers import Bounds, censored_sample_nll
 
 
-class censored_normal(stats):
+class Normal(stats):
     """
     Censored normal distribution class.
     """
@@ -69,33 +71,6 @@ class censored_normal(stats):
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
-
-
-class CensoredMultivariateNormalNLL(ch.autograd.Function):
-    """
-    Computes the negative population log likelihood for censored multivariate normal distribution.
-    """
-
-    @staticmethod
-    def forward(ctx, loc, covariance_matrix, x):
-        ctx.save_for_backward(loc, covariance_matrix, x)
-        return ch.zeros(1)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        loc, covariance_matrix, x = ctx.saved_tensors
-        # reparameterize distribution
-        T = covariance_matrix.inverse()
-        v = T.matmul(loc.unsqueeze(1)).flatten()
-        # rejection sampling
-        y = Tensor([])
-        M = MultivariateNormal(v, T)
-        while y.size(0) < x.size(0):
-            s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
-            y = ch.cat([y, s[config.args.phi(s).nonzero(as_tuple=False).flatten()]])
-        # calculate gradient
-        grad = (-x + censored_sample_nll(y[:x.size(0)])).mean(0)
-        return grad[loc.size(0) ** 2:], grad[:loc.size(0) ** 2].reshape(covariance_matrix.size()), None
 
 
 class CensoredNormalProjectionSet:

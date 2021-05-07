@@ -13,12 +13,12 @@ from ..oracle import oracle
 from ..train import train_model
 from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredMultivariateNormal
-from .censored_normal import CensoredMultivariateNormalNLL, CensoredNormalProjectionSet
+from ..grad import CensoredMultivariateNormalNLL
 from ..utils import defaults
 from ..utils.helpers import cov
 
 
-class censored_multivariate_normal(stats):
+class MultivariateNormal(stats):
     """
     Censored multivariate distribution class.
     """

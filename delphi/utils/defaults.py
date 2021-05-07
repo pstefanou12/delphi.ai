@@ -93,7 +93,7 @@ TRAINING_DEFAULTS = {
         "step_lr": 10,
         "score": True,
         "tol": 1e-2,
-    }
+    },
 }
 """
 Default hyperparameters for training by dataset (tested for resnet50).
@@ -116,7 +116,8 @@ TRAINING_ARGS = [
     ['log-iters', int, 'how frequently (in epochs) to log', 5],
     ['save-ckpt-iters', int, 'how frequently (epochs) to save \
             (-1 for none, only saves best and last)', -1],
-    ['parallel', [0, 1], 'train model on multiple GPUs', 0]
+    ['parallel', [0, 1], 'train model on multiple GPUs', 0], 
+    ['accuracy', [0, 1], 'check model accuracy during training procedure', 1],
 ]
 """
 Arguments essential for the `train_model` function.

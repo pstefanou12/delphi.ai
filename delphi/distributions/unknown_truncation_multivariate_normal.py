@@ -16,6 +16,7 @@ from ..train import train_model
 from ..utils.helpers import Exp_h
 from ..utils.datasets import TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, \
     TruncatedMultivariateNormal, DataSet
+from ..grad import TruncatedMultivariateNormalNLL
 from ..utils import defaults
 
 

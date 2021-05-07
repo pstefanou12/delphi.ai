@@ -1,7 +1,7 @@
 import torch as ch
 from torch import Tensor
 from torch.nn import Linear
-from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset, DataLoader
 from torch import sigmoid as sig
 from torch.distributions import Uniform
 from torch.distributions.transforms import SigmoidTransform
@@ -9,17 +9,19 @@ from torch.distributions.transformed_distribution import TransformedDistribution
 from cox.utils import Parameters
 import config
 from typing import Any
+from sklearn.linear_model import LogisticRegression as LogisticRegression_
+from cox.store import Store
 
 from .stats import stats
 from ..oracle import oracle
-from ..grad import TruncatedBCE
+from ..grad import TruncatedBCE, TruncatedCE
 from ..train import train_model
 from ..utils.helpers import Bounds
 from ..utils import defaults
 from ..utils.datasets import DataSet, TRUNC_LOG_REG_OPTIONAL_ARGS, TRUNC_LOG_REG_REQUIRED_ARGS, TruncatedLogisticRegression
 
 
-class truncated_logistic_regression(stats):
+class LogisticRegression(stats):
     """
     """
     def __init__(
@@ -28,19 +30,30 @@ class truncated_logistic_regression(stats):
             alpha: float,
             args: Parameters,
             bias: bool=True,
-            var: float = None,
+            scale: float = None,
             device: str="cpu",
+            multi_class='ovr',
+            store: Store=None,
+            table: str=None,
             **kwargs):
         """
         """
-        super(truncated_logistic_regression).__init__()
+        super(LogisticRegression).__init__()
+        # instance variables
+        self._log_reg, self.projectioin_set = None, None
+        self.phi = phi
+        self.alpha = alpha
+        self.bias = bias 
+        self.scale = scale
+        self.device = device
+        self.multi_class = multi_class
+        self.store, self.table = store, table
+
+        # add membership oracle to algorithm hyperparameters
+        args.__setattr__('phi', self.phi)
+        args.__setattr__('alpha', self.alpha)
+        args.__setattr__('device', self.device)
         config.args = defaults.check_and_fill_args(args, defaults.LOGISTIC_ARGS, TruncatedLogisticRegression)
-        # initialize hyperparameters for algorithm
-        self._emp_log_reg = None
-        self.projection_set = None
-        # intialize loss function and add custom criterion to hyperparameters
-        self.criterion = TruncatedBCE.apply
-        config.args.__setattr__('custom_criterion', self.criterion)
 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -48,7 +61,7 @@ class truncated_logistic_regression(stats):
         # create dataset and dataloader
         ds_kwargs = {
             'custom_class_args': {
-                'X': X, 'y': y, 'bias': config.args.bias},
+                'X': X, 'y': y},
             'custom_class': TruncatedLogisticRegression,
             'transform_train': None,
             'transform_test': None,
@@ -56,12 +69,24 @@ class truncated_logistic_regression(stats):
         ds = DataSet('truncated_logistic_regression', TRUNC_LOG_REG_REQUIRED_ARGS, TRUNC_LOG_REG_OPTIONAL_ARGS, data_path=None,
                      **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
-        # initialize model with empirical estimates
-        self._emp_log_reg = ch.nn.Linear(in_features=loaders[0].dataset.log_reg.coef_.shape[1], out_features=1, bias=loaders[0].dataset.log_reg.intercept_)
-        self.iteration_hook = TruncLogRegIterationHook(self._emp_log_reg, config.args.alpha, config.args.radius)
-        config.args.__setattr__('iteration_hook', self.iteration_hook)
+
+        # empirical estimates for logistic regression
+        # standard_log_reg = LogisticRegression_(penalty='none', fit_intercept=self.bias, multi_class=self.multi_class)
+        # standard_log_reg.fit(X, y.flatten())
+
+        # use standard predictions as empirical estimates
+        self._log_reg = ch.nn.Linear(in_features=X.size(1), out_features=int(ch.max(y) + 1), bias=self.bias)
+        # print("coef: ", standard_log_reg.coef_)
+        # print("coef shape: ", standard_log_reg.coef_.shape)
+        # self._log_reg.weight = ch.nn.Parameter(Tensor(standard_log_reg.coef_))
+        # if self.bias: 
+        #     self._log_reg.bias = ch.nn.Parameter(Tensor(standard_log_reg.intercept_))
+
+        # intialize loss function & iteration hook and add to hyperparameters
+        config.args.__setattr__('custom_criterion', TruncatedCE.apply if self.multi_class == 'multinomial' else TruncatedBCE.apply)
+        # config.args.__setattr__('iteration_hook', TruncLogRegIterationHook(self._log_reg, config.args.alpha, config.args.radius))
         # run PGD to predict actual estimates
-        return train_model(config.args, self._emp_log_reg, loaders)
+        return train_model(config.args, self._log_reg, loaders, store=self.store, table=self.table)
 
 
 class TruncLogRegIterationHook:
@@ -80,7 +105,7 @@ class TruncLogRegIterationHook:
         self.clamp = clamp
 
         # projection set radius
-        self.radius = config.args.radius * (ch.sqrt(2.0 * ch.log(1.0 / self.alpha)))
+        self.radius = config.args.radius * (ch.sqrt(2.0 * ch.log(Tensor([1.0 / self.alpha]))))
         if self.clamp:
             self.weight_bounds = Bounds((self.emp_log_reg.weight.data - self.r).flatten(),
                                         (self.emp_log_reg.weight.data + self.r).flatten())

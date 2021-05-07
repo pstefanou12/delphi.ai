@@ -7,6 +7,7 @@ Currently supported datasets:
 
 import torch as ch
 from torch import Tensor
+from torch.utils.data import TensorDataset
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import transforms, datasets
@@ -407,14 +408,9 @@ class TruncatedRegression(ch.utils.data.Dataset):
 
 
 class TruncatedLogisticRegression(ch.utils.data.Dataset):
-    def __init__(self, X, y, bias=True):
+    def __init__(self, X, y):
         self.X = X
         self.y = y
-        self.bias = bias
-
-        # empirical estimates for dataset
-        self._log_reg = LogisticRegression()
-        self._log_reg.fit(self.X, self.y.flatten())
 
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
@@ -422,19 +418,9 @@ class TruncatedLogisticRegression(ch.utils.data.Dataset):
     def __len__(self):
         return len(self.X)
 
-    @property
-    def log_reg(self):
-        return copy.deepcopy(self._log_reg)
-
-    @property
-    def w(self):
-        return Tensor(self._log_reg.coef_)
-
-    @property
-    def w0(self):
-        return Tensor(self._log_reg.intercept_)
 
 DATASETS = { 
+    'default': TruncatedLogisticRegression,
     'imagenet': ImageNet, 
     'cifar': CIFAR,
     'censored_normal': CensoredNormal, 
@@ -443,4 +429,5 @@ DATASETS = {
     'truncated_multivariate_normal': TruncatedMultivariateNormal, 
     'truncated_regression': TruncatedRegression, 
     'truncated_logistic_regression': TruncatedLogisticRegression,
+
 }

@@ -14,6 +14,7 @@ from ..train import train_model
 from ..utils.helpers import Bounds, Exp_h
 from ..utils.datasets import TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, \
     TruncatedNormal, DataSet
+from ..grad import TruncatedMultivariateNormalNLL
 from ..utils import defaults
 
 
@@ -67,25 +68,6 @@ class truncated_normal(stats):
         # run PGD to predict actual estimates
         return train_model(config.args, self._normal, loaders,
                            update_params=[self._normal.loc, self._normal.covariance_matrix])
-
-
-class TruncatedMultivariateNormalNLL(ch.autograd.Function):
-    """
-    Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
-    """
-
-    @staticmethod
-    def forward(ctx, u, B, x, loc_grad, cov_grad):
-        ctx.save_for_backward(u, B, x, loc_grad, cov_grad)
-        return ch.ones(1)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        u, B, x, loc_grad, cov_grad = ctx.saved_tensors
-        exp = config.args.exp_h(u, B, x)
-        psi = config.args.phi.psi_k(x).unsqueeze(1)
-        return (loc_grad * exp * psi).mean(0), ((cov_grad.flatten(1) * exp * psi).unflatten(1, B.size())).mean(
-            0), None, None, None
 
 
 class TruncatedNormalProjectionSet:
