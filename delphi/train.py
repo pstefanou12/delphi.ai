@@ -9,7 +9,7 @@ from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 import IPython
 
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance
 from .utils import constants as consts
 
 # determine running environment
@@ -108,7 +108,6 @@ def eval_model(args, model, loader, store, table=None):
 
 def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_device_ids=None, 
                 store=None, table=None, update_params=None, disable_no_grad=False):
-    
     table = consts.LOGS_TABLE if table is None else table
 
     if store is not None:
@@ -145,10 +144,6 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     while (args.steps is not None and steps < args.steps) or (args.epochs is not None and epoch < args.epochs):
         train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device)
 
-        # check score tolerance
-        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1).to(args.device), ch.zeros(1).to(args.device)).bool()):
-            break
-
         # check for logging/checkpoint
         last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
         should_save_ckpt = ((epoch % args.save_ckpt_iters == 0 or last_epoch) if args.epochs else (steps % args.save_ckpt_iters == 0 or last_epoch)) if args.save_ckpt_iters else False
@@ -165,9 +160,9 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
                     val_prec1, val_loss, val_score = model_loop(args, 'val', val_loader, model,
                             None, epoch + 1, steps, writer, device=args.device)
 
-            # remember best prec_1 and save checkpoint
-            is_best = val_prec1 > best_prec1
-            best_prec1 = max(val_prec1, best_prec1)
+                # remember best prec_1 and save checkpoint
+                is_best = val_prec1 > best_prec1
+                best_prec1 = max(val_prec1, best_prec1)
 
         # save model checkpoint -- for neural networks
         if should_save_ckpt:
@@ -211,13 +206,17 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
+
+        # check score tolerance
+        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1).to(args.device), ch.zeros(1).to(args.device)).bool()):
+            break
             
         # increment epoch counter
         epoch += 1
         # update number of gradient steps taken
         if steps is not None: 
             steps += len(train_loader)
-
+        
     # TODO: add end training hook
     return model
             
@@ -252,6 +251,11 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         elif isinstance(model, ch.nn.Module):
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
+
+            # check to make sure input is not infinity 
+            if ch.any(inp.isnan()): 
+                raise Exception("infinity in input")
+
             output = model(inp)
             # attacker model returns both output anf final input
             if isinstance(output, tuple):

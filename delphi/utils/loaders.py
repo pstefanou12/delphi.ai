@@ -19,7 +19,7 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
                  custom_class=None, dataset="", label_mapping=None, subset=None,
                 subset_type='rand', subset_start=0, val_batch_size=None,
                 train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
-                custom_class_args=None):
+                custom_class_args=None, verbose=False):
     '''
     **INTERNAL FUNCTION**
     This is an internal function that makes a loader for any dataset. You
@@ -29,7 +29,8 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
     >>> train_loader, val_loader = cifar_dataset.make_loaders(workers=10, batch_size=128)
     >>> # train_loader and val_loader are just PyTorch dataloaders
     '''
-    print(f"==> Preparing dataset {dataset}..")
+    if verbose:
+        print(f"==> Preparing dataset {dataset}...")
     # check that at least a train loader or validation loader specified to be created
     if not train and not val:
         raise ValueError("Neither training loader nor validation loader specified")
@@ -57,7 +58,6 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
     if not custom_class:
         if not os.path.exists(test_path):
             raise ValueError("Test data must be stored in dataset/test or {0}".format(test_path))
-
         if train:
             train_set = folder.ImageFolder(root=train_path, transform=transform_train,
                                            label_mapping=label_mapping)
@@ -92,7 +92,10 @@ def make_loaders(workers, batch_size, transforms, data_path=None, data_aug=True,
             if val:
                 test_set = custom_class(root=test_path, train=False, download=True,
                                         transform=transform_test, **custom_class_args)
-        else:
+        elif custom_class == TensorDataset:
+            # TODO: figure out way for validation dataset too
+            train_set = custom_class(*custom_class_args.values())
+        else: 
             # TODO: figure out way for validation dataset too
             train_set = custom_class(**custom_class_args)
 

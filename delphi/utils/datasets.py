@@ -36,8 +36,7 @@ CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
 
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
-TRUNC_REG_REQUIRED_ARGS, TRUNC_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
-TRUNC_LOG_REG_REQUIRED_ARGS, TRUNC_LOG_REG_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
+TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 
 
 class DataSet(object):
@@ -111,7 +110,6 @@ class DataSet(object):
             A model with the given architecture that works for each
             dataset (e.g. with the right input/output dimensions).
         '''
-
         raise NotImplementedError
 
     def make_loaders(self, workers, batch_size, data_aug=True, subset=None,
@@ -349,85 +347,12 @@ class TruncatedMultivariateNormal(ch.utils.data.Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedRegression(ch.utils.data.Dataset):
-    def __init__(self, X, y, bias=True, unknown=True):
-        self.X = X
-        self.y = y
-        self.bias = bias
-        self.unknown = unknown
-
-        # empirical estimates for dataset
-        self._reg = LinearRegression(fit_intercept=self.bias).fit(self.X, self.y)
-
-        if self.unknown:
-            # calculate empirical variance of the residuals
-            self.var = ch.var(ch.from_numpy(self._reg.predict(self.X)) - self.y, dim=0).unsqueeze(0)
-            self._lambda_ = self.var.inverse()
-            self._v = ch.from_numpy(self._reg.coef_) * self.lambda_
-            self._v0 = ch.from_numpy(self._reg.intercept_) * self._lambda_ if self._reg.intercept_ else None
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
-
-    def __len__(self):
-        return len(self.X)
-
-    @property
-    def reg(self):
-        return copy.deepcopy(self._reg)
-
-    @property
-    def w(self):
-        return ch.from_numpy(self._reg.coef_).clone().t()
-
-    @property
-    def w0(self):
-        return ch.from_numpy(self._reg.intercept_).clone()
-
-    # properties for regression with unknown noise variance
-    @property
-    def lambda_(self):
-        if self._lambda_:
-            return self._lambda_.clone()
-        warnings.warn("variance is known, so lambda is not defined.")
-
-    @property
-    def v(self):
-        if self._v is not None:
-            return self._v.clone().t()
-        warnings.warn("variance in known, so v is not defined")
-
-    @property
-    def v0(self):
-        if self._v0:
-            return self._v0.clone()
-        if self._v:
-            warnings.warn("no bias term, so v0 is not defined")
-        else:
-            warnings.warn("variance is known, so v0 is not defined")
-
-
-class TruncatedLogisticRegression(ch.utils.data.Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
-
-    def __len__(self):
-        return len(self.X)
-
-
-DATASETS = { 
-    'default': TruncatedLogisticRegression,
+DATASETS = {
     'imagenet': ImageNet, 
     'cifar': CIFAR,
     'censored_normal': CensoredNormal, 
     'censored_multivariate_normal': CensoredMultivariateNormal, 
     'truncated_normal': TruncatedNormal, 
     'truncated_multivariate_normal': TruncatedMultivariateNormal, 
-    'truncated_regression': TruncatedRegression, 
-    'truncated_logistic_regression': TruncatedLogisticRegression,
-
+    'tensor': TensorDataset, 
 }

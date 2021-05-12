@@ -2,6 +2,7 @@
 Gradients for truncated and untruncated latent variable models. 
 """
 import torch as ch
+from torch import Tensor
 from torch import sigmoid as sig
 from torch.distributions import Uniform, Gumbel
 from torch.distributions.transforms import SigmoidTransform
@@ -93,22 +94,27 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # import pdb; pdb.set_trace()
         pred, targ, lambda_ = ctx.saved_tensors
         # calculate std deviation of noise distribution estimate
-        sigma, z = ch.sqrt(lambda_.inverse()), Tensor([]).to(config.args.device)
+        sigma = ch.sqrt(lambda_.inverse())
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add noise to regression predictions
         noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
         # filter out copies that fall outside of truncation set
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
+        filtered = ch.stack([config.args.phi(batch)[..., None].float() for batch in noised])
         z = noised * filtered
-        lambda_grad = .5 * (targ.pow(2).sum(dim=0) / targ.size(0) - z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps))
+        lambda_grad = .5 * ((targ.pow(2).sum(dim=0) / targ.size(0)) - (z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)))
         """
         multiply the v gradient by lambda, because autograd computes 
-        v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance 
+        v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+
+        w_grad = lambda_ * (out - targ) / pred.size(0)
+        print("weight grad: ", w_grad.size())
+        print("lambda grad: ", lambda_grad.size())
         return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0)
 
 
@@ -182,9 +188,9 @@ class GumbelCE(ch.autograd.Function):
         noised = stacked + rand_noise 
         noised_labs = noised.argmax(-1)
         # remove the logits from the trials, where the kth logit is not the largest value
-        good_mask = noised_labs.eq(targ)[..., None]
+        mask = noised_labs.eq(targ)[..., None]
         inner_exp = 1 - ch.exp(-rand_noise)
-        avg = (inner_exp * good_mask).sum(0) / (good_mask.sum(0) + 1e-5) / pred.size(0)
+        avg = (inner_exp * mask).sum(0) / (mask.sum(0) + 1e-5) / pred.size(0)
         return -avg , None
 
 class TruncatedCE(ch.autograd.Function):
@@ -195,20 +201,21 @@ class TruncatedCE(ch.autograd.Function):
         return ce_loss(pred, targ)
 
     @staticmethod
-    def backward(ctx, grad_output):        
+    def backward(ctx, grad_output):  
+        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1) 
+        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add gumbel noise to logits
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = ch.all(config.args.phi(noised).bool(), dim=2).float().unsqueeze(2).to(config.args.device)
+        filtered = config.args.phi(noised).float()[..., None].to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]
         inner_exp = (1 - ch.exp(-rand_noise))
-        avg = (((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)
+        avg = (((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)            
         return -avg, None

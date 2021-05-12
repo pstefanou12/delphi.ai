@@ -18,3 +18,7 @@ super.code-workspace
 *.sh.*
 slurm*
 *.log*
+.vscode/
+*.csv
+*.sh
+.metals/

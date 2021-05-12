@@ -195,13 +195,9 @@ class DNN_Logit_Ball(oracle):
     Truncation ball placed on DNN logits.
     INTUITION: logits that are neither very large nor very small insinuate
     that the classification is not 
-    """
-    def __init__(self, lower, upper): 
-        self.lower = lower 
-        self.upper = upper
-        
+    """ 
     def __call__(self, x): 
-        return ((x < self.lower) | (x > self.upper)).float()
+       return (x.norm(dim=-1) <= 1.5)
         
 
 class Identity(oracle): 
@@ -209,4 +205,5 @@ class Identity(oracle):
     Identity membership oracle for DNNs. All logits are accepted within the truncation set.
     """
     def __call__(self, x): 
-        return ch.ones(x.size())
+        return ch.ones(x.size()).prod(-1)
+

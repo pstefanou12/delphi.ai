@@ -2,6 +2,9 @@
 This module is used to set up arguments and defaults.
 """
 
+from torch.utils.data import TensorDataset
+
+
 from . import datasets
 from .helpers import has_attr
 from . import constants as consts
@@ -72,18 +75,7 @@ TRAINING_DEFAULTS = {
         "tol": 1e-2,
         "d": 100,
     },
-    datasets.TruncatedRegression: {
-        "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-    },
-    datasets.TruncatedLogisticRegression: { 
+    datasets.TensorDataset: {
         "steps": 1000,
         "batch_size": 10,
         "weight_decay": 5e-4,

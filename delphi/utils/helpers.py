@@ -296,6 +296,30 @@ class DataPrefetcher():
             if type(self.stop_after) is int and (count > self.stop_after):
                 break
 
+
+class LinearUnknownVariance(nn.Module):
+    """
+    Linear layer with unknown noise variance.
+    """
+    def __init__(self, v, lambda_, bias=None):
+        """
+        :param lambda_: 1/empirical variance
+        :param v: empirical weight*lambda_ estimate
+        :param bias: (optional) empirical bias*lambda_ estimate
+        """
+        super(LinearUnknownVariance, self).__init__()
+        self.register_parameter(name='v', param=ch.nn.Parameter(v))
+        self.register_parameter(name='lambda_', param=ch.nn.Parameter(lambda_))
+        self.register_parameter(name='bias', param=ch.nn.Parameter(bias))
+
+    def forward(self, x):
+        var = self.lambda_.clone().detach().inverse()
+        w = self.v*var
+        if self.bias.nelement() > 0:
+            return x.matmul(w) + self.bias * var
+        return x.matmul(w)
+        
+
 # logistic distribution
 base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
