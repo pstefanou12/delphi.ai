@@ -112,8 +112,6 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
     if store is not None:
         store.add_table(table, consts.LOGS_SCHEMA)
-        # save experiment metadata
-        setup_store_with_metadata(args, store)
 
     writer = store.tensorboard if store else None
 
