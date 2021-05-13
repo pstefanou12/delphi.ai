@@ -25,8 +25,7 @@ TABLE_NAME = 'results'
 
 # commands and arguments
 COMMAND = 'Rscript'
-PATH2SCRIPT = '/home/pstefanou/delphi/truncreg.R'
-# PATH2SCRIPT = '/home/gridsan/stefanou/delphi/truncreg.R'
+PATH2SCRIPT = '/home/gridsan/stefanou/delphi/truncreg.R'
 TMP_FILE = 'tmp.csv'
 RESULT_FILE = 'result.csv'
 
@@ -118,7 +117,7 @@ def main(args):
             - c - truncation point (float)
             - dir - left or right -> type of truncation (str)
             """
-            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), 'left']
+            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), 'left', args.out_dir]
 
             # check_output will run the command and store the result
             result = subprocess.check_output(cmd, universal_newlines=True)
@@ -126,19 +125,27 @@ def main(args):
 
             # parameter estimates 
             known_params = ch.cat([w_.T, w0_[..., None]])
+
             real_params = ch.cat([ground_truth.weight.T, ground_truth.bias])
             ols_params = ch.cat([Tensor(ols.coef_).T, Tensor(ols.intercept_)[..., None]])
             unknown_params = ch.cat([w, w0])
-            trunc_reg_params = ch.cat([trunc_res[1:-1].flatten(), trunc_res[0]])
+            trunc_reg_params = ch.cat([trunc_res[0][1:-1].flatten(), trunc_res[0][0]])
 
             # metrics
             known_param_mse = mse_loss(known_params, real_params)
             unknown_param_mse = mse_loss(unknown_params, real_params)
+            print("ols var size: ", Tensor([var]).size())
+            print("unknown var size:", var_.size())
             unknown_var_mse = mse_loss(var_, Tensor([var]))
+            print("unknown var")
             ols_param_mse = mse_loss(Tensor(ols_params), Tensor(real_params))
             ols_var_mse = mse_loss(ols_var, Tensor([var]))
+            print("trunc reg param size: ", trunc_reg_params.size())
+            print("real params size: ", real_params.size())
             trunc_reg_param_mse = mse_loss(trunc_reg_params, real_params)
-            trunc_var_mse = mse_loss(trunc_reg_params[-1]**2, Tensor([var]))
+            print("trunc reg param")
+            trunc_var_mse = mse_loss(trunc_res[0][-1].pow(2), Tensor([var]))
+            print("trunc var size: ", trunc_res[0][-1].size())
 
             # add results to store
             store[TABLE_NAME].append_row({ 

@@ -207,3 +207,29 @@ class Identity(oracle):
     def __call__(self, x): 
         return ch.ones(x.size()).prod(-1)
 
+
+class Logit_Ball: 
+    """
+    Truncation based off of norm of logits. Logt norm needs to be smaller than input bound.
+    In other words, retain the input that the classifier is less certain on. Smaller 
+    unnormalized log probabilities implies uncertainty in classification.
+    """
+    def __init__(self, bound): 
+        self.bound = bound
+        
+    def __call__(self, x): 
+        return (x.norm(dim=-1) <= self.bound)
+    
+class Logit_Ball_Complement: 
+    
+    """
+    Truncation based off of complement norm of logits. Logit norm needs to be greater than input bound.
+    In other words, retain the inputs that the classifier is more certain on. Larger 
+    unnormalized log probabilities implies more certraining in classification.
+    """
+    def __init__(self, bound): 
+        self.bound = bound
+        
+    def __call__(self, x): 
+        return (x.norm(dim=-1) >= self.bound)
+
