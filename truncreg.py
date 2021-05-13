@@ -57,6 +57,7 @@ def main(args):
         # create store and add table
         store = Store(args.out_dir)
         store.add_table(TABLE_NAME, { 
+            'known_emp_param_mse': float,
             'known_param_mse': float,
             'unknown_param_mse': float,
             'unknown_var_mse': float,
@@ -92,10 +93,15 @@ def main(args):
             ols.fit(x_trunc, y_trunc)
             ols_var = ch.var(Tensor(ols.predict(x_trunc)) - y_trunc, dim=0)[..., None]
 
-            # truncated linear regression with known noise variance
+            # truncated linear regression with known noise variance using empirical noise variance
             trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=ols_var)
             results = trunc_reg.fit(x_trunc, y_trunc)
             w_, w0_ = results.weight.detach().cpu(), results.bias.detach().cpu()
+
+            # truncated linear regression with known noise variance using actual noise variance
+            trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([var])[...,None])
+            results = trunc_reg.fit(x_trunc, y_trunc)
+            w__, w0__ = results.weight.detach().cpu(), results.bias.detach().cpu()
 
             # truncated linear regression with unknown noise variance
             trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias)
@@ -117,38 +123,34 @@ def main(args):
             - c - truncation point (float)
             - dir - left or right -> type of truncation (str)
             """
-            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), 'left', args.out_dir]
+            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), str(args.dims), 'left', args.out_dir]
 
             # check_output will run the command and store the result
             result = subprocess.check_output(cmd, universal_newlines=True)
-            trunc_res = Tensor(pd.read_csv(args.out_dir + '/' + RESULT_FILE)['x'].to_numpy())[None,...]
+            trunc_res = Tensor(pd.read_csv(args.out_dir + '/' + RESULT_FILE)['x'].to_numpy())
 
             # parameter estimates 
-            known_params = ch.cat([w_.T, w0_[..., None]])
-
+            known_emp_params = ch.cat([w_.T, w0_[..., None]])
+            known_params = ch.cat([w__.T, w0__[..., None]])
             real_params = ch.cat([ground_truth.weight.T, ground_truth.bias])
             ols_params = ch.cat([Tensor(ols.coef_).T, Tensor(ols.intercept_)[..., None]])
             unknown_params = ch.cat([w, w0])
-            trunc_reg_params = ch.cat([trunc_res[0][1:-1].flatten(), trunc_res[0][0]])
+            trunc_reg_params = ch.cat([trunc_res[1:-1].flatten(), trunc_res[0][None,...]])[..., None]
 
             # metrics
+            known_emp_param_mse = mse_loss(known_emp_params, real_params)
             known_param_mse = mse_loss(known_params, real_params)
             unknown_param_mse = mse_loss(unknown_params, real_params)
-            print("ols var size: ", Tensor([var]).size())
-            print("unknown var size:", var_.size())
-            unknown_var_mse = mse_loss(var_, Tensor([var]))
-            print("unknown var")
+            unknown_var_mse = mse_loss(var_, Tensor([var])[None,...])
+
             ols_param_mse = mse_loss(Tensor(ols_params), Tensor(real_params))
-            ols_var_mse = mse_loss(ols_var, Tensor([var]))
-            print("trunc reg param size: ", trunc_reg_params.size())
-            print("real params size: ", real_params.size())
+            ols_var_mse = mse_loss(ols_var, Tensor([var])[None,...])
             trunc_reg_param_mse = mse_loss(trunc_reg_params, real_params)
-            print("trunc reg param")
-            trunc_var_mse = mse_loss(trunc_res[0][-1].pow(2), Tensor([var]))
-            print("trunc var size: ", trunc_res[0][-1].size())
+            trunc_var_mse = mse_loss(trunc_res[-1].pow(2)[None,...], Tensor([var]))
 
             # add results to store
             store[TABLE_NAME].append_row({ 
+                'known_emp_param_mse': known_emp_param_mse,
                 'known_param_mse': known_param_mse,
                 'unknown_param_mse': unknown_param_mse,
                 'unknown_var_mse': unknown_var_mse,
