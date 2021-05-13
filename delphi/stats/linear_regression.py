@@ -17,7 +17,7 @@ from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
-from ..utils.helpers import Bounds, LinearUnknownVariance
+from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_metadata
 from ..utils import defaults
 from ..utils.datasets import DataSet, TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS
 

@@ -9,7 +9,7 @@ from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 import IPython
 
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata
 from .utils import constants as consts
 
 # determine running environment
@@ -112,6 +112,9 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
     if store is not None:
         store.add_table(table, consts.LOGS_SCHEMA)
+        # save experiment metadata
+        setup_store_with_metadata(args, store)
+
     writer = store.tensorboard if store else None
 
     # data loaders

@@ -77,14 +77,15 @@ TRAINING_DEFAULTS = {
     },
     datasets.TensorDataset: {
         "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
+        "batch_size": 100,
+        "weight_decay": 0.0,
         "momentum": 0.0,
         "num_samples": 100,
         "radius": 2.0,
         "step_lr": 10,
         "score": True,
         "tol": 1e-2,
+        "clamp": True, 
     },
 }
 """
@@ -162,7 +163,10 @@ REGRESSION_ARGS = [
     ['radius', float, 'initial radius size for PSGD', BY_DATASET],
     ['score', bool, 'determine convergence based off of score', BY_DATASET],
     ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
-    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
+    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET], 
+    ['clamp', bool, 'use clamp method for projection set', BY_DATASET], 
+    ['shuffle', [0, 1], 'shuffle dataset running procedure', 1], 
+    ['eps', float, 'fuzzy error value', 1e-5]
 ]
 
 # default arguments for truncated logistic regression algorithm
