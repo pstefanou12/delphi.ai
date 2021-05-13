@@ -45,7 +45,7 @@ class TruncatedLogisticRegression(stats):
         """
         super(LogisticRegression).__init__()
         # instance variables
-        self._log_reg, self.projectioin_set = None, None
+        self.model, self.projectioin_set = None, None
         self.phi = phi
         self.alpha = alpha
         self.bias = bias 
@@ -80,7 +80,7 @@ class TruncatedLogisticRegression(stats):
         # standard_log_reg.fit(X, y.flatten())
 
         # use standard predictions as empirical estimates
-        self._log_reg = ch.nn.Linear(in_features=X.size(1), out_features=int(ch.max(y) + 1), bias=self.bias)
+        self.model = ch.nn.Linear(in_features=X.size(1), out_features=int(ch.max(y) + 1), bias=self.bias)
         # print("coef: ", standard_log_reg.coef_)
         # print("coef shape: ", standard_log_reg.coef_.shape)
         # self._log_reg.weight = ch.nn.Parameter(Tensor(standard_log_reg.coef_))
@@ -91,7 +91,14 @@ class TruncatedLogisticRegression(stats):
         config.args.__setattr__('custom_criterion', TruncatedCE.apply if self.multi_class == 'multinomial' else TruncatedBCE.apply)
         # config.args.__setattr__('iteration_hook', TruncLogRegIterationHook(self._log_reg, config.args.alpha, config.args.radius))
         # run PGD to predict actual estimates
-        return train_model(config.args, self._log_reg, loaders, store=self.store, table=self.table)
+        train_model(config.args, self.model, loaders, store=self.store, table=self.table)
+
+
+
+
+
+
+
 
 
 class TruncLogRegIterationHook:
