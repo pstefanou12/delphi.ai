@@ -111,10 +111,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         factor
         """
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-
-        w_grad = lambda_ * (out - targ) / pred.size(0)
-        print("weight grad: ", w_grad.size())
-        print("lambda grad: ", lambda_grad.size())
         return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0)
 
 

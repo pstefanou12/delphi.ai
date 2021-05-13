@@ -162,14 +162,19 @@ if __name__ == '__main__':
     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
     args = Parameters(parser.parse_args().__dict__)
-    args.__setattr__('phi', Left(Tensor([args.C])))
     args.__setattr__('workers', 8)
     args.__setattr__('custom_lr_multiplier', consts.COSINE)
+    # independent variable bounds
     args.__setattr__('x_lower', -5)
     args.__setattr__('x_upper', 5)
+    # parameter bounds
+    args.__setattr__('lower', -1)
+    args.__setattr__('upper', 1)
     args.__setattr__('device', 'cuda' if ch.cuda.is_available() else 'cpu')
 
     print('args: ', args)
+
+    args.__setattr__('phi', Left(Tensor([args.C])))
 
     # run experiment
     main(args)
