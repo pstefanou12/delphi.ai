@@ -25,7 +25,8 @@ TABLE_NAME = 'results'
 
 # commands and arguments
 COMMAND = 'Rscript'
-PATH2SCRIPT = '/home/gridsan/stefanou/delphi/truncreg.R'
+PATH2SCRIPT = '/home/pstefanou/delphi/truncreg.R'
+# PATH2SCRIPT = '/home/gridsan/stefanou/delphi/truncreg.R'
 TMP_FILE = 'tmp.csv'
 RESULT_FILE = 'result.csv'
 
@@ -73,7 +74,6 @@ def main(args):
             # generate ground truth
             ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
             ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
-            print("break")
             # bias term 
             if args.bias: 
                 ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
@@ -82,7 +82,6 @@ def main(args):
             with ch.no_grad():
                 # generate data
                 X = U_.sample(ch.Size([args.samples, args.dims]))
-                print("break")
                 y = ground_truth(X) + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
                 # truncate
                 indices = args.phi(y).nonzero(as_tuple=False).flatten()
@@ -119,7 +118,7 @@ def main(args):
             - c - truncation point (float)
             - dir - left or right -> type of truncation (str)
             """
-            cmd = [COMMAND, PATH2SCRIPT] + [args.C, 'left']
+            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), 'left']
 
             # check_output will run the command and store the result
             result = subprocess.check_output(cmd, universal_newlines=True)
