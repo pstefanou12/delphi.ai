@@ -209,6 +209,9 @@ class TruncatedCE(ch.autograd.Function):
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
         filtered = config.args.phi(noised).float()[..., None].to(config.args.device)
+        if ch.all(filtered.sum(dim=0) == 0):
+            print("pred: ", pred)
+            print("filtered sum 0: ", filtered.sum(dim=0))
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]
