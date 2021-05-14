@@ -38,7 +38,7 @@ class Interval:
         return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))
 
 
-class IntervalUnion(oracle):
+class KIntervalUnion(oracle):
     """
     Receives an iterable of tuples that contain a lower, upper bound tensor.
     """
@@ -52,6 +52,9 @@ class IntervalUnion(oracle):
             result = ch.logical_or(result, oracle_(x)) if result.nelement() > 0 else oracle_(x)
         return result
 
+    def __str__(self): 
+        return 'k-interval union'
+
 
 class Left(Interval):
     """
@@ -63,6 +66,9 @@ class Left(Interval):
             left: left bound - size (d,)
         """
         super().__init__(left, ch.full(left.size(), float('inf')))
+
+    def __str__(self): 
+        return 'left'
 
 
 class Right(Interval):
@@ -77,6 +83,9 @@ class Right(Interval):
         """
         super().__init__(-ch.full(right.size(), float('inf')), right)
 
+    def __str__(self): 
+        return 'right'
+
 
 class Lambda(oracle):   
     """
@@ -87,6 +96,9 @@ class Lambda(oracle):
     
     def __call__(self, x):
         return ch.cat([self.lambda_(x[i]).unsqueeze(0) for i in range(x.size(0))])
+
+    def __str__(self): 
+        return 'lambda'
 
 
 class Sphere(oracle):
@@ -103,6 +115,9 @@ class Sphere(oracle):
         dist = ch.sqrt(_batch_mahalanobis(self._unbroadcasted_scale_tril, diff))
         return (dist < self.radius).float().flatten()
 
+    def __str__(self): 
+        return 'sphere'
+
 
 # LAMBDA FUNCTIONS TRIED
 #  2D DIMENSIONAL GAUSSIAN LAMBDA FUNCTIONS
@@ -115,7 +130,7 @@ triangle = lambda x: x[1] >= 0 and x[1] <= +x[0] + 1 and x[1] <= 1 - x[0] and no
 three_d_union_check = lambda x: x[0] > 0 and x[2] > 0 or x.pow(2).sum() < 1.0
 
 
-class Unknown_Gaussian(oracle):
+class UnknownGaussian(oracle):
     """
     Oracle that learns truncation set
     """
@@ -180,7 +195,11 @@ class Unknown_Gaussian(oracle):
     def d(self):
         return self._d
 
-class DNN_Lower(oracle): 
+    def __str__(self): 
+        return 'unknown gaussian'
+
+
+class DNNLower(oracle): 
     """
     Lower bound truncation on the DNN logits.
     """
@@ -189,15 +208,9 @@ class DNN_Lower(oracle):
         
     def __call__(self, x): 
         return (x > self.lower).float()
-    
-class DNN_Logit_Ball(oracle): 
-    """
-    Truncation ball placed on DNN logits.
-    INTUITION: logits that are neither very large nor very small insinuate
-    that the classification is not 
-    """ 
-    def __call__(self, x): 
-       return (x.norm(dim=-1) <= 1.5)
+
+    def __str__(self): 
+        return 'dnn lower'
         
 
 class Identity(oracle): 
@@ -207,8 +220,11 @@ class Identity(oracle):
     def __call__(self, x): 
         return ch.ones(x.size()).prod(-1)
 
+    def __str__(self): 
+        return 'identity'
 
-class Logit_Ball: 
+
+class LogitBall: 
     """
     Truncation based off of norm of logits. Logt norm needs to be smaller than input bound.
     In other words, retain the input that the classifier is less certain on. Smaller 
@@ -219,8 +235,11 @@ class Logit_Ball:
         
     def __call__(self, x): 
         return (x.norm(dim=-1) <= self.bound)
+
+    def __str__(self): 
+        return 'logit ball'
     
-class Logit_Ball_Complement: 
+class LogitBallComplement: 
     
     """
     Truncation based off of complement norm of logits. Logit norm needs to be greater than input bound.
@@ -232,4 +251,7 @@ class Logit_Ball_Complement:
         
     def __call__(self, x): 
         return (x.norm(dim=-1) >= self.bound)
+
+    def __str__(self): 
+        return 'logit ball complement'
 

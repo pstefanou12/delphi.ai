@@ -39,11 +39,14 @@ parser.add_argument('--c', type=float, required=False, default=0, help='truncati
 parser.add_argument('--batch_size', type=int, required=False, default=100, help='batch size for procedure')
 parser.add_argument('--lr', type=float, required=False, default=1e-1, help='learning rate for weight params')
 parser.add_argument('--var-lr', type=float, required=False, default=1e-2, help='learning rate for variance parameter')
-parser.add_argument('--var_', type=int, required=False, default=20, help='maximum variance to run for experiment')
+parser.add_argument('--var_', type=int, required=False, default=20, help='variance to use for experiments')
 parser.add_argument('--trials', type=int, required=False, default=10, help='number of trials to run')
 
 
 def main(args):
+    # set experiment manual seed 
+    ch.manual_seed(0)
+
     # MSE Loss
     mse_loss = ch.nn.MSELoss()
 
@@ -51,8 +54,6 @@ def main(args):
     U = Uniform(args.lower, args.upper)
     U_ = Uniform(args.x_lower, args.x_upper)
 
-    # set experiment manual seed 
-    ch.manual_seed(0)
     for i in range(args.trials):
         # create store and add table
         store = Store(args.out_dir)
@@ -66,11 +67,13 @@ def main(args):
             'trunc_reg_param_mse': float, 
             'trunc_var_mse': float,
             'alpha': float, 
-            'var': float, 
+            'c': float, 
         })
 
         # increase variance up to 20
-        for var in range(1, args.var_ + 1):
+        for C in [-2, -1.75, -1.5, -1.25, -1.0, -.5, -.25, 0.0, .25, .5, .75, 1.0]:
+            # set oracle with left truncation set C
+            args.__setattr__('phi', Left(Tensor([args.C])))
             # generate ground truth
             ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
             ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
@@ -82,7 +85,7 @@ def main(args):
             with ch.no_grad():
                 # generate data
                 X = U_.sample(ch.Size([args.samples, args.dims]))
-                y = ground_truth(X) + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
+                y = ground_truth(X) + ch.sqrt(Tensor([args.var_])) * ch.randn(X.size(0), 1)
                 # truncate
                 indices = args.phi(y).nonzero(as_tuple=False).flatten()
                 y_trunc, x_trunc = y[indices], X[indices]
@@ -99,7 +102,7 @@ def main(args):
             w_, w0_ = results.weight.detach().cpu(), results.bias.detach().cpu()
 
             # truncated linear regression with known noise variance using actual noise variance
-            trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([var])[...,None])
+            trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([args.var_])[...,None])
             results = trunc_reg.fit(x_trunc, y_trunc)
             w__, w0__ = results.weight.detach().cpu(), results.bias.detach().cpu()
 
@@ -141,12 +144,12 @@ def main(args):
             known_emp_param_mse = mse_loss(known_emp_params, real_params)
             known_param_mse = mse_loss(known_params, real_params)
             unknown_param_mse = mse_loss(unknown_params, real_params)
-            unknown_var_mse = mse_loss(var_, Tensor([var])[None,...])
+            unknown_var_mse = mse_loss(var_, Tensor([args.var_])[None,...])
 
             ols_param_mse = mse_loss(Tensor(ols_params), Tensor(real_params))
-            ols_var_mse = mse_loss(ols_var, Tensor([var])[None,...])
+            ols_var_mse = mse_loss(ols_var, Tensor([args.var_])[None,...])
             trunc_reg_param_mse = mse_loss(trunc_reg_params, real_params)
-            trunc_var_mse = mse_loss(trunc_res[-1].pow(2)[None,...], Tensor([var]))
+            trunc_var_mse = mse_loss(trunc_res[-1].pow(2)[None,...], Tensor([args.var_]))
 
             # add results to store
             store[TABLE_NAME].append_row({ 
@@ -159,7 +162,7 @@ def main(args):
                 'trunc_reg_param_mse': trunc_reg_param_mse, 
                 'trunc_var_mse': trunc_var_mse,
                 'alpha': float(alpha.flatten()),
-                'var': float(var), 
+                'c': C, 
             })
 
         # close current store
@@ -181,8 +184,6 @@ if __name__ == '__main__':
     args.__setattr__('device', 'cuda' if ch.cuda.is_available() else 'cpu')
 
     print('args: ', args)
-
-    args.__setattr__('phi', Left(Tensor([args.C])))
 
     # run experiment
     main(args)
