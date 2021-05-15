@@ -61,18 +61,19 @@ def main(args):
             'alpha': float, 
             's': int,
         })
+        # generate ground truth
+        ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
+        ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
+        # bias term 
+        if args.bias: 
+            ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
 
         # number of samples to 
         samples = [100, 250, 500, 750, 1000, 1500, 2500, 5000, 7500, 10000, 20000, 100000]
         # samples = [100, 250, 500, 750, 1000, 1500]
 
         for s in samples:
-            # generate ground truth
-            ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
-            ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
-            # bias term 
-            if args.bias: 
-                ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
+
 
             # remove synthetic data from the computation graph
             with ch.no_grad():

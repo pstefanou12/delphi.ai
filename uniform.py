@@ -17,7 +17,7 @@ from sklearn.linear_model import LinearRegression
 from argparse import ArgumentParser
 
 from delphi.stats.linear_regression import TruncatedLinearRegression
-from delphi.oracle import Left
+from delphi import oracle
 from delphi.utils import constants as consts
 
 # CONSTANTS 
@@ -54,6 +54,9 @@ def main(args):
     U = Uniform(args.lower, args.upper)
     U_ = Uniform(args.x_lower, args.x_upper)
 
+    # noise distribution
+    uniform = Uniform(0, 1)
+
     for i in range(args.trials):
         # create store and add table
         store = Store(args.out_dir)
@@ -76,19 +79,27 @@ def main(args):
         # bias term 
         if args.bias: 
             ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
-        # ground-truth data
+
+        # generate data
         X = U_.sample(ch.Size([args.samples, args.dims]))
-        y = ground_truth(X) + ch.sqrt(Tensor([args.var_])) * ch.randn(X.size(0), 1)
+        # add laplace noise to distribution instead
+        noise = uniform.sample(ch.Size([X.size(0)]))[...,None]
+        print("noise: ", noise.size())
+        y = ground_truth(X) + noise
+        print("y: ", y.size())
 
         # increase variance up to 20
-        for C in [-2, -1.75, -1.5, -1.25, -1.0, -.5, -.25, 0.0, .25, .5, .75, 1.0, 1.5, 2.0, 2.5, 3.0]:
+        c = [-2, -1.75, -1.5, -1.25, -1.0, -.5, -.25, 0.0, .25, .5, .75, 1.0]
+        for C in c:
             # set oracle with left truncation set C
-            args.__setattr__('phi', Left(Tensor([C])))
+            args.__setattr__('phi', oracle.Left(Tensor([args.C])))
+
             # remove synthetic data from the computation graph
             with ch.no_grad():
                 # truncate
                 indices = args.phi(y).nonzero(as_tuple=False).flatten()
                 y_trunc, x_trunc = y[indices], X[indices]
+                
                 alpha = Tensor([y_trunc.size(0) / args.samples])
 
             # empirical linear regression
@@ -174,9 +185,8 @@ if __name__ == '__main__':
 
     args = Parameters(parser.parse_args().__dict__)
     args.__setattr__('workers', 8)
-    # args.__setattr__('custom_lr_multiplier', consts.COSINE)
-    args.__setattr__('step_lr', 100000000)
-    args.__setattr__('step_lr_gamma', 1.0)    # independent variable bounds
+    args.__setattr__('custom_lr_multiplier', consts.COSINE)
+    # independent variable bounds
     args.__setattr__('x_lower', -5)
     args.__setattr__('x_upper', 5)
     # parameter bounds

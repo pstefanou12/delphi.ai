@@ -53,6 +53,7 @@ def main(args):
     # distribution for generating ground truth
     U = Uniform(args.lower, args.upper)
     U_ = Uniform(args.x_lower, args.x_upper)
+
     # noise distribution
     laplace = Laplace(Tensor([0.0]), Tensor([1.0]))
 
@@ -72,26 +73,27 @@ def main(args):
             'c': float, 
         })
 
+        # generate ground truth
+        ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
+        ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
+        # bias term 
+        if args.bias: 
+            ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
+
+        # generate data
+        X = U_.sample(ch.Size([args.samples, args.dims]))
+        # add laplace noise to distribution instead
+        noise = laplace.sample(ch.Size([X.size(0)]))
+        y = ground_truth(X) + noise
+
         # increase variance up to 20
         c = [-2, -1.75, -1.5, -1.25, -1.0, -.5, -.25, 0.0, .25, .5, .75, 1.0]
-        # c = [-2, -1.75, -1.5, -1.25, -1.0]
         for C in c:
             # set oracle with left truncation set C
             args.__setattr__('phi', oracle.Left(Tensor([args.C])))
-            # generate ground truth
-            ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
-            ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
-            # bias term 
-            if args.bias: 
-                ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
 
             # remove synthetic data from the computation graph
             with ch.no_grad():
-                # generate data
-                X = U_.sample(ch.Size([args.samples, args.dims]))
-                # add laplace noise to distribution instead
-                noise = laplace.sample(ch.Size([X.size(0)]))
-                y = ground_truth(X) + noise
                 # truncate
                 indices = args.phi(y).nonzero(as_tuple=False).flatten()
                 y_trunc, x_trunc = y[indices], X[indices]

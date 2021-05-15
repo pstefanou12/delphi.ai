@@ -264,8 +264,10 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
             # lambda parameter used for regression with unknown noise variance
             try:
                 loss = criterion(output, target, model.lambda_)
+
             except Exception as e:
                 loss = criterion(output, target)
+                
 
         # regularizer option 
         reg_term = 0.0

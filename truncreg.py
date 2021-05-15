@@ -19,6 +19,7 @@ from argparse import ArgumentParser
 from delphi.stats.linear_regression import TruncatedLinearRegression
 from delphi.oracle import Left
 from delphi.utils import constants as consts
+from delphi.utils.helpers import setup_store_with_metadata
 
 # CONSTANTS 
 TABLE_NAME = 'results'
@@ -69,23 +70,29 @@ def main(args):
             'var': float, 
         })
 
+
+        # generate ground truth
+        ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
+        ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
+        # bias term 
+        if args.bias: 
+            ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
+
+        # create base classifier
+        with ch.no_grad():
+            # generate data
+            X = U_.sample(ch.Size([args.samples, args.dims]))
+            y = ground_truth(X)
+
         # increase variance up to 20
         for var in range(1, args.var_ + 1):
-            # generate ground truth
-            ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
-            ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
-            # bias term 
-            if args.bias: 
-                ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
-
             # remove synthetic data from the computation graph
             with ch.no_grad():
-                # generate data
-                X = U_.sample(ch.Size([args.samples, args.dims]))
-                y = ground_truth(X) + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
+                # add noise to ground-truth pedictions
+                noised = y + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
                 # truncate
-                indices = args.phi(y).nonzero(as_tuple=False).flatten()
-                y_trunc, x_trunc = y[indices], X[indices]
+                indices = args.phi(noised).nonzero(as_tuple=False).flatten()
+                y_trunc, x_trunc = noised[indices], X[indices]
                 alpha = Tensor([y_trunc.size(0) / args.samples])
 
             # empirical linear regression
@@ -171,7 +178,9 @@ if __name__ == '__main__':
 
     args = Parameters(parser.parse_args().__dict__)
     args.__setattr__('workers', 8)
-    args.__setattr__('custom_lr_multiplier', consts.COSINE)
+    # args.__setattr__('custom_lr_multiplier', consts.COSINE)
+    args.__setattr__('step_lr', 100000000)
+    args.__setattr__('step_lr_gamma', 1.0)
     # independent variable bounds
     args.__setattr__('x_lower', -5)
     args.__setattr__('x_upper', 5)
@@ -180,9 +189,17 @@ if __name__ == '__main__':
     args.__setattr__('upper', 1)
     args.__setattr__('device', 'cuda' if ch.cuda.is_available() else 'cpu')
 
+    # setup store with metadata
+    store = Store(args.out_dir)
+    setup_store_with_metadata(args, store)
+    store.close()
+
     print('args: ', args)
 
+
     args.__setattr__('phi', Left(Tensor([args.C])))
+
+
 
     # run experiment
     main(args)

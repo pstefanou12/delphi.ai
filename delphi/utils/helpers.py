@@ -301,25 +301,28 @@ class LinearUnknownVariance(nn.Module):
     """
     Linear layer with unknown noise variance.
     """
-    def __init__(self, v, lambda_, bias=None):
+    def __init__(self, in_features, out_features, bias=True):
         """
-        :param lambda_: 1/empirical variance
-        :param v: empirical weight*lambda_ estimate
-        :param bias: (optional) empirical bias*lambda_ estimate
+        :param in_features: number of in features
+        :param out_features: number of out features 
+        :param bias: bias term or not
         """
         super(LinearUnknownVariance, self).__init__()
-        self.register_parameter(name='v', param=ch.nn.Parameter(v))
-        self.register_parameter(name='lambda_', param=ch.nn.Parameter(lambda_))
-        self.register_parameter(name='bias', param=ch.nn.Parameter(bias))
+        # instance variables
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bias
+        self.layer = ch.nn.Linear(in_features=in_features, out_features=out_features, bias=self.bias)
+        # choose initial noise variance from a normal distribution
+        self.lambda_ = ch.nn.Parameter(ch.abs(ch.nrandn(1))[None,...])
 
-    def forward(self, x):
+    def forward(self, x, lambda_):
         var = self.lambda_.clone().detach().inverse()
         w = self.v*var
-        if self.bias.nelement() > 0:
+        if self.layer.bias.nelement() > 0:
             return x.matmul(w) + self.bias * var
         return x.matmul(w)
         
-
 # logistic distribution
 base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
