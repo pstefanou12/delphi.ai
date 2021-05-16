@@ -88,12 +88,12 @@ def eval_model(args, model, loader, store, table=None):
     model.to(args.device)
 
     assert not hasattr(model, "module"), "model is already in DataParallel."
-    if next(model.parameters()).is_cuda:
+    if args.parallel and next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
-
+    print("before model loop.")
     test_prec1, test_loss, score = model_loop(args, 'val', loader,
                                         model, None, 0, 0, writer, args.device)
-
+    print("after loop.")
     log_info = {
         'test_prec1': test_prec1,
         'test_loss': test_loss,
@@ -227,11 +227,10 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
         raise ValueError(err_msg)
-
     # train or val loop
     is_train = (loop_type == 'train')
     loop_msg = 'Train' if is_train else 'Val'
-
+ 
     # algorithm metrics
     losses, score = AverageMeter(), AverageMeter()
     top1, top5 = AverageMeter(), AverageMeter()
