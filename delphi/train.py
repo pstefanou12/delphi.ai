@@ -7,7 +7,6 @@ import torch as ch
 from torch import Tensor
 from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
-import IPython
 
 from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata
 from .utils import constants as consts
@@ -249,12 +248,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         elif isinstance(model, ch.nn.Module):
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
-
-            # check to make sure input is not infinity 
-            if ch.any(inp.isnan()): 
-                raise Exception("infinity in input")
-
             output = model(inp)
+            print("output: ", output[:10])
+            print("target: ", target[:10])
             # attacker model returns both output anf final input
             if isinstance(output, tuple):
                 output, final_inp = output
@@ -276,6 +272,13 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         if is_train:
             optimizer.zero_grad()
             loss.backward()
+            try: 
+                print("weight grad: ", model.weight.grad)
+                print("bias grad: ", model.bias.grad)
+            except: 
+                print("weight grad: ", model.layer.weight.grad)
+                print("bias grad: ", model.layer.bias.grad)
+                print("lambda grad: ", model.lambda_.grad)
             # normalize gradient
             if args.norm: 
                 model.weight.grad = model.weight.grad / model.weight.grad.norm()
@@ -325,45 +328,23 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
                 # ITERATOR
                 if steps is not None: 
                     # TODO: figure out better way to pass descriptions through to iterator
-                    if args.score:
-                        if args.accuracy:  
-                            desc = ('Steps: {0} | Score: \n {score} | Loss {loss.avg:.4f} \n| '
-                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                    'Reg term: {reg} ||'.format(steps, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
-                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                        else: 
-                            desc = ('Steps: {0} | Score: {score} | Loss {loss.avg:.4f} | '
-                                    'Reg term: {reg} ||'.format(steps, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
-                                                                loss=losses, reg=reg_term))
+                    if args.accuracy: 
+                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
+                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                'Reg term: {reg} ||'.format(steps, loop_msg,
+                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                     else: 
-                        if args.accuracy: 
-                            desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
-                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                    'Reg term: {reg} ||'.format(steps, loop_msg,
-                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                        else: 
-                            desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
-                                    'Reg term: {reg} ||'.format(steps, loop_msg, loss=losses, reg=reg_term))
+                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
+                                'Reg term: {reg} ||'.format(steps, loop_msg, loss=losses, reg=reg_term))
                 else: 
-                    if args.score: 
-                        if args.accuracy: 
-                            desc = ('Epoch: {0} | Score: {score} | Loss {loss.avg:.4f} | '
-                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                    'Reg term: {reg} ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
-                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                        else: 
-                            desc = ('Epoch: {0} | Score: {score} | Loss {loss.avg:.4f} | '
-                                    'Reg term: {reg} ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()],
-                                                                loss=losses, reg=reg_term))
+                    if args.accuracy: 
+                        desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                                'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
                     else: 
-                        if args.accuracy: 
-                            desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                    'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                        else: 
-                            desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                                    'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
+                        desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                                'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
         except Exception as e:
             # ITERATOR
             if steps is not None:

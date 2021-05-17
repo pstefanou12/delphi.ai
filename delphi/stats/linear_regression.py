@@ -70,15 +70,23 @@ class TruncatedLinearRegression(stats):
         ds = DataSet('tensor', TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS, data_path=None,
                      **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
+        self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
+        self.emp_weight = Tensor(self.emp_lin_reg.coef_)
+        self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
+        self.emp_var = ch.var(Tensor(self.emp_lin_reg.predict(X)) - y, dim=0)[..., None]
         
         if config.args.var: # known variance
             self.criterion = TruncatedMSE.apply
             self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=self.bias)
+            # assign empirical estimates
+            self._lin_reg.weight.data, self._lin_reg.bias.data = self.emp_weight, self.emp_bias
             self.projection_set = TruncatedRegressionProjectionSet(X, y, config.args.radius, config.args.alpha, bias=config.args.bias, clamp=config.args.clamp)
             update_params = None
         else:  # unknown variance
             self.criterion = TruncatedUnknownVarianceMSE.apply
             self._lin_reg = LinearUnknownVariance(in_features=X.size(1), out_features=y.size(1), bias=self.bias)
+            # assign empirical estimates
+            self._lin_reg.layer.weight.data, self._lin_reg.layer.bias.data, self._lin_reg.lambda_.data = self.emp_weight, self.emp_bias, self.emp_var
             self.projection_set = TruncatedUnknownVarianceProjectionSet(X, y, config.args.radius, config.args.alpha, bias=config.args.bias, clamp=config.args.clamp)
             update_params = [{'params': self._lin_reg.layer.parameters()},
                             {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
@@ -87,6 +95,12 @@ class TruncatedLinearRegression(stats):
         config.args.__setattr__('iteration_hook', self.projection_set)
         # run PGD for parameter estimation
         return train_model(config.args, self._lin_reg, loaders, update_params=update_params)
+
+
+    def __call__(self, x: Tensor): 
+        """
+        """
+        return self._lin_reg(x)
 
 
 class TruncatedRegressionProjectionSet:
@@ -112,6 +126,10 @@ class TruncatedRegressionProjectionSet:
         else:
             pass
 
+
+        print("weight bounds: ", (self.weight_bounds.lower, self.weight_bounds.upper))
+        print("bias bounds: ", (self.bias_bounds.lower, self.bias_bounds.upper))
+        
     def __call__(self, M, i, loop_type, inp, target):
         if self.clamp:
             M.weight.data = ch.stack(
