@@ -90,10 +90,8 @@ def eval_model(args, model, loader, store, table=None):
     assert not hasattr(model, "module"), "model is already in DataParallel."
     if args.parallel and next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
-    print("before model loop.")
     test_prec1, test_loss, score = model_loop(args, 'val', loader,
                                         model, None, 0, 0, writer, args.device)
-    print("after loop.")
     log_info = {
         'test_prec1': test_prec1,
         'test_loss': test_loss,
@@ -263,8 +261,10 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
             # lambda parameter used for regression with unknown noise variance
             try:
                 loss = criterion(output, target, model.lambda_)
+
             except Exception as e:
                 loss = criterion(output, target)
+                
 
         # regularizer option 
         reg_term = 0.0

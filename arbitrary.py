@@ -17,18 +17,11 @@ from sklearn.linear_model import LinearRegression
 from argparse import ArgumentParser
 
 from delphi.stats.linear_regression import TruncatedLinearRegression
-from delphi.oracle import Left
+from delphi import oracle
 from delphi.utils import constants as consts
-from delphi.utils.helpers import setup_store_with_metadata
 
 # CONSTANTS 
 TABLE_NAME = 'results'
-
-# commands and arguments
-COMMAND = 'Rscript'
-PATH2SCRIPT = '/home/gridsan/stefanou/delphi/truncreg.R'
-TMP_FILE = 'tmp.csv'
-RESULT_FILE = 'result.csv'
 
 # experiment argument parser
 parser = ArgumentParser()
@@ -40,11 +33,14 @@ parser.add_argument('--c', type=float, required=False, default=0, help='truncati
 parser.add_argument('--batch_size', type=int, required=False, default=100, help='batch size for procedure')
 parser.add_argument('--lr', type=float, required=False, default=1e-1, help='learning rate for weight params')
 parser.add_argument('--var-lr', type=float, required=False, default=1e-2, help='learning rate for variance parameter')
-parser.add_argument('--var_', type=int, required=False, default=20, help='maximum variance to run for experiment')
+parser.add_argument('--var_', type=int, required=False, default=20, help='variance to use for experiments')
 parser.add_argument('--trials', type=int, required=False, default=10, help='number of trials to run')
 
 
 def main(args):
+    # set experiment manual seed 
+    ch.manual_seed(0)
+
     # MSE Loss
     mse_loss = ch.nn.MSELoss()
 
@@ -52,8 +48,6 @@ def main(args):
     U = Uniform(args.lower, args.upper)
     U_ = Uniform(args.x_lower, args.x_upper)
 
-    # set experiment manual seed 
-    ch.manual_seed(0)
     for i in range(args.trials):
         # create store and add table
         store = Store(args.out_dir)
@@ -64,13 +58,9 @@ def main(args):
             'unknown_var_mse': float,
             'ols_param_mse': float,
             'ols_var_mse': float,
-            'trunc_reg_param_mse': float, 
-            'trunc_var_mse': float,
             'alpha': float, 
-            'var': float, 
+            's': int,
         })
-
-
         # generate ground truth
         ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
         ground_truth.weight = ch.nn.Parameter(U.sample(ch.Size([1, args.dims]))) 
@@ -78,22 +68,28 @@ def main(args):
         if args.bias: 
             ground_truth.bias = ch.nn.Parameter(U.sample(ch.Size([1, 1])))
 
-        # create base classifier
-        with ch.no_grad():
-            # generate data
-            X = U_.sample(ch.Size([args.samples, args.dims]))
-            y = ground_truth(X)
+        # number of samples to 
+        samples = [100, 250, 500, 750, 1000, 1500, 2500, 5000, 7500, 10000, 20000, 100000]
+        # samples = [100, 250, 500, 750, 1000, 1500]
 
-        # increase variance up to 20
-        for var in range(1, args.var_ + 1):
+        for s in samples:
+
+
             # remove synthetic data from the computation graph
             with ch.no_grad():
-                # add noise to ground-truth pedictions
-                noised = y + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
-                # truncate
-                indices = args.phi(noised).nonzero(as_tuple=False).flatten()
-                y_trunc, x_trunc = noised[indices], X[indices]
-                alpha = Tensor([y_trunc.size(0) / args.samples])
+                total = 0.0 # total number of samples sampled from linear regression
+                x_trunc, y_trunc = Tensor([]), Tensor([])
+                while x_trunc.size(0) < s: 
+                    # generate data
+                    X = U_.sample(ch.Size([args.samples, args.dims]))
+                    y = ground_truth(X) + ch.sqrt(Tensor([args.var_])) * ch.randn(X.size(0), 1)
+                    # truncate
+                    indices = args.phi(y).nonzero(as_tuple=False).flatten()
+                    x_trunc, y_trunc = ch.cat([x_trunc, X[indices]]), ch.cat([y[indices], y_trunc])
+                    total += args.samples
+                alpha = Tensor([s / total])
+                # take only the first s samples that fall inside the truncation set
+                x_trunc, y_trunc = x_trunc[:s], y_trunc[:s]
 
             # empirical linear regression
             ols = LinearRegression() 
@@ -106,7 +102,7 @@ def main(args):
             w_, w0_ = results.weight.detach().cpu(), results.bias.detach().cpu()
 
             # truncated linear regression with known noise variance using actual noise variance
-            trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([var])[...,None])
+            trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([args.var_])[...,None])
             results = trunc_reg.fit(x_trunc, y_trunc)
             w__, w0__ = results.weight.detach().cpu(), results.bias.detach().cpu()
 
@@ -116,44 +112,20 @@ def main(args):
             var_ = results.lambda_.inverse().detach()
             w, w0 = (results.v.detach()*var_).cpu(), (results.bias.detach()*var_).cpu()
 
-            # spawn subprocess to run truncreg experiment
-            concat = ch.cat([x_trunc, y_trunc], dim=1).numpy()
-            """
-            DATA FORMAT:
-                -First n-1 columns are independent variables
-                -nth column is dependent variable
-            """
-            concat_df = pd.DataFrame(concat)
-            concat_df.to_csv(args.out_dir + '/' + TMP_FILE) # save data to csv
-            """
-            Arguments
-            - c - truncation point (float)
-            - dir - left or right -> type of truncation (str)
-            """
-            cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), str(args.dims), 'left', args.out_dir]
-
-            # check_output will run the command and store the result
-            result = subprocess.check_output(cmd, universal_newlines=True)
-            trunc_res = Tensor(pd.read_csv(args.out_dir + '/' + RESULT_FILE)['x'].to_numpy())
-
             # parameter estimates 
             known_emp_params = ch.cat([w_.T, w0_[..., None]])
             known_params = ch.cat([w__.T, w0__[..., None]])
             real_params = ch.cat([ground_truth.weight.T, ground_truth.bias])
             ols_params = ch.cat([Tensor(ols.coef_).T, Tensor(ols.intercept_)[..., None]])
             unknown_params = ch.cat([w, w0])
-            trunc_reg_params = ch.cat([trunc_res[1:-1].flatten(), trunc_res[0][None,...]])[..., None]
 
             # metrics
             known_emp_param_mse = mse_loss(known_emp_params, real_params)
             known_param_mse = mse_loss(known_params, real_params)
             unknown_param_mse = mse_loss(unknown_params, real_params)
-            unknown_var_mse = mse_loss(var_, Tensor([var])[None,...])
-
+            unknown_var_mse = mse_loss(var_, Tensor([args.var_])[None,...])
             ols_param_mse = mse_loss(Tensor(ols_params), Tensor(real_params))
-            ols_var_mse = mse_loss(ols_var, Tensor([var])[None,...])
-            trunc_reg_param_mse = mse_loss(trunc_reg_params, real_params)
-            trunc_var_mse = mse_loss(trunc_res[-1].pow(2)[None,...], Tensor([var]))
+            ols_var_mse = mse_loss(ols_var, Tensor([args.var_])[None,...])
 
             # add results to store
             store[TABLE_NAME].append_row({ 
@@ -163,10 +135,8 @@ def main(args):
                 'unknown_var_mse': unknown_var_mse,
                 'ols_param_mse': ols_param_mse,
                 'ols_var_mse': ols_var_mse,
-                'trunc_reg_param_mse': trunc_reg_param_mse, 
-                'trunc_var_mse': trunc_var_mse,
                 'alpha': float(alpha.flatten()),
-                'var': float(var), 
+                's': s, 
             })
 
         # close current store
@@ -179,7 +149,7 @@ if __name__ == '__main__':
     args = Parameters(parser.parse_args().__dict__)
     args.__setattr__('workers', 8)
     # args.__setattr__('custom_lr_multiplier', consts.COSINE)
-    args.__setattr__('step_lr', 100000000)
+    args.__setattr__('step_lr', 100000)
     args.__setattr__('step_lr_gamma', 1.0)
     # independent variable bounds
     args.__setattr__('x_lower', -5)
@@ -189,16 +159,9 @@ if __name__ == '__main__':
     args.__setattr__('upper', 1)
     args.__setattr__('device', 'cuda' if ch.cuda.is_available() else 'cpu')
 
-    # setup store with metadata
-    store = Store(args.out_dir)
-    setup_store_with_metadata(args, store)
-    store.close()
-
-    print('args: ', args)
-
-
-    args.__setattr__('phi', Left(Tensor([args.C])))
-
+    # set oracle with left truncation set C
+    print('args: ', args)    
+    args.__setattr__('phi', oracle.KIntervalUnion([(Tensor([-1.0]), Tensor([-.5])), (Tensor([0.0]), Tensor([0.5])), (Tensor([2.0]), Tensor([3.0]))]))
 
 
     # run experiment

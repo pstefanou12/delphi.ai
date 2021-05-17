@@ -70,19 +70,14 @@ class TruncatedLinearRegression(stats):
         ds = DataSet('tensor', TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS, data_path=None,
                      **ds_kwargs)
         loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
-        # use OLS as empirical estimate
-        lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
         
         if config.args.var: # known variance
             self.criterion = TruncatedMSE.apply
-            self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=config.args.bias)
-            self._lin_reg.weight.data = ch.nn.Parameter(Tensor(lin_reg.coef_))
-            self._lin_reg.bias = ch.nn.Parameter(Tensor(lin_reg.intercept_)) if config.args.bias else None
-            self.projection_set = TruncatedRegressionProjectionSet(self._lin_reg)
+            self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=self.bias)
+            self.projection_set = TruncatedRegressionProjectionSet(X, y, config.args.radius, config.args.alpha, bias=config.args.bias, clamp=config.args.clamp)
             update_params = None
         else:  # unknown variance
             self.criterion = TruncatedUnknownVarianceMSE.apply
-            self.emp_lambda = ch.var(Tensor(lin_reg.predict(X)) - y, dim=0)[..., None].inverse()
             self._lin_reg = LinearUnknownVariance(Tensor(lin_reg.coef_).T * self.emp_lambda, self.emp_lambda,
                                                       bias=Tensor(lin_reg.intercept_) * self.emp_lambda)
             self.projection_set = TruncatedUnknownVarianceProjectionSet(self._lin_reg)
@@ -101,20 +96,28 @@ class TruncatedRegressionProjectionSet:
     """
     Project to domain for linear regression with known variance
     """
-    def __init__(self, lin_reg):
-        self.weight = lin_reg.weight.data
-        self.bias = lin_reg.bias.data if config.args.bias else None
-        self.radius = config.args.radius * (4.0 * ch.log(2.0 / config.args.alpha) + 7.0)
-        if config.args.clamp:
-            self.weight_bounds = Bounds(self.weight.flatten() - config.args.radius,
-                                        self.weight.flatten() + config.args.radius)
-            self.bias_bounds = Bounds(self.bias.flatten() - config.args.radius,
-                                      self.bias.flatten() + config.args.radius) if config.args.bias else None
+    def __init__(self, X, y, r, alpha, bias=True, clamp=True):
+        # use OLS as empirical estimate to define projection set
+        self.bias = bias
+        self.r = r
+        self.alpha = alpha
+        self.clamp = clamp
+        self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
+        self.emp_var = ch.var(Tensor(lin_reg.predict(X)) - y, dim=0)[..., None]
+
+        self.emp_weight = Tensor(self.emp_lin_reg.coef_)
+        self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
+        self.radius = r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
+        if self.clamp:
+            self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
+                                        self.weight.flatten() + self.radius)
+            self.bias_bounds = Bounds(self.bias.flatten() - self.radius,
+                                      self.bias.flatten() + self.radius) if self.bias else None
         else:
             pass
 
     def __call__(self, M, i, loop_type, inp, target):
-        if config.args.clamp:
+        if self.clamp:
             M.weight.data = ch.stack(
                 [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
                  range(M.weight.size(0))])
