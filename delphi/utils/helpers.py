@@ -311,16 +311,17 @@ class LinearUnknownVariance(nn.Module):
         # instance variables
         self.in_features = in_features
         self.out_features = out_features
-        self.bias
+        self.bias = bias
         self.layer = ch.nn.Linear(in_features=in_features, out_features=out_features, bias=self.bias)
         # choose initial noise variance from a normal distribution
-        self.lambda_ = ch.nn.Parameter(ch.abs(ch.nrandn(1))[None,...])
+        self.lambda_ = ch.nn.Parameter(ch.abs(ch.randn(1))[None,...])
 
-    def forward(self, x, lambda_):
+    def forward(self, x):
         var = self.lambda_.clone().detach().inverse()
-        w = self.v*var
+        w = self.layer.weight*var
         if self.layer.bias.nelement() > 0:
-            return x.matmul(w) + self.bias * var
+            out_ = x.matmul(w) + self.layer.bias * var
+            return x.matmul(w) + self.layer.bias * var
         return x.matmul(w)
         
 # logistic distribution
