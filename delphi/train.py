@@ -249,8 +249,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
             output = model(inp)
-            print("output: ", output[:10])
-            print("target: ", target[:10])
             # attacker model returns both output anf final input
             if isinstance(output, tuple):
                 output, final_inp = output
@@ -272,13 +270,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         if is_train:
             optimizer.zero_grad()
             loss.backward()
-            try: 
-                print("weight grad: ", model.weight.grad)
-                print("bias grad: ", model.bias.grad)
-            except: 
-                print("weight grad: ", model.layer.weight.grad)
-                print("bias grad: ", model.layer.bias.grad)
-                print("lambda grad: ", model.lambda_.grad)
             # normalize gradient
             if args.norm: 
                 model.weight.grad = model.weight.grad / model.weight.grad.norm()

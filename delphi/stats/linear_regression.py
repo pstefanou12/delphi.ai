@@ -86,7 +86,8 @@ class TruncatedLinearRegression(stats):
             self.criterion = TruncatedUnknownVarianceMSE.apply
             self._lin_reg = LinearUnknownVariance(in_features=X.size(1), out_features=y.size(1), bias=self.bias)
             # assign empirical estimates
-            self._lin_reg.layer.weight.data, self._lin_reg.layer.bias.data, self._lin_reg.lambda_.data = self.emp_weight, self.emp_bias, self.emp_var
+            self.lambda_ = self.emp_var.inverse()
+            self._lin_reg.layer.weight.data, self._lin_reg.layer.bias.data = self.emp_weight * self.lambda_, self.emp_bias * self.lambda_
             self.projection_set = TruncatedUnknownVarianceProjectionSet(X, y, config.args.radius, config.args.alpha, bias=config.args.bias, clamp=config.args.clamp)
             update_params = [{'params': self._lin_reg.layer.parameters()},
                             {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
@@ -126,10 +127,6 @@ class TruncatedRegressionProjectionSet:
         else:
             pass
 
-
-        print("weight bounds: ", (self.weight_bounds.lower, self.weight_bounds.upper))
-        print("bias bounds: ", (self.bias_bounds.lower, self.bias_bounds.upper))
-        
     def __call__(self, M, i, loop_type, inp, target):
         if self.clamp:
             M.weight.data = ch.stack(
@@ -185,7 +182,7 @@ class TruncatedUnknownVarianceProjectionSet:
             # project bias
             if self.bias:
                 bias = M.layer.bias * var
-                M.layer.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).flatten()
+                M.layer.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.layer.bias.size())
         else:
             pass
 

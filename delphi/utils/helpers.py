@@ -318,9 +318,8 @@ class LinearUnknownVariance(nn.Module):
 
     def forward(self, x):
         var = self.lambda_.clone().detach().inverse()
-        w = self.layer.weight*var
+        w = self.layer.weight * var
         if self.layer.bias.nelement() > 0:
-            out_ = x.matmul(w) + self.layer.bias * var
             return x.matmul(w) + self.layer.bias * var
         return x.matmul(w)
         
