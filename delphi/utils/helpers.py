@@ -325,13 +325,13 @@ class LinearUnknownVariance(nn.Module):
         nn.init.uniform_(self.lambda_, -5, 5)  # lambda init 
 
     def forward(self, x):
-
         # reparamaterize weight and variance estimates
         var = self.lambda_.clone().detach().inverse()
         w = self.weight * var
         if self.bias is not None:
             return ch.add(x@w.T, self.bias * var)
         return x@w.T
+
         
 # logistic distribution
 base_distribution = Uniform(0, 1)
