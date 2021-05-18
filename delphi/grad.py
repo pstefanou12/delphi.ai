@@ -73,12 +73,13 @@ class TruncatedMSE(ch.autograd.Function):
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
-        noised = stacked + (ch.sqrt(config.args.var)*ch.randn(stacked.size())).to(config.args.device)
+        noised = stacked + (ch.sqrt(config.args.var) * ch.randn(stacked.size())).to(config.args.device)
         # filter out copies where pred is in bounds
         filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
         # average across truncated indices
         out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return (out - targ) / pred.size(0), targ / pred.size(0)
+        w_grad = (out - targ) / pred.size(0)
+        return w_grad, targ / pred.size(0)
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -140,6 +141,7 @@ class LogisticBCE(ch.autograd.Function):
         avg = 1 - 2*((sig(rand_noise)*mask).sum(0) / (mask.sum(0) + 1e-5))
         return avg, None
 
+
 class TruncatedBCE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ):
@@ -165,6 +167,7 @@ class TruncatedBCE(ch.autograd.Function):
         grad = ch.where(ch.abs(out) > 1e-5, sig(out), targ) - targ
         return grad / pred.size(0), -grad / pred.size(0)
 
+
 class GumbelCE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ):
@@ -189,6 +192,7 @@ class GumbelCE(ch.autograd.Function):
         avg = (inner_exp * mask).sum(0) / (mask.sum(0) + 1e-5) / pred.size(0)
         return -avg , None
 
+
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ):
@@ -209,9 +213,6 @@ class TruncatedCE(ch.autograd.Function):
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
         filtered = config.args.phi(noised).float()[..., None].to(config.args.device)
-        if ch.all(filtered.sum(dim=0) == 0):
-            print("pred: ", pred)
-            print("filtered sum 0: ", filtered.sum(dim=0))
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]

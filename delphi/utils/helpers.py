@@ -13,6 +13,7 @@ import cox
 from typing import NamedTuple
 import os
 import git
+import math
 
 from . import constants as consts
 
@@ -307,22 +308,30 @@ class LinearUnknownVariance(nn.Module):
         :param out_features: number of out features 
         :param bias: bias term or not
         """
-        super(LinearUnknownVariance, self).__init__()
-        # instance variables
-        self.in_features = in_features
-        self.out_features = out_features
-        self.bias = bias
-        self.layer = ch.nn.Linear(in_features=in_features, out_features=out_features, bias=self.bias)
         # choose initial noise variance from a normal distribution
-        self.lambda_ = ch.nn.Parameter(ch.abs(ch.randn(1))[None,...])
+        super(LinearUnknownVariance, self).__init__()
+        self.in_features, self.out_features = in_features, out_features
+
+        # layer parameters
+        self.weight = ch.nn.Parameter(Tensor(self.in_features, self.out_features))
+        self.bias = ch.nn.Parameter(Tensor(out_features)) if bias else None
+        self.lambda_ = ch.nn.Parameter(Tensor(1, 1))
+
+        # initialize weights and biases
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5)) # weight init
+        fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1 / math.sqrt(fan_in)
+        nn.init.uniform_(self.bias, -5, 5)  # bias init 
+        nn.init.uniform_(self.lambda_, -5, 5)  # lambda init 
 
     def forward(self, x):
+
+        # reparamaterize weight and variance estimates
         var = self.lambda_.clone().detach().inverse()
-        w = self.layer.weight*var
-        if self.layer.bias.nelement() > 0:
-            out_ = x.matmul(w) + self.layer.bias * var
-            return x.matmul(w) + self.layer.bias * var
-        return x.matmul(w)
+        w = self.weight * var
+        if self.bias is not None:
+            return ch.add(x@w.T, self.bias * var)
+        return x@w.T
         
 # logistic distribution
 base_distribution = Uniform(0, 1)

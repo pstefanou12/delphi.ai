@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance
 from .utils import constants as consts
 
 # determine running environment
@@ -120,9 +120,11 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
     # put the model into parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
+
     # run on parallel GPUs
     if parallel:
         model = ch.nn.DataParallel(model)
+
     if isinstance(model, ch.distributions.distribution.Distribution):
         model.loc.to(args.device)
         model.covariance_matrix.to(args.device)
@@ -249,8 +251,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
             output = model(inp)
-            print("output: ", output[:10])
-            print("target: ", target[:10])
             # attacker model returns both output anf final input
             if isinstance(output, tuple):
                 output, final_inp = output
@@ -260,7 +260,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
 
             except Exception as e:
                 loss = criterion(output, target)
-                
 
         # regularizer option 
         reg_term = 0.0
@@ -270,20 +269,33 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         
         # perform backprop and take optimizer step
         if is_train:
+            # if i >  0:
+            #     import pdb; pdb.set_trace()
             optimizer.zero_grad()
             loss.backward()
-            try: 
-                print("weight grad: ", model.weight.grad)
-                print("bias grad: ", model.bias.grad)
-            except: 
-                print("weight grad: ", model.layer.weight.grad)
-                print("bias grad: ", model.layer.bias.grad)
-                print("lambda grad: ", model.lambda_.grad)
             # normalize gradient
             if args.norm: 
-                model.weight.grad = model.weight.grad / model.weight.grad.norm()
-                if model.bias is not None: 
-                    model.bias.grad = model.bias.grad / model.bias.grad.norm()
+                # check if unknown variance regression
+                if not isinstance(model, LinearUnknownVariance):
+                    if model.bias is not None: 
+                        grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten()])
+                        norm_grad = grad / grad.norm()
+                        model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
+                        model.bias.grad = norm_grad[-1].reshape(model.bias.size())
+                    else: 
+                        model.weight.grad = model.weight.grad / model.weight.grad.norm()
+                else: 
+                    if model.bias is not None: 
+                        grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten(), model.lambda_.flatten()])
+                        norm_grad = grad / grad.norm()
+                        model.weight.grad = norm_grad[:-2].reshape(model.weight.size())
+                        model.bias.grad = norm_grad[-2].reshape(model.bias.size())
+                        model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
+                    else: 
+                        grad = ch.cat([model.weight.grad.flatten(), model.lambda_.flatten()])
+                        norm_grad = model.weight.grad / moptimiodel.weight.grad.norm()
+                        model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
+                        model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
             optimizer.step()
 
         if len(loss.size()) > 0: loss = loss.mean()
@@ -357,6 +369,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, i, loop_type, inp, target)
+
         # increment number of gradients
         if steps is not None: 
             steps += 1

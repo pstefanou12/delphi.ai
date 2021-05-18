@@ -14,7 +14,9 @@ from cox.utils import Parameters
 from cox.store import Store
 import os
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 from argparse import ArgumentParser
+import datetime
 
 from delphi.stats.linear_regression import TruncatedLinearRegression
 from delphi.oracle import Left
@@ -42,6 +44,7 @@ parser.add_argument('--lr', type=float, required=False, default=1e-1, help='lear
 parser.add_argument('--var-lr', type=float, required=False, default=1e-2, help='learning rate for variance parameter')
 parser.add_argument('--var_', type=int, required=False, default=20, help='maximum variance to run for experiment')
 parser.add_argument('--trials', type=int, required=False, default=10, help='number of trials to run')
+parser.add_argument('--norm', action='store_true', help='normalize gradient')
 
 
 def main(args):
@@ -52,24 +55,33 @@ def main(args):
     U = Uniform(args.lower, args.upper)
     U_ = Uniform(args.x_lower, args.x_upper)
 
-    # set experiment manual seed 
-    ch.manual_seed(0)
+    # # set experiment manual seed 
+    # ch.manual_seed(0)
     for i in range(args.trials):
         # create store and add table
         store = Store(args.out_dir)
         store.add_table(TABLE_NAME, { 
-            'known_emp_param_mse': float,
-            'known_param_mse': float,
-            'unknown_param_mse': float,
-            'unknown_var_mse': float,
+            'ols_r2': float,
             'ols_param_mse': float,
             'ols_var_mse': float,
+            'known_emp_r2': float,
+            'known_emp_param_mse': float,
+            'known_emp_time': int,
+            'known_r2': float,
+            'known_param_mse': float,
+            'known_time': int,
+            'unknown_r2': float, 
+            'unknown_param_mse': float,
+            'unknown_var_mse': float,
+            'unknown_time': int,
+            'trunc_reg_r2': float,
             'trunc_reg_param_mse': float, 
-            'trunc_var_mse': float,
+            'trunc_reg_var_mse': float,
+            'trunc_reg_time': int,
             'alpha': float, 
-            'var': float, 
+            'num_samples': int,
+            'noise_scale': float, 
         })
-
 
         # generate ground truth
         ground_truth = ch.nn.Linear(in_features=args.dims, out_features=1, bias=args.bias)
@@ -81,43 +93,106 @@ def main(args):
         # create base classifier
         with ch.no_grad():
             # generate data
-            X = U_.sample(ch.Size([args.samples, args.dims]))
+            X = U_.sample(ch.Size([args.samples, args.dims]))                # 
             y = ground_truth(X)
+            # standardize input features
+            X_ = (X - X.mean(0)[None,...]) / ch.sqrt(X.var(0))
 
         # increase variance up to 20
         for var in range(1, args.var_ + 1):
+            noise_var = Tensor([var])[...,None]
             # remove synthetic data from the computation graph
             with ch.no_grad():
                 # add noise to ground-truth pedictions
-                noised = y + ch.sqrt(Tensor([var])) * ch.randn(X.size(0), 1)
-                # truncate
-                indices = args.phi(noised).nonzero(as_tuple=False).flatten()
-                y_trunc, x_trunc = noised[indices], X[indices]
+                noised = y + ch.sqrt(noise_var) * ch.randn(X.size(0), 1)
+                # standardize noised ground truth output features
+                noised_ = (y - y.mean(0)[None,...]) / ch.sqrt(y.var(0))
+                # truncate based off of the standardized data
+                indices = args.phi(noised_).nonzero(as_tuple=False).flatten()
+                y_trunc, x_trunc = noised_[indices], X_[indices]
                 alpha = Tensor([y_trunc.size(0) / args.samples])
+                print("alpha: ", alpha)
+
+            print("x trunc: ", x_trunc)
+            print("y trunc: ", y_trunc)
+
+            # standardize ground-truth parameters
+            gt_ols = LinearRegression().fit(X_, noised_)
+            gt_params = ch.cat([Tensor(gt_ols.coef_).T, Tensor(gt_ols.intercept_)[..., None]])
+            print("gt params: ", gt_params)
 
             # empirical linear regression
             ols = LinearRegression() 
             ols.fit(x_trunc, y_trunc)
             ols_var = ch.var(Tensor(ols.predict(x_trunc)) - y_trunc, dim=0)[..., None]
+            ols_params = ch.cat([Tensor(ols.coef_).T, Tensor(ols.intercept_)[..., None]])
+            # check r2 for entire dataset
+            ols_pred = ols.predict(X_)
+            print("ols params: ", ols_params)
+
+            # ols results
+            store[TABLE_NAME].update_row({
+                'ols_r2': r2_score(y.flatten(), ols_pred.flatten()), 
+                'ols_param_mse': mse_loss(Tensor(ols_params), Tensor(gt_params)),
+                'ols_var_mse': mse_loss(ols_var, noise_var), 
+                })
 
             # truncated linear regression with known noise variance using empirical noise variance
             trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=ols_var)
-            results = trunc_reg.fit(x_trunc, y_trunc)
-            w_, w0_ = results.weight.detach().cpu(), results.bias.detach().cpu()
+            st = datetime.datetime.now()
+            known_emp_results = trunc_reg.fit(x_trunc, y_trunc)
+            known_emp_params = ch.cat([known_emp_results.weight.detach().cpu().T, known_emp_results.bias.detach().cpu()[..., None]])
+            # check r2 for entire dataset
+            known_emp_pred = known_emp_results(X_).detach().cpu()
+            print("known emp params: ", known_emp_params)
+
+            # known emp results
+            store[TABLE_NAME].update_row({
+                'known_emp_r2': r2_score(noised_.flatten(), known_emp_pred.flatten()), 
+                'known_emp_param_mse': mse_loss(known_emp_params, gt_params),
+                'known_emp_time': int((datetime.datetime.now() - st).total_seconds()), 
+                })
 
             # truncated linear regression with known noise variance using actual noise variance
             trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias, var=Tensor([var])[...,None])
-            results = trunc_reg.fit(x_trunc, y_trunc)
-            w__, w0__ = results.weight.detach().cpu(), results.bias.detach().cpu()
+            st = datetime.datetime.now()
+            known_results = trunc_reg.fit(x_trunc, y_trunc)
+            known_params = ch.cat([known_results.weight.detach().cpu().T, known_results.bias.detach().cpu()[..., None]])
+            known_time = int((datetime.datetime.now() - st).total_seconds())
+            # check r2 for entire dataset
+            known_pred = known_results(X_).detach().cpu()
+
+            print("known params: ", known_params)
+
+            # known results
+            store[TABLE_NAME].update_row({
+                'known_r2': r2_score(noised_.flatten(), known_pred.flatten()), 
+                'known_param_mse': mse_loss(known_params, gt_params),
+                'known_time': int((datetime.datetime.now() - st).total_seconds()), 
+                })
 
             # truncated linear regression with unknown noise variance
             trunc_reg = TruncatedLinearRegression(phi=args.phi, alpha=alpha, args=args, bias=args.bias)
-            results = trunc_reg.fit(x_trunc, y_trunc)
-            var_ = results.lambda_.inverse().detach()
-            w, w0 = (results.v.detach()*var_).cpu(), (results.bias.detach()*var_).cpu()
+            st = datetime.datetime.now()
+            unknown_results = trunc_reg.fit(x_trunc, y_trunc)
+            var_ = unknown_results.lambda_.inverse().detach()
+            unknown_params = ch.cat([(unknown_results.weight.detach() * var_).cpu().T, (unknown_results.bias.detach() * var_).cpu()])
+            # check r2 for entire dataset
+            unknown_pred = unknown_results(X_).detach().cpu()
+
+            print("unknown params", unknown_params)
+            print("var_: ", var_)
+
+            # unknown results
+            store[TABLE_NAME].update_row({
+                'unknown_r2': r2_score(noised_.flatten(), unknown_pred.flatten()), 
+                'unknown_param_mse': mse_loss(unknown_params, gt_params),
+                'unknown_var_mse': mse_loss(var_, noise_var),
+                'unknown_time': int((datetime.datetime.now() - st).total_seconds()), 
+                })
 
             # spawn subprocess to run truncreg experiment
-            concat = ch.cat([x_trunc, y_trunc], dim=1).numpy()
+            concat = ch.cat([X_, noised_], dim=1).numpy()
             """
             DATA FORMAT:
                 -First n-1 columns are independent variables
@@ -133,41 +208,33 @@ def main(args):
             cmd = [COMMAND, PATH2SCRIPT] + [str(args.C), str(args.dims), 'left', args.out_dir]
 
             # check_output will run the command and store the result
+            st = datetime.datetime.now()
             result = subprocess.check_output(cmd, universal_newlines=True)
             trunc_res = Tensor(pd.read_csv(args.out_dir + '/' + RESULT_FILE)['x'].to_numpy())
-
-            # parameter estimates 
-            known_emp_params = ch.cat([w_.T, w0_[..., None]])
-            known_params = ch.cat([w__.T, w0__[..., None]])
-            real_params = ch.cat([ground_truth.weight.T, ground_truth.bias])
-            ols_params = ch.cat([Tensor(ols.coef_).T, Tensor(ols.intercept_)[..., None]])
-            unknown_params = ch.cat([w, w0])
             trunc_reg_params = ch.cat([trunc_res[1:-1].flatten(), trunc_res[0][None,...]])[..., None]
 
-            # metrics
-            known_emp_param_mse = mse_loss(known_emp_params, real_params)
-            known_param_mse = mse_loss(known_params, real_params)
-            unknown_param_mse = mse_loss(unknown_params, real_params)
-            unknown_var_mse = mse_loss(var_, Tensor([var])[None,...])
+            print("trunc reg params: ", trunc_reg_params)
+            print("first term: ", trunc_reg_params[:-1][None,...].mm(X_))
+            print("second term: ", trunc_reg_params[-1][None,...])
+            trunc_reg_pred = trunc_reg_params[:-1][None,...].mm(X_) + trunc_reg_params[-1][None,...]
 
-            ols_param_mse = mse_loss(Tensor(ols_params), Tensor(real_params))
-            ols_var_mse = mse_loss(ols_var, Tensor([var])[None,...])
-            trunc_reg_param_mse = mse_loss(trunc_reg_params, real_params)
-            trunc_var_mse = mse_loss(trunc_res[-1].pow(2)[None,...], Tensor([var]))
+            # truncreg results
+            store[TABLE_NAME].update_row({
+                'trunc_reg_r2': r2_score(noised_.flatten(), trunc_reg_pred.flatten()), 
+                'trunc_reg_param_mse': mse_loss(trunc_reg_params, gt_params),
+                'trunc_reg_var_mse': mse_loss(trunc_res[-1].pow(2)[None,...], noise_var),
+                'trunc_reg_time': int((datetime.datetime.now() - st).total_seconds()), 
+                })
 
-            # add results to store
-            store[TABLE_NAME].append_row({ 
-                'known_emp_param_mse': known_emp_param_mse,
-                'known_param_mse': known_param_mse,
-                'unknown_param_mse': unknown_param_mse,
-                'unknown_var_mse': unknown_var_mse,
-                'ols_param_mse': ols_param_mse,
-                'ols_var_mse': ols_var_mse,
-                'trunc_reg_param_mse': trunc_reg_param_mse, 
-                'trunc_var_mse': trunc_var_mse,
+            # add additional metadata to store
+            store[TABLE_NAME].update_row({ 
                 'alpha': float(alpha.flatten()),
-                'var': float(var), 
+                'num_samples': x_trunc.size(0),
+                'noise_scale': float(var), 
             })
+
+            # append row to table
+            store[TABLE_NAME].flush_row()
 
         # close current store
         store.close()
@@ -182,12 +249,14 @@ if __name__ == '__main__':
     args.__setattr__('step_lr', 100000000)
     args.__setattr__('step_lr_gamma', 1.0)
     # independent variable bounds
-    args.__setattr__('x_lower', -5)
-    args.__setattr__('x_upper', 5)
+    args.__setattr__('x_lower', -100)
+    args.__setattr__('x_upper', 100)
     # parameter bounds
     args.__setattr__('lower', -1)
     args.__setattr__('upper', 1)
     args.__setattr__('device', 'cuda' if ch.cuda.is_available() else 'cpu')
+    # normalize gradient
+    args.__setattr__('norm', False)
 
     # setup store with metadata
     store = Store(args.out_dir)
@@ -196,10 +265,7 @@ if __name__ == '__main__':
 
     print('args: ', args)
 
-
     args.__setattr__('phi', Left(Tensor([args.C])))
-
-
 
     # run experiment
     main(args)
