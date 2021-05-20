@@ -93,7 +93,7 @@ class TruncatedRegression(stats):
             self._lin_reg.lambda_.data = self.emp_var.inverse()
             self._lin_reg.weight.data = self.emp_weight * self._lin_reg.lambda_ 
             if self.bias: 
-                self._lin_reg.bias.data = self.emp_bias * self._lin_reg.lambda_
+                self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
 
             self.projection_set = TruncatedUnknownVarianceProjectionSet(X, y, config.args.radius, config.args.alpha, bias=self.bias, clamp=self.clamp)
             update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias] if self._lin_reg.bias is not None else [self._lin_reg.weight]},
