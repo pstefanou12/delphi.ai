@@ -89,7 +89,6 @@ flipping, color jitter, and rotation. Called as, for example,
 # Dataset test set augmentation defaults
 TEST_TRANSFORMS_DEFAULT = lambda size: transforms.Compose([
     transforms.Resize(size),
-    transforms.CenterCrop(size),
     transforms.ToTensor()
 ])
 """

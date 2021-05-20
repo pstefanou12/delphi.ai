@@ -65,7 +65,7 @@ class Left(Interval):
         Args: 
             left: left bound - size (d,)
         """
-        super().__init__(left, ch.full(left.size(), float('inf')))
+        super(Left, self).__init__(left, ch.full(left.size(), float('inf')))
 
     def __str__(self): 
         return 'left'

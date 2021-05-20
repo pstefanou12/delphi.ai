@@ -61,7 +61,6 @@ class TruncatedMSE(ch.autograd.Function):
     Computes the gradient of the negative population log likelihood for censored regression
     with known noise variance.
     """
-
     @staticmethod
     def forward(ctx, pred, targ):
         ctx.save_for_backward(pred, targ)
@@ -69,17 +68,18 @@ class TruncatedMSE(ch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
         noised = stacked + (ch.sqrt(config.args.var) * ch.randn(stacked.size())).to(config.args.device)
+        # noised = stacked + ch.randn(stacked.size()).to(config.args.device)
         # filter out copies where pred is in bounds
         filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
         # average across truncated indices
         out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        w_grad = (out - targ) / pred.size(0)
-        return w_grad, targ / pred.size(0)
+        return (out - targ) / pred.size(0), targ / pred.size(0)
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -105,7 +105,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # filter out copies that fall outside of truncation set
         filtered = ch.stack([config.args.phi(batch)[..., None].float() for batch in noised])
         z = noised * filtered
-        lambda_grad = .5 * ((targ.pow(2).sum(dim=0) / targ.size(0)) - (z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)))
+        lambda_grad = .5 * (targ.pow(2) - (z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)))
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
@@ -212,7 +212,7 @@ class TruncatedCE(ch.autograd.Function):
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = config.args.phi(noised).float()[..., None].to(config.args.device)
+        filtered = config.args.phi(noised)[..., None].to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]

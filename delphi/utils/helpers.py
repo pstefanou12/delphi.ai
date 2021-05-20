@@ -321,7 +321,8 @@ class LinearUnknownVariance(nn.Module):
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5)) # weight init
         fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
         bound = 1 / math.sqrt(fan_in)
-        nn.init.uniform_(self.bias, -5, 5)  # bias init 
+        if self.bias: 
+            nn.init.uniform_(self.bias, -5, 5)  # bias init 
         nn.init.uniform_(self.lambda_, -5, 5)  # lambda init 
 
     def forward(self, x):

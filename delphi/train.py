@@ -269,10 +269,14 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         
         # perform backprop and take optimizer step
         if is_train:
-            # if i >  0:
-            #     import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             optimizer.zero_grad()
             loss.backward()
+
+            # print("weight grad: ", model.weight.grad)
+            # print("bias grad: ", model.bias.grad)
+            # print("lambda grad: ", model.lambda_.grad)
+
             # normalize gradient
             if args.norm: 
                 # check if unknown variance regression
