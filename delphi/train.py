@@ -135,14 +135,14 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     if checkpoint:
         epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, steps, writer=None, device=args.device)[0]
+            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, steps, writer=None, device=args.device, schedule=schedule)[0]
 
     # keep track of the start time
     start_time = time.time()
     steps = 0 if args.steps else None # number of gradient steps taken
     # do training loops until performing enough gradient steps or epochs
     while (args.steps is not None and steps < args.steps) or (args.epochs is not None and epoch < args.epochs):
-        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device)
+        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device, schedule=schedule)
 
         # check for logging/checkpoint
         last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
@@ -202,7 +202,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
             if store: store[table].append_row(log_info)
         
         # update lr
-        if schedule: schedule.step()
+        if args.epochs is not None and schedule: schedule.step()
 
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
@@ -221,7 +221,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     return model
             
             
-def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, device):
+def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, device, schedule=None):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -377,6 +377,8 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         # increment number of gradients
         if steps is not None: 
             steps += 1
+            if schedule: schedule.step()
+            print("lr: ", optimizer.param_groups)
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
