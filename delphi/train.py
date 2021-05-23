@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 
+from . import oracle
 from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance, ProcedureComplete
 from .utils import constants as consts
 
@@ -98,7 +99,7 @@ def eval_model(args, model, loader, store, table=None):
     return log_info
 
 
-def train_model(args, model, loaders, *, checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
+def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
                 store=None, table=None, update_params=None, disable_no_grad=False):
     table = consts.LOGS_TABLE if table is None else table
     if store is not None:
@@ -128,7 +129,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, cuda=F
     # do training loops until performing enough gradient steps or epochs
     while (args.steps is not None and steps < args.steps) or (args.epochs is not None and epoch < args.epochs):
         try: 
-            train_prec1, train_loss = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device, schedule=schedule)
+            train_prec1, train_loss = model_loop(args, 'train', train_loader, model, phi, criterion, optimizer, epoch+1, steps, writer, device=args.device, schedule=schedule)
         except ProcedureComplete: 
             return model
         except Exception as e: 
@@ -207,7 +208,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, cuda=F
     return model
             
             
-def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, device, schedule=None):
+def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch, steps, writer, device, schedule=None):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -222,11 +223,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
     if not isinstance(model, ch.distributions.distribution.Distribution):   
         model = model.train() if is_train else model.eval()
     
-    # check for custom criterion
-    has_custom_criterion = has_attr(args, 'custom_criterion')
-    criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
+    # iterator
     iterator = enumerate(loader) if args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
-    
+
     for i, batch in iterator:
         inp, target, output = None, None, None
         loss = 0.0
@@ -241,10 +240,10 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
                 output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
             try:
-                loss = criterion(output, target, model.lambda_)
+                loss = criterion(output, target, model.lambda_, phi)
 
             except Exception as e:
-                loss = criterion(output, target)
+                loss = criterion(output, target, phi)
 
         # regularizer option 
         reg_term = 0.0

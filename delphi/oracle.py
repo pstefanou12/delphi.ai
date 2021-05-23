@@ -56,16 +56,20 @@ class KIntervalUnion(oracle):
         return 'k-interval union'
 
 
-class Left(Interval):
+class Left(oracle):
     """
-    Left truncation
+    Left Regression Truncation.
     """
     def __init__(self, left):
         """
         Args: 
-            left: left bound - size (d,)
+            left: left truncation
         """
-        super(Left, self).__init__(left, ch.full(left.size(), float('inf')))
+        super(Left, self).__init__()
+        self.left = left
+
+    def __call__(self, x): 
+        return x > self.left
 
     def __str__(self): 
         return 'left'
@@ -218,7 +222,7 @@ class Identity(oracle):
     Identity membership oracle for DNNs. All logits are accepted within the truncation set.
     """
     def __call__(self, x): 
-        return ch.ones(x.size()).prod(-1)
+        return ch.ones(x.size()).prod(-1)[...,None]
 
     def __str__(self): 
         return 'identity'

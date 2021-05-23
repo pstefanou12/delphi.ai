@@ -62,22 +62,24 @@ class TruncatedMSE(ch.autograd.Function):
     with known noise variance.
     """
     @staticmethod
-    def forward(ctx, pred, targ):
+    def forward(ctx, pred, targ, phi):
         ctx.save_for_backward(pred, targ)
+        ctx.phi = phi
         return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
+        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
         noised = stacked + ch.randn(stacked.size()).to(config.args.device)
         # filter out copies where pred is in bounds
-        filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
+        filtered = ctx.phi(noised)
         # average across truncated indices
         out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return (out - targ) / pred.size(0), targ / pred.size(0)
+        return (out - targ) / pred.size(0), targ / pred.size(0), None
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -86,13 +88,13 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     with unknown noise variance.
     """
     @staticmethod
-    def forward(ctx, pred, targ, lambda_):
+    def forward(ctx, pred, targ, lambda_, phi):
         ctx.save_for_backward(pred, targ, lambda_)
+        ctx.phi = phi
         return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        # import pdb; pdb.set_trace()
         pred, targ, lambda_ = ctx.saved_tensors
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
@@ -100,7 +102,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # add noise to regression predictions
         noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
         # filter out copies that fall outside of truncation set
-        filtered = ch.stack([config.args.phi(batch)[..., None].float() for batch in noised])
+        filtered = ctx.phi(noised)
         z = noised * filtered
         lambda_grad = .5 * (targ.pow(2) - (z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)))
         """
@@ -109,7 +111,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         factor
         """
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0)
+        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None
 
 
 class LogisticBCE(ch.autograd.Function):

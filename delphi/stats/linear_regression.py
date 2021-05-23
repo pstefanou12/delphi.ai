@@ -61,7 +61,6 @@ class TruncatedRegression(stats):
         self.ds = None
 
         config.args = Parameters({ 
-            'phi': self.phi, 
             'steps': steps,
             'momentum': 0.0, 
             'weight_decay': 0.0, 
@@ -69,7 +68,6 @@ class TruncatedRegression(stats):
             'step_lr_gamma': .9,    
             'num_samples': self.num_samples,
             'lr': 1e-1,  
-            'var_lr': 1e-1,
             'eps': 1e-5,
         })
 
@@ -96,8 +94,6 @@ class TruncatedRegression(stats):
             self._lin_reg.weight.data = self.emp_weight * self._lin_reg.lambda_ 
             if self.bias: 
                 self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
-            update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias] if self._lin_reg.bias is not None else [self._lin_reg.weight]},
-                            {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
         else:  # unknown variance
             self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=self.bias)
             # assign empirical estimates
@@ -105,11 +101,10 @@ class TruncatedRegression(stats):
             if self.bias: 
                 self._lin_reg.bias.data = self.emp_bias
             update_params = None
-        self.iter_hook = TruncatedRegressionIterationHook(X_train, y_train, X_val, y_val, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
-        config.args.__setattr__('custom_criterion', self.criterion)
+        self.iter_hook = TruncatedRegressionIterationHook(X_train, y_train, X_val, y_val, self.phi, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
-        return train_model(config.args, self._lin_reg, (loader, None), update_params=update_params)
+        return train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion)
 
     def __call__(self, x: Tensor): 
         """
@@ -127,12 +122,13 @@ class TruncatedRegressionIterationHook:
     set of samples. If the gradient for the samples is less than our tolerance, then 
     we terminate the procedure.
     """
-    def __init__(self, X_train, y_train, X_val, y_val, tol, r, alpha, bias, clamp, unknown, n, criterion):
+    def __init__(self, X_train, y_train, X_val, y_val, phi, tol, r, alpha, bias, clamp, unknown, n, criterion):
         """
         :param X_train: train covariates - torch.Tensor
         :param y_train: train dependent variable - torch.Tensor
         :param X_val: val covariates - torch.Tensor
         :param y_val: val dependent variable - torch.Tensor
+        :param phi: membership oracle - delphi.oracle
         :param tol: gradient tolerance to end procedure - float
         :param alpha: survival probability - torch.Tensor
         :param clamp: boolean to use clamp projection set - bool
@@ -145,6 +141,7 @@ class TruncatedRegressionIterationHook:
         self.r = r
         self.alpha = alpha
         self.unknown = unknown
+        self.phi = phi
 
         # initialize projection set
         self.clamp = clamp
@@ -170,50 +167,85 @@ class TruncatedRegressionIterationHook:
         self.X_val, self.y_val = X_val, y_val
         self.criterion = criterion
         self.tol = tol
+        # track best estimates based off of gradient norm
+        self.best_w, self.best_w0, self.best_lambda = None, None, None
+        self.best_grad = None
+        # calculate empirical score
+        # emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
+        # emp.weight.data, emp.bias.data = self.emp_weight, self.emp_bias 
+        # if self.unknown: 
+        #     emp.lambda_.data = self.emp_var.inverse()
+        # self.score(emp)
+
+        print("empirical weight: ", self.emp_weight)
+        print("empirical bias: ", self.emp_bias)
+
+    def score(self, M): 
+        """
+        Calculates the score of the current regression estimates of the validation set. It 
+        then updates the best estimates accordingly based off of the score's norm.
+        """
+        pred = M(self.X_val)
+        if self.unknown:
+            loss = self.criterion(pred, self.y_val, M.lambda_, self.phi)
+            grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
+            grad = ch.cat([grad.sum(0), lambda_grad.flatten()])
+        else: 
+            loss = self.criterion(pred, self.y_val, self.phi)
+            grad, = ch.autograd.grad(loss, [pred])
+            grad = grad.sum(0)
+
+        print("{} steps | score: {}".format(self.steps, grad.tolist()))
+        # check that gradient magnitude is less than tolerance
+        if ch.all(ch.abs(grad) < self.tol): 
+            raise ProcedureComplete()
+
+
+        # # if smaller gradient, update best
+        # if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
+        #     print("best grad: ", self.best_grad)
+        #     print("grad: ", self.best_grad)
+        #     self.best_grad = grad
+        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
+        #     if self.unknown: 
+        #         self.best_lambda = M.lambda_.data.clone()
+        # else: 
+        #     M.weight.data = self.best_w.clone()
+        #     M.bias.data = self.best_w0.clone() if self.bias else None
+        #     if self.unknown: 
+        #         M.lambda_.data = self.best_lambda.clone()
+
 
     def __call__(self, M, i, loop_type, inp, target): 
+        # increase number of steps taken
         self.steps += 1
-        # check for convergence
-        if self.steps % self.n == 0: 
-            pred = M(self.X_val)
-            if self.unknown:
-                loss = self.criterion(pred, self.y_val, M.lambda_)
-                grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
-                grad = ch.cat([grad.sum(0), lambda_grad.flatten()])
-            else: 
-                loss = self.criterion(pred, self.y_val)
-                grad, = ch.autograd.grad(loss, [pred])
-                grad = grad.sum(0)
-
-            print("{} steps | grad: {}".format(self.steps, grad))
-                
-            # check that absolute value of validation gradient is less than threshold
-            if ch.all(ch.abs(grad) < self.tol): 
-                raise ProcedureComplete()
-
         # project model parameters back to domain 
-        if self.clamp: 
-            if self.unknown: 
-                var = M.lambda_.inverse()
-                weight = M.weight * var
+        # if self.clamp: 
+        #     if self.unknown: 
+        #         var = M.lambda_.inverse()
+        #         weight = M.weight * var
 
-                M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
-                # project weights
-                M.weight.data = ch.cat(
-                    [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
-                            float(self.weight_bounds.upper[i]))
-                    for i in range(weight.size(0))]) * M.lambda_
-                # project bias
-                if self.bias:
-                    bias = M.bias * var
-                    M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
-            else: 
-                M.weight.data = ch.stack(
-                    [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
-                    range(M.weight.size(0))])
-                if self.bias:
-                    M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
-                        M.bias.size())
-        else: 
-            pass
+        #         M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
+        #         # project weights
+        #         M.weight.data = ch.cat(
+        #             [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
+        #                     float(self.weight_bounds.upper[i]))
+        #             for i in range(weight.size(0))]) * M.lambda_
+        #         # project bias
+        #         if self.bias:
+        #             bias = M.bias * var
+        #             M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
+        #     else: 
+        #         M.weight.data = ch.stack(
+        #             [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
+        #             range(M.weight.size(0))])
+        #         if self.bias:
+        #             M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
+        #                 M.bias.size())
+        # else: 
+        #     pass
+
+        # check for convergence every n steps
+        if self.steps % self.n == 0: 
+            self.score(M)
 
