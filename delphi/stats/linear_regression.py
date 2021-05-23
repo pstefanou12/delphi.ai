@@ -69,7 +69,7 @@ class TruncatedRegression(stats):
             'step_lr_gamma': .9,    
             'num_samples': self.num_samples,
             'lr': 1e-1,  
-            'var_lr': 1e-2,
+            'var_lr': 1e-1,
             'eps': 1e-5,
         })
 
