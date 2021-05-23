@@ -225,7 +225,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
     # check for custom criterion
     has_custom_criterion = has_attr(args, 'custom_criterion')
     criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
-    iterator = tqdm(enumerate(loader), total=len(loader), leave=False)
+    iterator = enumerate(loader) if args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
     
     for i, batch in iterator:
         inp, target, output = None, None, None
@@ -294,10 +294,9 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
 
         desc = None  # description for epoch
         # censored, truncated distributions - calculate score
-        if args.score:
+        if args.steps:
             steps += 1 
             if schedule: schedule.step()
-            desc = ('Steps: {0} | Loss: {loss.avg:.4f} ||'.format(steps, losses)) 
         # latent variable models
         else:
             losses.update(loss.item(), inp.size(0))
@@ -326,7 +325,7 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
                 desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
                         'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
             
-        iterator.set_description(desc)
+            iterator.set_description(desc)
     
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):

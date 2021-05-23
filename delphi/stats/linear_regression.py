@@ -2,7 +2,6 @@
 Truncated Linear Regression.
 """
 
-
 import torch as ch
 from torch import Tensor
 import torch.nn as nn
@@ -18,8 +17,6 @@ from ..oracle import oracle
 from ..train import train_model
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
 from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete
-from ..utils import defaults
-from ..utils.datasets import TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS
 
 
 class TruncatedRegression(stats):
@@ -75,7 +72,6 @@ class TruncatedRegression(stats):
             'var_lr': 1e-2,
             'eps': 1e-5,
         })
-        # config.args = defaults.check_and_fill_args(args, defaults.REGRESSION_ARGS, TensorDataset)
 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -183,14 +179,16 @@ class TruncatedRegressionIterationHook:
             if self.unknown:
                 loss = self.criterion(pred, self.y_val, M.lambda_)
                 grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
-                grad = ch.cat([grad.mean(0), lambda_grad.flatten()])
+                grad = ch.cat([grad.sum(0), lambda_grad.flatten()])
             else: 
                 loss = self.criterion(pred, self.y_val)
                 grad, = ch.autograd.grad(loss, [pred])
-                grad = grad.mean(0)
+                grad = grad.sum(0)
+
+            print("{} steps | grad: {}".format(self.steps, grad))
                 
-            # end of procedure
-            if ch.all(grad.mean(0) < self.tol): 
+            # check that absolute value of validation gradient is less than threshold
+            if ch.all(ch.abs(grad) < self.tol): 
                 raise ProcedureComplete()
 
         # project model parameters back to domain 
@@ -218,87 +216,4 @@ class TruncatedRegressionIterationHook:
                         M.bias.size())
         else: 
             pass
-
-
-# class TruncatedRegressionProjectionSet:
-#     """
-#     Project to domain for linear regression with known variance
-#     """
-#     def __init__(self, X, y, r, alpha, bias=True, clamp=True):
-#         # use OLS as empirical estimate to define projection set
-#         self.bias = bias
-#         self.r = r
-#         self.alpha = alpha
-#         self.clamp = clamp
-#         self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
-#         self.emp_weight = Tensor(self.emp_lin_reg.coef_)
-#         self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
-#         self.radius = r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
-
-#         if self.clamp:
-#             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
-#                                         self.emp_weight.flatten() + self.radius)
-#             self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
-#                                       self.emp_bias.flatten() + self.radius) if self.bias else None
-#         else:
-#             pass
-
-#     def __call__(self, M, i, loop_type, inp, target):
-#         if self.clamp:
-#             M.weight.data = ch.stack(
-#                 [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
-#                  range(M.weight.size(0))])
-#             if self.bias:
-#                 M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
-#                     M.bias.size())
-#         else:
-#             pass
-
-
-# class TruncatedUnknownVarianceProjectionSet:
-#     """
-#     Project parameter estimation back into domain of expected results for censored normal distributions.
-#     """
-
-#     def __init__(self, X, y, r, alpha, bias=True, clamp=True):
-#         """
-#         :param lin_reg: empirical regression with unknown noise variance
-#         """
-#         self.bias = bias
-#         self.r = r
-#         self.alpha = alpha
-#         self.clamp = clamp
-#         self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
-#         self.emp_weight = Tensor(self.emp_lin_reg.coef_)
-#         self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
-#         self.emp_var = ch.var(Tensor(self.emp_lin_reg.predict(X)) - y, dim=0)[..., None]
-#         self.radius = self.r * (12.0 + 4.0 * ch.log(2.0 / self.alpha))
-
-#         if self.clamp:
-#             self.weight_bounds, self.var_bounds = Bounds(self.emp_weight.flatten() - self.radius,
-#                                                          self.emp_weight.flatten() + self.radius), Bounds(
-#                 self.emp_var.flatten() / self.r, (self.emp_var.flatten()) / self.alpha.pow(2))
-#             self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
-#                                       self.emp_bias.flatten() + self.radius) if self.bias else None
-#         else:
-#             pass
-
-#     def __call__(self, M, i, loop_type, inp, target):
-#         var = M.lambda_.inverse()
-#         weight = M.weight * var
-
-#         if self.clamp:
-#             # project noise variance
-#             M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
-#             # project weights
-#             M.weight.data = ch.cat(
-#                 [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
-#                           float(self.weight_bounds.upper[i]))
-#                  for i in range(weight.size(0))]) * M.lambda_
-#             # project bias
-#             if self.bias:
-#                 bias = M.bias * var
-#                 M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
-#         else:
-#             pass
 
