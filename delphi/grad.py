@@ -68,13 +68,11 @@ class TruncatedMSE(ch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
-        noised = stacked + (ch.sqrt(config.args.var) * ch.randn(stacked.size())).to(config.args.device)
-        # noised = stacked + ch.randn(stacked.size()).to(config.args.device)
+        noised = stacked + ch.randn(stacked.size()).to(config.args.device)
         # filter out copies where pred is in bounds
         filtered = ch.stack([config.args.phi(batch).unsqueeze(1) for batch in noised]).float()
         # average across truncated indices
@@ -87,7 +85,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     Computes the gradient of negative population log likelihood for truncated linear regression
     with unknown noise variance.
     """
-
     @staticmethod
     def forward(ctx, pred, targ, lambda_):
         ctx.save_for_backward(pred, targ, lambda_)

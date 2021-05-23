@@ -319,8 +319,6 @@ class LinearUnknownVariance(nn.Module):
 
         # initialize weights and biases
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5)) # weight init
-        fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-        bound = 1 / math.sqrt(fan_in)
         if self.bias: 
             nn.init.uniform_(self.bias, -5, 5)  # bias init 
         nn.init.uniform_(self.lambda_, -5, 5)  # lambda init 
@@ -338,5 +336,9 @@ class LinearUnknownVariance(nn.Module):
 base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
 logistic = TransformedDistribution(base_distribution, transforms_)
+
+
+class ProcedureComplete(Exception): 
+    pass
 
 
