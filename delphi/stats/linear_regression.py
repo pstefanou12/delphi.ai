@@ -172,9 +172,12 @@ class TruncatedRegressionIterationHook:
         self.best_grad = None
         # calculate empirical score
         emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
-        emp.weight.data, emp.bias.data = self.emp_weight, self.emp_bias 
         if self.unknown: 
             emp.lambda_.data = self.emp_var.inverse()
+        emp.weight.data = self.emp_weight * emp.lambda_ if self.unknown else self.emp_weight
+        if self.bias: 
+            emp.bias.data = self.emp_bias * emp.lambda_ if self.unknown else self.emp_bias
+
         self.score(emp)
 
     def score(self, M): 
@@ -194,20 +197,20 @@ class TruncatedRegressionIterationHook:
 
         print("{} steps | score: {}".format(self.steps, grad.tolist()))
         # check that gradient magnitude is less than tolerance
-        if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
-            raise ProcedureComplete()
+        # if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
+        #     raise ProcedureComplete()
 
-        # if smaller gradient, update best
-        if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
-            self.best_grad = grad
-            self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
-            if self.unknown: 
-                self.best_lambda = M.lambda_.data.clone()
-        else: 
-            M.weight.data = self.best_w.clone()
-            M.bias.data = self.best_w0.clone() if self.bias else None
-            if self.unknown: 
-                M.lambda_.data = self.best_lambda.clone()
+        # # if smaller gradient, update best
+        # if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
+        #     self.best_grad = grad
+        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
+        #     if self.unknown: 
+        #         self.best_lambda = M.lambda_.data.clone()
+        # else: 
+        #     M.weight.data = self.best_w.clone()
+        #     M.bias.data = self.best_w0.clone() if self.bias else None
+        #     if self.unknown: 
+        #         M.lambda_.data = self.best_lambda.clone()
 
 
     def __call__(self, M, i, loop_type, inp, target): 

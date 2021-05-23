@@ -222,7 +222,7 @@ class Identity(oracle):
     Identity membership oracle for DNNs. All logits are accepted within the truncation set.
     """
     def __call__(self, x): 
-        return ch.ones(x.size()).prod(-1)[...,None]
+        return ch.ones(x.size()).prod(-1, keepdim=True)
 
     def __str__(self): 
         return 'identity'
