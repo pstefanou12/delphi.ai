@@ -9,6 +9,8 @@ from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import config
 
+from .utils.helpers import logistic
+
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
     """
@@ -124,12 +126,6 @@ class LogisticBCE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
-
-        # logistic distribution
-        base_distribution = Uniform(0, 1)
-        transforms_ = [SigmoidTransform().inv]
-        logistic = TransformedDistribution(base_distribution, transforms_)
-
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         rand_noise = logistic.sample(stacked.size())
         # add noise

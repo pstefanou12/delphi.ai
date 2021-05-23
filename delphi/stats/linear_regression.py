@@ -171,14 +171,11 @@ class TruncatedRegressionIterationHook:
         self.best_w, self.best_w0, self.best_lambda = None, None, None
         self.best_grad = None
         # calculate empirical score
-        # emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
-        # emp.weight.data, emp.bias.data = self.emp_weight, self.emp_bias 
-        # if self.unknown: 
-        #     emp.lambda_.data = self.emp_var.inverse()
-        # self.score(emp)
-
-        print("empirical weight: ", self.emp_weight)
-        print("empirical bias: ", self.emp_bias)
+        emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
+        emp.weight.data, emp.bias.data = self.emp_weight, self.emp_bias 
+        if self.unknown: 
+            emp.lambda_.data = self.emp_var.inverse()
+        self.score(emp)
 
     def score(self, M): 
         """
@@ -197,53 +194,50 @@ class TruncatedRegressionIterationHook:
 
         print("{} steps | score: {}".format(self.steps, grad.tolist()))
         # check that gradient magnitude is less than tolerance
-        if ch.all(ch.abs(grad) < self.tol): 
+        if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
             raise ProcedureComplete()
 
-
-        # # if smaller gradient, update best
-        # if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
-        #     print("best grad: ", self.best_grad)
-        #     print("grad: ", self.best_grad)
-        #     self.best_grad = grad
-        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
-        #     if self.unknown: 
-        #         self.best_lambda = M.lambda_.data.clone()
-        # else: 
-        #     M.weight.data = self.best_w.clone()
-        #     M.bias.data = self.best_w0.clone() if self.bias else None
-        #     if self.unknown: 
-        #         M.lambda_.data = self.best_lambda.clone()
+        # if smaller gradient, update best
+        if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
+            self.best_grad = grad
+            self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
+            if self.unknown: 
+                self.best_lambda = M.lambda_.data.clone()
+        else: 
+            M.weight.data = self.best_w.clone()
+            M.bias.data = self.best_w0.clone() if self.bias else None
+            if self.unknown: 
+                M.lambda_.data = self.best_lambda.clone()
 
 
     def __call__(self, M, i, loop_type, inp, target): 
         # increase number of steps taken
         self.steps += 1
         # project model parameters back to domain 
-        # if self.clamp: 
-        #     if self.unknown: 
-        #         var = M.lambda_.inverse()
-        #         weight = M.weight * var
+        if self.clamp: 
+            if self.unknown: 
+                var = M.lambda_.inverse()
+                weight = M.weight * var
 
-        #         M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
-        #         # project weights
-        #         M.weight.data = ch.cat(
-        #             [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
-        #                     float(self.weight_bounds.upper[i]))
-        #             for i in range(weight.size(0))]) * M.lambda_
-        #         # project bias
-        #         if self.bias:
-        #             bias = M.bias * var
-        #             M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
-        #     else: 
-        #         M.weight.data = ch.stack(
-        #             [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
-        #             range(M.weight.size(0))])
-        #         if self.bias:
-        #             M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
-        #                 M.bias.size())
-        # else: 
-        #     pass
+                M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
+                # project weights
+                M.weight.data = ch.cat(
+                    [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
+                            float(self.weight_bounds.upper[i]))
+                    for i in range(weight.size(0))]) * M.lambda_
+                # project bias
+                if self.bias:
+                    bias = M.bias * var
+                    M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
+            else: 
+                M.weight.data = ch.stack(
+                    [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
+                    range(M.weight.size(0))])
+                if self.bias:
+                    M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
+                        M.bias.size())
+        else: 
+            pass
 
         # check for convergence every n steps
         if self.steps % self.n == 0: 

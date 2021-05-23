@@ -339,6 +339,6 @@ logistic = TransformedDistribution(base_distribution, transforms_)
 
 
 class ProcedureComplete(Exception): 
-    pass
-
+    def __init__(self, message='procedure complete'): 
+        super(ProcedureComplete, self).__init__(message)
 
