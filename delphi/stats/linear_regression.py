@@ -67,7 +67,6 @@ class TruncatedRegression(stats):
             'weight_decay': 0.0, 
             'step_lr': 100, 
             'step_lr_gamma': .9,    
-            # 'custom_lr_multiplier': consts.CYCLIC,
             'num_samples': self.num_samples,
             'lr': 1e-1,  
             'var_lr': 1e-1,
@@ -201,7 +200,7 @@ class TruncatedRegressionIterationHook:
             grad, = ch.autograd.grad(loss, [pred])
             grad = grad.sum(0)
 
-        print("{} steps | score: {}".format(self.steps, grad.tolist()))
+        print("Iteration: {} | Score: {}".format(int(self.steps) / self.n, grad.tolist()))
         # check that gradient magnitude is less than tolerance
         if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
             raise ProcedureComplete()
@@ -218,8 +217,6 @@ class TruncatedRegressionIterationHook:
         #     M.bias.data = self.best_w0.clone() if self.bias else None
         #     if self.unknown: 
         #         M.lambda_.data = self.best_lambda.clone()
-        
-
 
     def __call__(self, M, i, loop_type, inp, target): 
         # increase number of steps taken

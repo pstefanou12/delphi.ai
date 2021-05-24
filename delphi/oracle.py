@@ -72,17 +72,20 @@ class Left(oracle):
         return 'left'
 
 
-class Right(Interval):
+class Right(oracle):
     """
-    Right truncation
+    Right Regression Truncation.
     """
-
     def __init__(self, right):
         """
         Args: 
-            right: right bound - size (d,)
+            right: right truncation
         """
-        super().__init__(-ch.full(right.size(), float('inf')), right)
+        super(Right, self).__init__()
+        self.right = right
+
+    def __call__(self, x): 
+        return x < self.right
 
     def __str__(self): 
         return 'right'
