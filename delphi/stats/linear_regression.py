@@ -65,11 +65,12 @@ class TruncatedRegression(stats):
             'steps': steps,
             'momentum': 0.0, 
             'weight_decay': 0.0, 
-            # 'step_lr': 100, 
-            # 'step_lr_gamma': .9,    
-            'custom_lr_multiplier': consts.CYCLIC,
+            'step_lr': 100, 
+            'step_lr_gamma': .9,    
+            # 'custom_lr_multiplier': consts.CYCLIC,
             'num_samples': self.num_samples,
             'lr': 1e-1,  
+            'var_lr': 1e-1,
             'eps': 1e-5,
         })
 
@@ -96,6 +97,8 @@ class TruncatedRegression(stats):
             self._lin_reg.weight.data = self.emp_weight * self._lin_reg.lambda_ 
             if self.bias: 
                 self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
+            update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias if self._lin_reg.bias is not None else None]},
+                {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
         else:  # unknown variance
             self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=self.bias)
             # assign empirical estimates
@@ -103,10 +106,11 @@ class TruncatedRegression(stats):
             if self.bias: 
                 self._lin_reg.bias.data = self.emp_bias
             update_params = None
+
         self.iter_hook = TruncatedRegressionIterationHook(X_train, y_train, X_val, y_val, self.phi, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
-        return train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion)
+        return train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
 
     def __call__(self, x: Tensor): 
         """
@@ -202,18 +206,18 @@ class TruncatedRegressionIterationHook:
         if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
             raise ProcedureComplete()
 
-        grad_norm = grad.norm(dim=-1)
-        # if smaller gradient, update best
-        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
-            self.best_grad_norm = grad_norm
-            self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten() if self.bias else None
-            if self.unknown: 
-                self.best_lambda = M.lambda_.data.clone()
-        else: 
-            M.weight.data = self.best_w.clone()
-            M.bias.data = self.best_w0.clone() if self.bias else None
-            if self.unknown: 
-                M.lambda_.data = self.best_lambda.clone()
+        # grad_norm = grad.norm(dim=-1)
+        # # if smaller gradient, update best
+        # if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
+        #     self.best_grad_norm = grad_norm
+        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten() if self.bias else None
+        #     if self.unknown: 
+        #         self.best_lambda = M.lambda_.data.clone()
+        # else: 
+        #     M.weight.data = self.best_w.clone()
+        #     M.bias.data = self.best_w0.clone() if self.bias else None
+        #     if self.unknown: 
+        #         M.lambda_.data = self.best_lambda.clone()
         
 
 
