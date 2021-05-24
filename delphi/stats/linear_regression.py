@@ -16,6 +16,7 @@ from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
+from ..utils import constants as consts
 from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete
 
 
@@ -64,8 +65,9 @@ class TruncatedRegression(stats):
             'steps': steps,
             'momentum': 0.0, 
             'weight_decay': 0.0, 
-            'step_lr': 100, 
-            'step_lr_gamma': .9,    
+            # 'step_lr': 100, 
+            # 'step_lr_gamma': .9,    
+            'custom_lr_multiplier': consts.CYCLIC,
             'num_samples': self.num_samples,
             'lr': 1e-1,  
             'eps': 1e-5,
@@ -169,14 +171,14 @@ class TruncatedRegressionIterationHook:
         self.tol = tol
         # track best estimates based off of gradient norm
         self.best_w, self.best_w0, self.best_lambda = None, None, None
-        self.best_grad = None
+        self.best_grad_norm = None
         # calculate empirical score
         emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
         if self.unknown: 
             emp.lambda_.data = self.emp_var.inverse()
         emp.weight.data = self.emp_weight * emp.lambda_ if self.unknown else self.emp_weight
         if self.bias: 
-            emp.bias.data = self.emp_bias * emp.lambda_ if self.unknown else self.emp_bias
+            emp.bias.data = (self.emp_bias * emp.lambda_).flatten() if self.unknown else self.emp_bias
 
         self.score(emp)
 
@@ -189,7 +191,7 @@ class TruncatedRegressionIterationHook:
         if self.unknown:
             loss = self.criterion(pred, self.y_val, M.lambda_, self.phi)
             grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
-            grad = ch.cat([grad.sum(0), lambda_grad.flatten()])
+            grad = ch.cat([(grad.sum(0) / M.lambda_).flatten(), lambda_grad.flatten()])
         else: 
             loss = self.criterion(pred, self.y_val, self.phi)
             grad, = ch.autograd.grad(loss, [pred])
@@ -197,20 +199,22 @@ class TruncatedRegressionIterationHook:
 
         print("{} steps | score: {}".format(self.steps, grad.tolist()))
         # check that gradient magnitude is less than tolerance
-        # if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
-        #     raise ProcedureComplete()
+        if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
+            raise ProcedureComplete()
 
-        # # if smaller gradient, update best
-        # if self.best_grad is None or ch.all(ch.abs(grad) < ch.abs(self.best_grad)): 
-        #     self.best_grad = grad
-        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone() if self.bias else None
-        #     if self.unknown: 
-        #         self.best_lambda = M.lambda_.data.clone()
-        # else: 
-        #     M.weight.data = self.best_w.clone()
-        #     M.bias.data = self.best_w0.clone() if self.bias else None
-        #     if self.unknown: 
-        #         M.lambda_.data = self.best_lambda.clone()
+        grad_norm = grad.norm(dim=-1)
+        # if smaller gradient, update best
+        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
+            self.best_grad_norm = grad_norm
+            self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten() if self.bias else None
+            if self.unknown: 
+                self.best_lambda = M.lambda_.data.clone()
+        else: 
+            M.weight.data = self.best_w.clone()
+            M.bias.data = self.best_w0.clone() if self.bias else None
+            if self.unknown: 
+                M.lambda_.data = self.best_lambda.clone()
+        
 
 
     def __call__(self, M, i, loop_type, inp, target): 

@@ -32,9 +32,6 @@ class Interval:
         self.bounds = Bounds(lower, upper)
 
     def __call__(self, x):
-        # check sample device
-        if x.is_cuda:
-            return ((self.bounds.lower.cuda() < x).prod(-1) * (x < self.bounds.upper.cuda()).prod(-1))
         return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))
 
 
@@ -50,7 +47,7 @@ class KIntervalUnion(oracle):
         result = Tensor([])
         for oracle_ in self.oracles:
             result = ch.logical_or(result, oracle_(x)) if result.nelement() > 0 else oracle_(x)
-        return result
+        return result[..., None]
 
     def __str__(self): 
         return 'k-interval union'

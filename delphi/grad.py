@@ -4,7 +4,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
-from torch.distributions import Uniform, Gumbel
+from torch.distributions import Uniform, Gumbel, Laplace
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import config
