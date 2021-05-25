@@ -11,6 +11,7 @@ from sklearn.linear_model import LinearRegression
 from cox.utils import Parameters
 from cox.store import Store
 import config
+import warnings
 
 from .stats import stats
 from ..oracle import oracle
@@ -79,10 +80,10 @@ class TruncatedRegression(stats):
         # separate into training and validation set
         rand_indices = ch.randperm(X.size(0))
         train_indices, val_indices = rand_indices[self.val:], rand_indices[:self.val]
-        X_train, y_train = X[train_indices], y[train_indices]
-        X_val, y_val = X[val_indices], y[val_indices]
+        self.X_train, self.y_train = X[train_indices], y[train_indices]
+        self.X_val, self.y_val = X[val_indices], y[val_indices]
 
-        self.ds = TensorDataset(X, y)
+        self.ds = TensorDataset(self.X_train, self.y_train)
         loader = DataLoader(self.ds, batch_size=self.bs, num_workers=self.workers)
         self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
         self.emp_weight = Tensor(self.emp_lin_reg.coef_)
@@ -106,15 +107,61 @@ class TruncatedRegression(stats):
                 self._lin_reg.bias.data = self.emp_bias
             update_params = None
 
-        self.iter_hook = TruncatedRegressionIterationHook(X_train, y_train, X_val, y_val, self.phi, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
+        self.iter_hook = TruncatedRegressionIterationHook(self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
-        return train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
+        self._lin_reg = train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
+        # remove linear regression from computation graph
+        with ch.no_grad():
+            return self._lin_reg
 
     def __call__(self, x: Tensor): 
         """
         """
         return self._lin_reg(x)
+
+    def score(self): 
+        """
+        Check the score of the validation set. Passes validation 
+        set through regression and then returns the gradient with 
+        respect to y and in the unknown setting with respect to lambda.
+        """
+        pred = self._lin_reg(self.X_val)
+        if self.unknown:
+            loss = self.criterion(pred, self.y_val, self._lin_reg.lambda_, self.phi)
+            grad, lambda_grad = ch.autograd.grad(loss, [pred, self._lin_reg.lambda_])
+            grad = ch.cat([(grad.sum(0) / self._lin_reg.lambda_).flatten(), lambda_grad.flatten()])
+        else: 
+            loss = self.criterion(pred, self.y_val, self.phi)
+            grad, = ch.autograd.grad(loss, [pred])
+            grad = grad.sum(0)
+        return grad
+
+    @property
+    def weight(self): 
+        """
+        Regression weight.
+        """
+        return self._lin_reg.weight.clone().T
+
+    @property
+    def intercept(self): 
+        """
+        Regression intercept.
+        """
+        if self.bias:
+            return self._lin_reg.bias.clone()
+
+    @property
+    def variance(self): 
+        """
+        Noise variance prediction for linear regression with
+        unknown noise variance algorithm.
+        """
+        if self.unknown: 
+            return self._lin_reg.lambda_.inverse().clone()
+        else: 
+            warnings.warn("no variance prediction because regression with known variance was run")
 
 
 class TruncatedRegressionIterationHook: 
