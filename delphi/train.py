@@ -255,7 +255,6 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
         if is_train:
             optimizer.zero_grad()
             loss.backward()
-
             # print("weight grad: ", model.weight.grad)
             # print("bias grad: ", model.bias.grad)
             # try: 

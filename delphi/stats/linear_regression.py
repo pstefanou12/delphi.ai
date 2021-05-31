@@ -29,7 +29,6 @@ class TruncatedRegression(stats):
             phi: oracle,
             alpha: float,
             steps: int=1000,
-            bias: bool=True,
             unknown: bool=True,
             clamp: bool=True,
             n: int=10, 
@@ -47,7 +46,7 @@ class TruncatedRegression(stats):
         self.phi = phi 
         self.alpha = alpha 
         self.steps = steps
-        self.bias = bias 
+        # self.bias = bias 
         self.unknown = unknown 
         self._lin_reg = None
         self.criterion = TruncatedUnknownVarianceMSE.apply if self.unknown else TruncatedMSE.apply
@@ -85,29 +84,27 @@ class TruncatedRegression(stats):
 
         self.ds = TensorDataset(self.X_train, self.y_train)
         loader = DataLoader(self.ds, batch_size=self.bs, num_workers=self.workers)
-        self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X, y)
+        self.emp_lin_reg = LinearRegression().fit(X, y)
         self.emp_weight = Tensor(self.emp_lin_reg.coef_)
-        self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
+        self.emp_bias = Tensor(self.emp_lin_reg.intercept_)
         self.emp_var = ch.var(Tensor(self.emp_lin_reg.predict(X)) - y, dim=0)[..., None]
         
         if self.unknown: # known variance
-            self._lin_reg = LinearUnknownVariance(in_features=X.size(1), out_features=y.size(1), bias=self.bias)
+            self._lin_reg = LinearUnknownVariance(in_features=X.size(1), out_features=y.size(1), bias=True)
             # assign empirical estimates
             self._lin_reg.lambda_.data = self.emp_var.inverse()
             self._lin_reg.weight.data = self.emp_weight * self._lin_reg.lambda_ 
-            if self.bias: 
-                self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
-            update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias if self._lin_reg.bias is not None else None]},
+            self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
+            update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias]},
                 {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
         else:  # unknown variance
-            self._lin_reg = Linear(in_features=X.size(1), out_features=1, bias=self.bias)
+            self._lin_reg = Linear(in_features=X.size(1), out_features=y.size(1), bias=True)
             # assign empirical estimates
             self._lin_reg.weight.data = self.emp_weight
-            if self.bias: 
-                self._lin_reg.bias.data = self.emp_bias
+            self._lin_reg.bias.data = self.emp_bias
             update_params = None
 
-        self.iter_hook = TruncatedRegressionIterationHook(self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.bias, self.clamp, self.unknown, self.n, self.criterion)
+        self.iter_hook = TruncatedRegressionIterationHook(self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
         self._lin_reg = train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
@@ -142,15 +139,14 @@ class TruncatedRegression(stats):
         """
         Regression weight.
         """
-        return self._lin_reg.weight.clone().T
+        return self._lin_reg.weight.detach().clone().T
 
     @property
     def intercept(self): 
         """
         Regression intercept.
         """
-        if self.bias:
-            return self._lin_reg.bias.clone()
+        return self._lin_reg.bias.detach().clone()
 
     @property
     def variance(self): 
@@ -159,7 +155,7 @@ class TruncatedRegression(stats):
         unknown noise variance algorithm.
         """
         if self.unknown: 
-            return self._lin_reg.lambda_.inverse().clone()
+            return self._lin_reg.lambda_.detach().inverse().clone()
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
 
@@ -174,7 +170,7 @@ class TruncatedRegressionIterationHook:
     set of samples. If the gradient for the samples is less than our tolerance, then 
     we terminate the procedure.
     """
-    def __init__(self, X_train, y_train, X_val, y_val, phi, tol, r, alpha, bias, clamp, unknown, n, criterion):
+    def __init__(self, X_train, y_train, X_val, y_val, phi, tol, r, alpha, clamp, unknown, n, criterion):
         """
         :param X_train: train covariates - torch.Tensor
         :param y_train: train dependent variable - torch.Tensor
@@ -189,7 +185,6 @@ class TruncatedRegressionIterationHook:
         :param criterion: criterion to determine convergence - torch.autograd.Function 
         """
         # use OLS as empirical estimate to define projection set
-        self.bias = bias
         self.r = r
         self.alpha = alpha
         self.unknown = unknown
@@ -197,9 +192,9 @@ class TruncatedRegressionIterationHook:
 
         # initialize projection set
         self.clamp = clamp
-        self.emp_lin_reg = LinearRegression(fit_intercept=self.bias).fit(X_train, y_train)
+        self.emp_lin_reg = LinearRegression().fit(X_train, y_train)
         self.emp_weight = Tensor(self.emp_lin_reg.coef_) 
-        self.emp_bias = Tensor(self.emp_lin_reg.intercept_) if self.bias else None
+        self.emp_bias = Tensor(self.emp_lin_reg.intercept_)
         self.emp_var = ch.var(Tensor(self.emp_lin_reg.predict(X_train)) - y_train, dim=0)[..., None]
         self.radius = r * (12.0 + 4.0 * ch.log(2.0 / self.alpha)) if self.unknown else r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
 
@@ -209,7 +204,7 @@ class TruncatedRegressionIterationHook:
             # generate noise variance radius bounds if unknown 
             self.var_bounds = Bounds(self.emp_var.flatten() / self.r, (self.emp_var.flatten()) / self.alpha.pow(2)) if self.unknown else None
             self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
-                                      self.emp_bias.flatten() + self.radius) if self.bias else None
+                                      self.emp_bias.flatten() + self.radius)
         else:
             pass
 
@@ -223,12 +218,11 @@ class TruncatedRegressionIterationHook:
         self.best_w, self.best_w0, self.best_lambda = None, None, None
         self.best_grad_norm = None
         # calculate empirical score
-        emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=self.bias) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=self.bias) 
+        emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=True) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=True) 
         if self.unknown: 
             emp.lambda_.data = self.emp_var.inverse()
         emp.weight.data = self.emp_weight * emp.lambda_ if self.unknown else self.emp_weight
-        if self.bias: 
-            emp.bias.data = (self.emp_bias * emp.lambda_).flatten() if self.unknown else self.emp_bias
+        emp.bias.data = (self.emp_bias * emp.lambda_).flatten() if self.unknown else self.emp_bias
 
         self.score(emp)
 
@@ -281,16 +275,15 @@ class TruncatedRegressionIterationHook:
                             float(self.weight_bounds.upper[i]))
                     for i in range(weight.size(0))]) * M.lambda_
                 # project bias
-                if self.bias:
-                    bias = M.bias * var
-                    M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
+                bias = M.bias * var
+                M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
             else: 
                 M.weight.data = ch.stack(
                     [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
                     range(M.weight.size(0))])
-                if self.bias:
-                    M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
-                        M.bias.size())
+                # project bias
+                M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
+                    M.bias.size())
         else: 
             pass
 
