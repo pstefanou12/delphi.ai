@@ -255,13 +255,15 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
         if is_train:
             optimizer.zero_grad()
             loss.backward()
-            # print("weight grad: ", model.weight.grad)
-            # print("bias grad: ", model.bias.grad)
-            # try: 
-            #     print("lambda: ", model.lambda_)
-            #     print("lambda grad: ", model.lambda_.grad)
-            # except: 
-            #     pass
+            print("weight before: ", model.weight)
+            print("weight grad: ", model.weight.grad)
+            print("bias before: ", model.bias)
+            print("bias grad: ", model.bias.grad)
+            try: 
+                print("lambda before: ", model.lambda_)
+                print("lambda grad: ", model.lambda_.grad)
+            except: 
+                pass
 
             # # normalize gradient
             # if args.norm: 
@@ -287,6 +289,14 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
             #             model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
             #             model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
             optimizer.step()
+            print("weight after: ", model.weight)
+            print("bias after: ", model.bias)
+            try: 
+                print("lambda after: ", model.lambda_)
+            except: 
+                pass
+
+
 
         if len(loss.size()) > 0: loss = loss.mean()
 
