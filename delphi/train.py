@@ -335,7 +335,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
     
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
-            args.iteration_hook(model, i, loop_type, inp, target)
+            args.iteration_hook(model, optimizer, i, loop_type, inp, target)
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']

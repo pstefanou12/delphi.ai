@@ -231,6 +231,7 @@ class TruncatedRegressionIterationHook:
         # track best estimates based off of gradient norm
         self.best_grad_norm = None
         self.best_state_dict = None
+        self.best_opt = None
         # calculate empirical score
         emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=True) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=True) 
         if self.unknown: 
@@ -238,9 +239,7 @@ class TruncatedRegressionIterationHook:
         emp.weight.data = self.emp_weight * emp.lambda_ if self.unknown else self.emp_weight
         emp.bias.data = (self.emp_bias * emp.lambda_).flatten() if self.unknown else self.emp_bias
 
-        self.score(emp)
-
-    def score(self, M): 
+    def score(self, M, optimizer): 
         """
         Calculates the score of the current regression estimates of the validation set. It 
         then updates the best estimates accordingly based off of the score's norm.
@@ -262,25 +261,18 @@ class TruncatedRegressionIterationHook:
             raise ProcedureComplete()
         
         print("Iteration {} | Score: {}".format(int(self.steps / self.n), grad_norm))
-
-        # if smaller gradient, update best
+        # if smaller gradient norm, update best
         if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
             self.best_grad_norm = grad_norm
-
-            # self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten()
-            # if self.unknown: 
-            #     self.best_lambda = M.lambda_.data.clone()
-            # # keep track of state dict
-            self.best_state_dict = copy.deepcopy(M.state_dict())
-
+            # keep track of state dict
+            self.best_state_dict, self.best_opt = copy.deepcopy(M.state_dict()), copy.deepcopy(optimizer.state_dict())
         elif 1e-1 <= grad_norm - self.best_grad_norm: 
-            # M.weight.data = self.best_w.clone()
-            # M.bias.data = self.best_w0.clone()
-            # if self.unknown: 
-            #     M.lambda_.data = self.best_lambda.clone()
+            # load in the best model state and optimizer dictionaries
             M.load_state_dict(self.best_state_dict)
+            optimizer.load_state_dict(self.best_opt)
 
-    def __call__(self, M, i, loop_type, inp, target): 
+
+    def __call__(self, M, optimizer, i, loop_type, inp, target): 
         # increase number of steps taken
         self.steps += 1
         # project model parameters back to domain 
@@ -310,5 +302,5 @@ class TruncatedRegressionIterationHook:
 
         # check for convergence every n steps
         if self.steps % self.n == 0: 
-            self.score(M)
+            self.score(M, optimizer)
 
