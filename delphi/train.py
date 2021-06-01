@@ -328,7 +328,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
                         'Reg term: {reg} ||'.format(epoch, loop_msg,
                                                     loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
             else: 
-                desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                desc = ('Epoch: {0} | Loss {loss.avg:.4f} | {1}1'
                         'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
             
             iterator.set_description(desc)

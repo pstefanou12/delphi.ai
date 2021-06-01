@@ -11,6 +11,7 @@ from sklearn.linear_model import LinearRegression
 from cox.utils import Parameters
 from cox.store import Store
 import config
+import copy
 import warnings
 
 from .stats import stats
@@ -38,6 +39,11 @@ class TruncatedRegression(stats):
             r: float=2.0,
             num_samples: int=100,
             bs: int=10,
+            lr: float=1e-1,
+            var_lr: float=1e-1, 
+            step_lr: int=100, 
+            step_lr_gamma: float=.9,
+            eps: float=1e-5, 
             **kwargs):
         """
         """
@@ -46,7 +52,6 @@ class TruncatedRegression(stats):
         self.phi = phi 
         self.alpha = alpha 
         self.steps = steps
-        # self.bias = bias 
         self.unknown = unknown 
         self._lin_reg = None
         self.criterion = TruncatedUnknownVarianceMSE.apply if self.unknown else TruncatedMSE.apply
@@ -59,18 +64,23 @@ class TruncatedRegression(stats):
         self.r = r 
         self.num_samples = num_samples
         self.bs = bs
+        self.lr = lr 
+        self.var_lr = var_lr
+        self.step_lr = step_lr
+        self.step_lr_gamma = step_lr_gamma
+        self.eps = eps 
         self.ds = None
 
         config.args = Parameters({ 
-            'steps': steps,
+            'steps': self.steps,
             'momentum': 0.0, 
             'weight_decay': 0.0, 
-            'step_lr': 100, 
-            'step_lr_gamma': .9,    
+            'step_lr': self.step_lr, 
+            'step_lr_gamma': self.step_lr_gamma,    
             'num_samples': self.num_samples,
-            'lr': 1e-1,  
-            'var_lr': 1e-1,
-            'eps': 1e-5,
+            'lr': self.lr,  
+            'var_lr': self.var_lr,
+            'eps': self.eps,
         })
 
     def fit(self, X: Tensor, y: Tensor):
@@ -96,7 +106,7 @@ class TruncatedRegression(stats):
             self._lin_reg.weight.data = self.emp_weight * self._lin_reg.lambda_ 
             self._lin_reg.bias.data = (self.emp_bias * self._lin_reg.lambda_).flatten()
             update_params = [{'params': [self._lin_reg.weight, self._lin_reg.bias]},
-                {'params': self._lin_reg.lambda_, 'lr': config.args.var_lr}]
+                {'params': self._lin_reg.lambda_, 'lr': self.var_lr}]
         else:  # unknown variance
             self._lin_reg = Linear(in_features=X.size(1), out_features=y.size(1), bias=True)
             # assign empirical estimates
@@ -139,6 +149,8 @@ class TruncatedRegression(stats):
         """
         Regression weight.
         """
+        if self.unknown: 
+            return self._lin_reg.weight.detach().clone().T * self._lin_reg.lambda_.detach().inverse().clone()
         return self._lin_reg.weight.detach().clone().T
 
     @property
@@ -146,6 +158,8 @@ class TruncatedRegression(stats):
         """
         Regression intercept.
         """
+        if self.unknown: 
+            return self._lin_reg.bias.detach().clone().T * self._lin_reg.lambda_.detach().inverse().clone()   
         return self._lin_reg.bias.detach().clone()
 
     @property
@@ -215,8 +229,8 @@ class TruncatedRegressionIterationHook:
         self.criterion = criterion
         self.tol = tol
         # track best estimates based off of gradient norm
-        self.best_w, self.best_w0, self.best_lambda = None, None, None
         self.best_grad_norm = None
+        self.best_state_dict = None
         # calculate empirical score
         emp = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=True) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=True) 
         if self.unknown: 
@@ -241,23 +255,30 @@ class TruncatedRegressionIterationHook:
             grad, = ch.autograd.grad(loss, [pred])
             grad = grad.sum(0)
 
-        print("Iteration: {} | Score: {}".format(int(self.steps) / self.n, grad.tolist()))
+        grad_norm = grad.norm(dim=-1)
         # check that gradient magnitude is less than tolerance
-        if self.steps != 0 and ch.all(ch.abs(grad) < self.tol): 
+        if self.steps != 0 and grad_norm < self.tol: 
+            print("Final Score: {}".format(grad_norm))
             raise ProcedureComplete()
+        
+        print("Iteration {} | Score: {}".format(int(self.steps / self.n), grad_norm))
 
-        # grad_norm = grad.norm(dim=-1)
-        # # if smaller gradient, update best
-        # if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
-        #     self.best_grad_norm = grad_norm
-        #     self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten() if self.bias else None
-        #     if self.unknown: 
-        #         self.best_lambda = M.lambda_.data.clone()
-        # else: 
-        #     M.weight.data = self.best_w.clone()
-        #     M.bias.data = self.best_w0.clone() if self.bias else None
-        #     if self.unknown: 
-        #         M.lambda_.data = self.best_lambda.clone()
+        # if smaller gradient, update best
+        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
+            self.best_grad_norm = grad_norm
+
+            # self.best_w, self.best_w0 = M.weight.data.clone(), M.bias.data.clone().flatten()
+            # if self.unknown: 
+            #     self.best_lambda = M.lambda_.data.clone()
+            # # keep track of state dict
+            self.best_state_dict = copy.deepcopy(M.state_dict())
+
+        elif 1e-1 <= grad_norm - self.best_grad_norm: 
+            # M.weight.data = self.best_w.clone()
+            # M.bias.data = self.best_w0.clone()
+            # if self.unknown: 
+            #     M.lambda_.data = self.best_lambda.clone()
+            M.load_state_dict(self.best_state_dict)
 
     def __call__(self, M, i, loop_type, inp, target): 
         # increase number of steps taken
