@@ -122,9 +122,6 @@ class TruncatedRegression(stats):
             self._lin_reg.bias.data = self.emp_bias
             update_params = None
 
-        print("empirical weight: ", self._lin_reg.weight)
-        print("empirical bias: ", self._lin_reg.bias)
-
         self.iter_hook = TruncatedRegressionIterationHook(self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
@@ -227,14 +224,15 @@ class TruncatedRegressionIterationHook:
             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
                                         self.emp_weight.flatten() + self.radius)
             # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(self.emp_var.flatten() / self.r, (self.emp_var.flatten()) / self.alpha.pow(2)) if self.unknown else None
-            self.bias_bounds = Bounds(self.emp_bias.flatten() - self.radius,
-                                      self.emp_bias.flatten() + self.radius)
+            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.r), float(self.emp_var.flatten() / self.alpha.pow(2))) if self.unknown else None
+            self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
+                                      float(self.emp_bias.flatten() + self.radius))
         else:
             pass
 
         print("weight bounds: ", self.weight_bounds)
         print("bias bounds: ", self.bias_bounds)
+        print("var bounds: ", self.var_bounds)
 
         # validation set
         # use steps counter to keep track of steps taken
@@ -280,44 +278,34 @@ class TruncatedRegressionIterationHook:
             self.best_grad_norm = grad_norm
             # keep track of state dict
             self.best_state_dict, self.best_opt = copy.deepcopy(M.state_dict()), copy.deepcopy(optimizer.state_dict())
-            print("updating best value")
         elif 1e-1 <= grad_norm - self.best_grad_norm: 
             # load in the best model state and optimizer dictionaries
             M.load_state_dict(self.best_state_dict)
             optimizer.load_state_dict(self.best_opt)
-            print("reassigning best parameters")
 
     def __call__(self, M, optimizer, i, loop_type, inp, target): 
         # increase number of steps taken
         self.steps += 1
         # project model parameters back to domain 
-        # if self.clamp: 
-        #     if self.unknown: 
-        #         var = M.lambda_.inverse()
-        #         weight = M.weight * var
+        if self.clamp: 
+            if self.unknown: 
+                var = M.lambda_.inverse()
+                weight = M.weight * var
 
-        #         M.lambda_.data = ch.clamp(var, float(self.var_bounds.lower), float(self.var_bounds.upper)).inverse()
-        #         # project weights
-        #         M.weight.data = ch.cat(
-        #             [ch.clamp(weight[i].unsqueeze(0), float(self.weight_bounds.lower[i]),
-        #                     float(self.weight_bounds.upper[i]))
-        #             for i in range(weight.size(0))]) * M.lambda_
-        #         # project bias
-        #         bias = M.bias * var
-        #         M.bias.data = (ch.clamp(bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)) * M.lambda_).reshape(M.bias.size())
-        #     else: 
-        #         print("weight before projection: ", M.weight)
-        #         print("bias before projection: ", M.bias)
-        #         M.weight.data = ch.cat(
-        #             [ch.clamp(M.weight[i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) for i in
-        #             range(M.weight.size(0))])
-        #         # project bias
-        #         M.bias.data = ch.clamp(M.bias, float(self.bias_bounds.lower), float(self.bias_bounds.upper)).reshape(
-        #             M.bias.size())
-        #         print("bias after projection: ", M.bias)
-        #         print("weight after projection: ", M.weight)
-        # else: 
-        #     pass
+                M.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+                # project weights
+                M.weight.data = ch.cat([ch.clamp(weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i])
+                    for i in range(weight.size(1))])[None,...] * M.lambda_
+                # project bias
+                bias = M.bias * var
+                M.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * M.lambda_).reshape(M.bias.size())
+            else: 
+                M.weight.data = ch.cat([ch.clamp(M.weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) 
+                    for i in range(M.weight.size(1))])[None,...]
+                # project bias
+                M.bias.data = ch.clamp(M.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(M.bias.size())
+        else: 
+            pass
 
         # check for convergence every n steps
         if self.steps % self.n == 0: 
