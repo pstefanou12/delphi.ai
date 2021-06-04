@@ -125,8 +125,10 @@ class TruncatedRegression(stats):
         self.iter_hook = TruncatedRegressionIterationHook(self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.clamp, self.unknown, self.n, self.criterion)
         config.args.__setattr__('iteration_hook', self.iter_hook)
         # run PGD for parameter estimation
-        self._lin_reg = train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
+        if self.score() > self.tol: # first check regression's empirical score
+            self._lin_reg = train_model(config.args, self._lin_reg, (loader, None), phi=self.phi, criterion=self.criterion, update_params=update_params)
         # remove linear regression from computation graph
+
         with ch.no_grad():
             return self._lin_reg
 
@@ -150,7 +152,7 @@ class TruncatedRegression(stats):
             loss = self.criterion(pred, self.y_val, self.phi)
             grad, = ch.autograd.grad(loss, [pred])
             grad = grad.sum(0)
-        return grad
+        return grad.norm(dim=-1)
 
     @property
     def weight(self): 
@@ -229,10 +231,6 @@ class TruncatedRegressionIterationHook:
                                       float(self.emp_bias.flatten() + self.radius))
         else:
             pass
-
-        print("weight bounds: ", self.weight_bounds)
-        print("bias bounds: ", self.bias_bounds)
-        print("var bounds: ", self.var_bounds)
 
         # validation set
         # use steps counter to keep track of steps taken
