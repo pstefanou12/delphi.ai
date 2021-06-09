@@ -115,7 +115,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     # data loaders
     train_loader, val_loader = loaders
     # number of periods/epochs for learning rate schedulers
-    T = args.epochs if args.epochs else args.steps // len(train_loader)
+    T = args.epochs if args.epochs else args.steps
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
 
     # put the model into parallel mode
@@ -378,7 +378,6 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         if steps is not None: 
             steps += 1
             if schedule: schedule.step()
-            print("lr: ", optimizer.param_groups)
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']

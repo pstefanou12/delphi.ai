@@ -218,4 +218,5 @@ class TruncatedCE(ch.autograd.Function):
         mask = noised_labs.eq(targ)[..., None]
         inner_exp = (1 - ch.exp(-rand_noise))
         avg = (((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)            
+        print("filtered: ", filtered.sum(0))
         return -avg, None
