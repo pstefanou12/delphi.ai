@@ -99,7 +99,7 @@ def eval_model(args, model, loader, store, table=None):
     return log_info
 
 
-def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
+def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
                 store=None, table=None, update_params=None, disable_no_grad=False):
     table = consts.LOGS_TABLE if table is None else table
     if store is not None:
@@ -239,11 +239,15 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
             if isinstance(output, tuple):
                 output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
-            try:
-                loss = criterion(output, target, model.lambda_, phi)
+            print("phi: ", phi)
+            if phi is not None: 
+                try:
+                    loss = criterion(output, target, model.lambda_, phi)
 
-            except Exception as e:
-                loss = criterion(output, target, phi)
+                except Exception as e:
+                    loss = criterion(output, target, phi)
+            else: 
+                loss = criterion(output, target)
 
         # regularizer option 
         reg_term = 0.0
