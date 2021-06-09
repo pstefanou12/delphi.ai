@@ -108,7 +108,13 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
 
     # data loaders
     train_loader, val_loader = loaders
+<<<<<<< HEAD
+    # number of periods/epochs for learning rate schedulers
+    T = args.epochs if args.epochs else args.steps
+    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
+=======
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=(args.epochs if args.epochs else args.steps))
+>>>>>>> 34769e722a76c17343271fb621c7d3d0b0d542f4
 
     # put the neural network onto gpu and in parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
@@ -350,6 +356,11 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
             args.iteration_hook(model, optimizer, i, loop_type, inp, target)
+
+        # increment number of gradients
+        if steps is not None: 
+            steps += 1
+            if schedule: schedule.step()
 
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
