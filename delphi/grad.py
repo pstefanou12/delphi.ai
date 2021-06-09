@@ -190,8 +190,9 @@ class GumbelCE(ch.autograd.Function):
 
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ):
+    def forward(ctx, pred, targ, phi):
         ctx.save_for_backward(pred, targ)
+        ctx.phi = phi
         ce_loss = ch.nn.CrossEntropyLoss()
         return ce_loss(pred, targ)
 

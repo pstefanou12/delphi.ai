@@ -108,13 +108,9 @@ def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.
 
     # data loaders
     train_loader, val_loader = loaders
-<<<<<<< HEAD
     # number of periods/epochs for learning rate schedulers
     T = args.epochs if args.epochs else args.steps
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
-=======
-    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=(args.epochs if args.epochs else args.steps))
->>>>>>> 34769e722a76c17343271fb621c7d3d0b0d542f4
 
     # put the neural network onto gpu and in parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
