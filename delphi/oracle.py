@@ -32,9 +32,6 @@ class Interval:
         self.bounds = Bounds(lower, upper)
 
     def __call__(self, x):
-        # check sample device
-        if x.is_cuda:
-            return ((self.bounds.lower.cuda() < x).prod(-1) * (x < self.bounds.upper.cuda()).prod(-1))
         return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))
 
 
@@ -50,38 +47,45 @@ class KIntervalUnion(oracle):
         result = Tensor([])
         for oracle_ in self.oracles:
             result = ch.logical_or(result, oracle_(x)) if result.nelement() > 0 else oracle_(x)
-        return result
+        return result[..., None]
 
     def __str__(self): 
         return 'k-interval union'
 
 
-class Left(Interval):
+class Left(oracle):
     """
-    Left truncation
+    Left Regression Truncation.
     """
     def __init__(self, left):
         """
         Args: 
-            left: left bound - size (d,)
+            left: left truncation
         """
-        super(Left, self).__init__(left, ch.full(left.size(), float('inf')))
+        super(Left, self).__init__()
+        self.left = left
+
+    def __call__(self, x): 
+        return x > self.left
 
     def __str__(self): 
         return 'left'
 
 
-class Right(Interval):
+class Right(oracle):
     """
-    Right truncation
+    Right Regression Truncation.
     """
-
     def __init__(self, right):
         """
         Args: 
-            right: right bound - size (d,)
+            right: right truncation
         """
-        super().__init__(-ch.full(right.size(), float('inf')), right)
+        super(Right, self).__init__()
+        self.right = right
+
+    def __call__(self, x): 
+        return x < self.right
 
     def __str__(self): 
         return 'right'
@@ -218,7 +222,7 @@ class Identity(oracle):
     Identity membership oracle for DNNs. All logits are accepted within the truncation set.
     """
     def __call__(self, x): 
-        return ch.ones(x.size()).prod(-1)
+        return ch.ones(x.size()).prod(-1, keepdim=True)
 
     def __str__(self): 
         return 'identity'

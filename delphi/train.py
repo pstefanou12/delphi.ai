@@ -8,7 +8,8 @@ from torch import Tensor
 from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance
+from . import oracle
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance, ProcedureComplete
 from .utils import constants as consts
 
 # determine running environment
@@ -21,12 +22,7 @@ else:
 
 def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
     param_list = model.parameters() if params is None else params
-
-    # run on mutliple GPUs
-    if args.adam: 
-        optimizer = Adam(param_list, lr=args.lr, weight_decay=args.weight_decay)
-    else: 
-        optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Make schedule
     schedule = None
@@ -103,33 +99,29 @@ def eval_model(args, model, loader, store, table=None):
     return log_info
 
 
-def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_device_ids=None, 
+def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
                 store=None, table=None, update_params=None, disable_no_grad=False):
     table = consts.LOGS_TABLE if table is None else table
-
     if store is not None:
         store.add_table(table, consts.LOGS_SCHEMA)
-
     writer = store.tensorboard if store else None
 
     # data loaders
     train_loader, val_loader = loaders
+<<<<<<< HEAD
     # number of periods/epochs for learning rate schedulers
     T = args.epochs if args.epochs else args.steps
     optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
+=======
+    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=(args.epochs if args.epochs else args.steps))
+>>>>>>> 34769e722a76c17343271fb621c7d3d0b0d542f4
 
-    # put the model into parallel mode
+    # put the neural network onto gpu and in parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
-
-    # run on parallel GPUs
+    if cuda: 
+        model = model.cuda()
     if parallel:
         model = ch.nn.DataParallel(model)
-
-    if isinstance(model, ch.distributions.distribution.Distribution):
-        model.loc.to(args.device)
-        model.covariance_matrix.to(args.device)
-    else:
-        model.to(args.device)
 
     best_prec1, epoch = (0, 0)
     if checkpoint:
@@ -142,7 +134,12 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     steps = 0 if args.steps else None # number of gradient steps taken
     # do training loops until performing enough gradient steps or epochs
     while (args.steps is not None and steps < args.steps) or (args.epochs is not None and epoch < args.epochs):
-        train_prec1, train_loss, score = model_loop(args, 'train', train_loader, model, optimizer, epoch+1, steps, writer, device=args.device, schedule=schedule)
+        try: 
+            train_prec1, train_loss = model_loop(args, 'train', train_loader, model, phi, criterion, optimizer, epoch+1, steps, writer, device=args.device, schedule=schedule)
+        except ProcedureComplete: 
+            return model
+        except Exception as e: 
+            raise e
 
         # check for logging/checkpoint
         last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
@@ -150,14 +147,14 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
         should_log = ((epoch % args.log_iters == 0 or last_epoch) if args.epochs else (steps % args.log_iters == 0 or last_epoch)) if args.log_iters else False
 
         # validation loop
-        val_prec1, val_loss, val_score = 0.0, 0.0, 0.0
+        val_prec1, val_loss = 0.0, 0.0
         if should_log or should_save_ckpt: 
             ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
 
             # evaluate model on validation set, if there is one
             if val_loader is not None:
                 with ctx:
-                    val_prec1, val_loss, val_score = model_loop(args, 'val', val_loader, model,
+                    val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
                             None, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec_1 and save checkpoint
@@ -206,10 +203,6 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
 
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
-
-        # check score tolerance
-        if args.score and ch.all(ch.where(ch.abs(score) < args.tol, ch.ones(1).to(args.device), ch.zeros(1).to(args.device)).bool()):
-            break
             
         # increment epoch counter
         epoch += 1
@@ -221,7 +214,7 @@ def train_model(args, model, loaders, *, checkpoint=None, parallel=False, dp_dev
     return model
             
             
-def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, device, schedule=None):
+def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch, steps, writer, device, schedule=None):
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -231,16 +224,13 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
     loop_msg = 'Train' if is_train else 'Val'
  
     # algorithm metrics
-    losses, score = AverageMeter(), AverageMeter()
-    top1, top5 = AverageMeter(), AverageMeter()
+    losses, top1, top5 =  AverageMeter(), AverageMeter(), AverageMeter()
 
     if not isinstance(model, ch.distributions.distribution.Distribution):   
         model = model.train() if is_train else model.eval()
     
-    # check for custom criterion
-    has_custom_criterion = has_attr(args, 'custom_criterion')
-    criterion = args.custom_criterion if has_custom_criterion else ch.nn.CrossEntropyLoss()
-    iterator = tqdm(enumerate(loader), total=len(loader), leave=False)
+    # iterator
+    iterator = enumerate(loader) if args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
 
     for i, batch in iterator:
         inp, target, output = None, None, None
@@ -256,10 +246,10 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
                 output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
             try:
-                loss = criterion(output, target, model.lambda_)
+                loss = criterion(output, target, model.lambda_, phi)
 
             except Exception as e:
-                loss = criterion(output, target)
+                loss = criterion(output, target, phi)
 
         # regularizer option 
         reg_term = 0.0
@@ -269,38 +259,50 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         
         # perform backprop and take optimizer step
         if is_train:
-            # import pdb; pdb.set_trace()
             optimizer.zero_grad()
             loss.backward()
-
+            # print("weight before: ", model.weight)
             # print("weight grad: ", model.weight.grad)
+            # print("bias before: ", model.bias)
             # print("bias grad: ", model.bias.grad)
-            # print("lambda grad: ", model.lambda_.grad)
+            # try: 
+            #     print("lambda before: ", model.lambda_)
+            #     print("lambda grad: ", model.lambda_.grad)
+            # except: 
+            #     pass
 
-            # normalize gradient
-            if args.norm: 
-                # check if unknown variance regression
-                if not isinstance(model, LinearUnknownVariance):
-                    if model.bias is not None: 
-                        grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten()])
-                        norm_grad = grad / grad.norm()
-                        model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
-                        model.bias.grad = norm_grad[-1].reshape(model.bias.size())
-                    else: 
-                        model.weight.grad = model.weight.grad / model.weight.grad.norm()
-                else: 
-                    if model.bias is not None: 
-                        grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten(), model.lambda_.flatten()])
-                        norm_grad = grad / grad.norm()
-                        model.weight.grad = norm_grad[:-2].reshape(model.weight.size())
-                        model.bias.grad = norm_grad[-2].reshape(model.bias.size())
-                        model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
-                    else: 
-                        grad = ch.cat([model.weight.grad.flatten(), model.lambda_.flatten()])
-                        norm_grad = model.weight.grad / moptimiodel.weight.grad.norm()
-                        model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
-                        model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
+            # # normalize gradient
+            # if args.norm: 
+            #     # check if unknown variance regression
+            #     if not isinstance(model, LinearUnknownVariance):
+            #         if model.bias is not None: 
+            #             grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten()])
+            #             norm_grad = grad / grad.norm()
+            #             model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
+            #             model.bias.grad = norm_grad[-1].reshape(model.bias.size())
+            #         else: 
+            #             model.weight.grad = model.weight.grad / model.weight.grad.norm()
+            #     else: 
+            #         if model.bias is not None: 
+            #             grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten(), model.lambda_.flatten()])
+            #             norm_grad = grad / grad.norm()
+            #             model.weight.grad = norm_grad[:-2].reshape(model.weight.size())
+            #             model.bias.grad = norm_grad[-2].reshape(model.bias.size())
+            #             model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
+            #         else: 
+            #             grad = ch.cat([model.weight.grad.flatten(), model.lambda_.flatten()])
+            #             norm_grad = model.weight.grad / moptimiodel.weight.grad.norm()
+            #             model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
+            #             model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
             optimizer.step()
+            # print("weight after: ", model.weight)
+            # print("bias after: ", model.bias)
+            # try: 
+            #     print("lambda after: ", model.lambda_)
+            # except: 
+            #     pass
+
+
 
         if len(loss.size()) > 0: loss = loss.mean()
 
@@ -313,66 +315,43 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
         top5_acc = float('nan')
 
         desc = None  # description for epoch
-        try:
-            # censored, truncated distributions - calculate score
-            if isinstance(model, ch.distributions.distribution.Distribution):
-                score.update(ch.cat([model.loc.grad, model.covariance_matrix.grad.flatten()]),
-                             model.loc.size(0) + model.covariance_matrix.flatten().size(0))
-                desc = ('Steps:{0} | Score: {score} \n ||'.format(epoch, loop_msg, score=[round(x, 4) for x in score.avg.tolist()]))
-            # regression with unknown variance
-            elif inp is not None:
-                losses.update(loss.item(), inp.size(0))
-                # calculate score
-                if args.score:
-                    score.update(ch.cat([p.grad.flatten() for p in model.parameters()]), inp.size(0))
+        # censored, truncated distributions - calculate score
+        if args.steps:
+            steps += 1 
+            if schedule: schedule.step()
+        # latent variable models
+        else:
+            losses.update(loss.item(), inp.size(0))
+            # calculate accuracy metrics
+            if args.accuracy:
+                # accuracy
+                maxk = min(5, model_logits.shape[-1])
+                if has_attr(args, "custom_accuracy"):
+                    prec1, prec5 = args.custom_accuracy(model_logits, target)
+                else:
+                    prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
+                    prec1, prec5 = prec1[0], prec5[0]
 
-                # calculate accuracy metrics
-                if args.accuracy:
-                    # accuracy
-                    maxk = min(5, model_logits.shape[-1])
-                    if has_attr(args, "custom_accuracy"):
-                        prec1, prec5 = args.custom_accuracy(model_logits, target)
-                    else:
-                        prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
-                        prec1, prec5 = prec1[0], prec5[0]
+                top1.update(prec1, inp.size(0))
+                top5.update(prec5, inp.size(0))
+                top1_acc = top1.avg
+                top5_acc = top5.avg
 
-                    top1.update(prec1, inp.size(0))
-                    top5.update(prec5, inp.size(0))
-                    top1_acc = top1.avg
-                    top5_acc = top5.avg
-
-                # ITERATOR
-                if steps is not None: 
-                    # TODO: figure out better way to pass descriptions through to iterator
-                    if args.accuracy: 
-                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
-                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                'Reg term: {reg} ||'.format(steps, loop_msg,
-                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                    else: 
-                        desc = ('Steps: {0} | Loss {loss.avg:.4f} | '
-                                'Reg term: {reg} ||'.format(steps, loop_msg, loss=losses, reg=reg_term))
-                else: 
-                    if args.accuracy: 
-                        desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                                'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-                    else: 
-                        desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                                'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
-        except Exception as e:
             # ITERATOR
-            if steps is not None:
-                desc = ('Steps: {0} | Loss {loss.avg:.4f} ||'.format(steps, loop_msg, loss=losses))
+            if args.accuracy: 
+                desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                        '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                        'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                    loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
             else: 
-                desc = ('Epoch:{0} | Loss {loss.avg:.4f} ||'.format(epoch, loop_msg, loss=losses))
-        
-        iterator.set_description(desc)
+                desc = ('Epoch: {0} | Loss {loss.avg:.4f} | {1}1'
+                        'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
+            
+            iterator.set_description(desc)
     
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
-            args.iteration_hook(model, i, loop_type, inp, target)
+            args.iteration_hook(model, optimizer, i, loop_type, inp, target)
 
         # increment number of gradients
         if steps is not None: 
@@ -387,4 +366,4 @@ def model_loop(args, loop_type, loader, model, optimizer, epoch, steps, writer, 
                               epoch)
     
     # LOSS AND ACCURACY
-    return top1.avg, losses.avg, score.avg
+    return top1.avg, losses.avg

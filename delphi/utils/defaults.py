@@ -76,7 +76,7 @@ TRAINING_DEFAULTS = {
         "d": 100,
     },
     datasets.TensorDataset: {
-        "epochs": 1,
+        "steps": 1000,
         "batch_size": 100,
         "weight_decay": 0.0,
         "momentum": 0.0,
