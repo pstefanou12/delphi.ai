@@ -85,8 +85,8 @@ def eval_model(args, model, loader, store, table=None):
     assert not hasattr(model, "module"), "model is already in DataParallel."
     if args.parallel and next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
-    test_prec1, test_loss, score = model_loop(args, 'val', loader,
-                                        model, None, 0, 0, writer, args.device)
+    test_prec1, test_loss = model_loop(args, 'val', loader,
+                                        model, None, ch.nn.CrossEntropyLoss(), None,  0, 0, writer, args.device)
     log_info = {
         'test_prec1': test_prec1,
         'test_loss': test_loss,
@@ -99,7 +99,7 @@ def eval_model(args, model, loader, store, table=None):
     return log_info
 
 
-def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
+def train_model(args, model, loaders, *, phi=None, criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
                 store=None, table=None, update_params=None, disable_no_grad=False):
     table = consts.LOGS_TABLE if table is None else table
     if store is not None:
@@ -150,8 +150,8 @@ def train_model(args, model, loaders, *, phi=oracle.Identity(), criterion=ch.nn.
             # evaluate model on validation set, if there is one
             if val_loader is not None:
                 with ctx:
-                    val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, steps, writer, device=args.device)
+                    val_prec1, val_loss = model_loop(args, 'val', val_loader, model,
+                            None, criterion, None, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec_1 and save checkpoint
                 is_best = val_prec1 > best_prec1
@@ -241,11 +241,14 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
             if isinstance(output, tuple):
                 output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
-            try:
-                loss = criterion(output, target, model.lambda_, phi)
+            if phi is not None: 
+                try:
+                    loss = criterion(output, target, model.lambda_, phi)
 
-            except Exception as e:
-                loss = criterion(output, target, phi)
+                except Exception as e:
+                    loss = criterion(output, target, phi)
+            else: 
+                loss = criterion(output, target)
 
         # regularizer option 
         reg_term = 0.0
