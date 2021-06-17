@@ -11,6 +11,7 @@ from torch.optim import lr_scheduler
 from . import oracle
 from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance, ProcedureComplete
 from .utils import constants as consts
+from .attacker import AttackerModel
 
 # determine running environment
 script = type_of_script()
@@ -123,7 +124,7 @@ def train_model(args, model, loaders, *, phi=None, criterion=ch.nn.CrossEntropyL
     if checkpoint:
         epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, steps, writer=None, device=args.device, schedule=schedule)[0]
+            else model_loop(args, 'val', val_loader, model, phi, criterion, optimizer, start_epoch-1, steps, writer=None, device=args.device, schedule=schedule)[0]
 
     # keep track of the start time
     start_time = time.time()
@@ -151,7 +152,7 @@ def train_model(args, model, loaders, *, phi=None, criterion=ch.nn.CrossEntropyL
             if val_loader is not None:
                 with ctx:
                     val_prec1, val_loss = model_loop(args, 'val', val_loader, model,
-                            None, criterion, None, epoch + 1, steps, writer, device=args.device)
+                            phi, criterion, optimizer, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec_1 and save checkpoint
                 is_best = val_prec1 > best_prec1
@@ -233,7 +234,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
         loss = 0.0
         if isinstance(model, ch.distributions.distribution.Distribution):
             loss = criterion(*optimizer.param_groups[0]['params'], *batch)
-        elif isinstance(model, ch.nn.Module):
+        elif isinstance(model, ch.nn.Module) or isinstance(model, AttackerModel):
             inp, target = batch
             inp, target = inp.to(device), target.to(device)
             output = model(inp)
