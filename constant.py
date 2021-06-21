@@ -39,8 +39,8 @@ num_classes = 10
 # file path constants
 BASE_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/base_calibrated_'
 BASE_CLASSIFIER_PATH = BASE_CLASSIFIER + '/e4476e64-c5bb-4d8a-b2bc-299aed256e88/checkpoint.pt.latest'
-LOGIT_BALL_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/trunc_ce_step_lr'
-STANDARD_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/ce_step_lr'
+LOGIT_BALL_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/trunc_ce_constant'
+STANDARD_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/ce_constant'
 DATA_PATH = '/home/pstefanou/data/'
 TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit__'
 TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit__'
@@ -111,7 +111,7 @@ args = Parameters({
     'logit_ball': 7.5,
     'trials': 3,
     'step_lr': 10, 
-    'step_lr_gamma': .9,
+    'step_lr_gamma': 1.0,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
 LEARNING_RATES = [1e-1, 1e-2, 1e-3]
