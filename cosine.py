@@ -27,8 +27,8 @@ os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 # file path constants
-LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_step_lr_real'
-STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_step_lr_real'
+LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_cosine'
+STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_cosine'
 DATA_PATH = '/home/gridsan/stefanou/data/'
 TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit_'
 TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit_'
@@ -87,19 +87,17 @@ args = Parameters({
     'accuracy': True,
     'momentum': 0.0, 
     'weight_decay': 0.0, 
-    'save_ckpt_iters': 10,
+    'custom_lr_multiplier': consts.COSINE,
     'should_save_ckpt': True,
     'log_iters': 1,
-    'step_lr': 1, 
-    'step_lr_gamma': .9,
     'validation_split': .8,
     'shuffle': True,
     'parallel': False, 
     'num_samples': 1000,
     'logit_ball': 7.5,
     'trials': 3,
-    'step_lr': 10, 
-    'step_lr_gamma': .9,
+    'step_lr': 1, 
+    'step_lr_gamma': 1.0,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
 LEARNING_RATES = [1e-1, 1e-2, 1e-3]

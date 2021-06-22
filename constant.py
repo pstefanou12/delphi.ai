@@ -1,50 +1,34 @@
-import sys
-sys.path.append('../..')
+from delphi import train
+from delphi import oracle
+
 import torchvision 
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 import torch as ch
-import torch.nn as nn
-from torch import Tensor
-from torch.distributions import Gumbel
-import math
-import numpy as np
-import matplotlib.pyplot as plt
-import cox
 from cox.utils import Parameters
 import cox.store as store
-import seaborn as sns
 import os
 import config
 import pickle
 import pandas as pd
 
-from delphi import train
-from delphi.utils import model_utils
 from delphi import grad
-from delphi import oracle
-from delphi.utils.datasets import CIFAR, ImageNet
+from delphi.utils import model_utils
+from delphi.utils.datasets import CIFAR
 import delphi.utils.constants as consts
 import delphi.utils.data_augmentation as da
 from delphi.utils.helpers import setup_store_with_metadata
-
 # CONSTANTS
 # set environment variable so that stores can create output files
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-# noise distributions
-gumbel = Gumbel(0, 1)
-num_classes = 10
-
 # file path constants
-BASE_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/base_calibrated_'
-BASE_CLASSIFIER_PATH = BASE_CLASSIFIER + '/e4476e64-c5bb-4d8a-b2bc-299aed256e88/checkpoint.pt.latest'
-LOGIT_BALL_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/trunc_ce_constant'
-STANDARD_CLASSIFIER = '/home/pstefanou/cifar-10/resnet-18/ce_constant'
-DATA_PATH = '/home/pstefanou/data/'
-TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit__'
-TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit__'
-TRUNC_UNSEEN_DATASET = 'trunc_test_calibrated_logit__'
+LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_constant'
+STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_constant'
+DATA_PATH = '/home/gridsan/stefanou/data/'
+TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit_'
+TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit_'
+TRUNC_UNSEEN_DATASET = 'trunc_test_calibrated_logit_'
 
 # helper dataset
 class TruncatedCIFAR(Dataset):
@@ -92,7 +76,7 @@ transform_ = transforms.Compose(
 
 # hyperparameters
 args = Parameters({ 
-    'epochs': 50,
+    'epochs': 100,
     'workers': 8, 
     'batch_size': 128, 
     'lr': 1e-2, 
@@ -110,16 +94,17 @@ args = Parameters({
     'num_samples': 1000,
     'logit_ball': 7.5,
     'trials': 3,
-    'step_lr': 10, 
+    'step_lr': 1, 
     'step_lr_gamma': 1.0,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
 LEARNING_RATES = [1e-1, 1e-2, 1e-3]
+print("before ds")
 
-ds = CIFAR(data_path='/home/pstefanou/')
+ds = CIFAR(data_path='/home/gridsan/stefanou/data')
 
 # test dataset
-test_set = torchvision.datasets.CIFAR10(root='/home/pstefanou/', train=False,
+test_set = torchvision.datasets.CIFAR10(root='/home/gridsan/stefanou/data', train=False,
                                        download=False, transform=transform_)
 test_loader = ch.utils.data.DataLoader(test_set, batch_size=128,
                                          shuffle=False, num_workers=2)
