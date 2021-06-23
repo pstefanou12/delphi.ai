@@ -156,6 +156,7 @@ def train_model(args, model, loaders, *, phi=None, criterion=ch.nn.CrossEntropyL
 
                 # remember best prec_1 and save checkpoint
                 is_best = val_prec1 > best_prec1
+                print("is best: ", is_best)
                 best_prec1 = max(val_prec1, best_prec1)
 
         # save model checkpoint -- for neural networks

@@ -90,7 +90,7 @@ args = Parameters({
     'shuffle': True,
     'parallel': False, 
     'num_samples': 1000,
-    'logit_ball': 7.5,
+    'logit_ball': 12.0,
     'trials': 3,
     'step_lr': 1, 
     'step_lr_gamma': 1.0,
