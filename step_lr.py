@@ -22,13 +22,9 @@ from delphi.utils.helpers import setup_store_with_metadata
 # set environment variable so that stores can create output files
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-# CONSTANTS
-# set environment variable so that stores can create output files
-os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-
 # file path constants
-LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_step_lr_real'
-STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_step_lr_real'
+LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_step_lr_vary_epochs_and_lr'
+STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_step_lr_real_vary_epochs_and_lr'
 DATA_PATH = '/home/gridsan/stefanou/data/'
 TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit_'
 TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit_'
@@ -80,18 +76,14 @@ transform_ = transforms.Compose(
 
 # hyperparameters
 args = Parameters({ 
-    'epochs': 100,
     'workers': 8, 
-    'batch_size': 128, 
-    'lr': 1e-2, 
+    'batch_size': 128,  
     'accuracy': True,
-    'momentum': 0.0, 
-    'weight_decay': 0.0, 
+    'momentum': 0.9, 
+    'weight_decay': 5e-4, 
     'save_ckpt_iters': 10,
     'should_save_ckpt': True,
     'log_iters': 1,
-    'step_lr': 1, 
-    'step_lr_gamma': .9,
     'validation_split': .8,
     'shuffle': True,
     'parallel': False, 
@@ -102,7 +94,9 @@ args = Parameters({
     'step_lr_gamma': .9,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
-LEARNING_RATES = [1e-1, 1e-2, 1e-3]
+LEARNING_RATES = [2e-1, 1e-1, 1e-2]
+EPOCHS = [100, 150, 200]
+
 
 ds = CIFAR(data_path='/home/gridsan/stefanou/data')
 
@@ -123,44 +117,46 @@ phi = oracle.LogitBallComplement(args.logit_ball)
 seeds = ch.randperm(args.trials)
 
 for i in range(args.trials):
-    for lr in LEARNING_RATES: 
-        # set learning rate
-        args.__setattr__('lr', lr)
-        # train model using truncated ce loss 
-        # logging store
-        out_store = store.Store(LOGIT_BALL_CLASSIFIER)
-        setup_store_with_metadata(args, out_store)
-        delphi_, _ = model_utils.make_and_restore_model(arch='resnet18', dataset=ds)
+    for epoch in EPOCHS:
+        args.__setattr__('epochs', epoch)
+        for lr in LEARNING_RATES: 
+            # set learning rate
+            args.__setattr__('lr', lr)
+            # train model using truncated ce loss 
+            # logging store
+            out_store = store.Store(LOGIT_BALL_CLASSIFIER)
+            setup_store_with_metadata(args, out_store)
+            delphi_, _ = model_utils.make_and_restore_model(arch='resnet18', dataset=ds)
 
-        # train
-        ch.manual_seed(seeds[i])
-        config.args = args
-        delphi_ = train.train_model(args, delphi_, (trunc_train_loader, trunc_val_loader), store=out_store, phi=phi, criterion=grad.TruncatedCE.apply)
+            # train
+            ch.manual_seed(seeds[i])
+            config.args = args
+            delphi_ = train.train_model(args, delphi_, (trunc_train_loader, trunc_val_loader), store=out_store, phi=phi, criterion=grad.TruncatedCE.apply)
 
-        # test model on data sets
-        delphi_unseen_results = train.eval_model(args, delphi_, trunc_unseen_loader, out_store, table='unseen')
-        delphi_test_results = train.eval_model(args, delphi_, test_loader, out_store, table='test')
-        delphi_train_results = train.eval_model(args, delphi_, trunc_train_loader, out_store, table='train')
-        delphi_val_results = train.eval_model(args, delphi_, trunc_val_loader, out_store, table='val')
-        out_store.close()
+            # test model on data sets
+            delphi_unseen_results = train.eval_model(args, delphi_, trunc_unseen_loader, out_store, table='unseen')
+            delphi_test_results = train.eval_model(args, delphi_, test_loader, out_store, table='test')
+            delphi_train_results = train.eval_model(args, delphi_, trunc_train_loader, out_store, table='train')
+            delphi_val_results = train.eval_model(args, delphi_, trunc_val_loader, out_store, table='val')
+            out_store.close()
 
-        # train model using standard cross entropy loss
-        # logging store
-        out_store = store.Store(STANDARD_CLASSIFIER)
-        setup_store_with_metadata(args, out_store)
-        standard, _ = model_utils.make_and_restore_model(arch='resnet18', dataset=ds)
+            # train model using standard cross entropy loss
+            # logging store
+            out_store = store.Store(STANDARD_CLASSIFIER)
+            setup_store_with_metadata(args, out_store)
+            standard, _ = model_utils.make_and_restore_model(arch='resnet18', dataset=ds)
 
-        # train
-        ch.manual_seed(seeds[i])
-        config.args = args
+            # train
+            ch.manual_seed(seeds[i])
+            config.args = args
 
-        # test model on datasets
-        standard_model = train.train_model(args, standard, (trunc_train_loader, trunc_val_loader), store=out_store, parallel=args.parallel)
-        standard_unseen_results = train.eval_model(args, standard_model, trunc_unseen_loader, out_store, table='unseen')
-        standard_test_results = train.eval_model(args, standard_model, test_loader, out_store, table='test')
-        standard_train_results = train.eval_model(args, standard_model, trunc_train_loader, out_store, table='train')
-        standard_val_results = train.eval_model(args, standard_model, trunc_val_loader, out_store, table='val')
-        out_store.close()
+            # test model on datasets
+            standard_model = train.train_model(args, standard, (trunc_train_loader, trunc_val_loader), store=out_store, parallel=args.parallel)
+            standard_unseen_results = train.eval_model(args, standard_model, trunc_unseen_loader, out_store, table='unseen')
+            standard_test_results = train.eval_model(args, standard_model, test_loader, out_store, table='test')
+            standard_train_results = train.eval_model(args, standard_model, trunc_train_loader, out_store, table='train')
+            standard_val_results = train.eval_model(args, standard_model, trunc_val_loader, out_store, table='val')
+            out_store.close()
 
 
 

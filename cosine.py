@@ -22,13 +22,9 @@ from delphi.utils.helpers import setup_store_with_metadata
 # set environment variable so that stores can create output files
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-# CONSTANTS
-# set environment variable so that stores can create output files
-os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-
 # file path constants
-LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_cosine'
-STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_cosine'
+LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_cosine_100epochs'
+STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_cosine_100epochs'
 DATA_PATH = '/home/gridsan/stefanou/data/'
 TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit_'
 TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit_'
@@ -85,8 +81,8 @@ args = Parameters({
     'batch_size': 128, 
     'lr': 1e-2, 
     'accuracy': True,
-    'momentum': 0.0, 
-    'weight_decay': 0.0, 
+    'momentum': 0.9, 
+    'weight_decay': 5e-4, 
     'custom_lr_multiplier': consts.COSINE,
     'should_save_ckpt': True,
     'log_iters': 1,
@@ -100,7 +96,7 @@ args = Parameters({
     'step_lr_gamma': 1.0,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
-LEARNING_RATES = [1e-1, 1e-2, 1e-3]
+LEARNING_RATES = [5e-1, 3e-1, 2e-1, 1e-1, 1e-2]
 
 ds = CIFAR(data_path='/home/gridsan/stefanou/data')
 

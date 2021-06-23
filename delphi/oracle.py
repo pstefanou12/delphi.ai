@@ -250,11 +250,13 @@ class LogitBallComplement:
     In other words, retain the inputs that the classifier is more certain on. Larger 
     unnormalized log probabilities implies more certraining in classification.
     """
-    def __init__(self, bound): 
+    def __init__(self, bound, temperature=ch.ones(1)): 
         self.bound = bound
+        self.temperature = temperature.cuda()
         
     def __call__(self, x): 
-        return (x.norm(dim=-1) >= self.bound)
+        x_ = x / self.temperature
+        return (x_.norm(dim=-1) >= self.bound)
 
     def __str__(self): 
         return 'logit ball complement'

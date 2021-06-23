@@ -23,8 +23,8 @@ from delphi.utils.helpers import setup_store_with_metadata
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 # file path constants
-LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_constant'
-STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_constant'
+LOGIT_BALL_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/trunc_ce_constant_vary_epochs'
+STANDARD_CLASSIFIER = '/home/gridsan/stefanou/cifar-10/resnet-18/ce_constant_vary_epochs'
 DATA_PATH = '/home/gridsan/stefanou/data/'
 TRUNC_TRAIN_DATASET = 'trunc_train_calibrated_logit_'
 TRUNC_VAL_DATASET = 'trunc_val_calibrated_logit_'
@@ -76,13 +76,12 @@ transform_ = transforms.Compose(
 
 # hyperparameters
 args = Parameters({ 
-    'epochs': 100,
     'workers': 8, 
     'batch_size': 128, 
     'lr': 1e-2, 
     'accuracy': True,
-    'momentum': 0.0, 
-    'weight_decay': 0.0, 
+    'momentum': 0.9, 
+    'weight_decay': 5e-4, 
     'save_ckpt_iters': 10,
     'should_save_ckpt': True,
     'log_iters': 1,
@@ -98,8 +97,8 @@ args = Parameters({
     'step_lr_gamma': 1.0,
     'device': 'cuda' if ch.cuda.is_available() else 'cpu'
 })
-LEARNING_RATES = [1e-1, 1e-2, 1e-3]
-print("before ds")
+
+EPOCHS = [50, 100, 150, 200]
 
 ds = CIFAR(data_path='/home/gridsan/stefanou/data')
 
@@ -120,9 +119,9 @@ phi = oracle.LogitBallComplement(args.logit_ball)
 seeds = ch.randperm(args.trials)
 
 for i in range(args.trials):
-    for lr in LEARNING_RATES: 
+    for epochs in EPOCHS: 
         # set learning rate
-        args.__setattr__('lr', lr)
+        args.__setattr__('epochs', epochs)
         # train model using truncated ce loss 
         # logging store
         out_store = store.Store(LOGIT_BALL_CLASSIFIER)
