@@ -85,7 +85,7 @@ def eval_model(args, model, loader, store, table=None):
     assert not hasattr(model, "module"), "model is already in DataParallel."
     if args.parallel and next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
-    test_prec1, test_loss, score = model_loop(args, 'val', loader,
+    test_prec1, test_loss = model_loop(args, 'val', loader,
                                         model, None, 0, 0, writer, args.device)
     log_info = {
         'test_prec1': test_prec1,
@@ -151,7 +151,7 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
             # evaluate model on validation set, if there is one
             if val_loader is not None:
                 with ctx:
-                    val_prec1, val_loss, score = model_loop(args, 'val', val_loader, model,
+                    val_prec1, val_loss = model_loop(args, 'val', val_loader, model,
                             None, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec_1 and save checkpoint
@@ -242,7 +242,6 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
             if isinstance(output, tuple):
                 output, final_inp = output
             # lambda parameter used for regression with unknown noise variance
-            print("phi: ", phi)
             if phi is not None: 
                 try:
                     loss = criterion(output, target, model.lambda_, phi)
