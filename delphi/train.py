@@ -9,8 +9,10 @@ from torch.optim import SGD, Adam
 from torch.optim import lr_scheduler
 
 from . import oracle
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, LinearUnknownVariance, setup_store_with_metadata, LinearUnknownVariance, ProcedureComplete
+from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, 
+    LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete
 from .utils import constants as consts
+from .attacker import AttackerModel
 
 # determine running environment
 script = type_of_script()
@@ -21,35 +23,61 @@ else:
 
 
 def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
-    param_list = model.parameters() if params is None else params
-    optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    """
+    Generate optimizer and scheduler for SGD procedure. 
+    Args: 
+        args (object) : A list of arguments---should be a python object
+            implementing ``getattr()`` and ``setattr()``.
+        model (AttackerModel) : model to evaluate
+        params (Iterable) : parameters if model.parameters() does not return 
+            correct parameters to optimize 
+        T (int) : period length for scheduler. gradient steps if SGD procedure, 
+            epochs if training neural network
 
-    # Make schedule
-    schedule = None
-    if args.custom_lr_multiplier == consts.CYCLIC and T is not None:
-        lr_func = lambda t: np.interp([t], [0, T*4//15, T], [0, 1, 0])[0]
-        schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.custom_lr_multiplier == consts.COSINE and T is not None:
-        schedule = lr_scheduler.CosineAnnealingLR(optimizer, T)
-    elif args.custom_lr_multiplier:
-        cs = args.custom_lr_multiplier
-        periods = eval(cs) if type(cs) is str else cs
-        if args.lr_interpolation == consts.LINEAR:
-            lr_func = lambda t: np.interp([t], *zip(*periods))[0]
-        else:
-            def lr_func(ep):
-                for (milestone, lr) in reversed(periods):
-                    if ep >= milestone: return lr
-                return 1.0
-        schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.step_lr:
-        schedule = lr_scheduler.StepLR(optimizer, step_size=args.step_lr, gamma=args.step_lr_gamma)
+    Returns:
+        An optimizer (ch.nn.optim.Optimizer) and a scheduler
+            (ch.nn.optim.lr_schedulers module).
+    """
+    # initialize optimizer, scheduler, and then get parameters
+    optimizer, schedule = None, None
+    param_list = model.parameters() if params is None else params
+
+    # check for Adam optimizer
+    if args.adam: 
+        optimizer = Adam(param_list, betas=args.betas, lr=args.lr, weight_decay=args.weight_decay, amsgrad=args.amsgrad)
+    else: 
+        # SGD optimizer
+        optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        # cyclic learning rate scheduler
+        if args.custom_lr_multiplier == consts.CYCLIC and T is not None:
+            lr_func = lambda t: np.interp([t], [0, T*4//15, T], [0, 1, 0])[0]
+            schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+        # cosine annealing scheduler
+        elif args.custom_lr_multiplier == consts.COSINE and T is not None:
+            schedule = lr_scheduler.CosineAnnealingLR(optimizer, T)
+        elif args.custom_lr_multiplier:
+            cs = args.custom_lr_multiplier
+            periods = eval(cs) if type(cs) is str else cs
+            # constant linear interpolation
+            if args.lr_interpolation == consts.LINEAR:
+                lr_func = lambda t: np.interp([t], *zip(*periods))[0]
+            # custom lr interpolation
+            else:
+                def lr_func(ep):
+                    for (milestone, lr) in reversed(periods):
+                        if ep >= milestone: return lr
+                    return 1.0
+            schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+        # step learning rate
+        elif args.step_lr:
+            schedule = lr_scheduler.StepLR(optimizer, step_size=args.step_lr, gamma=args.step_lr_gamma, verbose=args.verbose)
         
-    # Fast-forward the optimizer and the scheduler if resuming
+    # if checkpoint load  optimizer and scheduler
     if checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer'])
         try:
             schedule.load_state_dict(checkpoint['schedule'])
+        # if can't load scheduler state, take epoch steps
         except:
             steps_to_take = checkpoint['epoch']
             print('Could not load schedule (was probably LambdaLR).'
@@ -59,7 +87,7 @@ def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
     return optimizer, schedule
 
 
-def eval_model(args, model, loader, store, table=None):
+def eval_model(args, model, loader, store, device=None, table=None):
     """
     Evaluate a model for standard (and optionally adversarial) accuracy.
     Args:
@@ -69,38 +97,115 @@ def eval_model(args, model, loader, store, table=None):
         loader (iterable) : a dataloader serving `(input, label)` batches from
             the validation set
         store (cox.Store) : store for saving results in (via tensorboardX)
+        device (str) : optional parameter, where to run model evaluation
+        table (str) : table name, `eval` by default
+
+    Returns: 
+        model (AttackerModel)
     """
+    # start timer
     start_time = time.time()
 
+    # if store provided, 
     table = consts.EVAL_LOGS_TABLE if table is None else table
-
     if store is not None:
         store.add_table(table, consts.EVAL_LOGS_SCHEMA)
 
     writer = store.tensorboard if store else None
 
-    # put model on device
-    model.to(args.device)
+    # put model onto device
+    if device is not None: 
+        model.to(device)
 
+    # run model in parallel model
     assert not hasattr(model, "module"), "model is already in DataParallel."
     if args.parallel and next(model.parameters()).is_cuda:
         model = ch.nn.DataParallel(model)
-    test_prec1, test_loss = model_loop(args, 'val', loader,
-                                        model, None, 0, 0, writer, args.device)
-    log_info = {
-        'test_prec1': test_prec1,
-        'test_loss': test_loss,
-        'time': time.time() - start_time
-    }
+    test_prec1, test_loss = model_loop(args, 'val', loader, model, None, 
+                ch.nn.CrossEntropyLoss(), None,  0, 0, writer, args.device)
 
-    # Log info into the logs table
     if store:
-        store[consts.EVAL_LOGS_TABLE if table is None else table].append_row(log_info)
+        log_info = {
+            'test_prec1': test_prec1,
+            'test_loss': test_loss,
+            'time': time.time() - start_time
+        }
+        table = consts.EVAL_LOGS_TABLE if table is None else table # table name
+        store[table].append_row(log_info)
+
     return log_info
 
 
-def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, cuda=False, dp_device_ids=None, 
-                store=None, table=None, update_params=None, disable_no_grad=False):
+def train_model(args, model, loaders, *, phi=None, criterion=ch.nn.CrossEntropyLoss(), checkpoint=None, parallel=False, 
+                device=None, dp_device_ids=None, store=None, table=None, params=None, disable_no_grad=False):
+    """
+    Train models. 
+    Args: 
+        args (object) : A python object for arguments, implementing
+            ``getattr()`` and ``setattr()`` and having the following
+            attributes. See :attr:`delphi.defaults.TRAINING_ARGS` for a 
+            list of arguments, and you can use
+            :meth:`robustness.defaults.check_and_fill_args` to make sure that
+            all required arguments are filled and to fill missing args with
+            reasonable defaults:
+            epochs (int, *required*)
+                number of epochs to train for
+            lr (float, *required*)
+                learning rate for SGD optimizer
+            weight_decay (float, *required*)
+                weight decay for SGD optimizer
+            momentum (float, *required*)
+                momentum parameter for SGD optimizer
+            step_lr (int)
+                if given, drop learning rate by 10x every `step_lr` steps
+            custom_lr_multplier (str)
+                If given, use a custom LR schedule, formed by multiplying the
+                    original ``lr`` (format: [(epoch, LR_MULTIPLIER),...])
+            lr_interpolation (str)
+                How to drop the learning rate, either ``step`` or ``linear``,
+                    ignored unless ``custom_lr_multiplier`` is provided.
+            log_iters (int, *required*)
+                How frequently (in epochs) to save training logs
+            save_ckpt_iters (int, *required*)
+                How frequently (in epochs) to save checkpoints (if -1, then only
+                save latest and best ckpts)
+            eps (float or str, *required if adv_train or adv_eval*)
+                float (or float-parseable string) for the adv attack budget
+            use_best (int or bool, *required if adv_train or adv_eval*) :
+                If True/1, use the best (in terms of loss) PGD step as the
+                attack, if False/0 use the last step
+            custom_accuracy (function)
+                If given, should be a function that takes in model outputs
+                and model targets and outputs a top1 and top5 accuracy, will 
+                displayed instead of conventional accuracies
+            regularizer (function, optional) 
+                If given, this function of `model, input, target` returns a
+                (scalar) that is added on to the training loss without being
+                subject to adversarial attack
+            iteration_hook (function, optional)
+                If given, this function is called every training iteration by
+                the training loop (useful for custom logging). The function is
+                given arguments `model, iteration #, loop_type [train/eval],
+                current_batch_ims, current_batch_labels`.
+            epoch hook (function, optional)
+                Similar to iteration_hook but called every epoch instead, and
+                given arguments `model, log_info` where `log_info` is a
+                dictionary with keys `epoch, nat_prec1, adv_prec1, nat_loss,
+                adv_loss, train_prec1, train_loss`.
+        model (AttackerModel) : model to train 
+        loaders: (Iterable) : iterable of length two (train loader, val loader) with DataLoaders 
+        phi: (delphi.oracle) : optional oracle object, depending on what model you are training 
+        criterion (ch.Autograd.Function) : instantiated loss object for training model
+        checkpoint (dict) : a loaded checkpoint previously saved by this library
+            (if resuming from checkpoint)
+        store (cox.Store) : a cox store for logging training progress
+        params (list) : list of parameters to use for training, if None
+            then all parameters in the model are used (useful for transfer
+            learning)
+        disable_no_grad (bool) : if True, then even model evaluation will be
+            run with autograd enabled (otherwise it will be wrapped in a ch.no_grad())
+    """
+    # if store provided, create logs table for experiment
     table = consts.LOGS_TABLE if table is None else table
     if store is not None:
         store.add_table(table, consts.LOGS_SCHEMA)
@@ -110,13 +215,12 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
     train_loader, val_loader = loaders
     # number of periods/epochs for learning rate schedulers
     T = args.epochs if args.epochs else args.steps
-    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, update_params, T=T)
-
+    optimizer, schedule = make_optimizer_and_schedule(args, model, checkpoint, params, T=T)
 
     # put the neural network onto gpu and in parallel mode
     assert not has_attr(model, "module"), "model is already in DataParallel."
-    if cuda: 
-        model = model.cuda()
+    if device is not None: 
+        model = model.to(device)
     if parallel:
         model = ch.nn.DataParallel(model)
 
@@ -124,7 +228,7 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
     if checkpoint:
         epoch = checkpoint['epoch']
         best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint \
-            else model_loop(args, 'val', val_loader, model, None, start_epoch-1, steps, writer=None, device=args.device, schedule=schedule)[0]
+            else model_loop(args, 'val', val_loader, model, phi, criterion, optimizer, start_epoch-1, steps, writer=None, device=args.device, schedule=schedule)[0]
 
     # keep track of the start time
     start_time = time.time()
@@ -139,9 +243,9 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
             raise e
 
         # check for logging/checkpoint
-        last_epoch = (epoch == (args.epochs - 1)) if args.epochs else (steps >= args.steps)
-        should_save_ckpt = ((epoch % args.save_ckpt_iters == 0 or last_epoch) if args.epochs else (steps % args.save_ckpt_iters == 0 or last_epoch)) if args.save_ckpt_iters else False
-        should_log = ((epoch % args.log_iters == 0 or last_epoch) if args.epochs else (steps % args.log_iters == 0 or last_epoch)) if args.log_iters else False
+        last_epoch = (epoch == (args.epochs - 1)) if args.epochs else False
+        should_save_ckpt = (epoch % args.save_ckpt_iters == 0 or last_epoch) if args.epochs else False
+        should_log = (epoch % args.log_iters == 0 or last_epoch) if args.epochs else False
 
         # validation loop
         val_prec1, val_loss = 0.0, 0.0
@@ -152,14 +256,14 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
             if val_loader is not None:
                 with ctx:
                     val_prec1, val_loss = model_loop(args, 'val', val_loader, model,
-                            None, epoch + 1, steps, writer, device=args.device)
+                            phi, criterion, optimizer, epoch + 1, steps, writer, device=args.device)
 
                 # remember best prec_1 and save checkpoint
                 is_best = val_prec1 > best_prec1
                 best_prec1 = max(val_prec1, best_prec1)
 
-        # save model checkpoint -- for neural networks
-        if should_save_ckpt:
+        # CHECKPOINT -- checkpoint epoch of better DNN performance
+        if should_save_ckpt or is_best:
             sd_info = {
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
@@ -170,19 +274,24 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
             }
             
             def save_checkpoint(filename):
-                ckpt_save_path = os.path.join(args.out_dir if not store else \
-                                              store.path, filename)
+                """
+                Saves model checkpoint at store path with filename.
+                Args: 
+                    filename (str) name of file for saving model
+                """
+                ckpt_save_path = os.path.join(store.path, filename)
                 ch.save(sd_info, ckpt_save_path, pickle_module=dill)
 
-            # If we are at a saving epoch (or the last epoch), save a checkpoint
-            save_checkpoint(ckpt_at_epoch(epoch))
-            # Update the latest and best checkpoints (overrides old one)
-            save_checkpoint(consts.CKPT_NAME_LATEST)
-            if is_best: save_checkpoint(consts.CKPT_NAME_BEST)
+            # update the latest and best checkpoints (overrides old one)
+            if is_best:
+                save_checkpoint(consts.CKPT_NAME_BEST)
+            if should_save_ckpt: 
+                # if we are at a saving epoch (or the last epoch), save a checkpoint
+                save_checkpoint(ckpt_at_epoch(epoch))
+                save_checkpoint(consts.CKPT_NAME_LATEST)
 
-        # log results
-        if should_log: # TODO: add custom logging hook
-            # log every checkpoint
+        # LOG
+        if should_log and store: # TODO: add custom logging hook
             log_info = {
                 'epoch': epoch + 1,
                 'val_prec1': val_prec1,
@@ -191,19 +300,17 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
                 'train_loss': train_loss,
                 'time': time.time() - start_time
             }
-
-            # log info in log table
-            if store: store[table].append_row(log_info)
+            store[table].append_row(log_info)
         
-        # update lr
+        # UPDATE LR
         if args.epochs is not None and schedule: schedule.step()
 
+        # EPOCH HOOK
         if has_attr(args, 'epoch_hook'): 
             args.epoch_hook(model, epoch)
             
-        # increment epoch counter
+        # GRADIENT STEP COUNTER
         epoch += 1
-        # update number of gradient steps taken
         if steps is not None: 
             steps += len(train_loader)
         
@@ -212,6 +319,24 @@ def train_model(args, model, loaders, criterion, *, phi=None, criterion=ch.nn.Cr
             
             
 def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch, steps, writer, device, schedule=None):
+    """
+    *Internal function* (refer to the train_model and eval_model functions for
+    how to train and evaluate models).
+    Runs a single epoch of either training or evaluating.
+    Args:
+        args (object) : an arguments object (see
+            :meth:`~delphi.train.train_model` for list of arguments
+        loop_type ('train' or 'val') : whether we are training or evaluating
+        loader (iterable) : an iterable loader of the form 
+            `(image_batch, label_batch)`
+        model (AttackerModel) : model to train/evaluate
+        opt (ch.optim.Optimizer) : optimizer to use (ignored for evaluation)
+        epoch (int) : which epoch we are currently on
+        adv (bool) : whether to evaluate adversarially (otherwise standard)
+        writer : tensorboardX writer (optional)
+    Returns:
+        The average top1 accuracy and the average loss across the epoch.
+    """
     # check loop type 
     if not loop_type in ['train', 'val']: 
         err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -220,38 +345,38 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
     is_train = (loop_type == 'train')
     loop_msg = 'Train' if is_train else 'Val'
  
-    # algorithm metrics
+    # model stats
     losses, top1, top5 =  AverageMeter(), AverageMeter(), AverageMeter()
-
-    if not isinstance(model, ch.distributions.distribution.Distribution):   
-        model = model.train() if is_train else model.eval()
+    model = model.train() if not isinstance(model, ch.distributions.distribution.Distribution) and is_train else model.eval()
     
     # iterator
     iterator = enumerate(loader) if args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
-
     for i, batch in iterator:
         inp, target, output = None, None, None
         loss = 0.0
         if isinstance(model, ch.distributions.distribution.Distribution):
             loss = criterion(*optimizer.param_groups[0]['params'], *batch)
-        elif isinstance(model, ch.nn.Module):
+        elif isinstance(model, ch.nn.Module) or isinstance(model, AttackerModel):
             inp, target = batch
-            inp, target = inp.to(device), target.to(device)
+            # put data on device
+            if device is not None: 
+                inp, target = inp.to(device), target.to(device)
             output = model(inp)
             # attacker model returns both output anf final input
             if isinstance(output, tuple):
                 output, final_inp = output
-            # lambda parameter used for regression with unknown noise variance
             if phi is not None: 
+                # model with unknown noise variance
                 try:
                     loss = criterion(output, target, model.lambda_, phi)
-
                 except Exception as e:
+                    # known noise variance
                     loss = criterion(output, target, phi)
             else: 
+                # no 
                 loss = criterion(output, target)
 
-        # regularizer option 
+        # regularizer 
         reg_term = 0.0
         if has_attr(args, "regularizer") and isinstance(model, ch.nn.Module):
             reg_term = args.regularizer(model, inp, target)
@@ -261,48 +386,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
         if is_train:
             optimizer.zero_grad()
             loss.backward()
-            # print("weight before: ", model.weight)
-            # print("weight grad: ", model.weight.grad)
-            # print("bias before: ", model.bias)
-            # print("bias grad: ", model.bias.grad)
-            # try: 
-            #     print("lambda before: ", model.lambda_)
-            #     print("lambda grad: ", model.lambda_.grad)
-            # except: 
-            #     pass
-
-            # # normalize gradient
-            # if args.norm: 
-            #     # check if unknown variance regression
-            #     if not isinstance(model, LinearUnknownVariance):
-            #         if model.bias is not None: 
-            #             grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten()])
-            #             norm_grad = grad / grad.norm()
-            #             model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
-            #             model.bias.grad = norm_grad[-1].reshape(model.bias.size())
-            #         else: 
-            #             model.weight.grad = model.weight.grad / model.weight.grad.norm()
-            #     else: 
-            #         if model.bias is not None: 
-            #             grad = ch.cat([model.weight.grad.flatten(), model.bias.grad.flatten(), model.lambda_.flatten()])
-            #             norm_grad = grad / grad.norm()
-            #             model.weight.grad = norm_grad[:-2].reshape(model.weight.size())
-            #             model.bias.grad = norm_grad[-2].reshape(model.bias.size())
-            #             model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
-            #         else: 
-            #             grad = ch.cat([model.weight.grad.flatten(), model.lambda_.flatten()])
-            #             norm_grad = model.weight.grad / moptimiodel.weight.grad.norm()
-            #             model.weight.grad = norm_grad[:-1].reshape(model.weight.size())
-            #             model.lambda_.grad = norm_grad[-1].reshape(model.lambda_.size())
             optimizer.step()
-            # print("weight after: ", model.weight)
-            # print("bias after: ", model.bias)
-            # try: 
-            #     print("lambda after: ", model.lambda_)
-            # except: 
-            #     pass
-
-
 
         if len(loss.size()) > 0: loss = loss.mean()
 
@@ -347,6 +431,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
                 desc = ('Epoch: {0} | Loss {loss.avg:.4f} | {1}1'
                         'Reg term: {reg} ||'.format(epoch, loop_msg, loss=losses, reg=reg_term))
             
+            # set tqdm description
             iterator.set_description(desc)
     
         # USER-DEFINED HOOK
@@ -358,6 +443,7 @@ def model_loop(args, loop_type, loader, model, phi, criterion, optimizer, epoch,
             steps += 1
             if schedule: schedule.step()
 
+    # write to Tensorboard
     if writer is not None:
         descs = ['loss', 'top1', 'top5']
         vals = [losses, top1, top5]

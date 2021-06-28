@@ -190,14 +190,14 @@ class GumbelCE(ch.autograd.Function):
 
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ):
+    def forward(ctx, pred, targ, phi):
         ctx.save_for_backward(pred, targ)
+        ctx.phi = phi
         ce_loss = ch.nn.CrossEntropyLoss()
         return ce_loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):  
-        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
@@ -205,12 +205,13 @@ class TruncatedCE(ch.autograd.Function):
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add gumbel noise to logits
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
-        noised = stacked + rand_noise 
+        noised = (stacked) + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = config.args.phi(noised)[..., None].to(config.args.device)
+        # filtered = ctx.phi(noised)[..., None].to(config.args.device)
+        filtered = ctx.phi((stacked / 1.65))[..., None].to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]
         inner_exp = (1 - ch.exp(-rand_noise))
-        avg = (((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)            
-        return -avg, None
+        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)       
+        return -avg, None, None

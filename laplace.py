@@ -16,7 +16,7 @@ import os
 from sklearn.linear_model import LinearRegression
 from argparse import ArgumentParser
 
-from delphi.stats.linear_regression import TruncatedLinearRegression
+from delphi.stats.linear_regression import TruncatedRegression
 from delphi import oracle
 from delphi.utils import constants as consts
 

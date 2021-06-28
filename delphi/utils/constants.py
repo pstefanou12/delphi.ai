@@ -21,7 +21,7 @@ EVAL_LOGS_SCHEMA = {
 # scheduler constants
 CYCLIC='cyclic'
 COSINE='cosine'
-LINEAR='linear'
+LINEAR='linear' 
 
 LOGS_TABLE='logs'
 EVAL_LOGS_TABLE='eval'
