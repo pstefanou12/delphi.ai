@@ -22,3 +22,4 @@ slurm*
 *.csv
 *.sh
 .metals/
+.vscode/
