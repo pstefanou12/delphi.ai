@@ -112,8 +112,7 @@ class DataSet(object):
         '''
         raise NotImplementedError
 
-    def make_loaders(self, workers, batch_size, transforms, data_aug=True,
-                    custom_class=None, subset=None,
+    def make_loaders(self, workers, batch_size, transforms, data_aug=True, subset=None,
                     subset_type='rand', subset_start=0, val_batch_size=None,
                     train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
                     verbose=True):
@@ -161,7 +160,7 @@ class DataSet(object):
         if not val_batch_size:
             val_batch_size = batch_size
 
-        if not custom_class:
+        if not self.custom_class:
             if train:
                 train_set = folder.ImageFolder(root=data_path, transform=self.transform_train if data_aug else self.transform_test,
                                             label_mapping=self.label_mapping)
