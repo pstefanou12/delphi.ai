@@ -1,4 +1,4 @@
-"""
+p"""
 CLI interface for using delphi.
 """
 
@@ -21,7 +21,7 @@ try:
     from delphi.utils.helpers import setup_store_with_metadata, DataPrefetcher
     from delphi import grad
 except: 
-    raise ValueError("Error when importing packages.")
+    raise ValueError("Error when importing modules.")
 # set environment variable so that stores can create output files
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 

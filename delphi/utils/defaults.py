@@ -2,9 +2,6 @@
 This module is used to set up arguments and defaults.
 """
 
-from torch.utils.data import TensorDataset
-
-
 from . import datasets
 from .helpers import has_attr
 from . import constants as consts
@@ -29,70 +26,11 @@ TRAINING_DEFAULTS = {
         'momentum': .9,
         "score": False,
     },
-    datasets.CensoredNormal: {
-        "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-    },
-    datasets.CensoredMultivariateNormal: {
-        "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-    },
-    datasets.TruncatedNormal: {
-        "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-        "d": 100,
-    },
-    datasets.TruncatedMultivariateNormal: {
-        "steps": 1000,
-        "batch_size": 10,
-        "weight_decay": 5e-4,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-        "d": 100,
-    },
-    datasets.TensorDataset: {
-        "steps": 1000,
-        "batch_size": 100,
-        "weight_decay": 0.0,
-        "momentum": 0.0,
-        "num_samples": 100,
-        "radius": 2.0,
-        "step_lr": 10,
-        "score": True,
-        "tol": 1e-2,
-        "clamp": True, 
-    },
 }
 """
 Default hyperparameters for training by dataset (tested for resnet50).
 Parameters can be accessed as `TRAINING_DEFAULTS[dataset_class][param_name]`
 """
-
 # default arguments for training deep neural networks
 TRAINING_ARGS = [
     ['out-dir', str, 'where to save training logs and checkpoints', REQ],
@@ -111,78 +49,6 @@ TRAINING_ARGS = [
             (-1 for none, only saves best and last)', -1],
     ['parallel', [0, 1], 'train model on multiple GPUs', 0], 
     ['accuracy', [0, 1], 'check model accuracy during training procedure', 1],
-]
-"""
-Arguments essential for the `train_model` function.
-*Format*: `[NAME, TYPE/CHOICES, HELP STRING, DEFAULT (REQ=required,
-BY_DATASET=looked up in TRAINING_DEFAULTS at runtime)]`
-"""
-
-# default arguments for censored algorithm
-CENSOR_ARGS = [
-    ['steps', int, 'number of epochs to train for', BY_DATASET],
-    ['lr', float, 'initial learning rate for training', 0.1],
-    ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
-    ['momentum', float, 'SGD momentum parameter', BY_DATASET],
-    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
-    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
-    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
-    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
-    ['radius', float, 'initial radius size for PSGD', BY_DATASET],
-    ['score', bool, 'determine convergence based off of score', BY_DATASET],
-    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
-    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
-]
-
-# default arguments for unknown truncation algorithm
-HERMITE_ARGS = [
-    ['steps', int, 'number of epochs to train for', BY_DATASET],
-    ['lr', float, 'initial learning rate for training', 0.1],
-    ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
-    ['momentum', float, 'SGD momentum parameter', BY_DATASET],
-    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
-    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
-    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
-    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
-    ['radius', float, 'initial radius size for PSGD', BY_DATASET],
-    ['score', bool, 'determine convergence based off of score', BY_DATASET],
-    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
-    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
-]
-
-# default arguments for truncated regression algorithm
-REGRESSION_ARGS = [
-    ['steps', int, 'number of epochs to train for', BY_DATASET],
-    ['lr', float, 'initial learning rate for training', 0.1],
-    ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
-    ['momentum', float, 'SGD momentum parameter', BY_DATASET],
-    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
-    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
-    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
-    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
-    ['radius', float, 'initial radius size for PSGD', BY_DATASET],
-    ['score', bool, 'determine convergence based off of score', BY_DATASET],
-    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
-    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET], 
-    ['clamp', bool, 'use clamp method for projection set', BY_DATASET], 
-    ['shuffle', [0, 1], 'shuffle dataset running procedure', 1], 
-    ['eps', float, 'fuzzy error value', 1e-5]
-]
-
-# default arguments for truncated logistic regression algorithm
-LOGISTIC_ARGS = [
-    ['steps', int, 'number of epochs to train for', BY_DATASET],
-    ['lr', float, 'initial learning rate for training', 0.1],
-    ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
-    ['momentum', float, 'SGD momentum parameter', BY_DATASET],
-    ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
-    ['step-lr-gamma', float, 'multiplier by which LR drops in step scheduler', 0.1],
-    ['custom-lr-multiplier', str, 'LR multiplier sched (format: [(epoch, LR),...])', None],
-    ['num_samples', int, 'number of samples to sample at once from a truncated distribution', BY_DATASET],
-    ['radius', float, 'initial radius size for PSGD', BY_DATASET],
-    ['score', bool, 'determine convergence based off of score', BY_DATASET],
-    ['lr-interpolation', ["linear", "step"], 'Drop LR as step function or linearly', "step"],
-    ['tol', float, 'gradient tolerance for algorithm convergence', BY_DATASET]
 ]
 
 MODEL_LOADER_ARGS = [

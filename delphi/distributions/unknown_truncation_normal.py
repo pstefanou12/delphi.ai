@@ -102,3 +102,20 @@ class TruncatedNormalProjectionSet:
                                                 float(self.scale_bounds.upper))
         else:
             pass
+
+
+# HELPER FUNCTIONS
+class Exp_h:
+    def __init__(self, emp_loc, emp_cov):
+        self.emp_loc = emp_loc
+        self.emp_cov = emp_cov
+        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(2.0 * Tensor([ch.acos(ch.zeros(1)).item() * 2]).unsqueeze(0))
+
+    def __call__(self, u, B, x):
+        """
+        returns: evaluates exponential function
+        """
+        cov_term = ch.bmm(x.unsqueeze(1).matmul(B), x.unsqueeze(2)).flatten(1) / 2.0
+        trace_term = ch.trace((B - ch.eye(u.size(0))) * (self.emp_cov + self.emp_loc.matmul(self.emp_loc))).unsqueeze(0)
+        loc_term = (x - self.emp_loc).matmul(u.unsqueeze(1))
+        return ch.exp(cov_term - trace_term - loc_term + self.pi_const)

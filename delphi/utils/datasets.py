@@ -101,7 +101,7 @@ class DataSet(object):
         '''
         Should be overriden by subclasses. Also, you will probably never
         need to call this function, and should instead by using
-        `model_utils.make_and_restore_model </source/robustness.model_utils.html>`_.
+        `model_utils.make_and_restore_model </source/delphi.utils.model_utils.html>`_.
         Args:
             arch (str) : name of architecture
             pretrained (bool): whether to try to load torchvision
@@ -166,6 +166,80 @@ class DataSet(object):
                                     shuffle_train=shuffle_train,
                                     shuffle_val=shuffle_val,
                                     custom_class_args=self.custom_class_args)
+
+    def make_loaders(self, workers, batch_size, transforms, data_aug=True,
+                    custom_class=None, subset=None,
+                    subset_type='rand', subset_start=0, val_batch_size=None,
+                    train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
+                    verbose=True):
+        '''
+        **INTERNAL FUNCTION**
+        This is an internal function that makes a loader for any dataset. You
+        probably want to call dataset.make_loaders for a specific dataset,
+        which only requires workers and batch_size. For example:
+        >>> cifar_dataset = CIFAR10('/path/to/cifar')
+        >>> train_loader, val_loader = cifar_dataset.make_loaders(workers=10, batch_size=128)
+        >>> # train_loader and val_loader are just PyTorch dataloaders
+        '''
+        if verbose:
+            print(f"==> Preparing dataset {dataset}...")
+        # check that at least a train loader or validation loader specified to be created
+        if not train and not val:
+            raise ValueError("Neither training loader nor validation loader specified")
+        # initialize loader variables
+        train_set, test_set = None, None
+        train_loader, test_loader = None, None
+        transform_train, transform_test = transforms
+        if not data_aug:
+            transform_train = transform_test
+
+        if not val_batch_size:
+            val_batch_size = batch_size
+
+        if not custom_class:
+            if train:
+                train_set = folder.ImageFolder(root=data_path, transform=transform_train,
+                                            label_mapping=self.label_mapping)
+            if val:
+                test_set = folder.ImageFolder(root=data_path, transform=transform_test,
+                                            label_mapping=self.label_mapping)
+
+            if train:
+                attrs = ["samples", "train_data", "data"]
+                vals = {attr: hasattr(train_set, attr) for attr in attrs}
+                assert any(vals.values()), f"dataset must expose one of {attrs}"
+                train_sample_count = len(getattr(train_set, [k for k in vals if vals[k]][0]))
+
+            if (train and not val) and (subset is not None) and (subset <= train_sample_count):
+                assert train and not val
+                if subset_type == 'rand':
+                    rng = np.random.RandomState(seed)
+                    subset = rng.choice(list(range(train_sample_count)), size=subset + subset_start, replace=False)
+                    subset = subset[subset_start:]
+                elif subset_type == 'first':
+                    subset = np.arange(subset_start, subset_start + subset)
+                else:
+                    subset = np.arange(train_sample_count - subset, train_sample_count)
+
+                train_set = Subset(train_set, subset)
+        else:
+            if self.custom_class_args is None: self.custom_class_args = {}
+            if data_path is not None:
+                if train:
+                    train_set = self.custom_class(root=train_path, train=True, download=True,
+                                        transform=transform_train, **self.custom_class_args)
+                if val:
+                    test_set = self.custom_class(root=test_path, train=False, download=True,
+                                            transform=transform_test, **self.custom_class_args)
+        if train_set is not None:
+            train_loader = DataLoader(train_set, batch_size=batch_size,
+                shuffle=shuffle_train, num_workers=workers, pin_memory=True)
+
+        if test_set is not None:
+            test_loader = DataLoader(test_set, batch_size=val_batch_size,
+                    shuffle=shuffle_val, num_workers=workers, pin_memory=True)
+
+        return train_loader, test_loader
 
 
 class CIFAR(DataSet):
@@ -237,7 +311,6 @@ class ImageNet(DataSet):
     def get_model(self, arch, pretrained):
         """
         """
-        print("pretrained: {}".format(pretrained))
         return imagenet_models.__dict__[arch](num_classes=self.num_classes, 
                                         pretrained=pretrained)
 

@@ -99,3 +99,7 @@ class CensoredNormalProjectionSet:
             M.covariance_matrix.data = ch.clamp(M.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
         else:
             pass
+
+
+def censored_sample_nll(x):
+    return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
