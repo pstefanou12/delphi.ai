@@ -15,9 +15,6 @@ else:
     from tqdm import tqdm
 
 
-
-
-
 ## loader wrapper (for adding custom functions to dataloader)
 class PerEpochLoader:
     '''

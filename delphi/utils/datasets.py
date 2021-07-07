@@ -112,9 +112,11 @@ class DataSet(object):
         '''
         raise NotImplementedError
 
-    def make_loaders(self, workers, batch_size, data_aug=True, subset=None,
-                     subset_start=0, subset_type='rand', val_batch_size=None,
-                     train=True, val=True, shuffle_train=True, shuffle_val=True, subset_seed=None):
+    def make_loaders(self, workers, batch_size, transforms, data_aug=True,
+                    custom_class=None, subset=None,
+                    subset_type='rand', subset_start=0, val_batch_size=None,
+                    train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
+                    verbose=True):
         '''
         Args:
             workers (int) : number of workers for data fetching (*required*).
@@ -147,40 +149,6 @@ class DataSet(object):
             >>> for im, lab in train_loader:
             >>>     # Do stuff...
         '''
-        transforms = (self.transform_train, self.transform_test)
-        return loaders.make_loaders(workers=workers,
-                                    batch_size=batch_size,
-                                    transforms=transforms,
-                                    data_path=self.data_path,
-                                    data_aug=data_aug,
-                                    dataset=self.ds_name,
-                                    label_mapping=self.label_mapping,
-                                    custom_class=self.custom_class,
-                                    val_batch_size=val_batch_size,
-                                    subset=subset,
-                                    subset_start=subset_start,
-                                    subset_type=subset_type,
-                                    val=val,
-                                    train=train,
-                                    seed=subset_seed,
-                                    shuffle_train=shuffle_train,
-                                    shuffle_val=shuffle_val,
-                                    custom_class_args=self.custom_class_args)
-
-    def make_loaders(self, workers, batch_size, transforms, data_aug=True,
-                    custom_class=None, subset=None,
-                    subset_type='rand', subset_start=0, val_batch_size=None,
-                    train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
-                    verbose=True):
-        '''
-        **INTERNAL FUNCTION**
-        This is an internal function that makes a loader for any dataset. You
-        probably want to call dataset.make_loaders for a specific dataset,
-        which only requires workers and batch_size. For example:
-        >>> cifar_dataset = CIFAR10('/path/to/cifar')
-        >>> train_loader, val_loader = cifar_dataset.make_loaders(workers=10, batch_size=128)
-        >>> # train_loader and val_loader are just PyTorch dataloaders
-        '''
         if verbose:
             print(f"==> Preparing dataset {dataset}...")
         # check that at least a train loader or validation loader specified to be created
@@ -189,19 +157,16 @@ class DataSet(object):
         # initialize loader variables
         train_set, test_set = None, None
         train_loader, test_loader = None, None
-        transform_train, transform_test = transforms
-        if not data_aug:
-            transform_train = transform_test
 
         if not val_batch_size:
             val_batch_size = batch_size
 
         if not custom_class:
             if train:
-                train_set = folder.ImageFolder(root=data_path, transform=transform_train,
+                train_set = folder.ImageFolder(root=data_path, transform=self.transform_train if data_aug else self.transform_test,
                                             label_mapping=self.label_mapping)
             if val:
-                test_set = folder.ImageFolder(root=data_path, transform=transform_test,
+                test_set = folder.ImageFolder(root=data_path, transform=self.transform_test,
                                             label_mapping=self.label_mapping)
 
             if train:
@@ -226,10 +191,10 @@ class DataSet(object):
             if self.custom_class_args is None: self.custom_class_args = {}
             if data_path is not None:
                 if train:
-                    train_set = self.custom_class(root=train_path, train=True, download=True,
+                    train_set = self.custom_class(root=data_path, train=True, download=True,
                                         transform=transform_train, **self.custom_class_args)
                 if val:
-                    test_set = self.custom_class(root=test_path, train=False, download=True,
+                    test_set = self.custom_class(root=data_path, train=False, download=True,
                                             transform=transform_test, **self.custom_class_args)
         if train_set is not None:
             train_loader = DataLoader(train_set, batch_size=batch_size,
