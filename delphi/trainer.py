@@ -72,7 +72,7 @@ from tqdm.autonotebook import tqdm as tqdm if type_of_script() in set(JUPYTER, C
 
 class Trainer: 
     """
-    Flexible trainer class for training models in pytorch.
+    Flexible trainer class for training models in Pytorch.
     """
     def __init__(self, 
                 args: cox.Parameters, 

@@ -1,4 +1,4 @@
-p"""
+"""
 CLI interface for using delphi.
 """
 
@@ -12,7 +12,7 @@ from cox.store import Store
 import config
 
 try: 
-    from delphi import train
+    from delphi.trainer import Trainer
     from delphi.utils.model_utils import make_and_restore_model
     from delphi.utils.datasets import DATASETS
     from delphi.utils import constants as consts
@@ -44,7 +44,6 @@ def main(args, store=None):
 
     train_loader = DataPrefetcher(train_loader)
     val_loader = DataPrefetcher(val_loader)
-    loaders = (train_loader, val_loader)
 
     # MAKE MODEL
     model, checkpoint = make_and_restore_model(arch=args.arch,
@@ -53,10 +52,12 @@ def main(args, store=None):
 
     if args.eval_only:
         return eval_model(args, model, val_loader, store=store)
-
     if not args.resume_optimizer: checkpoint = None
-    model = train.train_model(args, model, loaders, store=store,
-                                    checkpoint=checkpoint, parallel=args.parallel)
+
+    # train model
+    trainer = Trainer(args, model, checkpoint, args.parallel, args.device == 'cuda', 
+                        store=store, table='table', params=None, disable_no_grad=False)
+    trainer.train_model((train_loader, val_loader))
     # if there is a store, close it at the end of the procedure
     if store is not None:
         store.close()
@@ -119,7 +120,6 @@ if __name__ == '__main__':
     args = setup_args(args)
     store = setup_store_with_metadata(args)
 
-    args.__setattr__('custom_criterion', grad.GumbelCE.apply)
     args.__setattr__('num_samples', 1000)
 
     if ch.cuda.is_available(): 
