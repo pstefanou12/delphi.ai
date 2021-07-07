@@ -17,6 +17,71 @@ import math
 
 from . import constants as consts
 
+# CONSTANTS
+JUPYTER = 'jupyter'
+TERMINAL = 'terminal'
+IPYTHON = 'ipython'
+ZMQ='zmqshell'
+COLAB='google.colab'
+
+
+def cov(m, rowvar=False):
+    '''
+    Estimate a covariance matrix given data.
+
+    Covariance indicates the level to which two variables vary together.
+    If we examine N-dimensional samples, `X = [x_1, x_2, ... x_N]^T`,
+    then the covariance matrix element `C_{ij}` is the covariance of
+    `x_i` and `x_j`. The element `C_{ii}` is the variance of `x_i`.
+
+    Args:
+        m: A 1-D or 2-D array containing multiple variables and observations.
+            Each row of `m` represents a variable, and each column a single
+            observation of all those variables.
+        rowvar: If `rowvar` is True, then each row represents a
+            variable, with observations in the columns. Otherwise, the
+            relationship is transposed: each column represents a variable,
+            while the rows contain observations.
+
+    Returns:
+        The covariance matrix of the variables.
+    '''
+    if m.dim() > 2:
+        raise ValueError('m has more than 2 dimensions')
+    # clone array so that data is not manipulated in-place
+    m_ = m.clone().detach()
+    if m_.dim() < 2:
+        m_ = m_.view(1, -1)
+    if not rowvar and m_.size(0) != 1:
+        m_ = m_.t()
+    # m = m.type(torch.double)  # uncomment this line if desired
+    fact = 1.0 / (m_.size(1) - 1)
+    m_ -= ch.mean(m_, dim=1, keepdim=True)
+    mt = m_.t()  # if complex: mt = m.t().conj()
+    return fact * m_.matmul(mt)
+
+
+def censored_sample_nll(x):
+    # calculates the negative log-likelihood for one sample of a censored normal
+    return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+
+
+def type_of_script():
+    """
+    Check the program's running environment.
+    """
+    try:
+        ipy_str = str(type(get_ipython()))
+        if ZMQ in ipy_str:
+            return JUPYTER
+        if TERMINEL in ipy_str:
+            return IPYTHON
+        if COLAB in ipy_str: 
+            return COLAB
+    except:
+        return TERMINAL
+
+
 
 def calc_est_grad(func, x, y, rad, num_samples):
     B, *_ = x.shape

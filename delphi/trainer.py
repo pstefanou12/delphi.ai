@@ -17,7 +17,7 @@ from typing import Any, Iterable, Callable
 from abc import ABC
 
 from . import oracle
-from .utils.helpers import has_attr, ckpt_at_epoch, AverageMeter, accuracy, type_of_script, setup_store_with_metadata, ProcedureComplete
+from .utils.helpers import has_attr, ckpt_at_epoch, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, ProcedureComplete
 from .utils import constants as consts
 
 # CONSTANTS 
@@ -68,14 +68,18 @@ def type_of_script():
         return TERMINAL
 
 # determine running environment
-from tqdm.autonotebook import tqdm as tqdm if type_of_script() in set(JUPYTER, COLAB) else from tqdm import tqdm
+if type_of_script() in {JUPYTER, COLAB}: 
+    from tqd.autonotebook import tqdm 
+else: 
+    import tqdm
+
 
 class Trainer: 
     """
     Flexible trainer class for training models in Pytorch.
     """
     def __init__(self, 
-                args: cox.Parameters, 
+                args: cox.utils.Parameters, 
                 model: Any, 
                 checkpoint: dict = None, 
                 parallel: bool = False, 
@@ -178,7 +182,7 @@ class Trainer:
         self.train_step = train_step
         self.iteration_hook = iteration_hook 
         self.epoch_hook = epoch_hook
-        self.post_train_hook post_train_hook
+        self.post_train_hook = post_train_hook
 
         # run model in parallel model
         assert not hasattr(self.model, "module"), "model is already in DataParallel."
@@ -284,7 +288,7 @@ class Trainer:
         best_prec1, epoch = (0, 0)
         if checkpoint:
             epoch = checkpoint['epoch']
-            best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint delse self.model_loop(VAL, val_loader)[0]
+            best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop(VAL, val_loader)[0]
 
         # keep track of the start time
         counter, start_time = 0, time.time()
@@ -358,7 +362,7 @@ class Trainer:
         """
         pass
 
-    def train_step(self, i, batch)
+    def train_step(self, i, batch):
         """
         Default train step is written assuming that the 
         default model is a neural network using cross 
@@ -449,7 +453,7 @@ class Trainer:
             # evaluate model on validation set, if there is one
             if val_loader is not None:
                 with ctx:
-                    val_prec1, val_loss = self.model_loop(VAL val_loader)
+                    val_prec1, val_loss = self.model_loop(VAL, val_loader)
 
                 # remember best prec_1 and save checkpoint
                 is_best = val_prec1 > best_prec1

@@ -101,5 +101,4 @@ class CensoredNormalProjectionSet:
             pass
 
 
-def censored_sample_nll(x):
-    return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+
