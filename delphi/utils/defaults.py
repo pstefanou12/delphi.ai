@@ -16,7 +16,6 @@ TRAINING_DEFAULTS = {
         "weight_decay": 5e-4,
         "step_lr": 50,
         "momentum": .9,
-        "score": False,
     },
     datasets.ImageNet: {
         "epochs": 200,
@@ -24,7 +23,6 @@ TRAINING_DEFAULTS = {
         "weight_decay":1e-4,
         "step_lr": 50, 
         'momentum': .9,
-        "score": False,
     },
 }
 """
