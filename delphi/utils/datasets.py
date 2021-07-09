@@ -7,7 +7,7 @@ Currently supported datasets:
 
 import torch as ch
 from torch import Tensor
-from torch.utils.data import TensorDataset
+from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import transforms, datasets
@@ -112,8 +112,8 @@ class DataSet(object):
         '''
         raise NotImplementedError
 
-    def make_loaders(self, workers, batch_size, transforms, data_aug=True, subset=None,
-                    subset_type='rand', subset_start=0, val_batch_size=None,
+    def make_loaders(self, workers, batch_size, data_aug=True,
+                    subset=None, subset_type='rand', subset_start=0, val_batch_size=None,
                     train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
                     verbose=True):
         '''
@@ -148,8 +148,6 @@ class DataSet(object):
             >>> for im, lab in train_loader:
             >>>     # Do stuff...
         '''
-        if verbose:
-            print(f"==> Preparing dataset {dataset}...")
         # check that at least a train loader or validation loader specified to be created
         if not train and not val:
             raise ValueError("Neither training loader nor validation loader specified")
@@ -188,13 +186,12 @@ class DataSet(object):
                 train_set = Subset(train_set, subset)
         else:
             if self.custom_class_args is None: self.custom_class_args = {}
-            if data_path is not None:
+            if self.data_path is not None:
                 if train:
                     train_set = self.custom_class(root=self.data_path, train=True, download=True,
-                                        transform=transform_train, **self.custom_class_args)
+                                        transform=self.transform_train, **self.custom_class_args)
                 if val:
                     test_set = self.custom_class(root=self.data_path, train=False, download=True,
-                                            transform=transform_test, **self.custom_class_args)
         if train_set is not None:
             train_loader = DataLoader(train_set, batch_size=batch_size,
                 shuffle=shuffle_train, num_workers=workers, pin_memory=True)
