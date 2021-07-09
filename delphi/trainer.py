@@ -85,9 +85,14 @@ class Trainer:
                 parallel: bool = False, 
                 cuda: bool = False, 
                 dp_device_ids = None, 
-                store: cox.store.Store=None, 
+                store: cox.store.Store = None, 
                 table: str = 'table', 
                 params: Iterable = None, 
+                pretrain_hook: Callable = default_pretrain_hook, 
+                train_step: Callable = default_train_step, 
+                iteration_hook: Callable = default_iteration_hook, 
+                epoch_hook: Callable = default_epoch_hook, 
+                post_train_hook: Callable = default_post_train_hook, 
                 disable_no_grad: bool = False) -> None:
         """
         Train models. 
@@ -141,27 +146,25 @@ class Trainer:
             model (Any) : model to train 
             train_loader: (ch.utils.data.DataLoader) : training set data loader 
             val_loader: (ch.utils.data.DataLoader): validation set data loader 
-            pretrain_hook (Callable) : procedure pretrian hook, default is None; useful for initializing model parameters, etc.
-            train_step: (Callable) : procedure train step, including both the forward and the backward step, default 
-            is multi-class train step with CE Loss
-            epoch_hook (Callable) : procedure epoch hook, default is None; useful for custom logging, etc.
-            post_train_hook (Callable) : post training hook, called after the model has been trained
             checkpoint (dict) : a loaded checkpoint previously saved by this library
                 (if resuming from checkpoint)
             store (cox.Store) : a cox store for logging training progress
             params (list) : list of parameters to use for training, if None
                 then all parameters in the model are used (useful for transfer
                 learning)
+            pretrain_hook (Callable) : procedure pretrian hook, default is None; useful for initializing model parameters, etc.
+            train_step: (Callable) : procedure train step, including both the forward and the backward step, default 
+            is multi-class train step with CE Loss
+            epoch_hook (Callable) : procedure epoch hook, default is None; useful for custom logging, etc.
+            post_train_hook (Callable) : post training hook, called after the model has been trained
             disable_no_grad (bool) : if True, then even model evaluation will be
                 run with autograd enabled (otherwise it will be wrapped in a ch.no_grad())
         """
         # INSTANCE VARIABLES
         self.args = args 
         self.model = model 
-        self.train_loader, self.val_loader = train_loader, val_loader
         self.checkpoint = checkpoint 
         self.parallel = parallel 
-        self.device = device 
         self.dp_device_ids = dp_device_ids 
         self.store = store 
         self.table = table 
@@ -207,10 +210,10 @@ class Trainer:
             # cyclic learning rate scheduler
             if self.args.custom_lr_multiplier == CYCLIC and self.M is not None:
                 lr_func = lambda t: np.interp([t], [0, self.M*4//15, self.M], [0, 1, 0])[0]
-                self.schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
             # cosine annealing scheduler
             elif self.args.custom_lr_multiplier == COSINE and self.M is not None:
-                schedule = lr_scheduler.CosineAnnealingLR(optimizer, self.M)
+                schedule = lr_scheduler.CosineAnnealingLR(self.optimizer, self.M)
             elif self.args.custom_lr_multiplier:
                 cs = self.args.custom_lr_multiplier
                 periods = eval(cs) if type(cs) is str else cs
@@ -226,7 +229,7 @@ class Trainer:
                 self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
             # step learning rate
             elif self.args.step_lr:
-                self.schedule = lr_scheduler.StepLR(optimizer, step_size=self.args.step_lr, 
+                self.schedule = lr_scheduler.StepLR(self.optimizer, step_size=self.args.step_lr, 
                 gamma=self.args.step_lr_gamma, verbose=self.args.verbose)
             
         # if checkpoint load  optimizer and scheduler
@@ -355,12 +358,6 @@ class Trainer:
 
         # LOSS AND ACCURACY
         return top1.avg, losses.avg
-
-    def pretrain_hook(self): 
-        """
-        Default pre-train hook. Does nothing by default
-        """
-        pass
 
     def train_step(self, i, batch):
         """
