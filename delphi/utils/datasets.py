@@ -162,10 +162,10 @@ class DataSet(object):
 
         if not self.custom_class:
             if train:
-                train_set = folder.ImageFolder(root=data_path, transform=self.transform_train if data_aug else self.transform_test,
+                train_set = folder.ImageFolder(root=self.data_path, transform=self.transform_train if data_aug else self.transform_test,
                                             label_mapping=self.label_mapping)
             if val:
-                test_set = folder.ImageFolder(root=data_path, transform=self.transform_test,
+                test_set = folder.ImageFolder(root=self.data_path, transform=self.transform_test,
                                             label_mapping=self.label_mapping)
 
             if train:
@@ -190,10 +190,10 @@ class DataSet(object):
             if self.custom_class_args is None: self.custom_class_args = {}
             if data_path is not None:
                 if train:
-                    train_set = self.custom_class(root=data_path, train=True, download=True,
+                    train_set = self.custom_class(root=self.data_path, train=True, download=True,
                                         transform=transform_train, **self.custom_class_args)
                 if val:
-                    test_set = self.custom_class(root=data_path, train=False, download=True,
+                    test_set = self.custom_class(root=self.data_path, train=False, download=True,
                                             transform=transform_test, **self.custom_class_args)
         if train_set is not None:
             train_loader = DataLoader(train_set, batch_size=batch_size,

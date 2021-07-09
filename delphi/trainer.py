@@ -81,6 +81,11 @@ class Trainer:
     def __init__(self, 
                 args: cox.utils.Parameters, 
                 model: Any, 
+                pretrain_hook: Callable = pretrain_hook, 
+                train_step: Callable = train_step, 
+                iteration_hook: Callable = iteration_hook,
+                epoch_hook: Callable = DefaultEpochHook(), 
+                post_train_hook: Callable = post_train_hook,
                 checkpoint: dict = None, 
                 parallel: bool = False, 
                 cuda: bool = False, 
@@ -88,7 +93,8 @@ class Trainer:
                 store: cox.store.Store=None, 
                 table: str = 'table', 
                 params: Iterable = None, 
-                disable_no_grad: bool = False) -> None:
+                disable_no_grad: bool = False, 
+                verbose: bool = True) -> None:
         """
         Train models. 
         Args: 
@@ -133,14 +139,7 @@ class Trainer:
                     If given, this function of `model, input, target` returns a
                     (scalar) that is added on to the training loss without being
                     subject to adversarial attack
-                epoch hook (function, optional)
-                    Similar to iteration_hook but called every epoch instead, and
-                    given arguments `model, log_info` where `log_info` is a
-                    dictionary with keys `epoch, nat_prec1, adv_prec1, nat_loss,
-                    adv_loss, train_prec1, train_loss`.
             model (Any) : model to train 
-            train_loader: (ch.utils.data.DataLoader) : training set data loader 
-            val_loader: (ch.utils.data.DataLoader): validation set data loader 
             pretrain_hook (Callable) : procedure pretrian hook, default is None; useful for initializing model parameters, etc.
             train_step: (Callable) : procedure train step, including both the forward and the backward step, default 
             is multi-class train step with CE Loss
@@ -154,6 +153,7 @@ class Trainer:
                 learning)
             disable_no_grad (bool) : if True, then even model evaluation will be
                 run with autograd enabled (otherwise it will be wrapped in a ch.no_grad())
+            verbose (bool) : print iterator output as procedure progresses
         """
         # INSTANCE VARIABLES
         self.args = args 
@@ -302,14 +302,21 @@ class Trainer:
             # raise error
             except Exception as e: 
                 raise e
+            # evaluate model on validation set, if there is one
+            if val_loader is not None:
+                with ctx:
+                    val_prec1, val_loss = self.model_loop(VAL, val_loader)
+
+            # take step of learning rate scheduler
+            if self.args.epochs is not None and self.schedule: self.schedule.step()
 
             # EPOCH HOOK
-            if hasattr(self, 'epoch_hook'): self.epoch_hook(counter)
+            if self.epoch_hook is not None: self.epoch_hook(counter)
                 
             # update procedure step counter
             counter += (len(train_loader) if has_attr(self.args, 'steps') else 1)
             
-        if hasattr(self, 'post_training_hook'): self.post_training_hook()
+        if self.post_training_hook is not None: self.post_training_hook()
         return model
                 
     def model_loop(self, loop_type, loader):
@@ -325,6 +332,10 @@ class Trainer:
         Returns:
             The average top1 accuracy and the average loss across the epoch.
         """
+        # measure accuracy and record loss
+        top1_acc = float('nan')
+        top5_acc = float('nan')
+
         # check loop type 
         if not loop_type in ['train', 'val']: 
             err_msg = "loop type must be in {0} must be 'train' or 'val".format(loop_type)
@@ -335,138 +346,149 @@ class Trainer:
     
         # model stats
         losses, top1, top5 =  AverageMeter(), AverageMeter(), AverageMeter()
-        model = model.train() if not isinstance(model, ch.distributions.distribution.Distribution) and is_train else model.eval()
+
+        # if not distirbution put into either train or valuation mode
+        if not isinstance(self.model, ch.distributions.Distribution):
+            self.model = self.model.train() if is_train else self.model.eval()
         
         # iterator
-        self.iterator = enumerate(loader) if args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
+        iterator = enumerate(loader) if self.args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
         for i, batch in iterator:
             # zero gradient for model parameters
             self.optimizer.zero_grad()
             # if training loop, perform training step
             if is_train:
-                self.train_step(i, batch)
+                loss, prec1, prec5 = self.train_step(self.args, self.model, i, batch)
+            else: 
+                pass
+
+            losses.update(loss.item(), batch[0].size(0))
+            top1.update(prec1, batch[0].size(0))
+            top5.update(prec5, batch[0].size(0))
+            top1_acc = top1.avg
+            top5_acc = top5.avg
+
+            # iterator description
+            if self.verbose:
+                desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                    '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+                    'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                iterator.set_description(desc)
+
+            # write to Tensorboard
+            if self.writer is not None:
+                descs = ['loss', 'top1', 'top5']
+                vals = [losses, top1, top5]
+                for d, v in zip(descs, vals):
+                    self.writer.add_scalar('_'.join([loop_type, d]), v.avg,
+                                    epoch)
             # iteration hook 
-            self.iteration_hook(i, loop_type, *batch)
+            self.iteration_hook(self.args, i, loop_type, loss, prec1, prec5, *batch)
             
-            # increment number of gradients
-            if steps is not None: 
-                steps += 1
-                if schedule: schedule.step()
+            # take step for learning rate scheduler
+            if self.args.steps is not None and self.schedule: schedule.step()
 
         # LOSS AND ACCURACY
         return top1.avg, losses.avg
 
-    def pretrain_hook(self): 
-        """
-        Default pre-train hook. Does nothing by default
-        """
-        pass
 
-    def train_step(self, i, batch):
-        """
-        Default train step is written assuming that the 
-        default model is a neural network using cross 
-        entropy loss. 
-        """ 
-        inp, targ = batch
-        inp, targ = inp.to(device), targ.to(device)
-        output = self.model(inp)
+# DEFAULT HOOKS FOR TRAINER
+def pretrain_hook(args, model, store): 
+    """
+    Default pre-train hook. Does nothing by default
+    """
+    pass
 
-        # AttackerModel returns both output and final input
-        if isinstance(output, tuple):
-            model_logits, _ = output
 
-        # regularizer 
-        reg_term = 0.0
-        if has_attr(self.args, "regularizer") and isinstance(model, ch.nn.Module):
-            reg_term = self.args.regularizer(model, inp, targ)
+def train_step(args, model, i, batch):
+    """
+    Default train step is written assuming that the 
+    default model is a neural network using cross 
+    entropy loss. 
+    """ 
+    inp, targ = batch
+    inp, targ = inp.to(device), targ.to(device)
+    output = model(inp)
 
-        # calculate loss and regularize
-        loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
-        loss = loss + reg_term
+    # AttackerModel returns both output and final input
+    if isinstance(output, tuple):
+        model_logits, _ = output
 
-        # backward propagation
-        loss.backward()
-        # update model 
-        optimizer.step()
+    # regularizer 
+    reg_term = 0.0
+    if has_attr(args, "regularizer") and isinstance(model, ch.nn.Module):
+        reg_term = args.regularizer(model, inp, targ)
 
-        return loss
+    # calculate loss and regularize
+    loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
+    loss = loss + reg_term
 
-    def iteration_hook(self, i, loop_type, *batch): 
-        """
-        Default iteration hook. By default, does logging for DNN training 
-        for both robust and non-robust models. This hook can be very useful 
-        for custom logging, checking procedure convergence, projection sets, etc. 
-        Args: 
-            *batch (Iterable) : iterable of 
-        Returns: 
+    # backward propagation
+    loss.backward()
+    # update model parameters 
+    optimizer.step()
 
-        """
-        # measure accuracy and record loss
-        top1_acc = float('nan')
-        top5_acc = float('nan')
+    # calculate accuracy metrics
+    maxk = min(5, model_logits.shape[-1])
+    if has_attr(args, "custom_accuracy"):
+        prec1, prec5 = args.custom_accuracy(model_logits, target)
+    else:
+        prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
+        prec1, prec5 = prec1[0], prec5[0]
 
-        losses.update(loss.item(), inp.size(0))
+    return loss, prec1, prec5
 
-        # calculate accuracy metrics
-        maxk = min(5, model_logits.shape[-1])
-        if has_attr(self.args, "custom_accuracy"):
-            prec1, prec5 = self.args.custom_accuracy(model_logits, target)
-        else:
-            prec1, prec5 = accuracy(model_logits, target, topk=(1, maxk))
-            prec1, prec5 = prec1[0], prec5[0]
 
-        top1.update(prec1, inp.size(0))
-        top5.update(prec5, inp.size(0))
-        top1_acc = top1.avg
-        top5_acc = top5.avg
+def iteration_hook(args, i, loop_type, loss, prec1, prec5, *batch): 
+    """
+    Default iteration hook. By default, does logging for DNN training 
+    for both robust and non-robust models. This hook can be very useful 
+    for custom logging, checking procedure convergence, projection sets, etc. 
+    Args: 
+        *batch (Iterable) : iterable of 
+    Returns: 
 
-        # ITERATOR
-        desc = ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                            loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
-        
-    def epoch_hook(self, i): 
+    """
+    pass 
+
+    
+class DefaultEpochHook: 
+    '''
+    Default epoch hook. Written for training standard 
+    deep computer vision neural networks.
+    '''
+    def __init__(self): 
+        # keep track of the best performing neural network on the validation set
+        self.best_prec1 = 0.0
+
+    def epoch_hook(self, args, model, optimizer, schedule, i, store, writer, train_prec1, train_loss, val_prec1, val_loss): 
         """
         Default epoch hook. Does nothing by default. However, this hook 
         can be very useful for custom logging, etc.
         """
-        # write to Tensorboard
-        if self.writer is not None:
-            descs = ['loss', 'top1', 'top5']
-            vals = [losses, top1, top5]
-            for d, v in zip(descs, vals):
-                self.writer.add_scalar('_'.join([loop_type, d]), v.avg,
-                                epoch)
 
         # check for logging/checkpoint
-        last_epoch = (i == (self.args.epochs - 1))
-        should_save_ckpt = (i % self.args.save_ckpt_iters == 0 or last_epoch) 
-        should_log = (i % self.args.log_iters == 0 or last_epoch)
+        last_epoch = (i == (args.epochs - 1))
+        should_save_ckpt = (i % args.save_ckpt_iters == 0 or last_epoch) 
+        should_log = (i % args.log_iters == 0 or last_epoch)
 
-        # validation loop
-        val_prec1, val_loss = 0.0, 0.0
+        # logging
         if should_log or should_save_ckpt: 
             ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
 
-            # evaluate model on validation set, if there is one
-            if val_loader is not None:
-                with ctx:
-                    val_prec1, val_loss = self.model_loop(VAL, val_loader)
-
-                # remember best prec_1 and save checkpoint
-                is_best = val_prec1 > best_prec1
-                best_prec1 = max(val_prec1, best_prec1)
+            # remember best prec_1 and save checkpoint
+            is_best = val_prec1 > self.best_prec1
+            self.best_prec1 = max(val_prec1, self.best_prec1)
 
         # CHECKPOINT -- checkpoint epoch of better DNN performance
         if should_save_ckpt or is_best:
             sd_info = {
-                'model': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'schedule': (self.schedule and self.schedule.state_dict()),
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'schedule': (schedule and schedule.state_dict()),
                 'epoch': i+1,
-                'amp': amp.state_dict() if self.args.mixed_precision else None,
+                'amp': amp.state_dict() if args.mixed_precision else None,
                 'prec1': val_prec1
             }
             
@@ -497,12 +519,12 @@ class Trainer:
                 'train_loss': train_loss,
                 'time': time.time() - start_time
             }
-            store[self.table].append_row(log_info)
+            store[table].append_row(log_info)
 
-    def post_train_hook(self): 
-        """
-        Default post training hook. Does nothing by default. However, this hook 
-        can be useful for custom logging, saving trained models, and testing model 
-        accuracy after the entire training procedure.
-        """
-        pass 
+def post_train_hook(args, model): 
+    """
+    Default post training hook. Does nothing by default. However, this hook 
+    can be useful for custom logging, saving trained models, and testing model 
+    accuracy after the entire training procedure.
+    """
+    pass 
