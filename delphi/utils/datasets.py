@@ -192,7 +192,7 @@ class DataSet(object):
                                         transform=self.transform_train, **self.custom_class_args)
                 if val:
                     test_set = self.custom_class(root=self.data_path, train=False, download=True,
-                                            transform=self.transform_test, **self.custom_class_args)
+                                        transform=self.transform_test, **self.custom_class_args)
         if train_set is not None:
             train_loader = DataLoader(train_set, batch_size=batch_size,
                 shuffle=shuffle_train, num_workers=workers, pin_memory=True)

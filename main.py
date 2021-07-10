@@ -55,7 +55,7 @@ def main(args, store=None):
     if not args.resume_optimizer: checkpoint = None
 
     # train model
-    trainer = Trainer(args, model, checkpoint, args.parallel, args.device == 'cuda', 
+    trainer = Trainer(args, model, checkpoint=checkpoint, parallel=args.parallel, cuda=args.device == 'cuda', 
                         store=store, table='table', params=None, disable_no_grad=False)
     trainer.train_model((train_loader, val_loader))
     # if there is a store, close it at the end of the procedure
