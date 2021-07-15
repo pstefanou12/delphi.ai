@@ -46,18 +46,20 @@ def main(args, store=None):
     val_loader = DataPrefetcher(val_loader)
 
     # MAKE MODEL
-    model, checkpoint = make_and_restore_model(arch=args.arch,
-            dataset=dataset, resume_path=args.resume)
+    model = make_and_restore_model(args=args, arch=args.arch,
+            dataset=dataset, resume_path=args.resume, store=store)
     if 'module' in dir(model): model = model.module
 
+    # initialize trainer
+    trainer = Trainer(model, verbose=True)
+    
+    # only evluate model
     if args.eval_only:
-        return eval_model(args, model, val_loader, store=store)
-    if not args.resume_optimizer: checkpoint = None
+        return trainer.eval_model(val_loader)
 
     # train model
-    trainer = Trainer(args, model, checkpoint=checkpoint, parallel=args.parallel, cuda=args.device == 'cuda', 
-                        store=store, table='table', params=None, disable_no_grad=False)
     trainer.train_model((train_loader, val_loader))
+    
     # if there is a store, close it at the end of the procedure
     if store is not None:
         store.close()
@@ -122,10 +124,6 @@ if __name__ == '__main__':
 
     args.__setattr__('num_samples', 1000)
 
-    if ch.cuda.is_available(): 
-        args.__setattr__('device', 'cuda')
-    else: 
-        args.__setattr__('device', 'cpu')
 
     # set global 
     config.args = args 

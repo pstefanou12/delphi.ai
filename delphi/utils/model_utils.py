@@ -19,8 +19,7 @@ class DummyModel(nn.Module):
         return self.model(x)
 
 
-def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
-                            parallel=False, pytorch_pretrained=False, add_custom_forward=False):
+def make_and_restore_model(*_, arch, args, dataset, store=None, parallel=False, dp_device_ids=None, update_params=None, resume_path=None, pytorch_pretrained=False, add_custom_forward=False):
     """
     Makes a model and (optionally) restores it from a checkpoint.
     Args:
@@ -29,8 +28,6 @@ def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
         dataset (Dataset class [see datasets.py])
         resume_path (str): optional path to checkpoint saved with the
             robustness library (ignored if ``arch`` is not a string)
-        parallel (bool): if True, wrap the model in a DataParallel
-            (defaults to False)
         pytorch_pretrained (bool): if True, try to load a standard-trained
             checkpoint from the torchvision library (throw error if failed)
         add_custom_forward (bool): ignored unless arch is an instance of
@@ -51,8 +48,7 @@ def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
     classifier_model = dataset.get_model(arch, pytorch_pretrained) if \
         isinstance(arch, str) else arch
 
-    model = AttackerModel(classifier_model, dataset)
-
+    
     # optionally resume from a checkpoint
     checkpoint = None
     if resume_path and os.path.isfile(resume_path):
@@ -63,17 +59,12 @@ def make_and_restore_model(*_, arch, dataset, device='cuda', resume_path=None,
         state_dict_path = 'model'
         if not ('model' in checkpoint):
             state_dict_path = 'state_dict'
-
-        sd = checkpoint[state_dict_path]
-        model.load_state_dict(sd)
+        
         print("=> loaded checkpoint '{}' (epoch {})".format(resume_path, checkpoint['epoch']))
     elif resume_path:
         error_msg = "=> no checkpoint found at '{}'".format(resume_path)
         raise ValueError(error_msg)
+    
+    model = AttackerModel(args, classifier_model, dataset, checkpoint=checkpoint, store=store, parallel=parallel, dp_device_ids=dp_device_ids, update_params=update_params)
 
-    # place model on device and check if run in parallel
-    model = model.to(device)
-    if parallel and next(model.parameters()).is_cuda:
-        model = ch.nn.DataParallel(model)
-
-    return model, checkpoint
+    return model

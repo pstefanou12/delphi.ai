@@ -30,10 +30,15 @@ Cite: code for attacker model shamelessly taken from:
 """
 
 import torch as ch
+import os
+import dill
+import time
 
-from .utils.helpers import type_of_script, calc_est_grad, InputNormalize, accuracy
+from .utils.helpers import type_of_script, calc_est_grad, InputNormalize, accuracy, AverageMeter, has_attr, ckpt_at_epoch
 from .utils import constants as consts
 from . import attack_steps
+from .delphi import delphi
+
 # determine running environment
 script = type_of_script()
 if script == consts.JUPYTER:
@@ -48,6 +53,15 @@ STEPS = {
     'fourier': attack_steps.FourierStep,
     'random_smooth': attack_steps.RandomStep
 }
+LOGS = 'logs'
+LOGS_SCHEMA = {
+                'epoch': int,
+                'val_prec1': float,
+                'val_loss': float,
+                'train_prec1': float,
+                'train_loss': float,
+                'time': float,
+            }
 
 
 class Attacker(ch.nn.Module):
@@ -249,7 +263,7 @@ class Attacker(ch.nn.Module):
         return adv_ret
 
 
-class AttackerModel(ch.nn.Module):
+class AttackerModel(delphi):
     """
     Wrapper class for adversarial attacks on models. Given any normal
     model (a ``ch.nn.Module`` instance), wrapping it in AttackerModel allows
@@ -265,11 +279,31 @@ class AttackerModel(ch.nn.Module):
     For a more comprehensive overview of this class, see
     :doc:`our detailed walkthrough <../example_usage/input_space_manipulation>`.
     """
-    def __init__(self, model, dataset):
-        super(AttackerModel, self).__init__()
+    def __init__(self, args, model, dataset, checkpoint = None, store=None, parallel=False, dp_device_ids=None, update_params=None):
+       
+        super(AttackerModel, self).__init__(args, model, store, LOGS, LOGS_SCHEMA)
+        self.checkpoint = checkpoint
+        self.parallel = parallel 
+        self.dp_device_ids = dp_device_ids
+        self.update_params = update_params
         self.normalizer = InputNormalize(dataset.mean, dataset.std)
-        self.model = model
         self.attacker = Attacker(model, dataset)
+        # keep track of the best performing neural network on the validation set
+        self.best_prec1 = 0.0
+        # training and validation set metric counters
+        self.reset_metrics()
+        
+        if checkpoint is not None: 
+            sd = self.checkpoint[state_dict_path]
+            self.model.load_state_dict(sd)
+ 
+        # put AttackerModel on GPU
+        self.model = self.model.cuda() 
+
+        # run model in parallel model
+        assert not hasattr(self.model, "module"), "model is already in DataParallel."
+        if self.parallel and next(self.model.parameters()).is_cuda:
+            self.model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
     def forward(self, inp, target=None, make_adv=False, with_latent=False,
                 fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
@@ -323,3 +357,152 @@ class AttackerModel(ch.nn.Module):
         if with_image:
             return (output, inp)
         return output
+
+    def reset_metrics(self):
+        '''
+        *INTERNAL FUNCTION* resets meters that keep track of model's 
+        performance over training and validation loops.
+        '''
+        # training and validation set metric counters
+        self.train_losses, self.train_top1, self.train_top5 =  AverageMeter(), AverageMeter(), AverageMeter()
+        self.val_losses, self.val_top1, self.val_top5 =  AverageMeter(), AverageMeter(), AverageMeter()
+
+    def step(self, batch, losses, top1, top5, is_train=False): 
+        '''
+        *INTERNAL FUNCTION* used for both train 
+        and validation steps. 
+        '''
+        # unpack input and target
+        inp, targ = batch
+        inp, targ = inp.cuda(), targ.cuda()
+        model_logits = self.model(inp)
+
+        # AttackerModel returns both output and final input
+        if isinstance(model_logits, tuple):
+            model_logits, _ = output
+
+        # regularizer 
+        self.reg_term = 0.0
+        if has_attr(self.args, "regularizer") and isinstance(model, ch.nn.Module):
+            self.reg_term = args.regularizer(self.model, inp, targ)
+
+        # calculate loss and regularize
+        loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
+        loss = loss + self.reg_term
+
+        # backprop if is train
+        if is_train:
+            # zero gradient for model parameters
+            self.optimizer.zero_grad()
+            # backward propagation
+            loss.backward()
+            # update model parameters
+            self.optimizer.step()
+
+        # calculate accuracy metrics
+        maxk = min(5, model_logits.shape[-1])
+        if has_attr(self.args, "custom_accuracy"):
+            prec1, prec5 = args.custom_accuracy(model_logits, targ)
+        else:
+            prec1, prec5 = accuracy(model_logits, targ, topk=(1, maxk))
+            prec1, prec5 = prec1[0], prec5[0]
+        # udpate model metric meters
+        losses.update(loss.item(), batch[0].size(0))
+        top1.update(prec1, batch[0].size(0))
+        top5.update(prec5, batch[0].size(0))
+
+    def pretrain_hook(self): 
+        self.reset_metrics() 
+    
+    def train_step(self, batch):
+        self.step(batch, self.train_losses, self.train_top1, self.train_top5, is_train=True)
+        
+    def val_step(self, batch):
+        self.step(batch, self.val_losses, self.val_top1, self.val_top5, is_train=False) 
+
+    def iteration_hook(self, epoch, i, loop_type, batch): 
+        pass 
+
+    def description(self, epoch, i, loop_msg):
+        if loop_msg == 'Train': 
+            losses, top1, top5 = self.train_losses, self.train_top1, self.train_top5
+        else: 
+            losses, top1, top5 = self.val_losses, self.val_top1, self.val_top5
+
+        return ('Epoch: {0} | Loss {loss.avg:.4f} | '
+                    '{1}1 {top1_acc.avg:.3f} | {1}5 {top5_acc.avg:.3f} | '
+                    'Reg term: {reg} ||'.format(epoch, loop_msg,
+                                                loss=losses, top1_acc=top1, top5_acc=top5, reg=self.reg_term))
+  
+    def epoch_hook(self, epoch, loop_type): 
+        # update learning rate
+        if self.schedule: 
+            self.schedule.step()
+        if loop_type == 'Train': 
+            losses, top1, top5 = self.train_losses, self.train_top1, self.train_top5
+        else: 
+            losses, top1, top5 = self.val_losses, self.val_top1, self.val_top5
+
+        # write to Tensorboard
+        if self.writer is not None:
+            descs = ['loss', 'top1', 'top5']
+            vals = [losses, top1, top5]
+            for d, v in zip(descs, vals):
+                self.writer.add_scalar('_'.join([loop_type, d]), v.avg, epoch)
+
+        # check for logging/checkpoint
+        last_epoch = (epoch == (self.args.epochs - 1))
+        should_save_ckpt = (epoch % self.args.save_ckpt_iters == 0 or last_epoch) 
+        should_log = (epoch % self.args.log_iters == 0 or last_epoch)
+
+        # logging
+        if should_log or should_save_ckpt: 
+            # remember best prec_1 and save checkpoint
+            is_best = self.val_top1.avg > self.best_prec1
+            self.best_prec1 = max(self.val_top1.avg, self.best_prec1)
+
+        # CHECKPOINT -- checkpoint epoch of better DNN performance
+        if self.store is not None and (should_save_ckpt or is_best):
+            sd_info = {
+                'model': self.model.state_dict(),
+                'optimizer': self.optimizer.state_dict(),
+                'schedule': (self.schedule and self.schedule.state_dict()),
+                'epoch': epoch + 1,
+                'amp': amp.state_dict() if self.args.mixed_precision else None,
+                'prec1': self.val_top1.avg
+            }
+            
+            def save_checkpoint(store, filename):
+                """
+                Saves model checkpoint at store path with filename.
+                Args: 
+                    filename (str) name of file for saving model
+                """
+                ckpt_save_path = os.path.join(store.path, filename)
+                ch.save(sd_info, ckpt_save_path, pickle_module=dill)
+
+            # update the latest and best checkpoints (overrides old one)
+            if is_best:
+                save_checkpoint(self.store, consts.CKPT_NAME_BEST)
+            if should_save_ckpt: 
+                # if we are at a saving epoch (or the last epoch), save a checkpoint
+                save_checkpoint(self.store, ckpt_at_epoch(epoch))
+                save_checkpoint(self.store, consts.CKPT_NAME_LATEST)
+
+        # LOG
+        if should_log and self.store:
+            log_info = {
+                'epoch': epoch + 1,
+                'val_prec1': self.val_top1.avg,
+                'val_loss': self.val_losses.avg,
+                'train_prec1': self.train_top1.avg,
+                'train_loss': self.train_losses.avg,
+                'time': time.time()
+            }
+            self.store['logs'].append_row(log_info)
+
+        # reset model performance meters for next epoch
+        self.reset_metrics()
+
+    def post_train_hook(self):
+        pass

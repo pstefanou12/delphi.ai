@@ -26,6 +26,7 @@ wheels/
 .installed.cfg
 *.egg
 *.swp
+*.swo
 MANIFEST
 
 # PyInstaller

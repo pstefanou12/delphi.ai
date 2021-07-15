@@ -1,5 +1,5 @@
 """
-**For most use cases, this can just be considered an internal class and
+For most use cases, this can just be considered an internal class and
 ignored.**
 This module contains the abstract class AttackerStep as well as a few subclasses.
 AttackerStep is a generic way to implement optimizers specifically for use with
