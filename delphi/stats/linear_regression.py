@@ -14,6 +14,7 @@ import config
 import copy
 import warnings
 
+from .delphi.delphi import delphi
 from .stats import stats
 from ..oracle import oracle
 from ..train import train_model
@@ -23,8 +24,14 @@ from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_meta
 
 
 class TruncatedRegression(stats):
-    """
-    """
+    '''
+    Truncated linear regression class. Supports truncated linear regression
+    with known noise, unknown noise, and confidence intervals. Module uses 
+    delphi.trainer.Trainer to train truncated linear regression by performing 
+    projected stochastic gradient descent on the truncated population log likelihood. 
+    Module requires the user to specify an oracle from the delphi.oracle.oracle class, 
+    and the survival probability. 
+    '''
     def __init__(
             self,
             phi: oracle,
@@ -46,8 +53,10 @@ class TruncatedRegression(stats):
             step_lr_gamma: float=.9,
             eps: float=1e-5, 
             **kwargs):
-        """
-        """
+        '''
+        Args: 
+            phi (delphi.oracle.oracle) : `
+        '''
         super(TruncatedRegression).__init__()
         # instance variables
         self.phi = phi 
@@ -249,38 +258,7 @@ class TruncatedRegressionIterationHook:
         emp.weight.data = self.emp_weight * emp.lambda_ if self.unknown else self.emp_weight
         emp.bias.data = (self.emp_bias * emp.lambda_).flatten() if self.unknown else self.emp_bias
 
-    def score(self, M, optimizer): 
-        """
-        Calculates the score of the current regression estimates of the validation set. It 
-        then updates the best estimates accordingly based off of the score's norm.
-        """
-        pred = M(self.X_val)
-        if self.unknown:
-            loss = self.criterion(pred, self.y_val, M.lambda_, self.phi)
-            grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
-            grad = ch.cat([(grad.sum(0) / M.lambda_).flatten(), lambda_grad.flatten()])
-        else: 
-            loss = self.criterion(pred, self.y_val, self.phi)
-            grad, = ch.autograd.grad(loss, [pred])
-            grad = grad.sum(0)
-
-        grad_norm = grad.norm(dim=-1)
-        # check that gradient magnitude is less than tolerance
-        if self.steps != 0 and grad_norm < self.tol: 
-            print("Final Score: {}".format(grad_norm))
-            raise ProcedureComplete()
-        
-        print("Iteration {} | Score: {}".format(int(self.steps / self.n), grad_norm))
-        # if smaller gradient norm, update best
-        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
-            self.best_grad_norm = grad_norm
-            # keep track of state dict
-            self.best_state_dict, self.best_opt = copy.deepcopy(M.state_dict()), copy.deepcopy(optimizer.state_dict())
-        elif 1e-1 <= grad_norm - self.best_grad_norm: 
-            # load in the best model state and optimizer dictionaries
-            M.load_state_dict(self.best_state_dict)
-            optimizer.load_state_dict(self.best_opt)
-
+    
     def __call__(self, M, optimizer, i, loop_type, inp, target): 
         # increase number of steps taken
         self.steps += 1
@@ -308,4 +286,108 @@ class TruncatedRegressionIterationHook:
         # check for convergence every n steps
         if self.steps % self.n == 0: 
             self.score(M, optimizer)
+
+
+
+class TruncatedRegressionModel(delphi):
+    '''
+    Parent/abstract class for models to be passed into trainer.  
+    '''
+    def __init__(self, args, unknown=True, store=None, table=None, schema=None): 
+        '''
+        Args: 
+            args (cox.utils.Parameters) : parameter object holding hyperparameters
+        '''
+        super().__init__()
+        self.args = args
+        self.unknown = unknown
+        # truncated regression model components
+        self.linear, self.lambda_ = None, None
+   
+   def calc_emp_grad_est(self): 
+        """
+        Calculates the score of the current regression estimates of the validation set. It 
+        then updates the best estimates accordingly based off of the score's norm.
+        """
+        pred = M(self.X_val)
+        if self.unknown:
+            loss = self.criterion(pred, self.y_val, M.lambda_, self.phi)
+            grad, lambda_grad = ch.autograd.grad(loss, [pred, M.lambda_])
+            grad = ch.cat([(grad.sum(0) / M.lambda_).flatten(), lambda_grad.flatten()])
+        else: 
+            loss = self.criterion(pred, self.y_val, self.phi)
+            grad, = ch.autograd.grad(loss, [pred])
+            grad = grad.sum(0)
+
+        grad_norm = grad.norm(dim=-1)
+        # check that gradient magnitude is less than tolerance
+        if self.steps != 0 and grad_norm < self.tol: 
+            print("Final Score: {}".format(grad_norm))
+            raise ProcedureComplete()
+        
+        print("Iteration {} | Empirical Gradient Estimate: {}".format(int(self.steps / self.n), grad_norm))
+        # if smaller gradient norm, update best
+        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
+            self.best_grad_norm = grad_norm
+            # keep track of state dict
+            self.best_state_dict, self.best_opt = copy.deepcopy(M.state_dict()), copy.deepcopy(optimizer.state_dict())
+        elif 1e-1 <= grad_norm - self.best_grad_norm: 
+            # load in the best model state and optimizer dictionaries
+            M.load_state_dict(self.best_state_dict)
+            optimizer.load_state_dict(self.best_opt)
+
+    @abstractmethod
+    def pretrain_hook(self):
+        '''
+        Assign OLS estimates as original empirical estimates 
+        for PGD procedure.
+        '''
+        pass 
+
+    @abstractmethod
+    def train_step(self, i, batch):
+        '''
+        Training step for defined model.
+        Args: 
+            i (int) : gradient step or epoch number
+            batch (Iterable) : iterable of inputs that 
+        '''
+        inp, targ = batch
+
+        self.model = 
+
+    @abstractmethod
+    def val_step(self, i, batch):
+        '''
+        Valdation step for defined model. 
+        '''
+        pass 
+
+    @abstractmethod
+    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+        '''
+        Iteration hook for defined model. Method is called after each 
+        training update.
+        Args:
+            loop_type (str) : 'train' or 'val'; indicating type of loop
+            loss (ch.Tensor) : loss for that iteration
+            prec1 (float) : accuracy for top prediction
+            prec5 (float) : accuracy for top-5 predictions
+        '''
+        pass 
+
+    @abstractmethod
+    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
+        '''
+        Epoch hook for defined model. Method is called after each 
+        complete iteration through dataset.
+        '''
+        pass 
+
+    @abstractmethod 
+    def post_train_hook(self):
+        '''
+        Post training hook, called after sgd procedures completes. 
+        '''
+        pass
 

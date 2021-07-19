@@ -34,6 +34,7 @@ TRAINING_ARGS = [
     ['out-dir', str, 'where to save training logs and checkpoints', REQ],
     ['epochs', int, 'number of epochs to train for', BY_DATASET],
     ['lr', float, 'initial learning rate for training', 0.1],
+    ['adam', [0, 1], 'Adam optimizer option', 0],
     ['weight-decay', float, 'SGD weight decay parameter', BY_DATASET],
     ['momentum', float, 'SGD momentum parameter', BY_DATASET],
     ['step-lr', int, 'number of steps between step-lr-gamma x LR drops', BY_DATASET],
@@ -46,7 +47,6 @@ TRAINING_ARGS = [
     ['save-ckpt-iters', int, 'how frequently (epochs) to save \
             (-1 for none, only saves best and last)', -1],
     ['parallel', [0, 1], 'train model on multiple GPUs', 0], 
-    ['accuracy', [0, 1], 'check model accuracy during training procedure', 1],
 ]
 
 MODEL_LOADER_ARGS = [
@@ -117,10 +117,11 @@ def check_and_fill_args(args, arg_list, ds_class):
     Returns:
         args (object): The :samp:`args` object with all the defaults filled in according to :samp:`arg_list` defaults.
     """
-    for arg_name, _, _, arg_default in arg_list:
+    for arg_name, args_type, _, arg_default in arg_list:
         name = arg_name.replace("-", "_")
+        # check for training parameter
         if has_attr(args, name): continue
-        if arg_default == REQ: raise ValueError(f"{arg_name} required")
+        if arg_default == REQ: raise ValueError(f"{name} required")
         elif arg_default == BY_DATASET:
             setattr(args, name, TRAINING_DEFAULTS[ds_class][name])
         elif arg_default is not None:

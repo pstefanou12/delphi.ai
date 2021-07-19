@@ -281,7 +281,8 @@ class AttackerModel(delphi):
     """
     def __init__(self, args, model, dataset, checkpoint = None, store=None, parallel=False, dp_device_ids=None, update_params=None):
        
-        super(AttackerModel, self).__init__(args, model, store, LOGS, LOGS_SCHEMA)
+        super(AttackerModel, self).__init__(args, store, LOGS, LOGS_SCHEMA)
+        self.model = model
         self.checkpoint = checkpoint
         self.parallel = parallel 
         self.dp_device_ids = dp_device_ids

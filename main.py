@@ -1,5 +1,5 @@
 """
-CLI interface for using delphi.
+CLI interface for using .
 """
 
 from argparse import ArgumentParser
@@ -17,9 +17,9 @@ try:
     from delphi.utils.datasets import DATASETS
     from delphi.utils import constants as consts
     from delphi.utils import defaults
-    from delphi.utils.defaults import check_and_fill_args
     from delphi.utils.helpers import setup_store_with_metadata, DataPrefetcher
     from delphi import grad
+    from delphi import __version__
 except: 
     raise ValueError("Error when importing modules.")
 # set environment variable so that stores can create output files
@@ -31,7 +31,8 @@ parser = defaults.add_args_to_parser(defaults.MODEL_LOADER_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.TRAINING_ARGS, parser)
 
 def main(args, store=None):
-    '''Given arguments from `setup_args` and a store from `setup_store`,
+    '''
+    Given arguments from `setup_args` and a store from `setup_store`,
     trains as a model. Check out the argparse object in this file for
     argument options.
     '''
@@ -68,7 +69,7 @@ def main(args, store=None):
 def setup_args(args):
     '''
     Fill the args object with reasonable defaults from
-    :mod:`robustness.defaults`, and also perform a sanity check to make sure no
+    :mod:`delphi.defaults`, and also perform a sanity check to make sure no
     args are missing.
     '''
     # override non-None values with optional config_path
@@ -76,15 +77,15 @@ def setup_args(args):
         args = cox.utils.override_json(args, args.config_path)
 
     ds_class = DATASETS[args.dataset]
-    args = check_and_fill_args(args, defaults.CONFIG_ARGS, ds_class)
+    args = defaults.check_and_fill_args(args, defaults.CONFIG_ARGS, ds_class)
 
     if not args.eval_only:
-        args = check_and_fill_args(args, defaults.TRAINING_ARGS, ds_class)
+        args = defaults.check_and_fill_args(args, defaults.TRAINING_ARGS, ds_class)
 
     if args.adv_train or args.adv_eval:
-        args = check_and_fill_args(args, defaults.PGD_ARGS, ds_class)
+        args = defaults.check_and_fill_args(args, defaults.PGD_ARGS, ds_class)
 
-    args = check_and_fill_args(args, defaults.MODEL_LOADER_ARGS, ds_class)
+    args = defaults.check_and_fill_args(args, defaults.MODEL_LOADER_ARGS, ds_class)
     if args.eval_only: assert args.resume is not None, \
             "Must provide a resume path if only evaluating"
     return args
@@ -123,7 +124,6 @@ if __name__ == '__main__':
     store = setup_store_with_metadata(args)
 
     args.__setattr__('num_samples', 1000)
-
 
     # set global 
     config.args = args 
