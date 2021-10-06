@@ -24,6 +24,8 @@ from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_meta
 
 class TruncatedRegression(stats):
     """
+    Truncated Linear Regression class. Performs projected stochastic gradient descent on the 
+    population log likelihood of the truncation set.
     """
     def __init__(
             self,
