@@ -71,7 +71,6 @@ class TruncatedMSE(ch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)

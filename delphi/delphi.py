@@ -15,7 +15,7 @@ CYCLIC = 'cyclic'
 COSINE = 'cosine'
 LINEAR = 'linear'
 
-class delphi(ch.nn.Module, ABC):
+class delphi:
     '''
     Parent/abstract class for models to be passed into trainer.
     '''
@@ -33,15 +33,16 @@ class delphi(ch.nn.Module, ABC):
         self.writer = self.store.tensorboard if self.store else None
         # algorithm optimizer and scheduler
         self.optimizer, self.scheduler = None, None
+        self.checkpoint = None
 
-    def make_optimizer_and_schedule(self):
+    def make_optimizer_and_schedule(self, params=None):
         """
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
         for SGD procedure. 
         """
-        if self.model is None and self.update_params is None: raise ValueError('need to inititalize model of update params')
+        if self.model is None and params is None: raise ValueError('need to inititalize model of update params')
         # initialize optimizer, scheduler, and then get parameters
-        param_list = self.model.parameters() if self.update_params is None else self.update_params
+        param_list = self.model.parameters() if params is None else params
 
         # setup optimizer
         if self.args.adam:  # adam

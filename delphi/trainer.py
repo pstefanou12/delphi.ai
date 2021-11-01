@@ -153,16 +153,19 @@ class Trainer:
         # separate loaders
         train_loader, val_loader = loaders
 
+        if self.model.args.steps: 
+            self.M = int(self.M / len(train_loader))
+
         # PRETRAIN HOOK
         if hasattr(self.model, 'pretrain_hook'): self.model.pretrain_hook()
         
         # make optimizer and scheduler for training neural network
         self.model.make_optimizer_and_schedule()
-        '''
-        if self.checkpoint:
-            epoch = self.checkpoint['epoch']
-            best_prec1 = self.checkpoint['prec1'] if 'prec1' in self.checkpoint else self.model_loop(VAL, val_loader)[0]
-        '''
+        
+        if self.model.checkpoint:
+            epoch = self.model.checkpoint['epoch']
+            best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
+        
         # keep track of the start time
         start_time = time.time()
         # do training loops until performing enough gradient steps or epochs
@@ -171,7 +174,7 @@ class Trainer:
                 self.model_loop(TRAIN, train_loader, epoch)
             # if raising ProcedureComplete, then terminate
             except ProcedureComplete: 
-                return model
+                return self.model
             # raise error
             except Exception as e: 
                 raise e
@@ -183,7 +186,7 @@ class Trainer:
 
         # POST TRAINING HOOK     
         if hasattr(self.model, 'post_training_hook'): self.model.post_training_hook()
-        return model
+        return self.model
                 
     def model_loop(self, loop_type, loader, epoch):
         """
@@ -207,16 +210,16 @@ class Trainer:
         loop_msg = 'Train' if is_train else 'Val'
         
         # if is_train, put model into train mode, else eval mode
-        self.model = self.model.train() if is_train else self.model.eval()
-        
+        # self.model = self.model.model.train() if is_train else self.model.model.eval()
+       
         # iterator
-        iterator = tqdm(enumerate(loader), total=len(loader)) if self.model.args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
+        iterator = enumerate(loader) if self.model.args.steps else tqdm(enumerate(loader), total=len(loader), leave=False) 
         for i, batch in iterator:
             # if training loop, perform training step
             if is_train:
-                self.model.train_step(batch)
+                loss, prec1, prec5 = self.model.train_step(i, batch)
             else: 
-                self.model.val_step(batch)
+                loss, prec1, prec5 = self.model.val_step(i, batch)
 
             # iterator description
             if self.verbose and hasattr(self.model, 'description'):
@@ -224,8 +227,8 @@ class Trainer:
                 iterator.set_description(desc)
 
             # iteration hook 
-            if hasattr(self.model, 'iteration_hook'): self.model.iteration_hook(epoch, i, loop_type, batch)
+            if hasattr(self.model, 'iteration_hook'): self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
 
         # EPOCH HOOK
-        if hasattr(self.model, 'epoch_hook'): self.model.epoch_hook(epoch, loop_type)
+        if hasattr(self.model, 'epoch_hook'): self.model.epoch_hook(i, loop_type, loss, prec1, prec5, batch)
 
