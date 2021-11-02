@@ -281,7 +281,7 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
-        self._var = ch.var(S, dim=0)
+        self._covariance_matcovariance_matrix = ch.var(S, dim=0)[None,...]
         # apply gradient
         self.S = censored_sample_nll(S)
 

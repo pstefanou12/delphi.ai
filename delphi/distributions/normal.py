@@ -77,7 +77,7 @@ class CensoredNormal(distributions):
             config.args.__setattr__('step_lr_gamma', step_lr_gamma)
 
         # create instance variables for empirical estimates
-        self.emp_loc, self.emp_var = None, None
+        self.emp_loc, self.emp_covariance_matrix = None, None
         # initialize projection set
         self.projection_set = None
 
@@ -120,13 +120,13 @@ class CensoredNormalModel(delphi.delphi):
         # initialize projection set 
         self.clamp = clamp 
         self.emp_loc = X_train._loc
-        self.emp_var = X_train._var
+        self.emp_covariance_matrix = X_train._covariance_matrix
 
         self.radius = self.r * (ch.log(1.0 / self.alpha)/ch.square(self.alpha))
         # parameterize projection set
         if self.clamp:
             self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
-             Bounds(ch.max(ch.square(self.alpha / 12.0), self.emp_var - self.radius), self.emp_var + self.radius)
+             Bounds(ch.max(ch.square(self.alpha / 12.0), self.emp_covariance_matrix - self.radius), self.emp_covariance_matrix + self.radius)
         else:
             pass
 
@@ -142,10 +142,9 @@ class CensoredNormalModel(delphi.delphi):
         self.best_opt = None
 
         # establish empirical distribution
-        self.model = MultivariateNormal(self.emp_loc.clone(), self.emp_var.clone()[None,...])
+        self.model = MultivariateNormal(self.emp_loc.clone(), self.emp_covariance_matrix.clone())
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         self.params = [self.model.loc, self.model.covariance_matrix]
-        # self.make_optimizer_and_schedule(params)
 
     def check_grad(self): 
         """

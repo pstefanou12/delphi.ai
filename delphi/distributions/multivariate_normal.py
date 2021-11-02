@@ -5,89 +5,120 @@ Censored multivariate normal distribution with oracle access (ie. known truncati
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.utils.data import DataLoader
 from cox.utils import Parameters
 import config
 
-from .stats import stats
+from .. import delphi
+from .normal import CensoredNormal, CensoredNormalModel
 from ..oracle import oracle
-from ..train import train_model
-from ..utils.datasets import DataSet, CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,\
-    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, CensoredMultivariateNormal
-from ..grad import CensoredMultivariateNormalNLL
+from ..trainer import Trainer
+from ..utils.datasets import CensoredMultivariateNormalDataset 
+from ..utils.helpers import Bounds
 from ..utils import defaults
-from ..utils.helpers import cov
 
 
-class MultivariateNormal(stats):
+class CensoredMultivariateNormal(CensoredNormal):
     """
     Censored multivariate distribution class.
     """
-    def __init__(
-            self,
+    def __init__(self,
             phi: oracle,
-            alpha: Tensor,
-            args: Parameters,
+            alpha: float,
+            steps: int=1000,
+            clamp: bool=True,
+            n: int=10, 
+            val: int=50,
+            tol: float=1e-2,
+            workers: int=0,
+            r: float=2.0,
+            num_samples: int=100,
+            bs: int=10,
+            lr: float=1e-1,
+            step_lr: int=100, 
+            custom_lr_multiplier: str=None,
+            step_lr_gamma: float=.9,
+            eps: float=1e-5, 
             **kwargs):
         """
         """
-        super(censored_multivariate_normal, self).__init__()
-        # check that algorithm hyperparameters
-        config.args = defaults.check_and_fill_args(args, defaults.CENSOR_ARGS, CensoredMultivariateNormal)
-        # add oracle and survival prob to parameters
-        config.args.__setattr__('phi', phi)
-        config.args.__setattr__('alpha', alpha)
-        self._multivariate_normal = None
-        # intialize loss function and add custom criterion to hyperparameters
-        self.criterion = CensoredMultivariateNormalNLL.apply
-        config.args.__setattr__('custom_criterion', self.criterion)
-        # create instance variables for empirical estimates
-        self.emp_loc, self.emp_covariance_matrix = None, None
-        self.projection_set = None
+        super().__init__(phi, alpha, steps, clamp, n, val, tol, workers, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps, **kwargs)
+        self.emp_covariance_matrix = None
 
     def fit(self, S: Tensor):
         """
         """
-        # create dataset and dataloader
-        ds_kwargs = {
-            'custom_class_args': {
-                'S': S},
-            'custom_class': CensoredMultivariateNormal,
-            'transform_train': None,
-            'transform_test': None,
-            'label_mapping': None}
-        ds = DataSet('censored_multivariate_normal', CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
-                     CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS, data_path=None, **ds_kwargs)
-        loaders = ds.make_loaders(workers=config.args.workers, batch_size=config.args.batch_size)
-        # initialize model with empiricial estimates
-        self._multivariate_normal = MultivariateNormal(loaders[0].dataset.loc, loaders[0].dataset.covariance_matrix)
-        # keep track of gradients for mean and covariance matrix
-        self._multivariate_normal.loc.requires_grad, self._multivariate_normal.covariance_matrix.requires_grad = True, True
-        # initialize projection set and add iteration hook to hyperparameters
-        self.projection_set = CensoredMultivariateNormalProjectionSet(self._multivariate_normal.loc,
-                                                                      self._multivariate_normal.covariance_matrix)
-        config.args.__setattr__('iteration_hook', self.projection_set)
+         # separate into training and validation set
+        rand_indices = ch.randperm(S.size(0))
+        train_indices, val_indices = rand_indices[self.val:], rand_indices[:self.val]
+        self.X_train = S[train_indices]
+        self.X_val = S[val_indices]
+
+        self.train_ds = CensoredMultivariateNormalDataset(self.X_train)
+        self.val_ds = CensoredMultivariateNormalDataset(self.X_val)
+        train_loader = DataLoader(self.train_ds, batch_size=self.bs, num_workers=self.workers)
+        val_loader = DataLoader(self.val_ds, batch_size=len(self.val_ds), num_workers=self.workers)
+
+        self.censored_multi_normal = CensoredMultivariateNormalModel(config.args, self.train_ds, self.val_ds, self.phi, self.tol, self.r, self.alpha, self.clamp, n=self.n)
         # run PGD to predict actual estimates
-        return train_model(config.args, self._multivariate_normal, loaders,
-                           update_params=[self._multivariate_normal.loc, self._multivariate_normal.covariance_matrix])
+        self.trainer = Trainer(self.censored_multi_normal)
+
+        # run PGD for parameter estimation 
+        self.trainer.train_model((train_loader, None))
 
 
-class CensoredMultivariateNormalProjectionSet(CensoredNormalProjectionSet):
-    """
-    Censored multivariate normal projection set
-    """
-    def __init__(self, emp_loc, emp_covariance_matrix):
-        """
-        Args:
-            emp_loc (torch.Tensor): empirical mean
-            emp_covariance_matrix (torch.Tensor): empirical covariance
-        """
-        super().__init__(emp_loc, emp_covariance_matrix.svd()[1])
+class CensoredMultivariateNormalModel(CensoredNormalModel):
+    '''
+    Model for censored normal distributions to be passed into trainer.
+    '''
+    def __init__(self, args,  X_train, X_val, phi, tol, r, alpha, clamp, n=100, store=None, table=None, schema=None): 
+        '''
+        Args: 
+            args (cox.utils.Parameters) : parameter object holding hyperparameters
+        '''
+        super().__init__(args, X_train, X_val, phi, tol, r, alpha, clamp, store=store, table=table, schema=schema)
 
-    def __call__(self, M, i, loop_type, inp, target):
-        if config.args.clamp:
-            u, s, v = M.covariance_matrix.svd()  # decompose covariance estimate
-            M.loc.data = ch.cat([ch.clamp(M.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(M.loc.shape[0])])
-            M.covariance_matrix.data = u.matmul(ch.diag(ch.cat([ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in range(s.shape[0])]))).matmul(v.t())
+        u, s, v = ch.linalg.svd(self.emp_covariance_matrix)
+
+        # parameterize projection set
+        if self.clamp:
+            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
+             Bounds(ch.max(ch.square(self.alpha / 12.0), s - self.radius), s + self.radius)
         else:
             pass
+        '''
+        self.model = MultivariateNormal(self.emp_loc.clone(), self.emp_covariance_matrix.clone())
+        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        self.params = [self.model.loc, self.model.covariance_matrix]
+        '''
+
+    def val_step(self, i, batch):
+        '''
+        Valdation step for defined model. 
+        '''
+        pass 
+
+    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+        '''
+        Iteration hook for defined model. Method is called after each 
+        training update.
+        Args:
+            loop_type (str) : 'train' or 'val'; indicating type of loop
+            loss (ch.Tensor) : loss for that iteration
+            prec1 (float) : accuracy for top prediction
+            prec5 (float) : accuracy for top-5 predictions
+        '''
+        # increase number of steps taken
+        self.steps += 1
+
+        if self.clamp:
+            u, s, v = ch.linalg.svd(self.model.covariance_matrix) # decompose covariance estimate
+            self.model.loc.data = ch.cat([ch.clamp(self.model.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(self.model.loc.shape[0])])
+            self.model.covariance_matrix.data = u.matmul(ch.diag(ch.cat([ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in range(s.shape[0])]))).matmul(v.t())
+        else:
+            pass
+
+        # check for convergence every n steps
+        if self.steps % self.n == 0: 
+            grad = self.check_grad()
 

@@ -16,7 +16,6 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the negative population log likelihood for censored multivariate normal distribution.
     """
-
     @staticmethod
     def forward(ctx, loc, covariance_matrix, x, phi):
         ctx.save_for_backward(loc, covariance_matrix, x)
