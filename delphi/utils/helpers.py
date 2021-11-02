@@ -25,45 +25,6 @@ ZMQ='zmqshell'
 COLAB='google.colab'
 
 
-def make_optimizer_and_schedule(args, model, checkpoint, params, T=None):
-    param_list = model.parameters() if params is None else params
-    optimizer = SGD(param_list, args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    # Make schedule
-    schedule = None
-    if args.custom_lr_multiplier == consts.CYCLIC and T is not None:
-        lr_func = lambda t: np.interp([t], [0, T*4//15, T], [0, 1, 0])[0]
-        schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.custom_lr_multiplier == consts.COSINE and T is not None:
-        schedule = lr_scheduler.CosineAnnealingLR(optimizer, T)
-    elif args.custom_lr_multiplier:
-        cs = args.custom_lr_multiplier
-        periods = eval(cs) if type(cs) is str else cs
-        if args.lr_interpolation == consts.LINEAR:
-            lr_func = lambda t: np.interp([t], *zip(*periods))[0]
-        else:
-            def lr_func(ep):
-                for (milestone, lr) in reversed(periods):
-                    if ep >= milestone: return lr
-                return 1.0
-        schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
-    elif args.step_lr:
-        schedule = lr_scheduler.StepLR(optimizer, step_size=args.step_lr, gamma=args.step_lr_gamma)
-        
-    # Fast-forward the optimizer and the scheduler if resuming
-    if checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        try:
-            schedule.load_state_dict(checkpoint['schedule'])
-        except:
-            steps_to_take = checkpoint['epoch']
-            print('Could not load schedule (was probably LambdaLR).'
-                  f' Stepping {steps_to_take} times instead...')
-            for i in range(steps_to_take):
-                schedule.step()
-    return optimizer, schedule
-
-
 def cov(m, rowvar=False):
     '''
     Estimate a covariance matrix given data.

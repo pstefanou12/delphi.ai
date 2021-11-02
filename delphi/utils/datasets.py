@@ -277,7 +277,7 @@ class ImageNet(DataSet):
                                         pretrained=pretrained)
 
 
-class CensoredNormal(ch.utils.data.Dataset):
+class CensoredNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
@@ -300,7 +300,7 @@ class CensoredNormal(ch.utils.data.Dataset):
         return self._var.clone()
     
     
-class CensoredMultivariateNormal(ch.utils.data.Dataset):
+class CensoredMultivariateNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = S.mean(0)
@@ -385,8 +385,6 @@ class TruncatedMultivariateNormal(ch.utils.data.Dataset):
 DATASETS = {
     'imagenet': ImageNet, 
     'cifar': CIFAR,
-    'censored_normal': CensoredNormal, 
-    'censored_multivariate_normal': CensoredMultivariateNormal, 
     'truncated_normal': TruncatedNormal, 
     'truncated_multivariate_normal': TruncatedMultivariateNormal, 
     'tensor': TensorDataset, 

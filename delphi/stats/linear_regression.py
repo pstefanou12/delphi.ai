@@ -86,7 +86,7 @@ class TruncatedRegression(stats):
             'eps': eps,
         })
 
-        # ste attribute for learning rate scheduler
+        # set attribute for learning rate scheduler
         if custom_lr_multiplier: 
             config.args.__setattr__('custom_lr_multiplier', custom_lr_multiplier)
         else: 
@@ -170,7 +170,7 @@ class TruncatedRegressionModel(delphi.delphi):
         self.emp_weight = Tensor(self.emp_model.coef_) 
         self.emp_bias = Tensor(self.emp_model.intercept_)
         self.emp_var = ch.var(Tensor(self.emp_model.predict(X_train)) - y_train, dim=0)[..., None]
-        self.radius = r * (12.0 + 4.0 * ch.log(2.0 / self.alpha)) if self.unknown else r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
+        self.radius = self.r * (12.0 + 4.0 * ch.log(2.0 / self.alpha)) if self.unknown else self.r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
 
         if self.clamp:
             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
@@ -210,7 +210,7 @@ class TruncatedRegressionModel(delphi.delphi):
             self.model.bias.data = self.emp_bias
             update_params = None
 
-        self.optimizer = self.make_optimizer_and_schedule(update_params)
+        self.make_optimizer_and_schedule(update_params)
 
     def check_grad(self): 
         """

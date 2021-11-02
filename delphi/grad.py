@@ -4,12 +4,12 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
-from torch.distributions import Uniform, Gumbel, Laplace
+from torch.distributions import Uniform, Gumbel, Laplace, MultivariateNormal
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import config
 
-from .utils.helpers import logistic
+from .utils.helpers import logistic, censored_sample_nll
 
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
@@ -18,8 +18,9 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, loc, covariance_matrix, x):
+    def forward(ctx, loc, covariance_matrix, x, phi):
         ctx.save_for_backward(loc, covariance_matrix, x)
+        ctx.phi = phi
         return ch.zeros(1)
 
     @staticmethod
@@ -33,10 +34,10 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         M = MultivariateNormal(v, T)
         while y.size(0) < x.size(0):
             s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
-            y = ch.cat([y, s[config.args.phi(s).nonzero(as_tuple=False).flatten()]])
+            y = ch.cat([y, s[ctx.phi(s).nonzero(as_tuple=False).flatten()]])
         # calculate gradient
         grad = (-x + censored_sample_nll(y[:x.size(0)])).mean(0)
-        return grad[loc.size(0) ** 2:], grad[:loc.size(0) ** 2].reshape(covariance_matrix.size()), None
+        return grad[loc.size(0) ** 2:], grad[:loc.size(0) ** 2].reshape(covariance_matrix.size()), None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
