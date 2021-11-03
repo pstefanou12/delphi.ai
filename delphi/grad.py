@@ -4,7 +4,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
-from torch.distributions import Uniform, Gumbel, Laplace, MultivariateNormal
+from torch.distributions import Uniform, Gumbel, MultivariateNormal
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import config
@@ -139,15 +139,16 @@ class LogisticBCE(ch.autograd.Function):
 
 class TruncatedBCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ):
+    def forward(ctx, pred, targ, phi):
         ctx.save_for_backward(pred, targ)
+        ctx.phi = phi
         loss = ch.nn.BCEWithLogitsLoss()
         return loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
-
+        
         # logistic distribution
         base_distribution = Uniform(0, 1)
         transforms_ = [SigmoidTransform().inv]
@@ -157,10 +158,10 @@ class TruncatedBCE(ch.autograd.Function):
         # add noise
         noised = stacked + logistic.sample(stacked.size())
         # filter
-        filtered = config.args.phi(noised).unsqueeze(-1)
+        filtered = ctx.phi(noised)
         out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + 1e-5)
         grad = ch.where(ch.abs(out) > 1e-5, sig(out), targ) - targ
-        return grad / pred.size(0), -grad / pred.size(0)
+        return grad / pred.size(0), -grad / pred.size(0), None
 
 
 class GumbelCE(ch.autograd.Function):

@@ -107,10 +107,10 @@ class TruncatedRegression(stats):
         
         self.trunc_reg = TruncatedRegressionModel(config.args, self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.clamp, self.unknown)
 
-        self.trainer = Trainer(self.trunc_reg)
+        trainer = Trainer(self.trunc_reg)
 
         # run PGD for parameter estimation
-        self.trainer.train_model((loader, None))
+        trainer.train_model((loader, None))
 
     def __call__(self, x: Tensor): 
         """
@@ -192,8 +192,6 @@ class TruncatedRegressionModel(delphi.delphi):
         self.best_grad_norm = None
         self.best_state_dict = None
         self.best_opt = None
-        # calculate empirical check_grad
-        self.linear = LinearUnknownVariance(in_features=X_train.size(0), out_features=1, bias=True) if self.unknown else ch.nn.Linear(in_features = X_train.size(1), out_features=1, bias=True) 
         
         if self.unknown: # unknown variance
             self.model = LinearUnknownVariance(in_features=self.X_train.size(1), out_features=1, bias=True)
@@ -209,8 +207,6 @@ class TruncatedRegressionModel(delphi.delphi):
             self.model.weight.data = self.emp_weight
             self.model.bias.data = self.emp_bias
             update_params = None
-
-        self.make_optimizer_and_schedule(update_params)
 
     def check_grad(self): 
         """
