@@ -78,8 +78,6 @@ class CensoredNormal(distributions):
 
         # create instance variables for empirical estimates
         self.emp_loc, self.emp_covariance_matrix = None, None
-        # initialize projection set
-        self.projection_set = None
 
     def fit(self, S: Tensor):
         """

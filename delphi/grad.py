@@ -43,19 +43,20 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
     """
-
     @staticmethod
-    def forward(ctx, u, B, x, loc_grad, cov_grad):
+    def forward(ctx, u, B, x, loc_grad, cov_grad, phi, exp_h):
         ctx.save_for_backward(u, B, x, loc_grad, cov_grad)
-        return ch.ones(1)
+        ctx.phi = phi
+        ctx.exp_h = exp_h
+        return ch.zeros(1)
 
     @staticmethod
     def backward(ctx, grad_output):
         u, B, x, loc_grad, cov_grad = ctx.saved_tensors
-        exp = config.args.exp_h(u, B, x)
-        psi = config.args.phi.psi_k(x).unsqueeze(1)
+        exp = ctx.exp_h(u, B, x)
+        psi = ctx.phi.psi_k(x).unsqueeze(1)
         return (loc_grad * exp * psi).mean(0), ((cov_grad.flatten(1) * exp * psi).unflatten(1, B.size())).mean(
-            0), None, None, None
+            0), None, None, None, None, None
 
 
 class TruncatedMSE(ch.autograd.Function):

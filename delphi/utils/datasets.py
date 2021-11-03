@@ -323,16 +323,16 @@ class CensoredMultivariateNormalDataset(ch.utils.data.Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedNormal(ch.utils.data.Dataset):
+class TruncatedNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         self.S = S
         # samples 
         self._loc = ch.mean(S, dim=0)
-        self._var = ch.var(S, dim=0)
+        self._covariance_matrix = ch.var(S, dim=0)[None,...]
         # compute gradients
         pdf = ch.exp(Normal(ch.zeros(1), ch.eye(1).flatten()).log_prob(self.S))
-        self.loc_grad = pdf*(self._loc - self.S)
-        self.var_grad = .5*pdf*(ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._var - self._loc.unsqueeze(0).matmul(self._loc.unsqueeze(1))).flatten(1)
+        self.loc_grad = pdf * (self._loc - self.S)
+        self.cov_grad = .5 * pdf * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc.unsqueeze(0).matmul(self._loc.unsqueeze(1))).flatten(1)
         
     def __len__(self): 
         return self.S.size(0)
@@ -341,18 +341,18 @@ class TruncatedNormal(ch.utils.data.Dataset):
         """
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
-        return self.S[idx], self.loc_grad[idx], self.var_grad[idx]
+        return self.S[idx], self.loc_grad[idx], self.cov_grad[idx]
     
     @property
     def loc(self): 
         return self._loc.clone()
     
     @property
-    def var(self): 
-        return self._var.clone()
+    def covariance_matrix(self): 
+        return self._covariance_matrix.clone()
 
 
-class TruncatedMultivariateNormal(ch.utils.data.Dataset):
+class TruncatedMultivariateNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # samples 
         self.S = S
@@ -385,7 +385,5 @@ class TruncatedMultivariateNormal(ch.utils.data.Dataset):
 DATASETS = {
     'imagenet': ImageNet, 
     'cifar': CIFAR,
-    'truncated_normal': TruncatedNormal, 
-    'truncated_multivariate_normal': TruncatedMultivariateNormal, 
     'tensor': TensorDataset, 
 }

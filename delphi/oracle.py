@@ -202,21 +202,6 @@ class UnknownGaussian(oracle):
     def __str__(self): 
         return 'unknown gaussian'
 
-
-class DNNLower(oracle): 
-    """
-    Lower bound truncation on the DNN logits.
-    """
-    def __init__(self, lower): 
-        self.lower = lower
-        
-    def __call__(self, x): 
-        return (x > self.lower).float()
-
-    def __str__(self): 
-        return 'dnn lower'
-        
-
 class Identity(oracle): 
     """
     Identity membership oracle for DNNs. All logits are accepted within the truncation set.
@@ -242,7 +227,8 @@ class LogitBall:
 
     def __str__(self): 
         return 'logit ball'
-    
+   
+
 class LogitBallComplement: 
     
     """
