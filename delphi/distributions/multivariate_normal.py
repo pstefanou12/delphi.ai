@@ -43,7 +43,6 @@ class CensoredMultivariateNormal(CensoredNormal):
         """
         """
         super().__init__(phi, alpha, steps, clamp, n, val, tol, workers, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps, **kwargs)
-        self.emp_covariance_matrix = None
 
     def fit(self, S: Tensor):
         """
