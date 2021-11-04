@@ -208,8 +208,7 @@ class TruncatedCE(ch.autograd.Function):
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
         noised = (stacked) + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        # filtered = ctx.phi(noised)[..., None].to(config.args.device)
-        filtered = ctx.phi((stacked / 1.65))[..., None].to(config.args.device)
+        filtered = ctx.phi(stacked)[..., None].to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None]

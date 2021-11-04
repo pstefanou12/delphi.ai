@@ -134,6 +134,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         self.emp_log_reg = LogisticRegression(penalty='none', fit_intercept=self.fit_intercept, multi_class=self.multi_class)
         self.emp_log_reg.fit(X_train, y_train.flatten())
         self.emp_weight = Tensor(self.emp_log_reg.coef_)
+        print("emp weight: {}".format(self.emp_weight))
         self.emp_bias = Tensor(self.emp_log_reg.intercept_)
 
         # projection set radius
@@ -157,11 +158,20 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         self.best_grad_norm = None
         self.best_state_dict = None
         self.best_opt = None
+       
+        if multi_class == 'multinomial': 
+            self.model = Linear(in_features=self.X_train.size(1), out_features=len(y_train.unique()), bias=True)
+        else: 
+            self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=True)
         
-        self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=True)
+        """
+        SkLearn sets up multinomial classification differenlty. So when doing 
+        multinomial classification, we initialize with random estimates.
+        """
         # assign empirical estimates
-        self.model.weight.data = self.emp_weight
-        self.model.bias.data = self.emp_bias
+        if self.multi_class == 'ovr':
+            self.model.weight.data = self.emp_weight
+            self.model.bias.data = self.emp_bias
         update_params = None
 
     def check_grad(self): 
