@@ -91,12 +91,6 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
         self.params = [self.model.loc, self.model.covariance_matrix]
         '''
 
-    def val_step(self, i, batch):
-        '''
-        Valdation step for defined model. 
-        '''
-        pass 
-
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
         Iteration hook for defined model. Method is called after each 

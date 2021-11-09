@@ -3,11 +3,14 @@ Truncated Linear Regression.
 """
 
 import torch as ch
+import torch.linalg as LA
 from torch import Tensor
 import torch.nn as nn
 from torch.nn import Linear
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.linear_model import LinearRegression
+import math
+import cox
 from cox.utils import Parameters
 from cox.store import Store
 import config
@@ -24,7 +27,7 @@ from ..utils import constants as consts
 from ..utils.helpers import Bounds, LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete
 
 
-class TruncatedRegression(stats):
+class TruncatedLinearRegression(stats):
     '''
     Truncated linear regression class. Supports truncated linear regression
     with known noise, unknown noise, and confidence intervals. Module uses 
@@ -37,8 +40,10 @@ class TruncatedRegression(stats):
             self,
             phi: oracle,
             alpha: float,
+            noise_var: float=None,
+            fit_intercept: bool=True,
+            normalize: bool=True,
             steps: int=1000,
-            unknown: bool=True,
             clamp: bool=True,
             n: int=10, 
             val: int=50,
@@ -51,44 +56,73 @@ class TruncatedRegression(stats):
             var_lr: float=1e-1, 
             step_lr: int=100, 
             custom_lr_multiplier: str=None,
+            lr_interpolation: str=None,
             step_lr_gamma: float=.9,
-            eps: float=1e-5, 
+            momentum: float=0.0, 
+            weight_decay: float=0.0,
+            eps: float=1e-5,
+            store: cox.store.Store=None, 
             **kwargs):
         '''
         Args: 
-            phi (delphi.oracle.oracle) : `
+            phi (delphi.oracle.oracle) : oracle object for truncated regression model 
+            alpha (float) : survival probability for truncated regression model
+            unknown (bool) : boolean indicating whether the noise variance is known or not - specifying algorithm to use 
+            normalize (bool) : normalize the input features before running procedure
+            fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
+            steps (int) : number of gradient steps to take
+            clamp (bool) : boolean indicating whether to clamp the projection set 
+            n (int) : number of gradient steps to take before checking gradient 
+            val (int) : number of samples to use for validation set 
+            tol (float) : gradient tolerance threshold 
+            workers (int) : number of workers to spawn 
+            r (float) : size for projection set radius 
+            num_samples (int) : number of samples to sample in gradient 
+            bs (int) : batch size
+            lr (float) : initial learning rate for regression parameters 
+            var_lr (float) : initial learning rate to use for variance parameter in the settign where the variance is unknown 
+            step_lr (int) : number of gradient steps to take before decaying learning rate for step learning rate 
+            custom_lr_multiplier (str) : 'cosine' (cosine annealing), 'adam' (adam optimizer) - different learning rate schedulers available
+            lr_interpolation (str) : 'linear' linear interpolation
+            step_lr_gamma (float) : amount to decay learning rate when running step learning rate
+            momentum (float) : momentum for SGD optimizer 
+            weight_decay (float) : weight decay for SGD optimizer 
+            eps (float) :  epsilon value for gradient to prevent zero in denominator
+            store (cox.store.Store) : cox store object for logging 
+            
         '''
-        super(TruncatedRegression).__init__()
+        super(TruncatedLinearRegression).__init__()
         # instance variables
         self.phi = phi 
-        self.alpha = alpha 
-        self.unknown = unknown 
         self.model = None
-        self.clamp = clamp
-        self.iter_hook = None
-        self.n = n 
-        self.val = val
-        self.tol = tol
-        self.workers = workers
-        self.r = r 
-        self.num_samples = num_samples
-        self.bs = bs
-        self.lr = lr 
-        self.ds = None
+        self.store = store 
 
-        config.args = Parameters({ 
+        config.args = Parameters({
+            'alpha': alpha,
+            'bs': bs, 
+            'workers': workers,
             'steps': steps,
-            'momentum': 0.0, 
-            'weight_decay': 0.0,   
+            'momentum': momentum, 
+            'weight_decay': weight_decay,   
             'num_samples': num_samples,
             'lr': lr,  
             'var_lr': var_lr,
             'eps': eps,
+            'tol': tol,
+            'n': n,
+            'val': val,
+            'clamp': clamp,
+            'fit_intercept': fit_intercept,
+            'r': r,
+            'noise_var': noise_var,
+            'normalize': normalize,
         })
 
         # set attribute for learning rate scheduler
         if custom_lr_multiplier: 
             config.args.__setattr__('custom_lr_multiplier', custom_lr_multiplier)
+            if lr_interpolation: 
+                config.args.__setattr__('lr_interpolation', lr_interpolation)
         else: 
             config.args.__setattr__('step_lr', step_lr)
             config.args.__setattr__('step_lr_gamma', step_lr_gamma)
@@ -96,157 +130,181 @@ class TruncatedRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
-        # separate into training and validation set
-        rand_indices = ch.randperm(X.size(0))
-        train_indices, val_indices = rand_indices[self.val:], rand_indices[:self.val]
-        self.X_train, self.y_train = X[train_indices], y[train_indices]
-        self.X_val, self.y_val = X[val_indices], y[val_indices]
-
-        self.ds = TensorDataset(self.X_train, self.y_train)
-        loader = DataLoader(self.ds, batch_size=self.bs, num_workers=self.workers)
-        
-        self.trunc_reg = TruncatedRegressionModel(config.args, self.X_train, self.y_train, self.X_val, self.y_val, self.phi, self.tol, self.r, self.alpha, self.clamp, self.unknown)
-
-        trainer = Trainer(self.trunc_reg)
+        self.trunc_reg = TruncatedLinearRegressionModel(config.args, X, y, self.phi, self.store)
 
         # run PGD for parameter estimation
-        trainer.train_model((loader, None))
+        trainer = Trainer(self.trunc_reg)
+        trainer.train_model((self.trunc_reg.train_loader_, None))
+
+        # renormalize weights and biases
+        with ch.no_grad():
+            if config.args.normalize:  self.trunc_reg.model.weight /= self.trunc_reg.beta # unnormalize coefficients
+            # assign results from procedure to instance variables
+            if config.args.noise_var is None: 
+                self.variance = self.trunc_reg.model.lambda_.inverse().clone()
+                self.coef = self.trunc_reg.model.weight.clone() * self.variance
+                self.intercept = self.trunc_reg.model.bias.clone() * self.variance
+            else:
+                self.coef = self.trunc_reg.model.weight.clone()
+                self.intercept = self.trunc_reg.model.bias.clone()
 
     def __call__(self, x: Tensor): 
         """
+        Make predictions with regression estimates.
         """
         return self.trunc_reg.model(x)
 
     @property
-    def weight(self): 
+    def coef_(self): 
         """
         Regression weight.
         """
-        if self.unknown: 
-            return self.trunc_reg.model.weight.detach().clone().T * self.trunc_reg.model.lambda_.detach().inverse().clone()
-        return self.trunc_reg.model.weight.detach().clone().T
+        return self.coef
 
     @property
-    def intercept(self): 
+    def intercept_(self): 
         """
         Regression intercept.
         """
-        if self.unknown: 
-            return self.trunc_reg.model.bias.detach().clone().T * self.trunc_reg.model.lambda_.detach().inverse().clone()   
-        return self.trunc_reg.model.bias.detach().clone()
+        return self.intercept
 
     @property
-    def variance(self): 
+    def variance_(self): 
         """
         Noise variance prediction for linear regression with
         unknown noise variance algorithm.
         """
-        if self.unknown: 
-            return self.trunc_reg.model.lambda_.detach().inverse().clone()
+        if config.args.noise_var is None: 
+            return self.variance
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
 
+    @property 
+    def beta_(self): 
+        """
+        Beta normalizing constant calculated on the training set.  
+        """
+        return self.trunc_reg.beta
 
-class TruncatedRegressionModel(delphi.delphi):
+    @property
+    def grad_(self): 
+        """
+        Gradient of the negative log likelihood on validation set 
+        for model's current estimates.
+        """
+        return self.trunc_reg.best_grad_norm.clone()
+
+
+class TruncatedLinearRegressionModel(delphi.delphi):
     '''
     Parent/abstract class for models to be passed into trainer.  
     '''
-    def __init__(self, args,  X_train, y_train, X_val, y_val, phi, tol, r, alpha, clamp, unknown, n=100, store=None, table=None, schema=None): 
+    def __init__(self, args,  X, y, phi, store): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, store=store, table=table, schema=schema)
-        self.unknown = unknown
-        # use OLS as empirical estimate to define projection set
-        self.r = r
-        self.alpha = alpha
-        self.unknown = unknown
+        super().__init__(args, store=store)
+        # separate into training and validation set
+        rand_indices = ch.randperm(X.size(0))
+        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
+        self.X_train, self.y_train = X[train_indices], y[train_indices]
+        self.X_val, self.y_val = X[val_indices], y[val_indices]
+
+        if self.args.normalize: 
+            # normalize x features so that ||x_{i}||_{2}^{2} <= 1
+            l_inf = LA.norm(self.X_train, dim=-1, ord=float('inf')).max() # find max l_inf
+            # calculate normalizing constant
+            self.beta = l_inf * math.sqrt(self.X_train.size(1))
+
+            self.X_val /= self.beta
+            self.X_train /= self.beta
+        self.ds = TensorDataset(self.X_train, self.y_train)
+        self.train_loader = DataLoader(self.ds, batch_size=self.args.bs, num_workers=self.args.workers)
         self.phi = phi
 
-        # initialize projection set
-        self.clamp = clamp
-        self.emp_model = LinearRegression().fit(X_train, y_train)
-        self.emp_weight = Tensor(self.emp_model.coef_) 
-        self.emp_bias = Tensor(self.emp_model.intercept_)
-        self.emp_var = ch.var(Tensor(self.emp_model.predict(X_train)) - y_train, dim=0)[..., None]
-        self.radius = self.r * (12.0 + 4.0 * ch.log(2.0 / self.alpha)) if self.unknown else self.r * (4.0 * ch.log(2.0 / self.alpha) + 7.0)
+        # use OLS as empirical estimate to define projection set
+        self.emp_model = LinearRegression(fit_intercept=self.args.fit_intercept).fit(self.X_train, self.y_train)
+        self.emp_weight = Tensor(self.emp_model.coef_)
+        if self.args.fit_intercept:
+            self.emp_bias = Tensor(self.emp_model.intercept_)
+        self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X_train)) - self.y_train, dim=0)[..., None]
+        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
 
-        if self.clamp:
+        if self.args.clamp:
             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
                                         self.emp_weight.flatten() + self.radius)
             # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.r), float(self.emp_var.flatten() / self.alpha.pow(2))) if self.unknown else None
-            self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
+            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / self.args.alpha.pow(2))) if self.args.noise_var is None else None
+            if self.args.fit_intercept:
+                self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
                                       float(self.emp_bias.flatten() + self.radius))
         else:
             pass
 
-        # validation set
-        # use steps counter to keep track of steps taken
-        self.n, self.steps = n, 0
-        self.X_val, self.y_val = X_val, y_val
-        self.X_train, self.y_train = X_train, y_train
-        self.tol = tol
         # track best estimates based off of gradient norm
         self.best_grad_norm = None
         self.best_state_dict = None
         self.best_opt = None
+        self.steps = 0 # counter 
         
-        if self.unknown: # unknown variance
-            self.model = LinearUnknownVariance(in_features=self.X_train.size(1), out_features=1, bias=True)
+        if self.args.noise_var is None: # unknown variance
+            self.model = LinearUnknownVariance(in_features=self.X_train.size(1), out_features=1, bias=self.args.fit_intercept)
             # assign empirical estimates
             self.model.lambda_.data = self.emp_var.inverse()
-            self.model.weight.data = self.emp_weight * self.model.lambda_ 
-            self.model.bias.data = (self.emp_bias * self.model.lambda_).flatten()
-            update_params = [{'params': [self.model.weight, self.model.bias]},
-                {'params': self.model.lambda_, 'lr': args.var_lr}]
+            self.model.weight.data = self.emp_weight * self.model.lambda_
+            if self.args.fit_intercept:
+                self.model.bias.data = (self.emp_bias * self.model.lambda_).flatten()
+            self.params = [{'params': [self.model.weight, self.model.bias]},
+                {'params': self.model.lambda_, 'lr': self.args.var_lr}]
         else:  # unknown variance
-            self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=True)
+            self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=self.args.fit_intercept)
             # assign empirical estimates
             self.model.weight.data = self.emp_weight
-            self.model.bias.data = self.emp_bias
-            update_params = None
+            if self.args.fit_intercept:
+                self.model.bias.data = self.emp_bias
+            self.params = None
 
     def check_grad(self): 
         """
         Calculates the check_grad of the current regression estimates of the validation set. It 
         then updates the best estimates accordingly based off of the check_grad's norm.
+        Args: 
+            proc (bool) : boolean indicating whether, the function is being called within 
+            a stochastic process, or someone is accessing the parent class's property
         """
         pred = self.model(self.X_val)
-        if self.unknown:
+        if self.args.noise_var is None:
             loss = TruncatedUnknownVarianceMSE.apply(pred, self.y_val, self.model.lambda_, self.phi)
             grad, lambda_grad = ch.autograd.grad(loss, [pred, self.model.lambda_])
-            grad = ch.cat([(grad.sum(0) / self.model.lambda_).flatten(), lambda_grad.flatten()])
+            grad = ch.cat([(grad / self.model.lambda_).sum(0).flatten(), lambda_grad.flatten()])
         else: 
             loss = TruncatedMSE.apply(pred, self.y_val, self.phi)
             grad, = ch.autograd.grad(loss, [pred])
             grad = grad.sum(0)
 
         grad_norm = grad.norm(dim=-1)
-        # check that gradient magnitude is less than tolerance
-        if self.steps != 0 and grad_norm < self.tol: 
-            print("Final Gradient Estimate: {}".format(grad_norm))
-            raise ProcedureComplete()
-        
-        print("{} Steps | Gradient Estimate: {}".format(self.steps, grad_norm))
         # if smaller gradient norm, update best
         if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
             self.best_grad_norm = grad_norm
             # keep track of state dict
-            self.best_state_dict, self.best_opt = copy.deepcopy(self.model.state_dict()), copy.deepcopy(self.optimizer.state_dict())
-        elif 1e-1 <= grad_norm - self.best_grad_norm: 
-            # load in the best model state and optimizer dictionaries
+            self.best_state_dict = copy.deepcopy(self.model.state_dict())
+            self.best_opt, self.best_schedule = copy.deepcopy(self.optimizer.state_dict()), copy.deepcopy(self.schedule.state_dict())
+        '''
+        elif ch.abs(grad_norm - self.best_grad_norm) <= 1e-1:
+            # load in the best model,  optimizer, and schedule state dictionaries
             self.model.load_state_dict(self.best_state_dict)
             self.optimizer.load_state_dict(self.best_opt)
-
-    def pretrain_hook(self):
+            self.schedule.load_state_dict(self.best_schedule)
+            grad_norm = self.best_grad_norm
         '''
-        Assign OLS estimates as original empirical estimates 
-        for PGD procedure.
-        '''
-        pass 
-
+        # check that gradient magnitude is less than tolerance or for procedure completion
+        if (self.steps != 0 and self.best_grad_norm < self.args.tol): 
+            print("Final Gradient Estimate: {}".format(self.best_grad_norm))
+            raise ProcedureComplete()
+        
+        print("{} Steps | Gradient Estimate: {}".format(self.steps, grad_norm))
+        
     def train_step(self, i, batch):
         '''
         Training step for defined model.
@@ -258,21 +316,16 @@ class TruncatedRegressionModel(delphi.delphi):
         inp, targ = batch
 
         pred = self.model(inp)
-        if self.unknown: 
+        if self.args.noise_var is None: 
             loss = TruncatedUnknownVarianceMSE.apply(pred, targ, self.model.lambda_, self.phi)
         else: 
             loss = TruncatedMSE.apply(pred, targ, self.phi)
 
         loss.backward()
         self.optimizer.step()
+        self.schedule.step()
 
         return loss, None, None
-
-    def val_step(self, i, batch):
-        '''
-        Valdation step for defined model. 
-        '''
-        pass 
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -287,40 +340,34 @@ class TruncatedRegressionModel(delphi.delphi):
         # increase number of steps taken
         self.steps += 1
         # project model parameters back to domain 
-        if self.clamp: 
-            if self.unknown: 
+        if self.args.clamp: 
+            if self.args.noise_var is None: 
                 var = self.model.lambda_.inverse()
                 weight = self.model.weight * var
-
                 self.model.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
                 # project weights
                 self.model.weight.data = ch.cat([ch.clamp(weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i])
                     for i in range(weight.size(1))])[None,...] * self.model.lambda_
-                # project bias
-                bias = self.model.bias * var
-                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.model.lambda_).reshape(self.model.bias.size())
+                if self.args.fit_intercept: 
+                    # project bias
+                    bias = self.model.bias * var
+                    self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.model.lambda_).reshape(self.model.bias.size())
             else: 
                 self.model.weight.data = ch.cat([ch.clamp(self.model.weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) 
                     for i in range(self.model.weight.size(1))])[None,...]
-                # project bias
-                self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(self.model.bias.size())
+                if self.args.fit_intercept:
+                    # project bias
+                    self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(self.model.bias.size())
         else: 
             pass
 
         # check for convergence every n steps
-        if self.steps % self.n == 0: 
+        if self.steps % self.args.n == 0: 
             grad = self.check_grad()
 
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    @property
+    def train_loader_(self): 
         '''
-        Epoch hook for defined model. Method is called after each 
-        complete iteration through dataset.
+        Get the train loader for model.
         '''
-        pass 
-
-    def post_train_hook(self):
-        '''
-        Post training hook, called after sgd procedures completes. 
-        '''
-        pass
-    
+        return self.train_loader

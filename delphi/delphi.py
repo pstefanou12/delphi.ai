@@ -11,9 +11,11 @@ from abc import ABC, abstractmethod
 
 
 # CONSTANTS 
+ADAM = 'adam'
 CYCLIC = 'cyclic'
 COSINE = 'cosine'
 LINEAR = 'linear'
+
 
 class delphi:
     '''
@@ -35,6 +37,7 @@ class delphi:
         # algorithm optimizer and scheduler
         self.optimizer, self.scheduler = None, None
         self.checkpoint = None
+        self.M = self.args.steps if self.args.steps else self.args.epochs
 
     def make_optimizer_and_schedule(self):
         """
@@ -46,9 +49,8 @@ class delphi:
         param_list = self.model.parameters() if self.params is None else self.params
 
         # setup optimizer
-        if self.args.adam:  # adam
-            self.optimizer = Adam(param_list, betas=self.args.betas, lr=self.args.lr, weight_decay=self.args.weight_decay, 
-            amsgrad=self.args.amsgrad)
+        if self.args.custom_lr_multiplier == ADAM:  # adam
+            self.optimizer = Adam(param_list, lr=self.args.lr, weight_decay=self.args.weight_decay)
         else: 
             # SGD optimizer
             self.optimizer = SGD(param_list, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
@@ -91,14 +93,12 @@ class delphi:
                 for i in range(steps_to_take):
                     self.schedule.step()
 
-    @abstractmethod
     def pretrain_hook(self):
         '''
         Hook called before training procedure begins.
         '''
         pass 
 
-    @abstractmethod
     def train_step(self, i, batch):
         '''
         Training step for defined model.
@@ -108,14 +108,12 @@ class delphi:
         '''
         pass 
 
-    @abstractmethod
     def val_step(self, i, batch):
         '''
         Valdation step for defined model. 
         '''
         pass 
 
-    @abstractmethod
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
         Iteration hook for defined model. Method is called after each 
@@ -128,7 +126,6 @@ class delphi:
         '''
         pass 
 
-    @abstractmethod
     def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
         Epoch hook for defined model. Method is called after each 
@@ -136,7 +133,6 @@ class delphi:
         '''
         pass 
 
-    @abstractmethod 
     def post_train_hook(self):
         '''
         Post training hook, called after sgd procedures completes. 

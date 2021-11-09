@@ -7,6 +7,7 @@ from torch import sigmoid as sig
 from torch.distributions import Uniform, Gumbel, MultivariateNormal
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
+import math
 import config
 
 from .utils.helpers import logistic, censored_sample_nll
@@ -76,7 +77,7 @@ class TruncatedMSE(ch.autograd.Function):
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
-        noised = stacked + ch.randn(stacked.size()).to(config.args.device)
+        noised = stacked + math.sqrt(config.args.noise_var) * ch.randn(stacked.size()).to(config.args.device)
         # filter out copies where pred is in bounds
         filtered = ctx.phi(noised)
         # average across truncated indices
@@ -106,13 +107,15 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # filter out copies that fall outside of truncation set
         filtered = ctx.phi(noised)
         z = noised * filtered
-        lambda_grad = .5 * (targ.pow(2) - (z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)))
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        out_2 = z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+
+        lambda_grad = .5 * (targ.pow(2) - out_2)
         return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None
 
 

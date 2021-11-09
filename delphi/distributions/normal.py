@@ -173,13 +173,6 @@ class CensoredNormalModel(delphi.delphi):
             self.model.covariance_matrix = self.best_covariance_matrix
             self.optimizer.load_state_dict(self.best_opt)
 
-    def pretrain_hook(self):
-        '''
-        Assign OLS estimates as original empirical estimates 
-        for PGD procedure.
-        '''
-        pass 
-
     def train_step(self, i, batch):
         '''
         Training step for defined model.
@@ -191,13 +184,9 @@ class CensoredNormalModel(delphi.delphi):
         loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch[0], self.phi)
         loss.backward()
         self.optimizer.step()
-        return loss, None, None
+        self.schedule.step()
 
-    def val_step(self, i, batch):
-        '''
-        Valdation step for defined model. 
-        '''
-        pass 
+        return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -221,19 +210,5 @@ class CensoredNormalModel(delphi.delphi):
         # check for convergence every n steps
         if self.steps % self.n == 0: 
             grad = self.check_grad()
-
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        '''
-        Epoch hook for defined model. Method is called after each 
-        complete iteration through dataset.
-        '''
-        pass 
-
-    def post_train_hook(self):
-        '''
-        Post training hook, called after sgd procedures completes. 
-        '''
-        pass
-    
 
 
