@@ -269,10 +269,10 @@ class TruncatedRegressionIterationHook:
         grad_norm = grad.norm(dim=-1)
         # check that gradient magnitude is less than tolerance
         if self.steps != 0 and grad_norm < self.tol: 
-            print("Final Score: {}".format(grad_norm))
+            print("Final Gradient: {}".format(grad_norm))
             raise ProcedureComplete()
         
-        print("Iteration {} | Score: {}".format(int(self.steps / self.n), grad_norm))
+        print("Iteration {} | Gradient: {}".format(int(self.steps / self.n), grad_norm))
         # if smaller gradient norm, update best
         if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
             self.best_grad_norm = grad_norm
