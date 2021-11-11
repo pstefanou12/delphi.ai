@@ -67,13 +67,24 @@ class TruncatedMSE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, phi):
-        ctx.save_for_backward(pred, targ)
+        # make args.num_samples copies of pred, N x B x 1
+        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        # add random noise to each copy
+        noised = stacked + math.sqrt(config.args.noise_var) * ch.randn(stacked.size()).to(config.args.device)
+        # filter out copies where pred is in bounds
+        filtered = phi(noised)
+        # average across truncated indices
+        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        z_2 =  (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+
+        ctx.save_for_backward(pred, targ, z)
         ctx.phi = phi
-        return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
+        return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        pred, targ = ctx.saved_tensors
+        pred, targ, z = ctx.saved_tensors
+        '''
         # make args.num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add random noise to each copy
@@ -82,7 +93,8 @@ class TruncatedMSE(ch.autograd.Function):
         filtered = ctx.phi(noised)
         # average across truncated indices
         out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        return (out - targ) / pred.size(0), targ / pred.size(0), None
+        '''
+        return (z - targ) / pred.size(0), targ / pred.size(0), None
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -92,13 +104,30 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, lambda_, phi):
-        ctx.save_for_backward(pred, targ, lambda_)
+        # calculate std deviation of noise distribution estimate
+        sigma = ch.sqrt(lambda_.inverse())
+        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        # add noise to regression predictions
+        noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
+        # filter out copies that fall outside of truncation set
+        filtered = phi(noised)
+        out = noised * filtered
+        z = out.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+
+        '''
+        out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        '''
+        z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+
+        ctx.save_for_backward(pred, targ, lambda_, z, z_2)
         ctx.phi = phi
-        return 0.5 * (pred.float() - targ.float()).pow(2).mean(0)
+
+        return (-0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred + 0.5 * lambda_ * z_2 - lambda_ * z * pred).mean(0) 
 
     @staticmethod
     def backward(ctx, grad_output):
-        pred, targ, lambda_ = ctx.saved_tensors
+        pred, targ, lambda_, z, z_2 = ctx.saved_tensors
+        '''
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
@@ -107,16 +136,18 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # filter out copies that fall outside of truncation set
         filtered = ctx.phi(noised)
         z = noised * filtered
+        '''
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
+        '''
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
         out_2 = z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-
-        lambda_grad = .5 * (targ.pow(2) - out_2)
-        return lambda_ * (out - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None
+        '''
+        lambda_grad = .5 * (targ.pow(2) - z_2)
+        return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None
 
 
 class LogisticBCE(ch.autograd.Function):

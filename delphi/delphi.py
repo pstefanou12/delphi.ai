@@ -35,7 +35,7 @@ class delphi:
         self.writer = self.store.tensorboard if self.store else None
         self.params = None
         # algorithm optimizer and scheduler
-        self.optimizer, self.scheduler = None, None
+        self.optimizer, self.schedule = None, None
         self.checkpoint = None
         self.M = self.args.steps if self.args.steps else self.args.epochs
 
@@ -55,30 +55,30 @@ class delphi:
             # SGD optimizer
             self.optimizer = SGD(param_list, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
 
-        # setup learning rate scheduler
-        if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
-            lr_func = lambda t: np.interp([t], [0, self.M*4//15, self.M], [0, 1, 0])[0]
-            self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
-        # cosine annealing scheduler
-        elif self.args.custom_lr_multiplier == COSINE and self.M is not None:
-            schedule = lr_scheduler.CosineAnnealingLR(self.optimizer, self.M)
-        elif self.args.custom_lr_multiplier:
-            cs = self.args.custom_lr_multiplier
-            periods = eval(cs) if type(cs) is str else cs
-            # constant linear interpolation
-            if self.args.lr_interpolation == LINEAR:
-                lr_func = lambda t: np.interp([t], *zip(*periods))[0]
-            # custom lr interpolation
-            else:
-                def lr_func(ep):
-                    for (milestone, lr) in reversed(periods):
-                        if ep >= milestone: return lr
-                    return 1.0
-            self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
-        # step learning rate
-        elif self.args.step_lr:
-            self.schedule = lr_scheduler.StepLR(self.optimizer, step_size=self.args.step_lr, 
-            gamma=self.args.step_lr_gamma, verbose=self.args.verbose)
+            # setup learning rate scheduler
+            if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
+                lr_func = lambda t: np.interp([t], [0, self.M*4//15, self.M], [0, 1, 0])[0]
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
+            # cosine annealing scheduler
+            elif self.args.custom_lr_multiplier == COSINE and self.M is not None:
+                schedule = lr_scheduler.CosineAnnealingLR(self.optimizer, self.M)
+            elif self.args.custom_lr_multiplier:
+                cs = self.args.custom_lr_multiplier
+                periods = eval(cs) if type(cs) is str else cs
+                # constant linear interpolation
+                if self.args.lr_interpolation == LINEAR:
+                    lr_func = lambda t: np.interp([t], *zip(*periods))[0]
+                # custom lr interpolation
+                else:
+                    def lr_func(ep):
+                        for (milestone, lr) in reversed(periods):
+                            if ep >= milestone: return lr
+                        return 1.0
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
+            # step learning rate
+            elif self.args.step_lr:
+                self.schedule = lr_scheduler.StepLR(self.optimizer, step_size=self.args.step_lr, 
+                gamma=self.args.step_lr_gamma, verbose=self.args.verbose)
             
         # if checkpoint load  optimizer and scheduler
         if self.checkpoint:
@@ -138,3 +138,4 @@ class delphi:
         Post training hook, called after sgd procedures completes. 
         '''
         pass
+

@@ -43,7 +43,7 @@ class TruncatedLinearRegression(stats):
             noise_var: float=None,
             fit_intercept: bool=True,
             normalize: bool=True,
-            steps: int=1000,
+            steps: int=None,
             clamp: bool=True,
             n: int=10, 
             val: int=50,
@@ -101,7 +101,7 @@ class TruncatedLinearRegression(stats):
             'alpha': alpha,
             'bs': bs, 
             'workers': workers,
-            'steps': steps,
+            'steps': steps if steps else None,
             'momentum': momentum, 
             'weight_decay': weight_decay,   
             'num_samples': num_samples,
@@ -130,14 +130,18 @@ class TruncatedLinearRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
+        # if steps not provided, iterate over dataset once
+        if not config.args.steps:
+            config.args.steps = len(X) - config.args.val
+
         self.trunc_reg = TruncatedLinearRegressionModel(config.args, X, y, self.phi, self.store)
 
         # run PGD for parameter estimation
         trainer = Trainer(self.trunc_reg)
         trainer.train_model((self.trunc_reg.train_loader_, None))
-
-        # renormalize weights and biases
+        
         with ch.no_grad():
+            # renormalize weights and biases
             if config.args.normalize:  self.trunc_reg.model.weight /= self.trunc_reg.beta # unnormalize coefficients
             # assign results from procedure to instance variables
             if config.args.noise_var is None: 
@@ -152,7 +156,8 @@ class TruncatedLinearRegression(stats):
         """
         Make predictions with regression estimates.
         """
-        return self.trunc_reg.model(x)
+        with ch.no_grad():
+            return self.trunc_reg.model(x)
 
     @property
     def coef_(self): 
@@ -187,7 +192,7 @@ class TruncatedLinearRegression(stats):
         return self.trunc_reg.beta
 
     @property
-    def grad_(self): 
+    def nll_(self): 
         """
         Gradient of the negative log likelihood on validation set 
         for model's current estimates.
@@ -243,7 +248,7 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             pass
 
         # track best estimates based off of gradient norm
-        self.best_grad_norm = None
+        self.best_nll = None
         self.best_state_dict = None
         self.best_opt = None
         self.steps = 0 # counter 
@@ -265,7 +270,7 @@ class TruncatedLinearRegressionModel(delphi.delphi):
                 self.model.bias.data = self.emp_bias
             self.params = None
 
-    def check_grad(self): 
+    def check_nll(self): 
         """
         Calculates the check_grad of the current regression estimates of the validation set. It 
         then updates the best estimates accordingly based off of the check_grad's norm.
@@ -276,35 +281,35 @@ class TruncatedLinearRegressionModel(delphi.delphi):
         pred = self.model(self.X_val)
         if self.args.noise_var is None:
             loss = TruncatedUnknownVarianceMSE.apply(pred, self.y_val, self.model.lambda_, self.phi)
-            grad, lambda_grad = ch.autograd.grad(loss, [pred, self.model.lambda_])
-            grad = ch.cat([(grad / self.model.lambda_).sum(0).flatten(), lambda_grad.flatten()])
         else: 
             loss = TruncatedMSE.apply(pred, self.y_val, self.phi)
-            grad, = ch.autograd.grad(loss, [pred])
-            grad = grad.sum(0)
-
-        grad_norm = grad.norm(dim=-1)
+        
         # if smaller gradient norm, update best
-        if self.best_grad_norm is None or grad_norm < self.best_grad_norm: 
-            self.best_grad_norm = grad_norm
+        if self.best_nll is None or loss < self.best_nll: 
+            self.best_nll = loss
             # keep track of state dict
             self.best_state_dict = copy.deepcopy(self.model.state_dict())
-            self.best_opt, self.best_schedule = copy.deepcopy(self.optimizer.state_dict()), copy.deepcopy(self.schedule.state_dict())
+            self.best_opt = copy.deepcopy(self.optimizer.state_dict())
+
+            if self.schedule: 
+                self.best_schedule = copy.deepcopy(self.schedule.state_dict())
+
         '''
-        elif ch.abs(grad_norm - self.best_grad_norm) <= 1e-1:
+        elif loss > self.best_nll:
             # load in the best model,  optimizer, and schedule state dictionaries
-            self.model.load_state_dict(self.best_state_dict)
-            self.optimizer.load_state_dict(self.best_opt)
-            self.schedule.load_state_dict(self.best_schedule)
-            grad_norm = self.best_grad_norm
+            # self.model.load_state_dict(self.best_state_dict)
+            # self.optimizer.load_state_dict(self.best_opt)
+            # self.schedule.load_state_dict(self.best_schedule)
+            loss = self.best_nll
         '''
         # check that gradient magnitude is less than tolerance or for procedure completion
-        if (self.steps != 0 and self.best_grad_norm < self.args.tol): 
-            print("Final Gradient Estimate: {}".format(self.best_grad_norm))
+        '''
+        if (self.steps != 0 and self.best_nll < self.args.tol): 
+            print("Final Log Likelihood: {}".format(self.best_nll))
             raise ProcedureComplete()
-        
-        print("{} Steps | Gradient Estimate: {}".format(self.steps, grad_norm))
-        
+        ''' 
+        print("{} Steps | Log Likelihood: {}".format(self.steps, abs(float(loss))))
+
     def train_step(self, i, batch):
         '''
         Training step for defined model.
@@ -322,8 +327,11 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             loss = TruncatedMSE.apply(pred, targ, self.phi)
 
         loss.backward()
+
+        ch.nn.utils.clip_grad_norm_(self.model.parameters(), 3.0)
         self.optimizer.step()
-        self.schedule.step()
+        if self.schedule is not None:
+            self.schedule.step()
 
         return loss, None, None
 
@@ -363,7 +371,11 @@ class TruncatedLinearRegressionModel(delphi.delphi):
 
         # check for convergence every n steps
         if self.steps % self.args.n == 0: 
-            grad = self.check_grad()
+            self.check_nll()
+
+        # check for proceduree termination
+        if self.steps == config.args.steps: 
+            raise ProcedureComplete()
 
     @property
     def train_loader_(self): 

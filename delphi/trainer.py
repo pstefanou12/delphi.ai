@@ -108,7 +108,7 @@ class Trainer:
         self.model = model
         self.disable_no_grad = disable_no_grad
         # number of periods/epochs for learning rate schedulers
-        self.M = self.model.args.epochs if self.model.args.epochs else self.model.args.steps
+        self.M = self.model.args.epochs if self.model.args.epochs else None 
         # print log output or not
         self.verbose = verbose
 
@@ -153,8 +153,8 @@ class Trainer:
         # separate loaders
         train_loader, val_loader = loaders
 
-        if self.model.args.steps: 
-            self.M = int(self.M / len(train_loader))
+        if self.model.args.steps and self.M is None:
+            self.M = int(self.model.args.steps / len(train_loader))
 
         # PRETRAIN HOOK
         if hasattr(self.model, 'pretrain_hook'): self.model.pretrain_hook()
