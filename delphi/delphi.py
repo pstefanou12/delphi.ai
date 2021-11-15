@@ -21,7 +21,7 @@ class delphi:
     '''
     Parent/abstract class for models to be passed into trainer.
     '''
-    def __init__(self, args, store=None, table=None, schema=None): 
+    def __init__(self, args, custom_lr_multiplier: str, lr_interpolation:str, step_lr:int, step_lr_gamma: float, store=None, table=None, schema=None): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
@@ -38,6 +38,15 @@ class delphi:
         self.optimizer, self.schedule = None, None
         self.checkpoint = None
         self.M = self.args.steps if self.args.steps else self.args.epochs
+
+        # set attribute for learning rate scheduler
+        if custom_lr_multiplier: 
+            self.args.__setattr__('custom_lr_multiplier', custom_lr_multiplier)
+            if lr_interpolation: 
+                self.args.__setattr__('lr_interpolation', lr_interpolation)
+        else: 
+            self.args.__setattr__('step_lr', step_lr)
+            self.args.__setattr__('step_lr_gamma', step_lr_gamma)
 
     def make_optimizer_and_schedule(self):
         """
@@ -139,3 +148,9 @@ class delphi:
         '''
         pass
 
+    @property 
+    def val_loader(self): 
+        '''
+        Default validation loader property.
+        '''
+        return None

@@ -43,14 +43,12 @@ class TruncatedLinearRegression(stats):
             noise_var: float=None,
             fit_intercept: bool=True,
             normalize: bool=True,
-            steps: int=None,
+            iter_: int=1,
             clamp: bool=True,
-            n: int=10, 
             val: int=50,
             tol: float=1e-2,
-            workers: int=0,
             r: float=2.0,
-            num_samples: int=100,
+            num_samples: int=10,
             bs: int=10,
             lr: float=1e-1,
             var_lr: float=1e-1, 
@@ -100,8 +98,8 @@ class TruncatedLinearRegression(stats):
         config.args = Parameters({
             'alpha': alpha,
             'bs': bs, 
-            'workers': workers,
-            'steps': steps if steps else None,
+            'workers': 1,
+            'epochs': iter_,
             'momentum': momentum, 
             'weight_decay': weight_decay,   
             'num_samples': num_samples,
@@ -109,13 +107,13 @@ class TruncatedLinearRegression(stats):
             'var_lr': var_lr,
             'eps': eps,
             'tol': tol,
-            'n': n,
             'val': val,
             'clamp': clamp,
             'fit_intercept': fit_intercept,
             'r': r,
             'noise_var': noise_var,
             'normalize': normalize,
+            'verbose': False,
         })
 
         # set attribute for learning rate scheduler
@@ -130,10 +128,6 @@ class TruncatedLinearRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
-        # if steps not provided, iterate over dataset once
-        if not config.args.steps:
-            config.args.steps = len(X) - config.args.val
-
         self.trunc_reg = TruncatedLinearRegressionModel(config.args, X, y, self.phi, self.store)
 
         # run PGD for parameter estimation
@@ -283,7 +277,8 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             loss = TruncatedUnknownVarianceMSE.apply(pred, self.y_val, self.model.lambda_, self.phi)
         else: 
             loss = TruncatedMSE.apply(pred, self.y_val, self.phi)
-        
+        return loss
+        ''' 
         # if smaller gradient norm, update best
         if self.best_nll is None or loss < self.best_nll: 
             self.best_nll = loss
@@ -294,7 +289,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             if self.schedule: 
                 self.best_schedule = copy.deepcopy(self.schedule.state_dict())
 
-        '''
         elif loss > self.best_nll:
             # load in the best model,  optimizer, and schedule state dictionaries
             # self.model.load_state_dict(self.best_state_dict)
@@ -302,13 +296,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             # self.schedule.load_state_dict(self.best_schedule)
             loss = self.best_nll
         '''
-        # check that gradient magnitude is less than tolerance or for procedure completion
-        '''
-        if (self.steps != 0 and self.best_nll < self.args.tol): 
-            print("Final Log Likelihood: {}".format(self.best_nll))
-            raise ProcedureComplete()
-        ''' 
-        print("{} Steps | Log Likelihood: {}".format(self.steps, abs(float(loss))))
 
     def train_step(self, i, batch):
         '''
@@ -317,7 +304,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
-        self.optimizer.zero_grad()
         inp, targ = batch
 
         pred = self.model(inp)
@@ -325,14 +311,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             loss = TruncatedUnknownVarianceMSE.apply(pred, targ, self.model.lambda_, self.phi)
         else: 
             loss = TruncatedMSE.apply(pred, targ, self.phi)
-
-        loss.backward()
-
-        ch.nn.utils.clip_grad_norm_(self.model.parameters(), 3.0)
-        self.optimizer.step()
-        if self.schedule is not None:
-            self.schedule.step()
-
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -369,13 +347,11 @@ class TruncatedLinearRegressionModel(delphi.delphi):
         else: 
             pass
 
-        # check for convergence every n steps
-        if self.steps % self.args.n == 0: 
-            self.check_nll()
+    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
+        # check for convergence every at each epoch
+        loss = self.check_nll()
+        print("Iteration {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
 
-        # check for proceduree termination
-        if self.steps == config.args.steps: 
-            raise ProcedureComplete()
 
     @property
     def train_loader_(self): 

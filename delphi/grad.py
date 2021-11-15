@@ -18,14 +18,42 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     Computes the negative population log likelihood for censored multivariate normal distribution.
     """
     @staticmethod
-    def forward(ctx, loc, covariance_matrix, x, phi):
-        ctx.save_for_backward(loc, covariance_matrix, x)
-        ctx.phi = phi
-        return ch.zeros(1)
+    def forward(ctx, v, T, S, S_grad, phi):
+        # reparameterize distribution
+        sigma = T.inverse()
+        mu = sigma@v[...,None].flatten()
+        # sigma = T
+        # mu = v
+        # import pdb; pdb.set_trace()
+        # print("mu: {}".format(mu))
+        # print("cov: {}".format(sigma))
+            
+        # s = MultivariateNormal(mu, sigma).rsample(ch.Size([config.args.num_samples, S.size(0)]))
+        # reparameterize distribution
+        z = Tensor([])
+        M = MultivariateNormal(mu, sigma)
+        while z.size(0) < S.size(0):
+            s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
+            z = ch.cat([z, s[phi(s).flatten().nonzero().flatten()]])
+        z = z[:S.size(0)]
+       
+        '''
+        filtered = phi(y)
+
+        print(filtered.sum(0))
+'''
+        first_term = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...]
+
+        second_term = (-.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...]).mean(0)
+        
+        ctx.save_for_backward(S_grad, z)
+        return (first_term + second_term).mean(0)
+
 
     @staticmethod
     def backward(ctx, grad_output):
-        loc, covariance_matrix, x = ctx.saved_tensors
+        S_grad, z = ctx.saved_tensors
+        '''
         # reparameterize distribution
         T = covariance_matrix.inverse()
         v = T.matmul(loc.unsqueeze(1)).flatten()
@@ -35,9 +63,11 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         while y.size(0) < x.size(0):
             s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
             y = ch.cat([y, s[ctx.phi(s).nonzero(as_tuple=False).flatten()]])
+        '''
         # calculate gradient
-        grad = (-x + censored_sample_nll(y[:x.size(0)])).mean(0)
-        return grad[loc.size(0) ** 2:], grad[:loc.size(0) ** 2].reshape(covariance_matrix.size()), None, None
+        # import pdb; pdb.set_trace()
+        grad = (-S_grad + censored_sample_nll(z)).mean(0)
+        return grad[z.size(1) ** 2:], grad[:z.size(1) ** 2].reshape(z.size(1), z.size(1)), None, None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
@@ -78,7 +108,6 @@ class TruncatedMSE(ch.autograd.Function):
         z_2 =  (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
 
         ctx.save_for_backward(pred, targ, z)
-        ctx.phi = phi
         return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
 
     @staticmethod
@@ -120,7 +149,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
 
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        ctx.phi = phi
 
         return (-0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred + 0.5 * lambda_ * z_2 - lambda_ * z * pred).mean(0) 
 

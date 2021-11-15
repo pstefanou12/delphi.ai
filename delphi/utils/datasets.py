@@ -281,23 +281,24 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
-        self._covariance_matcovariance_matrix = ch.var(S, dim=0)[None,...]
+        self._covariance_matrix = ch.var(S, dim=0)[None,...]
+        self.S = S 
         # apply gradient
-        self.S = censored_sample_nll(S)
+        self.S_grad = censored_sample_nll(S)
 
     def __len__(self): 
         return self.S.size(0)
     
     def __getitem__(self, idx):
-        return [self.S[idx],]
+        return [self.S[idx], self.S_grad[idx],]
 
     @property
     def loc(self):
         return self._loc.clone()
 
     @property
-    def var(self):
-        return self._var.clone()
+    def covariance_matrix(self):
+        return self._covariance_matrix.clone()
     
     
 class CensoredMultivariateNormalDataset(ch.utils.data.Dataset):
