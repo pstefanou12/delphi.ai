@@ -323,8 +323,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        # increase number of steps taken
-        self.steps += 1
         # project model parameters back to domain 
         if self.args.clamp: 
             if self.args.noise_var is None: 

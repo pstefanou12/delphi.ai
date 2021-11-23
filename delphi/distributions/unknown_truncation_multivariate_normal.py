@@ -13,7 +13,7 @@ import config
 from .unknown_truncation_normal import TruncatedNormal, TruncatedNormalModel, Exp_h
 from ..trainer import Trainer
 from ..grad import TruncatedMultivariateNormalNLL
-from ..utils.datasets import TruncatedMultivariateNormalDataset
+from ..utils.datasets import TruncatedNormalDataset
 from ..utils.helpers import Bounds
 
 
@@ -25,59 +25,56 @@ class TruncatedMultivariateNormal(TruncatedNormal):
             self,
             alpha: float,
             d: int=100,
-            steps: int=1000,
+            iter_: int=1,
             clamp: bool=True,
-            n: int=10, 
             val: int=50,
             tol: float=1e-2,
-            workers: int=0,
             r: float=2.0,
-            num_samples: int=100,
-            bs: int=10,
+            bs: int=1,
             lr: float=1e-1,
             step_lr: int=100, 
             custom_lr_multiplier: str=None,
+            lr_interpolation: str=None,
             step_lr_gamma: float=.9,
+            momentum: float=0.0, 
             eps: float=1e-5, 
             **kwargs):
-        super().__init__(alpha, d, steps, clamp, n, val, tol, workers, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps)
+        super().__init__(alpha, d, iter_, clamp, val, tol, r, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps)
 
     def fit(self, S: Tensor):
-        # separate into training and validation set
-        rand_indices = ch.randperm(S.size(0))
-        train_indices, val_indices = rand_indices[self.val:], rand_indices[:self.val]
-        self.X_train = S[train_indices]
-        self.X_val = S[val_indices]
-
-        self.train_ds = TruncatedMultivariateNormalDataset(self.X_train)
-        self.val_ds = TruncatedMultivariateNormalDataset(self.X_val)
-        train_loader = DataLoader(self.train_ds, batch_size=self.bs, num_workers=self.workers)
-        val_loader = DataLoader(self.val_ds, batch_size=len(self.val_ds), num_workers=self.workers)
-
-        self.truncated_normal = TruncatedMultivariateNormalModel(config.args, self.d, self.train_ds, self.val_ds, self.tol, self.r, self.alpha, self.clamp, n=self.n)
+        self.truncated = TruncatedMultivariateNormalModel(config.args, S, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.truncated_normal)
-
+        self.trainer = Trainer(self.truncated)
         # run PGD for parameter estimation 
-        self.trainer.train_model((train_loader, None))
+        self.trainer.train_model()
+    
+    @property 
+    def covariance_matrix(self): 
+        """
+        Returns the standard deviation for the normal distribution.
+        """
+        return self.truncated.model.covariance_matrix.clone()
 
 
 class TruncatedMultivariateNormalModel(TruncatedNormalModel):
     '''
     Model for truncated normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, d,  X_train, X_val, tol, r, alpha, clamp, n=100, store=None, table=None, schema=None): 
+    def __init__(self, args, S, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, d, X_train, X_val, tol, r, alpha, clamp, n, store=store, table=table, schema=schema)
-
-        u, s, v = ch.linalg.svd(self.emp_covariance_matrix)
+        super().__init__(args, S, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+       
+    def pretrain_hook(self):
+        # initialize projection set
+        self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
+        u, s, v = ch.linalg.svd(self.train_ds.covariance_matrix)
 
         # upper and lower bounds
-        if self.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc - self.radius, self.emp_loc + self.radius), Bounds(ch.max(self.alpha.pow(2) / 12, \
+        if self.args.clamp:
+            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.emp_loc + self.radius), Bounds(ch.max(self.args.alpha.pow(2) / 12, \
                                                                s - self.radius),
                                                         s + self.radius)
         else:
@@ -93,9 +90,9 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        # increase number of steps taken
-        self.steps += 1
-        if self.clamp:
+        # print("cov stride pre projection: ", self.model.covariance_matrix.stride())
+        '''
+        if self.args.clamp:
             u, s, v = self.model.covariance_matrix.svd()  # decompose covariance estimate
             self.model.loc.data = ch.cat(
                 [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
@@ -105,8 +102,13 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
                  range(s.shape[0])]))).matmul(v.t())
         else:
             pass
+        '''
+        # self.model.covariance_matrix.data = ch.eye(2)
 
-        # check for convergence every n steps
-        if self.steps % self.n == 0: 
-            grad = self.check_grad()
+        # print("cov stride post projection: ", self.model.covariance_matrix.stride())
 
+        print("loc: ", self.model.loc)
+        print("cov: ", self.model.covariance_matrix)
+
+        self.model.covariance_matrix.data = Tensor([[6.3305e-01, 3.8403e-04],
+        [3.8403e-04, 1.0023e+00]]) 

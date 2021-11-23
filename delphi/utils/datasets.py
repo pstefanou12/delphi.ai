@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import transforms, datasets
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from scipy.linalg import sqrtm
 import copy
 import warnings
 
@@ -57,7 +57,7 @@ class DataSet(object):
                 0.4465])` for CIFAR-10)
             std (ch.tensor) : *required kwarg for CNN*, the standard deviation to
                 normalize the dataset with (e.g. :samp:`Tensor([0.2023,
-                0.1994, 0.2010])` for CIFAR-10)
+                        0.1994, 0.2010])` for CIFAR-10)
 
             custom_class (type) : *required kwarg*, a
                 :samp:`torchvision.models` class corresponding to the
@@ -281,7 +281,7 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
-        self._covariance_matrix = ch.var(S, dim=0)[None,...]
+        self._covariance_matrix = cov(S)
         self.S = S 
         # apply gradient
         self.S_grad = censored_sample_nll(S)
@@ -299,41 +299,23 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
     @property
     def covariance_matrix(self):
         return self._covariance_matrix.clone()
-    
-    
-class CensoredMultivariateNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S):
-        # empirical mean and variance
-        self._loc = S.mean(0)
-        self._covariance_matrix = cov(S)
-        # apply gradient to data
-        self.S = censored_sample_nll(S) 
 
-    def __len__(self): 
-        return self.S.size(0)
+    def randomize(self): 
+        rand_ind = ch.randperm(self.S.size(0))
+        self.S = self.S[rand_ind]
+        self.S_grad = self.S_grad[rand_ind]
     
-    def __getitem__(self, idx):
-        return [self.S[idx],]
-    
-    @property
-    def loc(self): 
-        return self._loc.clone()
-    
-    @property
-    def covariance_matrix(self): 
-        return self._covariance_matrix.clone()
-
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         self.S = S
         # samples 
-        self._loc = ch.mean(S, dim=0)
-        self._covariance_matrix = ch.var(S, dim=0)[None,...]
+        self._loc = self.S.mean(0)
+        self._covariance_matrix = cov(self.S)
         # compute gradients
-        pdf = ch.exp(Normal(ch.zeros(1), ch.eye(1).flatten()).log_prob(self.S))
-        self.loc_grad = pdf * (self._loc - self.S)
-        self.cov_grad = .5 * pdf * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc.unsqueeze(0).matmul(self._loc.unsqueeze(1))).flatten(1)
+        self.pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))).log_prob(self.S))[...,None]
+        self.loc_grad =  self._loc - self.S
+        self.cov_grad = .5 * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc[...,None] @ self._loc[None,...]).flatten(1)
         
     def __len__(self): 
         return self.S.size(0)
@@ -342,37 +324,14 @@ class TruncatedNormalDataset(ch.utils.data.Dataset):
         """
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
-        return self.S[idx], self.loc_grad[idx], self.cov_grad[idx]
-    
-    @property
-    def loc(self): 
-        return self._loc.clone()
-    
-    @property
-    def covariance_matrix(self): 
-        return self._covariance_matrix.clone()
+        return self.S[idx], self.pdf[idx], self.loc_grad[idx], self.cov_grad[idx]
 
-
-class TruncatedMultivariateNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S):
-        # samples 
-        self.S = S
-        self._loc = ch.mean(S, dim=0)
-        self._covariance_matrix = cov(S)
-        # compute gradients
-        pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)).double(), ch.eye(self.S.size(1)).double()).log_prob(self.S)).unsqueeze(1)
-        # pdf of each sample
-        self.loc_grad = pdf*(self._loc - self.S)
-        self.cov_grad = (.5*pdf*((ch.bmm(S.unsqueeze(2), S.unsqueeze(1)) - self._covariance_matrix - self._loc.unsqueeze(0).matmul(self._loc.unsqueeze(1))).flatten(1))).unflatten(1, self._covariance_matrix.size())
-
-    def __len__(self): 
-        return self.S.size(0)
-    
-    def __getitem__(self, idx):
-        """
-        :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
-        """
-        return self.S[idx], self.loc_grad[idx], self.cov_grad[idx]
+    def randomize(self): 
+        rand_ind = ch.randperm(self.S.size(0))
+        self.S = self.S[rand_ind]
+        self.loc_grad = self.loc_grad[rand_ind]
+        self.cov_grad = self.cov_grad[rand_ind]
+        self.pdf = self.pdf[rand_ind]
     
     @property
     def loc(self): 

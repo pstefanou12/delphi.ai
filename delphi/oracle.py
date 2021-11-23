@@ -6,8 +6,9 @@ from abc import ABC
 from decimal import Decimal
 from orthnet import Hermite
 import math
+from scipy.linalg import sqrtm
 
-from .utils.helpers import Bounds
+from .utils.helpers import Bounds, cov
 
 
 class oracle(ABC):
@@ -53,7 +54,7 @@ class KIntervalUnion(oracle):
         return 'k-interval union'
 
 
-class Left(oracle):
+class Left_Regression(oracle):
     """
     Left Regression Truncation.
     """
@@ -62,17 +63,34 @@ class Left(oracle):
         Args: 
             left: left truncation
         """
-        super(Left, self).__init__()
+        super(Left_Regression, self).__init__()
         self.left = left
 
     def __call__(self, x): 
         return x > self.left
 
     def __str__(self): 
+        return 'left regression'
+
+class Left_Distribution(oracle):
+    """
+    Left Distribution Truncation.
+    """
+    def __init__(self, left):
+        """
+        Args: 
+            left: left truncation for distributions - multiplies whether each dimension of sample is within bounds
+        """
+        super(Left_Distribution, self).__init__()
+        self.left = left
+
+    def __call__(self, x): 
+        return (x > self.left).prod(dim=-1)
+
+    def __str__(self): 
         return 'left'
 
-
-class Right(oracle):
+class Right_Regression(oracle):
     """
     Right Regression Truncation.
     """
@@ -81,11 +99,29 @@ class Right(oracle):
         Args: 
             right: right truncation
         """
-        super(Right, self).__init__()
+        super(Right_Regression, self).__init__()
         self.right = right
 
     def __call__(self, x): 
         return x < self.right
+
+    def __str__(self): 
+        return 'right'
+
+class Right_Distribution(oracle):
+    """
+    Right Distribution Truncation.
+    """
+    def __init__(self, right):
+        """
+        Args: 
+            right: right truncation
+        """
+        super(Right_Distribution, self).__init__()
+        self.right = right
+
+    def __call__(self, x): 
+        return (x < self.right).prod(dim=-1)
 
     def __str__(self): 
         return 'right'
@@ -139,19 +175,26 @@ class UnknownGaussian(oracle):
     Oracle that learns truncation set
     """
 
-    def __init__(self, emp_loc, emp_covariance_matrix, S, d):
+    def __init__(self, emp_loc, emp_covariance_matrix, S,  d):
+        '''
+        '''
+        # assumes that input features have been normalized, and now are dealing with a standard normal disribution
+        self.emp_loc = emp_loc 
+        self.emp_covariance_matrix = emp_covariance_matrix
+
         # empirical estimates used for membership oracle
         self._emp_dist = MultivariateNormal(emp_loc, emp_covariance_matrix)
 
         self._d = d
         # calculate the normalizing hermite polynomial constant for degree d
         self._norm_const = Tensor([])
+
         for i in range(self._d + 1):
             try:
-                self._norm_const = ch.cat([self._norm_const, ch.sqrt(Tensor([math.factorial(i)]))])
+                self._norm_const = ch.cat([self._norm_const, ch.DoubleTensor([math.factorial(i)]).pow(.5)])
             except OverflowError:
-                self._norm_const = ch.cat([self._norm_const, Tensor([Decimal(math.factorial(i)) ** Decimal(.5)])])
-                warnings.warn("Overflow error: converting floats to Decimal")
+                self._norm_const = ch.cat([self._norm_const, ch.DoubleTensor([Decimal(math.factorial(i))]).pow(.5)])
+            
         self._norm_const = self._norm_const.unsqueeze(1)
 
         # truncation coefficient
@@ -162,8 +205,8 @@ class UnknownGaussian(oracle):
     def __call__(self, x):
         if self.dist is None:
             raise Exception("must learn underlying distribution for membership oracle")
-        return x[((ch.exp(self.emp_dist.log_prob(x)) / ch.exp(self.dist.log_prob(x))) * self.psi_k(
-            x) > .5).flatten().nonzero(as_tuple=False).flatten()]
+        return ((ch.exp(self.emp_dist.log_prob(x)[...,None]) / ch.exp(self.dist.log_prob(x))[...,None]) * self.psi_k(
+            x) > .5).float()
 
     # x - (n, d) matrix
     def H_v(self, x):
@@ -173,7 +216,7 @@ class UnknownGaussian(oracle):
         """
         Characteristic function, determines whether a sample falls within truncation set or not.
         """
-        return ch.clamp((self._C_v * self.H_v(x)).sum(1), 0.0)
+        return ch.clamp((self._C_v * self.H_v(x)).sum(1), 0.0)[...,None]
 
     @property
     def emp_dist(self):
@@ -184,8 +227,8 @@ class UnknownGaussian(oracle):
         return self._dist
 
     @dist.setter
-    def dist(self, params):
-        self._dist = MultivariateNormal(params[0], params[1])
+    def dist(self, dist_):
+        self._dist = dist_
 
     @property
     def C_v(self):
@@ -201,6 +244,7 @@ class UnknownGaussian(oracle):
 
     def __str__(self): 
         return 'unknown gaussian'
+
 
 class Identity(oracle): 
     """

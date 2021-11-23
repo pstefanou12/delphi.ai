@@ -1,7 +1,5 @@
 """
-Flexible, parent trainer class for experimentation. By default the class is programmed 
-to train Robust CV models. Nevertheless, the flexible nature of the framework allows it 
-to accomodate all the mmodesl with the delphi.ai package.
+General training format for training models with SGD/backprop.
 """
 
 import time
@@ -213,9 +211,23 @@ class Trainer:
             if is_train:
                 self.model.optimizer.zero_grad()
                 loss, prec1, prec5 = self.model.train_step(i, batch)
+                # print("loc pre grad: ", self.model.model.loc)
                 loss.backward()
-                 # ch.nn.utils.clip_grad_norm_(self.model.model.parameters(), 3.0)
+                # ch.nn.utils.clip_grad_norm_(self.model.parameters, 5.0)
+                '''
+                print("loc pre step: ", self.model.model.loc)
+                print("cov size: ", self.model.model.covariance_matrix.size())
+                print("cov stride: ", self.model.model.covariance_matrix.stride())
+                '''
                 self.model.optimizer.step()
+                # print("model post grad: ", self.model.model.loc)
+                # print("loc grad: ", self.model.model.loc.grad)
+
+                '''
+                print("loc post step: ", self.model.model.loc)
+                print("cov grad size: ", self.model.model.covariance_matrix.grad.size())
+                print("cov grad stride: ", self.model.model.covariance_matrix.grad.stride())
+                '''
                 if self.model.schedule is not None: self.model.schedule.step()
             else: 
                 loss, prec1, prec5 = self.model.val_step(i, batch)

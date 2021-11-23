@@ -55,14 +55,13 @@ class delphi:
         """
         if self.model is None and self.params is None: raise ValueError('need to inititalize model of update params')
         # initialize optimizer, scheduler, and then get parameters
-        param_list = self.model.parameters() if self.params is None else self.params
-
+        # param_list = self.model.parameters() if self.params is None else self.params
         # setup optimizer
         if self.args.custom_lr_multiplier == ADAM:  # adam
-            self.optimizer = Adam(param_list, lr=self.args.lr, weight_decay=self.args.weight_decay)
+            self.optimizer = Adam(self.parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
         else: 
             # SGD optimizer
-            self.optimizer = SGD(param_list, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+            self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
 
             # setup learning rate scheduler
             if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
@@ -154,3 +153,9 @@ class delphi:
         Default validation loader property.
         '''
         return None
+
+    @property
+    def parameters(self): 
+        if self.params: 
+            return self.params 
+        return self.model.parameters()

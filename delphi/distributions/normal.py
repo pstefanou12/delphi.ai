@@ -75,30 +75,26 @@ class CensoredNormal(distributions):
     def fit(self, S: Tensor):
         """
         """
-        self.censored_normal = CensoredNormalModel(config.args, S, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        self.censored = CensoredNormalModel(config.args, S, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.censored_normal)
+        self.trainer = Trainer(self.censored)
 
         # run PGD for parameter estimation 
         self.trainer.train_model()
-
-        with ch.no_grad():
-            self._scale = self.censored_normal.model.covariance_matrix.clone()
-            self._loc = self.censored_normal.model.loc.clone()
-
+        
     @property 
     def loc(self): 
         """
         Returns the mean of the normal disribution.
         """
-        return self._loc
+        return self.censored.model.loc.clone()
 
     @property 
-    def scale(self): 
+    def variance(self): 
         """
         Returns the standard deviation for the normal distribution.
         """
-        return self._scale
+        return self.censored.model.covariance_matrix.clone()
 
 
 class CensoredNormalModel(delphi.delphi):
@@ -125,16 +121,12 @@ class CensoredNormalModel(delphi.delphi):
         # initialize projection set
         self.emp_covariance_matrix = self.train_ds.covariance_matrix.inverse()
         self.emp_loc = self.train_ds.loc@self.emp_covariance_matrix
-
-        # keep track of estimates 
-        self.loc_est = self.emp_loc.clone()[None,...]
-        self.cov_est = self.emp_covariance_matrix.clone()
-            
+           
         self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
         # parameterize projection set
         if self.args.clamp:
             self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
-             Bounds(ch.max(ch.square(self.args.alpha / 12.0), self.emp_covariance_matrix - self.radius), self.emp_covariance_matrix + self.radius)
+             Bounds(ch.square(self.args.alpha / 12.0), self.emp_covariance_matrix + self.radius)
         else:
             pass
 
@@ -184,7 +176,20 @@ class CensoredNormalModel(delphi.delphi):
         loss = self.check_nll()
         print("Iteration {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
 
+        # re-randomize data points in training set 
+        self.train_ds.randomize() 
+    
+    def post_training_hook(self): 
+        # reparamterize distribution
+        self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
+        self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
+        self.model.loc.data = self.model.loc  @ self.model.covariance_matrix
+
+        
     @property 
     def train_loader(self): 
         return self._train_loader
+
+
+    
 
