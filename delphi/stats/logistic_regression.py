@@ -133,7 +133,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         self.X_val, self.y_val = X[val_indices], y[val_indices]
 
         self.train_ds = TensorDataset(self.X_train, self.y_train)
-        self._train_loader = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=1)
+        self._train_loader = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=0)
 
         # use OLS as empirical estimate to define projection set
         self.phi = phi

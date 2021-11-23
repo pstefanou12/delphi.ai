@@ -13,7 +13,6 @@ from .. import delphi
 from .normal import CensoredNormal, CensoredNormalModel
 from ..oracle import oracle
 from ..trainer import Trainer
-from ..utils.datasets import CensoredMultivariateNormalDataset 
 from ..utils.helpers import Bounds
 from ..utils import defaults
 
