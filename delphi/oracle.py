@@ -267,7 +267,7 @@ class LogitBall:
         self.bound = bound
         
     def __call__(self, x): 
-        return (x.norm(dim=-1) <= self.bound)
+        return (x.norm(dim=-1, keepdim=True) <= self.bound)
 
     def __str__(self): 
         return 'logit ball'
@@ -282,11 +282,11 @@ class LogitBallComplement:
     """
     def __init__(self, bound, temperature=ch.ones(1)): 
         self.bound = bound
-        self.temperature = temperature.cuda()
+        self.temperature = temperature
         
     def __call__(self, x): 
-        x_ = x / self.temperature
-        return (x_.norm(dim=-1) >= self.bound)
+        x_ = x
+        return (x_.norm(dim=-1, keepdim=True) >= self.bound)
 
     def __str__(self): 
         return 'logit ball complement'

@@ -143,9 +143,10 @@ class delphi:
 
     def post_train_hook(self):
         '''
-        Post training hook, called after sgd procedures completes. 
+        Post training hook, called after sgd procedures completes. By default returns True, 
+        so that procedure terminates by default after one trial.
         '''
-        pass
+        return True
 
     @property 
     def val_loader(self): 

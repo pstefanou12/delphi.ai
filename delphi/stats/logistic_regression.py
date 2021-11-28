@@ -7,6 +7,7 @@ import torch as ch
 from torch import Tensor
 from torch.nn import Linear
 from torch.utils.data import TensorDataset, DataLoader
+from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from cox.utils import Parameters
 from cox.store import Store
@@ -21,6 +22,9 @@ from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
 from ..utils.helpers import Bounds, ProcedureComplete
 
+
+# constants 
+G = Gumbel(0, 1)
 
 class TruncatedLogisticRegression(stats):
     """
@@ -93,12 +97,13 @@ class TruncatedLogisticRegression(stats):
             self.coef = self.trunc_log_reg.model.weight.clone()
             self.intercept = self.trunc_log_reg.model.bias.clone()
 
-    def __call__(self, x: Tensor): 
+    def __call__(self, x: Tensor, latent=True): 
         """
         Make predictions with regression estimates.
         """
         with ch.no_grad():
-            return self.trunc_log_reg.model(x)
+            if config.args.multi_class == 'multinomial' and latent:
+                return (self.trunc_log_reg.model(x) + G.sample([x.size(0), self.trunc_log_reg.model.out_features])).argmax(dim=-1) 
 
     @property
     def coef_(self): 
@@ -156,7 +161,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
             pass
 
         if self.args.multi_class == 'multinomial': 
-            self.model = Linear(in_features=self.X_train.size(1), out_features=len(y_train.unique()), bias=True)
+            self.model = Linear(in_features=self.X_train.size(1), out_features=len(self.y_train.unique()), bias=True)
         else: 
             self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=True)
         
@@ -235,4 +240,6 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
     @property 
     def train_loader(self): 
         return self._train_loader
+
+    
 

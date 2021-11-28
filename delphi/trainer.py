@@ -119,6 +119,7 @@ class Trainer:
         Returns: 
             schema with model performance metrics
         """
+        train_loader, val_loader = loaders
         # start timer
         start_time = time.time()
 
@@ -140,7 +141,7 @@ class Trainer:
             store['eval'].append_row(log_info)
         return log_info
 
-    def train_model(self):
+    def train_model(self, loaders):
         """
         Train model. 
         Args: 
@@ -148,36 +149,43 @@ class Trainer:
         Returns: 
             Trained model
         """
-        # PRETRAIN HOOK
-        if hasattr(self.model, 'pretrain_hook'): self.model.pretrain_hook()
-        
-        # make optimizer and scheduler for training neural network
-        self.model.make_optimizer_and_schedule()
-        
-        if self.model.checkpoint:
-            epoch = self.model.checkpoint['epoch']
-            best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
-        
-        # keep track of the start time
-        start_time = time.time()
-        # do training loops until performing enough gradient steps or epochs
-        for epoch in range(1, self.epochs + 1):
-            try: 
-                self.model_loop(TRAIN, self.model.train_loader, epoch)
-            # if raising ProcedureComplete, then terminate
-            except ProcedureComplete: 
-                return self.model
-            # raise error
-            except Exception as e: 
-                raise e
-            # evaluate model on validation set, if there is one
-            if self.model.val_loader is not None:
-                ctx = ch.enable_grad() if self.disable_no_grad else ch.no_grad()
-                with ctx:
-                    self.model_loop(VAL, self.model.val_loader, epoch)
+        train_loader, val_loader = loaders
+        # check to make sure that the model's trainer has data in it
+        if len(train_loader.dataset) == 0: 
+            raise Exception('No Datapoints in Train Loader')
 
-        # POST TRAINING HOOK     
-        if hasattr(self.model, 'post_training_hook'): self.model.post_training_hook()
+        # keep track of whether procedure is done or not
+        done = False
+        while not done:
+            # PRETRAIN HOOK
+            if hasattr(self.model, 'pretrain_hook'): self.model.pretrain_hook()
+            
+            # make optimizer and scheduler for training neural network
+            self.model.make_optimizer_and_schedule()
+            
+            if self.model.checkpoint:
+                epoch = self.model.checkpoint['epoch']
+                best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
+        
+            # do training loops until performing enough gradient steps or epochs
+            for epoch in range(1, self.epochs + 1):
+                try: 
+                    self.model_loop(TRAIN, train_loader, epoch)
+                # if raising ProcedureComplete, then terminate
+                except ProcedureComplete: 
+                    return self.model
+                # raise error
+                except Exception as e: 
+                    raise e
+                # evaluate model on validation set, if there is one
+                if val_loader is not None:
+                    ctx = ch.enable_grad() if self.disable_no_grad else ch.no_grad()
+                    with ctx:
+                        self.model_loop(VAL, val_loader, epoch)
+
+            # POST TRAINING HOOK     
+            if hasattr(self.model, 'post_training_hook'): 
+                done = self.model.post_training_hook(val_loader)
         return self.model
                 
     def model_loop(self, loop_type, loader, epoch):
@@ -203,40 +211,26 @@ class Trainer:
         
         # if is_train, put model into train mode, else eval mode
         # self.model = self.model.model.train() if is_train else self.model.model.eval()
-       
         # iterator
         iterator = enumerate(loader) if not self.model.args.verbose else tqdm(enumerate(loader), total=len(loader), leave=False) 
         for i, batch in iterator:
             # if training loop, perform training step
             if is_train:
                 self.model.optimizer.zero_grad()
-                loss, prec1, prec5 = self.model.train_step(i, batch)
-                # print("loc pre grad: ", self.model.model.loc)
+                loss, prec1, prec5 = self.model.train_step(epoch, batch)
                 loss.backward()
                 # ch.nn.utils.clip_grad_norm_(self.model.parameters, 5.0)
-                '''
-                print("loc pre step: ", self.model.model.loc)
-                print("cov size: ", self.model.model.covariance_matrix.size())
-                print("cov stride: ", self.model.model.covariance_matrix.stride())
-                '''
                 self.model.optimizer.step()
-                # print("model post grad: ", self.model.model.loc)
-                # print("loc grad: ", self.model.model.loc.grad)
-
-                '''
-                print("loc post step: ", self.model.model.loc)
-                print("cov grad size: ", self.model.model.covariance_matrix.grad.size())
-                print("cov grad stride: ", self.model.model.covariance_matrix.grad.stride())
-                '''
+                
                 if self.model.schedule is not None: self.model.schedule.step()
             else: 
-                loss, prec1, prec5 = self.model.val_step(i, batch)
+                loss, prec1, prec5 = self.model.val_step(epoch, batch)
 
             # iterator description
             if self.verbose and hasattr(self.model, 'description'):
                 desc = self.model.description(epoch, i, loop_msg)
                 iterator.set_description(desc)
-
+           
             # iteration hook 
             if hasattr(self.model, 'iteration_hook'): self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
 

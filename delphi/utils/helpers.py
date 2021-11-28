@@ -14,6 +14,7 @@ from typing import NamedTuple
 import os
 import git
 import math
+import pprint
 
 from . import constants as consts
 
@@ -23,6 +24,75 @@ TERMINAL = 'terminal'
 IPYTHON = 'ipython'
 ZMQ='zmqshell'
 COLAB='google.colab'
+
+class Parameters():
+    '''
+    Parameters class, just a nice way of accessing a dictionary
+
+    .. code-block:: python
+
+        ps = Parameters({"a": 1, "b": 3})
+        ps.A # returns 1
+    '''
+    def __init__(self, params):
+        super().__setattr__('params', params)
+
+        # ensure no overlapping (in case) params
+        collisions = set()
+        for k in self.params.keys():
+            collisions.add(k.lower())
+
+        assert len(collisions) == len(self.params.keys())
+
+    def as_dict(self):
+        return self.params
+
+    def __getattr__(self, x):
+        if x in vars(self):
+            return vars(self)[x]
+
+        k = x.lower()
+        if k not in self.params:
+            return None
+
+        return self.params[k]
+
+    def __setattr__(self, x, v):
+        # Fix for some back-compatibility with some pickling bugs
+        if x == 'params':
+            super().__setattr__(x, v)
+            return
+
+        if x in vars(self):
+            vars(self)[x.lower()] = v
+
+        self.params[x.lower()] = v
+
+    def __delattr__ (self, key):
+        del self.params[key]
+
+    def __iter__ (self):
+        return iter(self.params)
+
+    def __len__ (self):
+        return len(self.params)
+
+    def __str__(self):
+        pp = pprint.PrettyPrinter()
+        return pp.pformat(self.params)
+
+    def __repr__(self):
+        return str(self)
+
+    def __getstate__(self):
+        return self.params
+
+    def __contains__(self, x):
+        return x in self.params
+
+    def __setstate__(self, x):
+        self.params = x
+
 
 
 def cov(m, rowvar=False):

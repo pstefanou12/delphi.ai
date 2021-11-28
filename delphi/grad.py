@@ -21,7 +21,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     def forward(ctx, v, T, S, S_grad, phi):
         # reparameterize distribution
         sigma = T.inverse()
-        mu = sigma@v[...,None].flatten()
+        mu = sigma@v.flatten()
         # sigma = T
         # mu = v
         print("mu: {}".format(mu))
@@ -102,16 +102,16 @@ class TruncatedMSE(ch.autograd.Function):
     with known noise variance.
     """
     @staticmethod
-    def forward(ctx, pred, targ, phi):
+    def forward(ctx, pred, targ, phi, noise_var, num_samples=10, eps=1e-5):
         # make args.num_samples copies of pred, N x B x 1
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
         # add random noise to each copy
-        noised = stacked + math.sqrt(config.args.noise_var) * ch.randn(stacked.size()).to(config.args.device)
+        noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
         # filter out copies where pred is in bounds
         filtered = phi(noised)
         # average across truncated indices
-        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        z_2 =  (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        z_2 =  (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         ctx.save_for_backward(pred, targ, z)
         return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
@@ -129,7 +129,7 @@ class TruncatedMSE(ch.autograd.Function):
         # average across truncated indices
         out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
         '''
-        return (z - targ) / pred.size(0), targ / pred.size(0), None
+        return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
@@ -138,21 +138,21 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     with unknown noise variance.
     """
     @staticmethod
-    def forward(ctx, pred, targ, lambda_, phi):
+    def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
         # add noise to regression predictions
-        noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
+        noised = stacked + sigma * ch.randn(stacked.size())
         # filter out copies that fall outside of truncation set
         filtered = phi(noised)
         out = noised * filtered
-        z = out.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        z = out.sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         '''
         out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
         '''
-        z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
+        z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
 
@@ -181,7 +181,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         out_2 = z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
         '''
         lambda_grad = .5 * (targ.pow(2) - z_2)
-        return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None
+        return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
 
 class LogisticBCE(ch.autograd.Function):
@@ -201,7 +201,7 @@ class LogisticBCE(ch.autograd.Function):
         noised_labs = noised > 0
         # filter
         mask = (noised_labs).eq(targ)
-        avg = 1 - 2*((sig(rand_noise)*mask).sum(0) / (mask.sum(0) + 1e-5))
+        avg = 1 - 2*((sig(rand_noise) * mask).sum(0) / (mask.sum(0) + 1e-5))
         return avg, None
 
 
@@ -275,12 +275,12 @@ class TruncatedCE(ch.autograd.Function):
         stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
         # add gumbel noise to logits
         rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
-        noised = (stacked) + rand_noise 
+        noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = ctx.phi(stacked)[..., None].to(config.args.device)
+        filtered = ctx.phi(noised).to(config.args.device)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
-        mask = noised_labs.eq(targ)[..., None]
+        mask = noised_labs.eq(targ)[..., None] * filtered
         inner_exp = (1 - ch.exp(-rand_noise))
-        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)       
+        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)
         return -avg, None, None
