@@ -11,7 +11,6 @@ from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from cox.utils import Parameters
 from cox.store import Store
-import config
 from sklearn.linear_model import LogisticRegression
 import copy
 
@@ -64,7 +63,7 @@ class TruncatedLogisticRegression(stats):
         self.lr_interpolation = lr_interpolation
 
 
-        config.args = Parameters({ 
+        self.args = Parameters({ 
             'alpha': Tensor([alpha]),
             'bs': bs, 
             'workers': 1,
@@ -86,12 +85,23 @@ class TruncatedLogisticRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
-        self.trunc_log_reg = TruncatedLogisticRegressionModel(config.args, X, y, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        # separate into training and validation set
+        rand_indices = ch.randperm(X.size(0))
+        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
+        self.X_train, self.y_train = X[train_indices], y[train_indices]
+        self.X_val, self.y_val = X[val_indices], y[val_indices]
+        
+        self.train_ds = TensorDataset(self.X_train, self.y_train)
+        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=0)
+        
+        self.val_ds = TensorDataset(self.X_val, self.y_val)
+        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds), num_workers=0)
+
+        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.X_train, self.y_train, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
 
         trainer = Trainer(self.trunc_log_reg) 
-        
         # run PGD for parameter estimation 
-        trainer.train_model()
+        trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
             self.coef = self.trunc_log_reg.model.weight.clone()
@@ -102,7 +112,7 @@ class TruncatedLogisticRegression(stats):
         Make predictions with regression estimates.
         """
         with ch.no_grad():
-            if config.args.multi_class == 'multinomial' and latent:
+            if self.args.multi_class == 'multinomial' and latent:
                 return (self.trunc_log_reg.model(x) + G.sample([x.size(0), self.trunc_log_reg.model.out_features])).argmax(dim=-1) 
 
     @property
@@ -117,29 +127,29 @@ class TruncatedLogisticRegression(stats):
         """
         Regression intercept.
         """
-        if config.args.fit_intercept:
+        if self.args.fit_intercept:
             return self.intercept
+
+    @property 
+    def train_loader(self): 
+        return self.train_loader_
+
+    @property 
+    def val_loader(self): 
+        return self.val_loader_
 
 
 class TruncatedLogisticRegressionModel(delphi.delphi):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args,  X, y, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args,  X_train, y_train, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
         super().__init__(args, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
-        # separate into training and validation set
-        rand_indices = ch.randperm(X.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train, self.y_train = X[train_indices], y[train_indices]
-        self.X_val, self.y_val = X[val_indices], y[val_indices]
-
-        self.train_ds = TensorDataset(self.X_train, self.y_train)
-        self._train_loader = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=0)
-
+        self.X_train, self.y_train = X_train, y_train
         # use OLS as empirical estimate to define projection set
         self.phi = phi
 
@@ -175,16 +185,16 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
             self.model.bias.data = self.emp_bias
         update_params = None
 
-    def check_nll(self): 
+    def calc_nll(self, X, y): 
         """
         Calculates the check_grad of the current regression estimates of the validation set. It 
         then updates the best estimates accordingly based off of the check_grad's norm.
         """
-        pred = self.model(self.X_val)
+        pred = self.model(X)
         if self.args.multi_class == 'multinomial': 
-            loss = TruncatedCE.apply(pred, self.y_val, self.phi) 
+            loss = TruncatedCE.apply(pred, y, self.phi) 
         else: 
-            loss = TruncatedBCE.apply(pred, self.y_val, self.phi)
+            loss = TruncatedBCE.apply(pred, y, self.phi, self.args.num_samples, self.args.eps)
         return loss
 
     def train_step(self, i, batch):
@@ -200,7 +210,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         if self.args.multi_class == 'multinomial': 
             loss = TruncatedCE.apply(pred, targ, self.phi)
         elif self.args.multi_class == 'ovr': 
-            loss = TruncatedBCE.apply(pred, targ, self.phi)
+            loss = TruncatedBCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
         else: 
             raise Exception('multi class input invalid')
 
@@ -232,14 +242,12 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         else: 
             pass
 
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def val_step(self, i, batch):
         # check for convergence every at each epoch
-        loss = self.check_nll()
-        print("Iteration {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
+        loss = self.calc_nll(*batch)
+        print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
+        return  loss, None, None
 
-    @property 
-    def train_loader(self): 
-        return self._train_loader
-
+    
     
 

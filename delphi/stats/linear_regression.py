@@ -41,7 +41,6 @@ class TruncatedLinearRegression(stats):
             alpha: float,
             noise_var: float=None,
             fit_intercept: bool=True,
-            normalize: bool=True,
             epochs: int=1,
             num_trials: int=3,
             clamp: bool=True,
@@ -67,7 +66,6 @@ class TruncatedLinearRegression(stats):
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
             alpha (float) : survival probability for truncated regression model
             unknown (bool) : boolean indicating whether the noise variance is known or not - specifying algorithm to use 
-            normalize (bool) : normalize the input features before running procedure
             fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
             steps (int) : number of gradient steps to take
             clamp (bool) : boolean indicating whether to clamp the projection set 
@@ -116,7 +114,6 @@ class TruncatedLinearRegression(stats):
             'r': r,
             'rate': rate,
             'noise_var': noise_var,
-            'normalize': normalize,
             'verbose': False,
         })
 
@@ -128,20 +125,17 @@ class TruncatedLinearRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
+
+        # check to make sure that the input features all have an l2 norm less than or equal to 1
+        l_inf = LA.norm(X, dim=-1, ord=float('inf')).max() # find max l_inf
+        assert l_inf <= 1, "max l2 feature norm larger than one, make sure to normalize features"
+
         # separate into training and validation set
         rand_indices = ch.randperm(X.size(0))
         train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
         self.X_train, self.y_train = X[train_indices], y[train_indices]
         self.X_val, self.y_val = X[val_indices], y[val_indices]
 
-        if self.args.normalize: 
-            # normalize x features so that ||x_{i}||_{2} <= 1
-            l_inf = LA.norm(self.X_train, dim=-1, ord=float('inf')).max() # find max l_inf
-            # calculate normalizing constant
-            self.beta = l_inf * math.sqrt(self.X_train.size(1))
-
-            self.X_val /= self.beta
-            self.X_train /= self.beta
         self.train_ds = TensorDataset(self.X_train, self.y_train)
         self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=self.args.workers)
         self.val_ds = TensorDataset(self.X_val, self.y_val)
@@ -154,11 +148,6 @@ class TruncatedLinearRegression(stats):
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
-            # renormalize weights and biases
-            if self.args.normalize:
-                # unnormalize coefficients
-                # self.trunc_reg.best_model.weight /= self.beta
-                pass
             # assign results from procedure to instance variables
             if self.args.noise_var is None: 
                 self.variance = self.trunc_reg.best_model.lambda_.clone()
@@ -196,13 +185,6 @@ class TruncatedLinearRegression(stats):
             return self.variance
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
-
-    @property 
-    def beta_(self): 
-        """
-        Beta normalizing constant calculated on the training set.  
-        """
-        return self.trunc_reg.beta
 
     @property
     def nll_(self): 
@@ -384,7 +366,8 @@ class TruncatedLinearRegressionModel(delphi.delphi):
                     self.best_model.lambda_ = ch.nn.Parameter(self.best_model.lambda_.inverse())
                     self.best_model.weight =  ch.nn.Parameter(self.best_model.weight * self.best_model.lambda_)
                     if self.args.fit_intercept: self.best_model.bias = ch.nn.Parameter(self.best_model.bias * self.model.lambda_)
-            if not converge: warnings.warn("Procedure did not converge, increase batch size of number of epochs.")
+            if not converge: 
+                warnings.warn("Procedure did not converge, increase batch size of number of epochs.")
             return True
 
         self.args.r *= self.args.rate

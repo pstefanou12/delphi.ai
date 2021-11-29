@@ -18,7 +18,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     Computes the negative population log likelihood for censored multivariate normal distribution.
     """
     @staticmethod
-    def forward(ctx, v, T, S, S_grad, phi):
+    def forward(ctx, v, T, S, S_grad, phi, num_samples=10):
         # reparameterize distribution
         sigma = T.inverse()
         mu = sigma@v.flatten()
@@ -27,7 +27,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         print("mu: {}".format(mu))
         print("cov: {}".format(sigma))
             
-        # s = MultivariateNormal(mu, sigma).rsample(ch.Size([config.args.num_samples, S.size(0)]))
+        # s = MultivariateNormal(mu, sigma).rsample(ch.Size([num_samples, S.size(0)]))
         # reparameterize distribution
         z = Tensor([])
         M = MultivariateNormal(mu, sigma)
@@ -111,10 +111,13 @@ class TruncatedMSE(ch.autograd.Function):
         filtered = phi(noised)
         # average across truncated indices
         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        z_2 =  (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        z_2 =  -.5 * (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        out = ((-.5 * noised.pow(2) + noised * pred) * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         ctx.save_for_backward(pred, targ, z)
-        return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
+        return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
+
+        # return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -148,38 +151,22 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         filtered = phi(noised)
         out = noised * filtered
         z = out.sum(dim=0) / (filtered.sum(dim=0) + eps)
-
-        '''
-        out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        '''
         z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        const = (-0.5 * lambda_ * out.pow(2) + lambda_ * out * pred).sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
+        return (0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred + const).mean(0) 
 
-        return (-0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred + 0.5 * lambda_ * z_2 - lambda_ * z * pred).mean(0) 
+#        return (0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred - 0.5 * lambda_ * z_2 + lambda_ * z * pred).mean(0) 
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
-        '''
-        # calculate std deviation of noise distribution estimate
-        sigma = ch.sqrt(lambda_.inverse())
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        # add noise to regression predictions
-        noised = stacked + sigma * ch.randn(stacked.size()).to(config.args.device)
-        # filter out copies that fall outside of truncation set
-        filtered = ctx.phi(noised)
-        z = noised * filtered
-        '''
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
-        '''
-        out = z.sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        out_2 = z.pow(2).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        '''
         lambda_grad = .5 * (targ.pow(2) - z_2)
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
@@ -207,15 +194,16 @@ class LogisticBCE(ch.autograd.Function):
 
 class TruncatedBCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ, phi):
+    def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
         ctx.save_for_backward(pred, targ)
         ctx.phi = phi
+        ctx.eps = eps
+        ctx.num_samples = num_samples
         loss = ch.nn.BCEWithLogitsLoss()
         return loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):
-        # import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         
         # logistic distribution
@@ -223,14 +211,14 @@ class TruncatedBCE(ch.autograd.Function):
         transforms_ = [SigmoidTransform().inv]
         logistic = TransformedDistribution(base_distribution, transforms_)
 
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
         # add noise
         noised = stacked + logistic.sample(stacked.size())
         # filter
         filtered = ctx.phi(noised)
-        out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + 1e-5)
+        out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
         grad = ch.where(ch.abs(out) > 1e-5, sig(out), targ) - targ
-        return grad / pred.size(0), -grad / pred.size(0), None
+        return grad / pred.size(0), -grad / pred.size(0), None, None, None
 
 
 class GumbelCE(ch.autograd.Function):
