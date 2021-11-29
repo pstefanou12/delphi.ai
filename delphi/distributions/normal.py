@@ -90,7 +90,7 @@ class CensoredNormal(distributions):
         self.trainer = Trainer(self.censored)
 
         # run PGD for parameter estimation 
-        self.trainer.train_model((self.traiin_loader_, self.val_loader_))
+        self.trainer.train_model((self.train_loader_, self.val_loader_))
         
     @property 
     def loc(self): 
@@ -122,7 +122,7 @@ class CensoredNormalModel(delphi.delphi):
 
         # initialize projection set
         self.emp_covariance_matrix = self.train_ds.covariance_matrix.inverse()
-        self.emp_loc = self.train_ds.loc@self.emp_covariance_matrix
+        self.emp_loc = self.train_ds.loc @ self.emp_covariance_matrix
            
         self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
         # parameterize projection set
@@ -151,7 +151,7 @@ class CensoredNormalModel(delphi.delphi):
             batch (Iterable) : iterable of inputs that 
         '''
         loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi)
-        return loss
+        return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -169,21 +169,19 @@ class CensoredNormalModel(delphi.delphi):
         else:
             pass
 
-        self.loc_est = ch.cat([self.loc_est, self.model.loc[None,...]], dim=1)
-        self.cov_est = ch.cat([self.cov_est, self.model.covariance_matrix], dim=1)
-
     def val_step(self, i, batch):
         # check for convergence every at each epoch
         loss = self.calc_nll(*batch)
         print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
+        return loss, None, None
 
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch)
+    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
         # re-randomize data points in training set 
         self.train_ds.randomize() 
     
-    def post_training_hook(self): 
+    def post_training_hook(self, val_loader): 
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
         self.model.loc.data = self.model.loc  @ self.model.covariance_matrix
-
+        return True

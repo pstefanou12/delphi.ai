@@ -24,7 +24,7 @@ class CensoredMultivariateNormal(CensoredNormal):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            iter_: int=1,
+            epochs: int=1,
             clamp: bool=True,
             val: int=50,
             tol: float=1e-2,
@@ -42,17 +42,27 @@ class CensoredMultivariateNormal(CensoredNormal):
             **kwargs):
         """
         """
-        super().__init__(phi, alpha, iter_, clamp, val, tol, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, lr_interpolation, step_lr_gamma, momentum, weight_decay, eps, **kwargs)
+        super().__init__(phi, alpha, epochs, clamp, val, tol, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, lr_interpolation, step_lr_gamma, momentum, weight_decay, eps, **kwargs)
 
     def fit(self, S: Tensor):
         """
         """
-        self.censored = CensoredMultivariateNormalModel(config.args, S, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        # separate into training and validation set
+        rand_indices = ch.randperm(S.size(0))
+        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
+        self.X_train = S[train_indices]
+        self.X_val = S[val_indices]
+        self.train_ds = CensoredNormalDataset(self.X_train)
+        self.val_ds = CensoredNormalDataset(self.X_val)
+        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
+        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
+
+        self.censored = CensoredMultivariateNormalModel(self.args, S, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.censored)
 
         # run PGD for parameter estimation 
-        self.trainer.train_model()
+        self.trainer.train_model((self.train_loader_, self.val_loader_))
         
     @property
     def covariance_matrix(self): 

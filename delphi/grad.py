@@ -22,31 +22,16 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         # reparameterize distribution
         sigma = T.inverse()
         mu = sigma@v.flatten()
-        # sigma = T
-        # mu = v
-        print("mu: {}".format(mu))
-        print("cov: {}".format(sigma))
-            
-        # s = MultivariateNormal(mu, sigma).rsample(ch.Size([num_samples, S.size(0)]))
         # reparameterize distribution
         z = Tensor([])
         M = MultivariateNormal(mu, sigma)
-        # import pdb; pdb.set_trace()
         while z.size(0) < S.size(0):
-            s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
-            print("num samples: ", phi(s).sum(0))
+            s = M.sample(sample_shape=ch.Size([num_samples, ]))
             z = ch.cat([z, s[phi(s).flatten().nonzero().flatten()]])
         z = z[:S.size(0)]
        
-        '''
-        filtered = phi(y)
-
-        print(filtered.sum(0))
-'''
         first_term = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
-
         second_term = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
-        
         ctx.save_for_backward(S_grad, z)
         return (first_term + second_term).mean(0)
 
@@ -54,26 +39,10 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, z = ctx.saved_tensors
-        '''
-        # reparameterize distribution
-        T = covariance_matrix.inverse()
-        v = T.matmul(loc.unsqueeze(1)).flatten()
-        # rejection sampling
-        y = Tensor([])
-        M = MultivariateNormal(v, T)
-        while y.size(0) < x.size(0):
-            s = M.sample(sample_shape=ch.Size([config.args.num_samples, ]))
-            y = ch.cat([y, s[ctx.phi(s).nonzero(as_tuple=False).flatten()]])
-        '''
         # calculate gradient
         cov_grad = (-S_grad[:,:z.size(1) ** 2] - (.5* z.unsqueeze(2)@z.unsqueeze(1)).flatten(1)).reshape(z.size(0), z.size(1), z.size(1)).mean(0)
         loc_grad = (-S_grad[:,z.size(1) ** 2:] + z).mean(0)
-        print("cov grad: {}".format(cov_grad))
-        print("loc grad: {}".format(loc_grad))
-        # grad = (-S_grad + censored_sample_nll(z)).mean(0)
-       # return grad[z.size(1) ** 2:], grad[:z.size(1) ** 2].reshape(z.size(1), z.size(1)), None, None, None
-
-        return loc_grad, cov_grad, None, None, None
+        return loc_grad, cov_grad, None, None, None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
@@ -82,7 +51,6 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, u, B, x, pdf, loc_grad, cov_grad, phi, exp_h):
-        # import pdb; pdb.set_trace()
         exp = exp_h(u, B, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi

@@ -7,14 +7,13 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader
-from cox.utils import Parameters
-import config
+from scipy.linalg import sqrtm
 
-from .unknown_truncation_normal import TruncatedNormal, TruncatedNormalModel, Exp_h
+from .truncated_normal import TruncatedNormal, TruncatedNormalModel, Exp_h
 from ..trainer import Trainer
 from ..grad import TruncatedMultivariateNormalNLL
 from ..utils.datasets import TruncatedNormalDataset
-from ..utils.helpers import Bounds
+from ..utils.helpers import Bounds, cov, Parameters
 
 
 class TruncatedMultivariateNormal(TruncatedNormal):
@@ -25,7 +24,7 @@ class TruncatedMultivariateNormal(TruncatedNormal):
             self,
             alpha: float,
             d: int=100,
-            iter_: int=1,
+            epochs: int=1,
             clamp: bool=True,
             val: int=50,
             tol: float=1e-2,
@@ -39,14 +38,25 @@ class TruncatedMultivariateNormal(TruncatedNormal):
             momentum: float=0.0, 
             eps: float=1e-5, 
             **kwargs):
-        super().__init__(alpha, d, iter_, clamp, val, tol, r, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps)
+        super().__init__(alpha, d, epochs, clamp, val, tol, r, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps)
 
     def fit(self, S: Tensor):
-        self.truncated = TruncatedMultivariateNormalModel(config.args, S, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        self.emp_loc, self.emp_covariance_matrix = S.mean(0), cov(S)
+        self.S_norm = (S - self.emp_loc) @ Tensor(sqrtm(self.emp_covariance_matrix.numpy())).inverse()
+        rand_indices = ch.randperm(S.size(0))
+        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
+        self.X_train = self.S_norm[train_indices]
+        self.X_val = self.S_norm[val_indices]
+        self.train_ds = TruncatedNormalDataset(self.X_train)
+        self.val_ds = TruncatedNormalDataset(self.X_val)
+        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
+        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
+
+        self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_ds, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.truncated)
         # run PGD for parameter estimation 
-        self.trainer.train_model()
+        self.trainer.train_model((self.train_loader_, self.val_loader_))
     
     @property 
     def covariance_matrix(self): 
@@ -60,12 +70,12 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
     '''
     Model for truncated normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, S, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, S, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+        super().__init__(args, train_ds, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
        
     def pretrain_hook(self):
         # initialize projection set
@@ -74,7 +84,7 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
 
         # upper and lower bounds
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.emp_loc + self.radius), Bounds(ch.max(self.args.alpha.pow(2) / 12, \
+            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.max(self.args.alpha.pow(2) / 12, \
                                                                s - self.radius),
                                                         s + self.radius)
         else:
