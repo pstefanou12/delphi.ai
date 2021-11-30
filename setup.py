@@ -5,7 +5,7 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="delphi.ai",
-    version="0.0.7",
+    version="0.1.0",
     author="Patroklos Stefanou",
     author_email="patstefanou@gmail.com",
     description="Package for Robust Statistics",
@@ -40,5 +40,5 @@ setuptools.setup(
     install_requires=['tqdm', 'grpcio', 'psutil', 'gitpython','py3nvml', 'cox',
                     'scikit-learn', 'seaborn', 'torch', 'torchvision', 'pandas',
                     'numpy', 'scipy', 'GPUtil', 'dill', 'tensorboardX', 'tables',
-                    'matplotlib', 'orthnet', 'config'],
+                    'matplotlib', 'orthnet'],
 )

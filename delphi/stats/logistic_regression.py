@@ -5,6 +5,7 @@ Truncated Logistic Regression.
 import torch as ch
 from torch import Tensor
 from torch.nn import Linear
+from torch.nn import CrossEntropyLoss, Softmax
 from torch.utils.data import TensorDataset, DataLoader
 from torch.distributions import Gumbel
 from torch import sigmoid as sig
@@ -22,6 +23,8 @@ from ..utils.helpers import Bounds, ProcedureComplete, Parameters
 
 # constants 
 G = Gumbel(0, 1)
+
+softmax = Softmax()
 
 class TruncatedLogisticRegression(stats):
     """
@@ -136,9 +139,8 @@ class TruncatedLogisticRegression(stats):
         Make predictions with regression estimates.
         """
         with ch.no_grad():
-            if self.args.multi_class == 'multinomial' and latent:
-                return (self.trunc_log_reg.model(x) + G.sample([x.size(0), self.trunc_log_reg.model.out_features])).argmax(dim=-1) 
-
+            return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
+        
     @property
     def coef_(self): 
         """
