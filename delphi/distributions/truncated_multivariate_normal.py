@@ -7,6 +7,7 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader
+import torch.linalg as LA
 from scipy.linalg import sqrtm
 
 from .truncated_normal import TruncatedNormal, TruncatedNormalModel, Exp_h
@@ -57,6 +58,10 @@ class TruncatedMultivariateNormal(TruncatedNormal):
         self.trainer = Trainer(self.truncated)
         # run PGD for parameter estimation 
         self.trainer.train_model((self.train_loader_, self.val_loader_))
+
+        # rescale/standardize
+        self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
+        self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
     
     @property 
     def covariance_matrix(self): 
@@ -80,13 +85,10 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
     def pretrain_hook(self):
         # initialize projection set
         self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
-        u, s, v = ch.linalg.svd(self.train_ds.covariance_matrix)
-
+        eig_decomp = LA.eig(self.train_ds.covariance_matrix)
         # upper and lower bounds
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.max(self.args.alpha.pow(2) / 12, \
-                                                               s - self.radius),
-                                                        s + self.radius)
+            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
         else:
             pass
 
@@ -100,25 +102,14 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        # print("cov stride pre projection: ", self.model.covariance_matrix.stride())
-        '''
         if self.args.clamp:
-            u, s, v = self.model.covariance_matrix.svd()  # decompose covariance estimate
+            eig_decomp = LA.eig(self.model.covariance_matrix) 
             self.model.loc.data = ch.cat(
                 [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
-                 range(self.model.loc.shape[0])])
-            self.model.covariance_matrix.data = u.matmul(ch.diag(ch.cat(
-                [ch.clamp(s[i], float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
-                 range(s.shape[0])]))).matmul(v.t())
+                 range(self.model.loc.size(0))])
+            self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
+                [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
+                 range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()
         else:
             pass
-        '''
-        # self.model.covariance_matrix.data = ch.eye(2)
-
-        # print("cov stride post projection: ", self.model.covariance_matrix.stride())
-
-        print("loc: ", self.model.loc)
-        print("cov: ", self.model.covariance_matrix)
-
-        self.model.covariance_matrix.data = Tensor([[6.3305e-01, 3.8403e-04],
-        [3.8403e-04, 1.0023e+00]]) 
+        

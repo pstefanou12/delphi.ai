@@ -180,7 +180,6 @@ class TruncatedNormalModel(delphi.delphi):
     def val_step(self, i, batch): 
         # check for convergence every at each epoch
         loss = self.calc_nll(*batch)
-        print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
         return loss, None, None
 
     def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -194,14 +193,10 @@ class TruncatedNormalModel(delphi.delphi):
         self.model.loc.data = (self.model.loc[None,...]  @ self.model.covariance_matrix).flatten()
         # set estimated distribution in membership oracle
         self.phi.dist = self.model
-      
-        # rescale/standardize
-        self.model.covariance_matrix.data = self.model.covariance_matrix @ self.train_ds.covariance_matrix
-        self.model.loc.data = (self.model.loc[None,...] @ Tensor(sqrtm(self.train_ds.covariance_matrix.numpy()))).flatten() + self.train_ds.loc
         return True
 
     def phi_(self, x): 
-        x_norm = (x - self.train_ds.loc) @ Tensor(sqrtm(self.train_ds.covariance_matrix.numpy())).inverse()         
+        x_norm = (x - self.train_ds.loc) @ Tensor(sqrtm(self.train_ds.covariance_matrix.numpy())).inverse() 
         return self.phi(x_norm)
 
 

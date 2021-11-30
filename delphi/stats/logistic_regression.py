@@ -2,14 +2,12 @@
 Truncated Logistic Regression.
 """
 
-
 import torch as ch
 from torch import Tensor
 from torch.nn import Linear
 from torch.utils.data import TensorDataset, DataLoader
 from torch.distributions import Gumbel
 from torch import sigmoid as sig
-from cox.utils import Parameters
 from cox.store import Store
 from sklearn.linear_model import LogisticRegression
 import copy
@@ -19,7 +17,7 @@ from .stats import stats
 from ..oracle import oracle
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
-from ..utils.helpers import Bounds, ProcedureComplete
+from ..utils.helpers import Bounds, ProcedureComplete, Parameters
 
 
 # constants 
@@ -27,6 +25,7 @@ G = Gumbel(0, 1)
 
 class TruncatedLogisticRegression(stats):
     """
+    Truncated Logistic Regression supports both binary cross entropy classification and truncated cross entropy classification.
     """
     def __init__(
             self,
@@ -50,8 +49,33 @@ class TruncatedLogisticRegression(stats):
             multi_class='ovr',
             fit_intercept=True,
             **kwargs):
-        """
-        """
+        '''
+        Args: 
+            phi (delphi.oracle.oracle) : oracle object for truncated regression model 
+            alpha (float) : survival probability for truncated regression model
+            unknown (bool) : boolean indicating whether the noise variance is known or not - specifying algorithm to use 
+            fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
+            steps (int) : number of gradient steps to take
+            clamp (bool) : boolean indicating whether to clamp the projection set 
+            n (int) : number of gradient steps to take before checking gradient 
+            val (int) : number of samples to use for validation set 
+            tol (float) : gradient tolerance threshold 
+            workers (int) : number of workers to spawn 
+            r (float) : size for projection set radius 
+            rate (float): rate at which to increase the size of the projection set, when procedure does not converge - input as a decimal percentage
+            num_samples (int) : number of samples to sample in gradient 
+            bs (int) : batch size
+            lr (float) : initial learning rate for regression parameters 
+            var_lr (float) : initial learning rate to use for variance parameter in the settign where the variance is unknown 
+            step_lr (int) : number of gradient steps to take before decaying learning rate for step learning rate 
+            custom_lr_multiplier (str) : 'cosine' (cosine annealing), 'adam' (adam optimizer) - different learning rate schedulers available
+            lr_interpolation (str) : 'linear' linear interpolation
+            step_lr_gamma (float) : amount to decay learning rate when running step learning rate
+            momentum (float) : momentum for SGD optimizer 
+            weight_decay (float) : weight decay for SGD optimizer 
+            eps (float) :  epsilon value for gradient to prevent zero in denominator
+            store (cox.store.Store) : cox store object for logging 
+        '''
         super(TruncatedLogisticRegression).__init__()
         # instance variables
         self.phi = phi 
@@ -192,7 +216,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         """
         pred = self.model(X)
         if self.args.multi_class == 'multinomial': 
-            loss = TruncatedCE.apply(pred, y, self.phi) 
+            loss = TruncatedCE.apply(pred, y, self.phi, self.args.num_samples, self.args.eps) 
         else: 
             loss = TruncatedBCE.apply(pred, y, self.phi, self.args.num_samples, self.args.eps)
         return loss
@@ -208,7 +232,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
 
         pred = self.model(inp)
         if self.args.multi_class == 'multinomial': 
-            loss = TruncatedCE.apply(pred, targ, self.phi)
+            loss = TruncatedCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
         elif self.args.multi_class == 'ovr': 
             loss = TruncatedBCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
         else: 
@@ -245,7 +269,6 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
     def val_step(self, i, batch):
         # check for convergence every at each epoch
         loss = self.calc_nll(*batch)
-        print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
         return  loss, None, None
 
     

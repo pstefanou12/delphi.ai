@@ -148,6 +148,12 @@ class delphi:
         '''
         return True
 
+    def description(self, epoch, i, loop_msg, loss, prec1, prec5):
+        '''
+        Returns string description for model at each iteration.
+        '''
+        return '{} Epoch: {} | Loss: {} | Train Prec 1:  {} | Train Prec5: {} ||'.format(epoch, loop_msg, round(float(loss.avg), 4), round(float(prec1.avg), 4), round(float(prec5.avg), 4))
+
     @property 
     def val_loader(self): 
         '''

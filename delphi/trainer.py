@@ -29,7 +29,7 @@ EVAL_LOGS_SCHEMA = {
 
 # determine running environment
 if type_of_script() in {'jupyter', 'colab'}: 
-    from tqdm.autonotebook import tqdm 
+    from tqdm.auto import tqdm
 else: 
     from tqdm import tqdm
 
@@ -211,13 +211,19 @@ class Trainer:
         
         # if is_train, put model into train mode, else eval mode
         # self.model = self.model.model.train() if is_train else self.model.model.eval()
+        loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
+        
         # iterator
-        iterator = enumerate(loader) if not self.model.args.verbose else tqdm(enumerate(loader), total=len(loader), leave=False) 
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar}{r_bar}') 
         for i, batch in iterator:
             # if training loop, perform training step
             if is_train:
                 self.model.optimizer.zero_grad()
                 loss, prec1, prec5 = self.model.train_step(epoch, batch)
+                # update average meters
+                loss_.update(loss)
+                if prec1 is not None: prec1_.update(prec1)
+                if prec5 is not None: prec5_.update(prec5)
                 loss.backward()
                 # ch.nn.utils.clip_grad_norm_(self.model.parameters, 5.0)
                 self.model.optimizer.step()
@@ -227,9 +233,8 @@ class Trainer:
                 loss, prec1, prec5 = self.model.val_step(epoch, batch)
 
             # iterator description
-            if self.verbose and hasattr(self.model, 'description'):
-                desc = self.model.description(epoch, i, loop_msg)
-                iterator.set_description(desc)
+            desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_)
+            iterator.set_description(desc)
            
             # iteration hook 
             if hasattr(self.model, 'iteration_hook'): self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)

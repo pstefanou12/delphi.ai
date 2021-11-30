@@ -6,15 +6,15 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader
+import torch.linalg as LA
 from cox.utils import Parameters
-import config
 
 from .. import delphi
 from .normal import CensoredNormal, CensoredNormalModel
 from ..oracle import oracle
 from ..trainer import Trainer
 from ..utils.helpers import Bounds
-from ..utils import defaults
+from ..utils.datasets import CensoredNormalDataset
 
 
 class CensoredMultivariateNormal(CensoredNormal):
@@ -57,7 +57,7 @@ class CensoredMultivariateNormal(CensoredNormal):
         self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
         self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
 
-        self.censored = CensoredMultivariateNormalModel(self.args, S, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        self.censored = CensoredMultivariateNormalModel(self.args, self.train_ds, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.censored)
 
@@ -76,25 +76,23 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
     '''
     Model for censored normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, S, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, S, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+        super().__init__(args, train_ds, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
 
-        u, s, v = ch.linalg.svd(self.emp_covariance_matrix)
-
-        # parameterize projection set
-        if config.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
-             Bounds(ch.full((S.size(1),), float(ch.square(config.args.alpha / 12.0))), s + self.radius)
+    def pretrain_hook(self):
+        # initialize projection set
+        self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
+        eig_decomp = LA.eig(self.train_ds.covariance_matrix)
+        # upper and lower bounds
+        if self.args.clamp:
+            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
         else:
             pass
-
-        self.loc_est = self.emp_loc.clone()[None,...]
-        self.cov_est = self.emp_covariance_matrix.clone()[None,...]
-       
+   
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
         Iteration hook for defined model. Method is called after each 
@@ -105,32 +103,14 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        print("cov matrix before projection: {}".format(self.model.covariance_matrix))
-        print("cov eigenvalues: {}".format(ch.linalg.eigvals(self.model.covariance_matrix)))
-
-        if config.args.clamp:
-            u, s, v = ch.linalg.svd(self.model.covariance_matrix) # decompose covariance estimate
-            eigvals = ch.linalg.eigvals(self.model.covariance_matrix).float()
-            self.model.loc.data = ch.cat([ch.clamp(self.model.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(self.model.loc.shape[0])])
-
-            project = Tensor([])
-            for i in range(s.size(0)):
-                project = ch.cat([project, ch.clamp(eigvals[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i])[None,...]])
-            
-            self.model.covariance_matrix.data = u@ch.diag(project)@v
-
-            '''
-            self.model.covariance_matrix.data = u@ch.diag(ch.cat([ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in range(s.shape[0])]))@v.T
-            '''
+        if self.args.clamp:
+            eig_decomp = LA.eig(self.model.covariance_matrix) 
+            self.model.loc.data = ch.cat(
+                [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
+                 range(self.model.loc.size(0))])
+            self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
+                [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
+                 range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()
         else:
             pass
-        self.loc_est = ch.cat([self.loc_est, self.model.loc[None,...]])
-        self.cov_est = ch.cat([self.cov_est, self.model.covariance_matrix[None,...]])
-
-        print("cov matrix after projection: {}".format(self.model.covariance_matrix))
-        if not (ch.all(ch.linalg.eigvals(self.model.covariance_matrix).float() >= 0)):
-            print("u: ", u)
-            print("s: ", s) 
-            print("v: ", v)
-            import pdb; pdb.set_trace()
 

@@ -45,8 +45,8 @@ class TruncatedLinearRegression(stats):
             num_trials: int=3,
             clamp: bool=True,
             val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
+            tol: float=3e-1,
+            r: float=1.0,
             rate: float=.5, 
             num_samples: int=10,
             bs: int=10,
@@ -87,14 +87,13 @@ class TruncatedLinearRegression(stats):
             weight_decay (float) : weight decay for SGD optimizer 
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
-            
         '''
         super(TruncatedLinearRegression).__init__()
         # instance variables
         self.phi = phi 
-        self.model = None
         self.store = store 
-
+        self.trunc_reg = None
+        # algorithm hyperparameters
         self.args = Parameters({
             'alpha': alpha,
             'num_trials': num_trials,
@@ -125,10 +124,10 @@ class TruncatedLinearRegression(stats):
     def fit(self, X: Tensor, y: Tensor):
         """
         """
-
         # check to make sure that the input features all have an l2 norm less than or equal to 1
         l_inf = LA.norm(X, dim=-1, ord=float('inf')).max() # find max l_inf
-        assert l_inf <= 1, "max l2 feature norm larger than one, make sure to normalize features"
+        if l_inf > 1: 
+            warnings.warn("max l2 feature norm larger than one, procedure may not perform as expected")
 
         # separate into training and validation set
         rand_indices = ch.randperm(X.size(0))
@@ -154,7 +153,7 @@ class TruncatedLinearRegression(stats):
             self.coef = self.trunc_reg.best_model.weight.clone()
             if self.args.fit_intercept: self.intercept = self.trunc_reg.best_model.bias.clone()
 
-    def __call__(self, x: Tensor): 
+    def predict(self, x: Tensor): 
         """
         Make predictions with regression estimates.
         """
@@ -186,14 +185,6 @@ class TruncatedLinearRegression(stats):
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
 
-    @property
-    def nll_(self): 
-        """
-        Gradient of the negative log likelihood on validation set 
-        for model's current estimates.
-        """
-        return self.trunc_reg.best_grad_norm.clone()
-    
     @property
     def train_loader(self): 
         '''
@@ -343,7 +334,6 @@ class TruncatedLinearRegressionModel(delphi.delphi):
     def val_step(self, i, batch):
         # check for convergence every at each epoch
         loss = self.calc_nll(*batch)
-        print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
         return loss, None, None
 
     def post_training_hook(self, val_loader): 

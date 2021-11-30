@@ -141,7 +141,7 @@ class CensoredNormalModel(delphi.delphi):
         """
         Calculates the truncated log-likelihood of the current regression estimates of the validation set. 
         """
-        return CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, S, S_grad, self.phi)
+        return CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, S, S_grad, self.phi, self.args.num_samples, self.args.eps)
             
     def train_step(self, i, batch):
         '''
@@ -150,7 +150,7 @@ class CensoredNormalModel(delphi.delphi):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
-        loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi)
+        loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -172,7 +172,6 @@ class CensoredNormalModel(delphi.delphi):
     def val_step(self, i, batch):
         # check for convergence every at each epoch
         loss = self.calc_nll(*batch)
-        print("Epoch {} | Log Likelihood: {}".format(i, round(float(abs(loss)), 3)))
         return loss, None, None
 
     def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):

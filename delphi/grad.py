@@ -18,23 +18,22 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
     Computes the negative population log likelihood for censored multivariate normal distribution.
     """
     @staticmethod
-    def forward(ctx, v, T, S, S_grad, phi, num_samples=10):
+    def forward(ctx, v, T, S, S_grad, phi, num_samples=10, eps=1e-5):
         # reparameterize distribution
         sigma = T.inverse()
         mu = sigma@v.flatten()
         # reparameterize distribution
         z = Tensor([])
         M = MultivariateNormal(mu, sigma)
-        while z.size(0) < S.size(0):
-            s = M.sample(sample_shape=ch.Size([num_samples, ]))
-            z = ch.cat([z, s[phi(s).flatten().nonzero().flatten()]])
-        z = z[:S.size(0)]
-       
+        # make num_samples copies of pred, N x B x 1
+        stacked = S[None, ...].repeat(num_samples, 1, 1)
+        s = M.sample([num_samples, S.size(0)])
+        filtered = phi(s)[...,None]
+        z = (s * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
         first_term = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
         second_term = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
         ctx.save_for_backward(S_grad, z)
         return (first_term + second_term).mean(0)
-
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -42,7 +41,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         # calculate gradient
         cov_grad = (-S_grad[:,:z.size(1) ** 2] - (.5* z.unsqueeze(2)@z.unsqueeze(1)).flatten(1)).reshape(z.size(0), z.size(1), z.size(1)).mean(0)
         loc_grad = (-S_grad[:,z.size(1) ** 2:] + z).mean(0)
-        return loc_grad, cov_grad, None, None, None, None
+        return loc_grad, cov_grad, None, None, None, None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
@@ -71,7 +70,7 @@ class TruncatedMSE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, phi, noise_var, num_samples=10, eps=1e-5):
-        # make args.num_samples copies of pred, N x B x 1
+        # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         # add random noise to each copy
         noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
@@ -191,9 +190,11 @@ class TruncatedBCE(ch.autograd.Function):
 
 class GumbelCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ):
+    def forward(ctx, pred, targ, num_samples=1000, eps=1e-5):
         ctx.save_for_backward(pred, targ)
         ce_loss = ch.nn.CrossEntropyLoss()
+        ctx.num_samples = num_samples
+        ctx.eps = eps
         return ce_loss(pred, targ)
 
     @staticmethod
@@ -202,23 +203,25 @@ class GumbelCE(ch.autograd.Function):
         # gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
         # add gumbel noise to logits
-        rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
+        rand_noise = gumbel.sample(stacked.size())
         noised = stacked + rand_noise 
         noised_labs = noised.argmax(-1)
         # remove the logits from the trials, where the kth logit is not the largest value
         mask = noised_labs.eq(targ)[..., None]
         inner_exp = 1 - ch.exp(-rand_noise)
-        avg = (inner_exp * mask).sum(0) / (mask.sum(0) + 1e-5) / pred.size(0)
-        return -avg , None
+        avg = (inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps) / pred.size(0)
+        return -avg , None, None, None
 
 
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ, phi):
+    def forward(ctx, pred, targ, phi, num_samples=1000, eps=1e-5):
         ctx.save_for_backward(pred, targ)
         ctx.phi = phi
+        ctx.num_samples = num_samples
+        ctx.eps = eps
         ce_loss = ch.nn.CrossEntropyLoss()
         return ce_loss(pred, targ)
 
@@ -228,15 +231,15 @@ class TruncatedCE(ch.autograd.Function):
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
+        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
         # add gumbel noise to logits
-        rand_noise = gumbel.sample(stacked.size()).to(config.args.device)
+        rand_noise = gumbel.sample(stacked.size())
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = ctx.phi(noised).to(config.args.device)
+        filtered = ctx.phi(noised)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None] * filtered
         inner_exp = (1 - ch.exp(-rand_noise))
-        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + 1e-5))) / pred.size(0)
-        return -avg, None, None
+        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))) / pred.size(0)
+        return -avg, None, None, None, None
