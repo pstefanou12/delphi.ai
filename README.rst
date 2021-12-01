@@ -4,11 +4,6 @@ Install via ``pip``: ``pip install delphi.ai``
 
 This library holds a collection of algorithms that can be used debias models that have been defected due to truncation, or missing data. 
 
-To install the package, 
-.. code-block:: bash
-
-   pip install --user -r requirements.txt
-
 We
 demonstrate how to use the library in a set of walkthroughs and our API
 reference. Functionality provided by the library includes:
