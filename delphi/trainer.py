@@ -12,7 +12,9 @@ from torch import Tensor
 import cox
 from typing import Any, Iterable, Callable
 from abc import ABC
+from time import time
 
+from .delphi import delphi
 from . import oracle
 from .utils.helpers import has_attr, ckpt_at_epoch, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, ProcedureComplete
 from .utils import constants as consts
@@ -20,6 +22,7 @@ from .utils import constants as consts
 # CONSTANTS
 TRAIN = 'train'
 VAL = 'val'
+INFINITY = float('inf')
 
 EVAL_LOGS_SCHEMA = {
     'test_prec1':float,
@@ -38,76 +41,48 @@ class Trainer:
     Flexible trainer class for training models in Pytorch.
     """
     def __init__(self, 
-                model: Any,
-                disable_no_grad: bool = False,
-                verbose: bool = True) -> None:
+                model: delphi,
+                max_iter: int,
+                trials: int=1,
+                tol: float=1e-3, 
+                early_stopping: bool=False,
+                n_iter_no_change: int=5,
+                disable_no_grad: bool=False,
+                verbose: bool=False) -> None:
         """
         Train models. 
         Args: 
-            args (object) : A python object for arguments, implementing
-                ``getattr()`` and ``setattr()`` and having the following
-                attributes. See :attr:`delphi.defaults.TRAINING_ARGS` for a 
-                list of arguments, and you can use
-                :meth:`delphi.defaults.check_and_fill_args` to make sure that
-                all required arguments are filled and to fill missing args with
-                reasonable defaults:
-                epochs (int, *required*)
-                    number of epochs to train for
-                lr (float, *required*)
-                    learning rate for SGD optimizer
-                weight_decay (float, *required*)
-                    weight decay for SGD optimizer
-                momentum (float, *required*)
-                    momentum parameter for SGD optimizer
-                step_lr (int)
-                    if given, drop learning rate by 10x every `step_lr` steps
-                custom_lr_multplier (str)
-                    If given, use a custom LR schedule, formed by multiplying the
-                        original ``lr`` (format: [(epoch, LR_MULTIPLIER),...])
-                lr_interpolation (str)
-                    How to drop the learning rate, either ``step`` or ``linear``,
-                        ignored unless ``custom_lr_multiplier`` is provided.
-                log_iters (int, *required*)
-                    How frequently (in epochs) to save training logs
-                save_ckpt_iters (int, *required*)
-                    How frequently (in epochs) to save checkpoints (if -1, then only
-                    save latest and best ckpts)
-                eps (float or str, *required if adv_train or adv_eval*)
-                    float (or float-parseable string) for the adv attack budget
-                use_best (int or bool, *required if adv_train or adv_eval*) :
-                    If True/1, use the best (in terms of loss) PGD step as the
-                    attack, if False/0 use the last step
-                custom_accuracy (function)
-                    If given, should be a function that takes in model outputs
-                    and model targets and outputs a top1 and top5 accuracy, will 
-                    displayed instead of conventional accuracies
-                regularizer (function, optional) 
-                    If given, this function of `model, input, target` returns a
-                    (scalar) that is added on to the training loss without being
-                    subject to adversarial attack
-            model (Any) : model to train 
-            pretrain_hook (Callable) : procedure pretrian hook, default is None; useful for initializing model parameters, etc.
-            train_step (Callable) : procedure train step, including both the forward and the backward step, default 
-            is multi-class train step with CE Loss
-            val_step (Callable) : procedure val step 
-            epoch_hook (Callable) : procedure epoch hook, default is None; useful for custom logging, etc.
-            post_train_hook (Callable) : post training hook, called after the model has been trained
-            checkpoint (dict) : a loaded checkpoint previously saved by this library
-                (if resuming from checkpoint)
-            store (cox.Store) : a cox store for logging training progress
-            params (list) : list of parameters to use for training, if None
-                then all parameters in the model are used (useful for transfer
-                learning)
+            model (delphi) : delphi model to train 
+            max_iter (int): maximum number of epocsh to perform on data
+            trials (int): number of trials to pform procedure
+            tol (float): the tolerance for the stopping criterion
+            early_stopping (bool): whether to use a stopping criterion based on the validation set
+            n_iter_no_change (int): number of iteration with no improvement to wait before stopping
             disable_no_grad (bool) : if True, then even model evaluation will be
                 run with autograd enabled (otherwise it will be wrapped in a ch.no_grad())
             verbose (bool) : print iterator output as procedure progresses
         """
-        # INSTANCE VARIABLES
+        assert isinstance(model, delphi), "model type: {} is incompatible with Trainer class".format(type(model))
         self.model = model
+        assert isinstance(max_iter, int), "max_iter is type {}, Trainer expects type int".format(type(max_iter))
+        self.max_iter = max_iter 
+        assert isinstance(trials, int), "trials is type {}, Trainer expects type int".format(type(tol))
+        self.trials = trials 
+
+        # procedure early termination parameters
+        assert isinstance(tol, float), "tol is type {}, Trainer expects type float".format(type(tol))
+        self.tol = tol 
+        assert isinstance(early_stopping, bool), "early_stopping is type {}, Trainer expects type bool".format(type(early_stopping))
+        self.early_stopping = early_stopping
+        assert isinstance(n_iter_no_change, int), "n_iter_no_change is type {}, Trainer expects type int".format(type(n_iter_no_change))
+        self.n_iter_no_change = n_iter_no_change
+        self.no_improvement_count = 0
+        self.best_loss = -INFINITY
+
+        assert isinstance(disable_no_grad, bool), "disable_no_grad is type {}, Trainer expects type bool".format(type(disable_no_grad))
         self.disable_no_grad = disable_no_grad
-        # number of periods/epochs for learning rate schedulers
-        self.epochs = self.model.args.epochs
         # print log output or not
+        assert isinstance(verbose, bool), "verbose is type {}, Trainer expects type bool".format(type(verbose))
         self.verbose = verbose
 
     def eval_model(self, loader):
@@ -156,9 +131,10 @@ class Trainer:
 
         # keep track of whether procedure is done or not
         done = False
-        while not done:
+        t_start = time()
+        for trial in range(self.trials):
             # PRETRAIN HOOK
-            if hasattr(self.model, 'pretrain_hook'): self.model.pretrain_hook()
+            self.model.pretrain_hook()
             
             # make optimizer and scheduler for training neural network
             self.model.make_optimizer_and_schedule()
@@ -168,24 +144,32 @@ class Trainer:
                 best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
         
             # do training loops until performing enough gradient steps or epochs
-            for epoch in range(1, self.epochs + 1):
-                try: 
-                    self.model_loop(TRAIN, train_loader, epoch)
-                # if raising ProcedureComplete, then terminate
-                except ProcedureComplete: 
-                    return self.model
-                # raise error
-                except Exception as e: 
-                    raise e
-                # evaluate model on validation set, if there is one
+            for epoch in range(1, self.max_iter + 1):
+                # TRAIN LOOP
+                loss, prec1, prec5 = self.model_loop(TRAIN, train_loader, epoch)
+                
+                # VALIDATION LOOP
                 if val_loader is not None:
-                    ctx = ch.enable_grad() if self.disable_no_grad else ch.no_grad()
-                    with ctx:
-                        self.model_loop(VAL, val_loader, epoch)
+                    with ch.no_grad():
+                        loss, prec1, prec5 = self.model_loop(VAL, val_loader, epoch)
+
+                    # check for early completion
+                    if self.early_stopping: 
+                        if self.tol > -INFINITY and loss > self.best_loss - self.tol:
+                            self.no_improvement_count += 1
+                        else: 
+                            self.no_improvement_count = 0
+
+                        if loss < self.best_loss: 
+                            self.best_loss = loss
+
+                    if self.no_improvement_count >= self.n_iter_no_change:
+                        if self.verbose: 
+                            print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
+                        return self.model
 
             # POST TRAINING HOOK     
-            if hasattr(self.model, 'post_training_hook'): 
-                done = self.model.post_training_hook(val_loader)
+            self.model.post_training_hook()
         return self.model
                 
     def model_loop(self, loop_type, loader, epoch):
@@ -214,31 +198,34 @@ class Trainer:
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         
         # iterator
-        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar}{r_bar}') 
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar}{r_bar}') if self.verbose else enumerate(loader) 
         for i, batch in iterator:
+            self.model.optimizer.zero_grad()
+            loss, prec1, prec5 = self.model(batch)
+            # update average meters
+            loss_.update(loss)
+            if prec1 is not None: prec1_.update(prec1)
+            if prec5 is not None: prec5_.update(prec5)
+            # regularize
+            reg_term = self.model.regularize(batch)
+            loss = loss + reg_term
+
             # if training loop, perform training step
             if is_train:
-                self.model.optimizer.zero_grad()
-                loss, prec1, prec5 = self.model.train_step(epoch, batch)
-                # update average meters
-                loss_.update(loss)
-                if prec1 is not None: prec1_.update(prec1)
-                if prec5 is not None: prec5_.update(prec5)
                 loss.backward()
-                # ch.nn.utils.clip_grad_norm_(self.model.parameters, 5.0)
                 self.model.optimizer.step()
                 
                 if self.model.schedule is not None: self.model.schedule.step()
-            else: 
-                loss, prec1, prec5 = self.model.val_step(epoch, batch)
-
-            # iterator description
-            desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_)
-            iterator.set_description(desc)
+            
+            # ITERATOR DESCRIPTION
+            if self.verbose:
+                desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_)
+                iterator.set_description(desc)
            
-            # iteration hook 
-            if hasattr(self.model, 'iteration_hook'): self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
-
+            # ITERATION HOOK 
+            self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
         # EPOCH HOOK
-        if hasattr(self.model, 'epoch_hook'): self.model.epoch_hook(epoch, loop_type, loss, prec1, prec5, batch)
+        self.model.epoch_hook(epoch, loop_type, loss, prec1, prec5)
+
+        return loss_.avg, prec1_.avg, prec5_.avg
 

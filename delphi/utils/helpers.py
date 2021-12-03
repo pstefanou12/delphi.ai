@@ -5,9 +5,11 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
+import torch.linalg as LA
 from torch.distributions import Uniform
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
+from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 import cox
 from typing import NamedTuple
@@ -19,6 +21,7 @@ import pprint
 from . import constants as consts
 
 # CONSTANTS
+REQ = 'required'
 JUPYTER = 'jupyter'
 TERMINAL = 'terminal'
 IPYTHON = 'ipython'
@@ -390,6 +393,94 @@ class LinearUnknownVariance(nn.Module):
         if self.bias is not None:
             return ch.add(x@w.T, self.bias * var)
         return x@w.T
+
+
+class Normalize:
+    """
+    Normalizes the input covariate features for truncated
+    regression.
+    """
+
+    def __init__(self):
+        '''
+        Args:
+            X (torch.Tensor): regression input features; shape expected to be n (number of samples) by d (number of dimensions)
+        '''
+        super(Normalize).__init__()
+        self._l_inf, self._beta = None, None
+
+    def fit_transform(self, X):
+        '''
+        Normalize input features truncated regression
+        '''
+        # normalize input features
+        self._l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
+        self._beta = self._l_inf * (X.size(1) ** .5)
+        return self
+
+    def transform(self, X):      
+        return X / self._beta
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @property
+    def l_inf(self):
+        return self._l_inf
+
+
+def make_train_and_val(args, X, y): 
+    # separate into training and validation set
+    rand_indices = ch.randperm(X.size(0))
+    val = int(args.val * X.size(0))
+    train_indices, val_indices = rand_indices[val:], rand_indices[:val]
+    X_train,y_train = X[train_indices], y[train_indices]
+    X_val, y_val = X[val_indices], y[val_indices]
+
+    # normalize input covariates
+    if args.normalize:
+        train_norm = Normalize().fit_transform(X_train)
+        X_train = train_norm.transform(X_train)
+        val_norm = Normalize().fit_transform(X_val)
+        X_val = val_norm.transform(X_val)
+
+    train_ds = TensorDataset(X_train, y_train)
+    val_ds = TensorDataset(X_val, y_val)
+
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers)
+
+    return train_loader, val_loader
+
+def make_train_and_val_distr(args, S): 
+    # separate into training and validation set
+    rand_indices = ch.randperm(S.size(0))
+    val = int(args.val * X.size(0))
+    train_indices, val_indices = rand_indices[args.val:], rand_indices[:args.val]
+    X_train = S[train_indices]
+    X_val = S[val_indices]
+    train_ds = CensoredNormalDataset(X_train)
+    val_ds = CensoredNormalDataset(X_val)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size)
+    val_loader = DataLoader(val_ds, batch_size=len(val_ds))
+
+    return train_loader, val_loader
+
+def check_and_fill_args(args, defaults): 
+        '''
+        Checks args (algorithm hyperparameters) and makes sure that all required parameters are 
+        given.
+        '''
+        for arg_name, (arg_type, arg_default) in defaults.items():
+            if has_attr(args, arg_name):
+                # check to make sure that hyperparameter inputs are the same type
+                if isinstance(args.__getattr__(arg_name), arg_type): continue
+                raise ValueError('Arg: {} is not correct type: {}. Fix args dict and run again.'.format(arg_name, arg_type))
+            if arg_default == REQ: raise ValueError(f"{arg_name} required")
+            elif arg_default is not None: 
+                setattr(args, arg_name, arg_default)
+        return args
 
         
 # logistic distribution

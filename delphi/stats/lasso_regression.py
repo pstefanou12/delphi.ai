@@ -1,5 +1,5 @@
 """
-Truncated Linear Regression.
+Truncated Lasso Regression.
 """
 
 import torch as ch
@@ -8,7 +8,7 @@ from torch import Tensor
 import torch.nn as nn
 from torch.nn import Linear
 from torch.utils.data import TensorDataset, DataLoader
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LassoCV
 import math
 import cox
 from cox.store import Store
@@ -20,7 +20,8 @@ from .. import delphi
 from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
-from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
+from .linear_regression import TruncatedLinearRegression
+from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, KnownVariance, UnknownVariance
 from ..utils import constants as consts
 from ..utils.helpers import Parameters, Bounds, LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete, Normalize, make_train_and_val, check_and_fill_args
 
@@ -46,14 +47,14 @@ DEFAULTS = {
         'rate': (float, 1.5), 
         'normalize': (bool, True), 
         'batch_size': (int, 10),
-        'tol': (float, 1e-3),
+        'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
 }
 
-class TruncatedLinearRegression(stats):
+class TruncatedLassoRegression(TruncatedLinearRegression):
     '''
-    Truncated linear regression class. Supports truncated linear regression
+    Truncated LASSO regression class. Supports truncated LASSO regression
     with known noise, unknown noise, and confidence intervals. Module uses 
     delphi.trainer.Trainer to train truncated linear regression by performing 
     projected stochastic gradient descent on the truncated population log likelihood. 
@@ -68,7 +69,6 @@ class TruncatedLinearRegression(stats):
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
             alpha (float) : survival probability for truncated regression model
-            unknown (bool) : boolean indicating whether the noise variance is known or not - specifying algorithm to use 
             fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
             steps (int) : number of gradient steps to take
             clamp (bool) : boolean indicating whether to clamp the projection set 
@@ -87,27 +87,24 @@ class TruncatedLinearRegression(stats):
             lr_interpolation (str) : 'linear' linear interpolation
             step_lr_gamma (float) : amount to decay learning rate when running step learning rate
             momentum (float) : momentum for SGD optimizer 
+            l1 (float) : weight decay for SGD optimizer 
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         '''
-        super(TruncatedLinearRegression).__init__()
-        # instance variables
-        self.phi = phi 
-        self.trunc_reg = None
-        # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': alpha}, **kwargs}), DEFAULTS)
-
+        super(TruncatedLinearRegression).__init__(phi, alpha, kwargs)
+        
     def fit(self, X: Tensor, y: Tensor):
         """
         """
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
+
         if self.args.noise_var is None:
-            self.trunc_reg = UnknownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_reg = LassoUnknownVariance(self.args, self.train_loader_, self.phi) 
         else: 
-            self.trunc_reg = KnownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_reg = LassoKnownVariance(self.args, self.train_loader_, self.phi) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_reg, self.args.epochs, self.args.num_trials, self.args.tol)
+        trainer = Trainer(self.trunc_reg)
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
@@ -118,7 +115,7 @@ class TruncatedLinearRegression(stats):
                 self.variance = self.trunc_reg.model.lambda_.clone().inverse()
                 self.coef *= self.variance
                 if self.args.fit_intercept: self.intercept *= self.variance.flatten()
-            
+
     def predict(self, x: Tensor): 
         """
         Make predictions with regression estimates.
@@ -165,7 +162,7 @@ class TruncatedLinearRegression(stats):
         '''
         return self.val_loader_
 
-class KnownVariance(delphi.delphi):
+class LassoKnownVariance(KnownVariance):
     '''
     Truncated linear regression with known noise variance model.
     '''
@@ -176,9 +173,10 @@ class KnownVariance(delphi.delphi):
         '''
         super().__init__(args)
         X, y = train_loader.dataset[:]
+        self.trials = 0
         self.phi = phi
         # calculate empirical estimates
-        self.emp_model = LinearRegression(fit_intercept=self.args.fit_intercept).fit(X, y)
+        self.emp_model = LassoCV(fit_intercept=self.args.fit_intercept, alphas=[self.args.l1]).fit(X, y)
         self.emp_weight = Tensor(self.emp_model.coef_)
         if self.args.fit_intercept:
             self.emp_bias = Tensor(self.emp_model.intercept_)
@@ -206,43 +204,18 @@ class KnownVariance(delphi.delphi):
             self.model.bias.data = self.emp_bias
         self.params = None
 
-    def __call__(self, batch): 
-        """
-        Calculates the negative log likelihood of the current regression estimates of the validation set.
-        Args: 
-            proc (bool) : boolean indicating whether, the function is being called within 
-            a stochastic process, or someone is accessing the parent class's property
-        """
-        X, y = batch
-        pred = self.model(X)
-        loss = TruncatedMSE.apply(pred, y, self.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
-        return [loss, None, None]
-        
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def regularize(self, batch):
         '''
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
+        L1 regularizer for LASSO regression.
         '''
-        # project model parameters back to domain 
-        if self.args.clamp: 
-            self.model.weight.data = ch.cat([ch.clamp(self.model.weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i]) 
-                for i in range(self.model.weight.size(1))])[None,...]
-            if self.args.fit_intercept:
-                # project bias
-                self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(self.model.bias.size())
-        else: 
-            pass
-
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
+        if self.args.l1 == 0.0: return 0.0
+        reg_term = 0
+        for param in self.model.parameters(): 
+            reg_term += param.norm()
+        return self.args.l1 * reg_term
 
 
-class UnknownVariance(KnownVariance):
+class LassoUnknownVariance(UnknownVariance):
     '''
     Parent/abstract class for models to be passed into trainer.  
     '''
@@ -252,7 +225,13 @@ class UnknownVariance(KnownVariance):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
         super().__init__(args, train_loader, phi)
-        
+        # calculate empirical estimates
+        self.emp_model = LassoCV(fit_intercept=self.args.fit_intercept, alphas=[self.args.l1]).fit(X, y)
+        self.emp_weight = Tensor(self.emp_model.coef_)
+        if self.args.fit_intercept:
+            self.emp_bias = Tensor(self.emp_model.intercept_)
+        self.emp_var = ch.var(Tensor(self.emp_model.predict(X)) - y, dim=0)[..., None]
+
     def pretrain_hook(self):
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
@@ -277,38 +256,3 @@ class UnknownVariance(KnownVariance):
         self.params = [{'params': [self.model.weight, self.model.bias]},
             {'params': self.model.lambda_, 'lr': self.args.var_lr}]
         
-    def __call__(self, batch):
-        '''
-        Training step for defined model.
-        Args: 
-            batch (Iterable) : iterable of inputs that 
-        '''
-        X, y = batch
-        pred = self.model(X)
-        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.model.lambda_, self.phi, self.args.num_samples, self.args.eps)
-        return loss, None, None
-
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        '''
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
-        '''
-        # project model parameters back to domain 
-        if self.args.clamp: 
-            var = self.model.lambda_.inverse()
-            weight = self.model.weight * var
-            self.model.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
-            # project weights
-            self.model.weight.data = ch.cat([ch.clamp(weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i])
-                for i in range(weight.size(1))])[None,...] * self.model.lambda_
-            if self.args.fit_intercept: 
-                # project bias
-                bias = self.model.bias * var
-                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.model.lambda_).reshape(self.model.bias.size())
-        else: 
-            pass

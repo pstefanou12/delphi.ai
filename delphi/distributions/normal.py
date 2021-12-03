@@ -17,8 +17,29 @@ from ..trainer import Trainer
 from ..utils.datasets import CensoredNormalDataset
 from ..grad import CensoredMultivariateNormalNLL
 from ..utils import defaults
-from ..utils.helpers import Bounds, censored_sample_nll
+from ..utils.helpers import Bounds, check_and_fill_args
 
+# CONSTANTS 
+DEFAULTS = {
+        'epochs': (int, 1),
+        'num_trials': (int, 3),
+        'clamp': (bool, True), 
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
 
 class CensoredNormal(distributions):
     """
@@ -27,64 +48,23 @@ class CensoredNormal(distributions):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            epochs: int=1,
-            clamp: bool=True,
-            val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
-            num_samples: int=100,
-            bs: int=10,
-            lr: float=1e-1,
-            step_lr: int=100, 
-            custom_lr_multiplier: str=None,
-            lr_interpolation: str=None,
-            step_lr_gamma: float=.9,
-            momentum: float=0.0, 
-            weight_decay: float=0.0,
-            eps: float=1e-5, 
-            **kwargs):
+            kwargs: dict=None):
         """
         Args:
             
         """
         super(CensoredNormal).__init__()
-        self.custom_lr_multiplier = custom_lr_multiplier
-        self.step_lr = step_lr 
-        self.step_lr_gamma = step_lr_gamma
-        self.lr_interpolation = lr_interpolation
-
         # instance variables
-        self.phi = phi 
+        self.phi = phi
 
-        self.args = Parameters({ 
-            'alpha': Tensor([alpha]),
-            'bs': bs, 
-            'epochs': epochs,
-            'momentum': momentum, 
-            'weight_decay': weight_decay,   
-            'num_samples': num_samples,
-            'lr': lr,  
-            'eps': eps,
-            'tol': tol,
-            'val': val,
-            'clamp': clamp,
-            'r': r,
-            'verbose': False,
-        })
-        
+        # algorithm hyperparameters
+        self.args = check_and_fill_args(Parameters({**{'alpha': alpha}, **kwargs}), DEFAULTS)
+
     def fit(self, S: Tensor):
         """
         """
-        # separate into training and validation set
-        rand_indices = ch.randperm(S.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train = S[train_indices]
-        self.X_val = S[val_indices]
-        self.train_ds = CensoredNormalDataset(self.X_train)
-        self.val_ds = CensoredNormalDataset(self.X_val)
-        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
-        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
-
+       
+        train_loader, val_loader = 
         self.censored = CensoredNormalModel(self.args, self.train_ds, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.censored)
