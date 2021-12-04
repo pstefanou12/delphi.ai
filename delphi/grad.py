@@ -15,33 +15,52 @@ from .utils.helpers import logistic, censored_sample_nll
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
     """
-    Computes the negative population log likelihood for censored multivariate normal distribution.
+    Computes the truncated negative population log likelihood for censored multivariate normal distribution. 
+    Function calculates the truncated negative log likelihood in the forward method and then calculates the 
+    gradients with respect mu and cov in the backward method. When sampling from the conditional distribution, 
+    we sample batch_size * num_samples samples, we then filter out the samples that remain in the truncation set, 
+    and retainup to batch_size of the filtered samples. If there are fewer than batch_size number of samples remain,
+    we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
     def forward(ctx, v, T, S, S_grad, phi, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
+            T (torch.Tensor): square reparameterized (cov^(-1)) covariance matrix with dim d
+            S (torch.Tensor): batch_size * dims, sample batch 
+            S_grad (torch.Tenosr): batch_size * (dims + dim * dims) gradient for batch
+            phi (delphi.oracle): oracle for censored distribution
+            num_samples (int): number of samples to sample for each sample in batch
+        """
         # reparameterize distribution
         sigma = T.inverse()
-        mu = sigma@v.flatten()
+        mu = (sigma@v).flatten()
         # reparameterize distribution
-        z = Tensor([])
         M = MultivariateNormal(mu, sigma)
-        # make num_samples copies of pred, N x B x 1
-        stacked = S[None, ...].repeat(num_samples, 1, 1)
-        s = M.sample([num_samples, S.size(0)])
-        filtered = phi(s)[...,None]
-        z = (s * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        first_term = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
-        second_term = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
+        # sample num_samples * batch size samples from distribution
+        s = M.sample([num_samples * S.size(0)])
+        filtered = phi(s)[...,None] * s
+        """
+        TODO: see if there is a better way to do this
+        """
+        # z is a tensor of size batch size zeros, then fill with up to batch size num samples
+        z = ch.zeros(S.size())
+        elts = filtered[filtered.nonzero(as_tuple=True)][...,None][:S.size(0)]
+        z[:elts.size(0)] = elts
+        # standard negative log likelihood
+        nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
+        # normalizing constant for nll
+        norm_const = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
         ctx.save_for_backward(S_grad, z)
-        return (first_term + second_term).mean(0)
+        return (nll + norm_const).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, z = ctx.saved_tensors
         # calculate gradient
-        cov_grad = (-S_grad[:,:z.size(1) ** 2] - (.5* z.unsqueeze(2)@z.unsqueeze(1)).flatten(1)).reshape(z.size(0), z.size(1), z.size(1)).mean(0)
-        loc_grad = (-S_grad[:,z.size(1) ** 2:] + z).mean(0)
-        return loc_grad, cov_grad, None, None, None, None, None
+        grad = -S_grad + censored_sample_nll(z)
+        return grad[:,z.size(1) ** 2:] / z.size(0), grad[:,:z.size(1) ** 2] / z.size(0), None, None, None, None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):

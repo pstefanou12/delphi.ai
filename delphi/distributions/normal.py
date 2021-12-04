@@ -14,7 +14,7 @@ from .. import delphi
 from .distributions import distributions
 from ..oracle import oracle
 from ..trainer import Trainer
-from ..utils.datasets import CensoredNormalDataset
+from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
 from ..grad import CensoredMultivariateNormalNLL
 from ..utils import defaults
 from ..utils.helpers import Bounds, check_and_fill_args
@@ -55,19 +55,21 @@ class CensoredNormal(distributions):
         """
         super(CensoredNormal).__init__()
         # instance variables
+        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
+        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         self.phi = phi
 
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': alpha}, **kwargs}), DEFAULTS)
+        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
 
     def fit(self, S: Tensor):
         """
         """
        
-        train_loader, val_loader = 
-        self.censored = CensoredNormalModel(self.args, self.train_ds, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S)
+        self.censored = CensoredNormalModel(self.args, self.train_loader_.dataset, self.phi)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.censored)
+        self.trainer = Trainer(self.censored, self.args.epochs, self.args.num_trials, self.args.tol)
 
         # run PGD for parameter estimation 
         self.trainer.train_model((self.train_loader_, self.val_loader_))
@@ -82,7 +84,7 @@ class CensoredNormal(distributions):
     @property 
     def variance(self): 
         """
-        Returns the standard deviation for the normal distribution.
+        Returns the variance for the normal distribution.
         """
         return self.censored.model.covariance_matrix.clone()
 
@@ -91,39 +93,41 @@ class CensoredNormalModel(delphi.delphi):
     '''
     Model for censored normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, train_ds, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds, phi): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
-        self.train_ds = train_ds
+        super().__init__(args)
         self.phi = phi 
+        self.train_ds = train_ds
+        self.emp_loc, self.emp_covariance_matrix = None, None
+        # initialize empirical estimates
+        self.calc_emp_model()
 
-        # initialize projection set
-        self.emp_covariance_matrix = self.train_ds.covariance_matrix.inverse()
-        self.emp_loc = self.train_ds.loc @ self.emp_covariance_matrix
-           
+    def pretrain_hook(self):
         self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
         # parameterize projection set
+        T = self.emp_covariance_matrix.clone().inverse()
+        v = self.emp_loc.clone() @ T
+
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.emp_loc-self.radius, self.emp_loc+self.radius), \
-             Bounds(ch.square(self.args.alpha / 12.0), self.emp_covariance_matrix + self.radius)
+            self.loc_bounds, self.scale_bounds = Bounds(v - self.radius, v + self.radius), \
+             Bounds(ch.square(self.args.alpha / 12.0), T + self.radius)
         else:
             pass
 
-        # establish empirical distribution
-        self.model = MultivariateNormal(self.emp_loc.clone(), self.emp_covariance_matrix.clone())
+        # initialize empirical model 
+        self.model = MultivariateNormal(v, T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         self.params = [self.model.loc, self.model.covariance_matrix]
 
-    def calc_nll(self, S, S_grad): 
-        """
-        Calculates the truncated log-likelihood of the current regression estimates of the validation set. 
-        """
-        return CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, S, S_grad, self.phi, self.args.num_samples, self.args.eps)
-            
-    def train_step(self, i, batch):
+    def calc_emp_model(self): 
+        # initialize projection set
+        self.emp_covariance_matrix = self.train_ds.covariance_matrix
+        self.emp_loc = self.train_ds.loc
+
+    def __call__(self, batch):
         '''
         Training step for defined model.
         Args: 
@@ -149,18 +153,12 @@ class CensoredNormalModel(delphi.delphi):
         else:
             pass
 
-    def val_step(self, i, batch):
-        # check for convergence every at each epoch
-        loss = self.calc_nll(*batch)
-        return loss, None, None
+        # self.model.covariance_matrix.data = ch.ones(1, 1)
 
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        # re-randomize data points in training set 
-        self.train_ds.randomize() 
-    
-    def post_training_hook(self, val_loader): 
+
+    def post_training_hook(self): 
+        self.args.r *= self.args.rate
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
         self.model.loc.data = self.model.loc  @ self.model.covariance_matrix
-        return True

@@ -361,112 +361,6 @@ class DataPrefetcher():
                 break
 
 
-class LinearUnknownVariance(nn.Module):
-    """
-    Linear layer with unknown noise variance.
-    """
-    def __init__(self, in_features, out_features, bias=True):
-        """
-        :param in_features: number of in features
-        :param out_features: number of out features 
-        :param bias: bias term or not
-        """
-        # choose initial noise variance from a normal distribution
-        super(LinearUnknownVariance, self).__init__()
-        self.in_features, self.out_features = in_features, out_features
-
-        # layer parameters
-        self.weight = ch.nn.Parameter(Tensor(self.in_features, self.out_features))
-        self.bias = ch.nn.Parameter(Tensor(out_features)) if bias else None
-        self.lambda_ = ch.nn.Parameter(Tensor(1, 1))
-
-        # initialize weights and biases
-        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5)) # weight init
-        if self.bias: 
-            nn.init.uniform_(self.bias, -5, 5)  # bias init 
-        nn.init.uniform_(self.lambda_, -5, 5)  # lambda init 
-
-    def forward(self, x):
-        # reparamaterize weight and variance estimates
-        var = self.lambda_.clone().detach().inverse()
-        w = self.weight * var
-        if self.bias is not None:
-            return ch.add(x@w.T, self.bias * var)
-        return x@w.T
-
-
-class Normalize:
-    """
-    Normalizes the input covariate features for truncated
-    regression.
-    """
-
-    def __init__(self):
-        '''
-        Args:
-            X (torch.Tensor): regression input features; shape expected to be n (number of samples) by d (number of dimensions)
-        '''
-        super(Normalize).__init__()
-        self._l_inf, self._beta = None, None
-
-    def fit_transform(self, X):
-        '''
-        Normalize input features truncated regression
-        '''
-        # normalize input features
-        self._l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
-        self._beta = self._l_inf * (X.size(1) ** .5)
-        return self
-
-    def transform(self, X):      
-        return X / self._beta
-
-    @property
-    def beta(self):
-        return self._beta
-
-    @property
-    def l_inf(self):
-        return self._l_inf
-
-
-def make_train_and_val(args, X, y): 
-    # separate into training and validation set
-    rand_indices = ch.randperm(X.size(0))
-    val = int(args.val * X.size(0))
-    train_indices, val_indices = rand_indices[val:], rand_indices[:val]
-    X_train,y_train = X[train_indices], y[train_indices]
-    X_val, y_val = X[val_indices], y[val_indices]
-
-    # normalize input covariates
-    if args.normalize:
-        train_norm = Normalize().fit_transform(X_train)
-        X_train = train_norm.transform(X_train)
-        val_norm = Normalize().fit_transform(X_val)
-        X_val = val_norm.transform(X_val)
-
-    train_ds = TensorDataset(X_train, y_train)
-    val_ds = TensorDataset(X_val, y_val)
-
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers)
-
-    return train_loader, val_loader
-
-def make_train_and_val_distr(args, S): 
-    # separate into training and validation set
-    rand_indices = ch.randperm(S.size(0))
-    val = int(args.val * X.size(0))
-    train_indices, val_indices = rand_indices[args.val:], rand_indices[:args.val]
-    X_train = S[train_indices]
-    X_val = S[val_indices]
-    train_ds = CensoredNormalDataset(X_train)
-    val_ds = CensoredNormalDataset(X_val)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size)
-    val_loader = DataLoader(val_ds, batch_size=len(val_ds))
-
-    return train_loader, val_loader
-
 def check_and_fill_args(args, defaults): 
         '''
         Checks args (algorithm hyperparameters) and makes sure that all required parameters are 
@@ -476,7 +370,7 @@ def check_and_fill_args(args, defaults):
             if has_attr(args, arg_name):
                 # check to make sure that hyperparameter inputs are the same type
                 if isinstance(args.__getattr__(arg_name), arg_type): continue
-                raise ValueError('Arg: {} is not correct type: {}. Fix args dict and run again.'.format(arg_name, arg_type))
+                raise ValueError('arg: {} is not correct type: {}. fix args dict and run again.'.format(arg_name, arg_type))
             if arg_default == REQ: raise ValueError(f"{arg_name} required")
             elif arg_default is not None: 
                 setattr(args, arg_name, arg_default)

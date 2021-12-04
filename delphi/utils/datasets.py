@@ -276,6 +276,76 @@ class ImageNet(DataSet):
         return imagenet_models.__dict__[arch](num_classes=self.num_classes, 
                                         pretrained=pretrained)
 
+class Normalize:
+    """
+    Normalizes the input covariate features for truncated
+    regression.
+    """
+
+    def __init__(self):
+        '''
+        Args:
+            X (torch.Tensor): regression input features; shape expected to be n (number of samples) by d (number of dimensions)
+        '''
+        super(Normalize).__init__()
+        self._l_inf, self._beta = None, None
+
+    def fit_transform(self, X):
+        '''
+        Normalize input features truncated regression
+        '''
+        # normalize input features
+        self._l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
+        self._beta = self._l_inf * (X.size(1) ** .5)
+        return self
+
+    def transform(self, X):      
+        return X / self._beta
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @property
+    def l_inf(self):
+        return self._l_inf
+
+def make_train_and_val(args, X, y): 
+    # separate into training and validation set
+    rand_indices = ch.randperm(X.size(0))
+    val = int(args.val * X.size(0))
+    train_indices, val_indices = rand_indices[val:], rand_indices[:val]
+    X_train,y_train = X[train_indices], y[train_indices]
+    X_val, y_val = X[val_indices], y[val_indices]
+
+    # normalize input covariates
+    if args.normalize:
+        train_norm = Normalize().fit_transform(X_train)
+        X_train = train_norm.transform(X_train)
+        val_norm = Normalize().fit_transform(X_val)
+        X_val = val_norm.transform(X_val)
+
+    train_ds = TensorDataset(X_train, y_train)
+    val_ds = TensorDataset(X_val, y_val)
+
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers)
+
+    return train_loader, val_loader
+
+def make_train_and_val_distr(args, S): 
+    # separate into training and validation set
+    rand_indices = ch.randperm(S.size(0))
+    val = int(args.val * S.size(0))
+    train_indices, val_indices = rand_indices[val:], rand_indices[:val]
+    X_train, X_val = S[train_indices], S[val_indices]
+    train_ds = CensoredNormalDataset(X_train)
+    val_ds = CensoredNormalDataset(X_val)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size)
+    val_loader = DataLoader(val_ds, batch_size=len(val_ds))
+
+    return train_loader, val_loader
+
 
 class CensoredNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
