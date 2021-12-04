@@ -72,7 +72,7 @@ class delphi:
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
         for SGD procedure. 
         """
-        if self.model is None and self.params is None: raise ValueError('need to inititalize model of update params')
+        if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
         # initialize optimizer, scheduler, and then get parameters
         # setup optimizer
         if self.args.custom_lr_multiplier == ADAM:  # adam

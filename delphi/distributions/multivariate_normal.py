@@ -11,11 +11,34 @@ from cox.utils import Parameters
 
 from .. import delphi
 from .normal import CensoredNormal, CensoredNormalModel
+from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
 from ..oracle import oracle
 from ..trainer import Trainer
-from ..utils.helpers import Bounds
+from ..utils.helpers import Bounds, check_and_fill_args
 from ..utils.datasets import CensoredNormalDataset
 
+# CONSTANTS 
+DEFAULTS = {
+        'epochs': (int, 1),
+        'num_trials': (int, 3),
+        'clamp': (bool, True), 
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+        'covariance_matrix': (ch.Tensor, None),
+}
 
 class CensoredMultivariateNormal(CensoredNormal):
     """
@@ -24,42 +47,20 @@ class CensoredMultivariateNormal(CensoredNormal):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            epochs: int=1,
-            clamp: bool=True,
-            val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
-            num_samples: int=100,
-            bs: int=10,
-            lr: float=1e-1,
-            step_lr: int=100, 
-            custom_lr_multiplier: str=None,
-            lr_interpolation: str=None,
-            step_lr_gamma: float=.9,
-            momentum: float=0.0, 
-            weight_decay: float=0.0,
-            eps: float=1e-5, 
-            **kwargs):
+            kwargs: dict=None):
         """
         """
-        super().__init__(phi, alpha, epochs, clamp, val, tol, r, num_samples, bs, lr, step_lr, custom_lr_multiplier, lr_interpolation, step_lr_gamma, momentum, weight_decay, eps, **kwargs)
+        super().__init__(phi, alpha, kwargs)
 
     def fit(self, S: Tensor):
         """
         """
-        # separate into training and validation set
-        rand_indices = ch.randperm(S.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train = S[train_indices]
-        self.X_val = S[val_indices]
-        self.train_ds = CensoredNormalDataset(self.X_train)
-        self.val_ds = CensoredNormalDataset(self.X_val)
-        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
-        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
-
-        self.censored = CensoredMultivariateNormalModel(self.args, self.train_ds, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
+        assert S.size(0) > S.size(1), "input expected to bee num samples by dimenions, current input is size {}.".format(S.size()) 
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S)
+        self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset, self.phi)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.censored)
+        self.trainer = Trainer(self.censored, self.args.epochs, self.args.num_trials, self.args.tol)
 
         # run PGD for parameter estimation 
         self.trainer.train_model((self.train_loader_, self.val_loader_))
@@ -76,22 +77,38 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
     '''
     Model for censored normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, train_ds, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds, phi): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_ds, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+        super().__init__(args, train_ds, phi) 
 
     def pretrain_hook(self):
-        # initialize projection set
-        self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
-        eig_decomp = LA.eig(self.train_ds.covariance_matrix)
+        self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
+        # parameterize projection set
+        if self.args.covariance_matrix is not None:
+            T = self.args.covariance_matrix.clone().inverse()
+        else:
+            T = self.emp_covariance_matrix.clone().inverse()
+        v = self.emp_loc.clone() @ T
+
         # upper and lower bounds
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
+            self.loc_bounds = Bounds(v - self.radius, self.train_ds.loc + self.radius)
+            if self.args.covariance_matrix is None:
+                # initialize covaraince matrix projection set around its empirical eigenvalues
+                eig_decomp = LA.eig(T)
+                self.scale_bounds = Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
         else:
             pass
+
+        # initialize empirical model 
+        self.model = MultivariateNormal(v, T)
+        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # if distribution with known variance, remove from computation graph
+        if self.args.covariance_matrix is not None: self.model.covariance_matrix.requires_grad = False
+        self.params = [self.model.loc, self.model.covariance_matrix]
    
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -108,7 +125,8 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
             self.model.loc.data = ch.cat(
                 [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))])
-            self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
+            if self.args.covariance_matrix is None:
+                self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
                 [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()
         else:

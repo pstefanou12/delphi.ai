@@ -40,13 +40,13 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         M = MultivariateNormal(mu, sigma)
         # sample num_samples * batch size samples from distribution
         s = M.sample([num_samples * S.size(0)])
-        filtered = phi(s)[...,None] * s
+        filtered = phi(s).nonzero(as_tuple=True)
         """
         TODO: see if there is a better way to do this
         """
         # z is a tensor of size batch size zeros, then fill with up to batch size num samples
         z = ch.zeros(S.size())
-        elts = filtered[filtered.nonzero(as_tuple=True)][...,None][:S.size(0)]
+        elts = s[filtered][:S.size(0)]
         z[:elts.size(0)] = elts
         # standard negative log likelihood
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
@@ -60,7 +60,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         S_grad, z = ctx.saved_tensors
         # calculate gradient
         grad = -S_grad + censored_sample_nll(z)
-        return grad[:,z.size(1) ** 2:] / z.size(0), grad[:,:z.size(1) ** 2] / z.size(0), None, None, None, None, None
+        return grad[:,z.size(1) ** 2:] / z.size(0), (grad[:,:z.size(1) ** 2] / z.size(0)).view(-1, z.size(1), z.size(1)), None, None, None, None, None
 
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):

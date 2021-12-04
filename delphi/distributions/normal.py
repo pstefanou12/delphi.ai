@@ -51,7 +51,9 @@ class CensoredNormal(distributions):
             kwargs: dict=None):
         """
         Args:
-            
+           phi (delphi.oracle): oracle for censored distribution; see delphi.oracle
+           alpha (float): survival probability
+           kwargs (dict): hyperparameters for censored algorithm 
         """
         super(CensoredNormal).__init__()
         # instance variables
@@ -64,8 +66,12 @@ class CensoredNormal(distributions):
 
     def fit(self, S: Tensor):
         """
+        Runs PSGD to minimize the negative population log likelihood of the censored distribution.
+        Args: 
+            S (torch.Tensor): censored samples dataset, expecting n by d matrix (num_samples by dimensions)
         """
-       
+        assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
+        assert S.size(1) == 1, "censored normal class only accepts 1 dimensional distributions." 
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S)
         self.censored = CensoredNormalModel(self.args, self.train_loader_.dataset, self.phi)
         # run PGD to predict actual estimates
@@ -101,6 +107,7 @@ class CensoredNormalModel(delphi.delphi):
         super().__init__(args)
         self.phi = phi 
         self.train_ds = train_ds
+        self.model = None
         self.emp_loc, self.emp_covariance_matrix = None, None
         # initialize empirical estimates
         self.calc_emp_model()
@@ -117,7 +124,7 @@ class CensoredNormalModel(delphi.delphi):
         else:
             pass
 
-        # initialize empirical model 
+        # initialize empirical reparameterized model 
         self.model = MultivariateNormal(v, T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         self.params = [self.model.loc, self.model.covariance_matrix]
@@ -126,6 +133,7 @@ class CensoredNormalModel(delphi.delphi):
         # initialize projection set
         self.emp_covariance_matrix = self.train_ds.covariance_matrix
         self.emp_loc = self.train_ds.loc
+        self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
 
     def __call__(self, batch):
         '''
@@ -152,9 +160,6 @@ class CensoredNormalModel(delphi.delphi):
             self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
         else:
             pass
-
-        # self.model.covariance_matrix.data = ch.ones(1, 1)
-
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
