@@ -39,6 +39,7 @@ DEFAULTS = {
         'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
+        'variance': (ch.Tensor, None)
 }
 
 class CensoredNormal(distributions):
@@ -115,18 +116,24 @@ class CensoredNormalModel(delphi.delphi):
     def pretrain_hook(self):
         self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
         # parameterize projection set
-        T = self.emp_covariance_matrix.clone().inverse()
+        if self.args.variance is not None:
+            T = self.args.variance.clone().inverse()
+        else:
+            T = self.emp_covariance_matrix.clone().inverse()
         v = self.emp_loc.clone() @ T
 
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(v - self.radius, v + self.radius), \
-             Bounds(ch.square(self.args.alpha / 12.0), T + self.radius)
+            self.loc_bounds = Bounds(v - self.radius, v + self.radius)
+            if self.args.covariance_matrix is None:
+                self.scale_bounds = Bounds(ch.square(self.args.alpha / 12.0), T + self.radius)
         else:
             pass
 
         # initialize empirical reparameterized model 
         self.model = MultivariateNormal(v, T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # if distribution with known variance, remove from computation graph
+        if self.args.variance is not None: self.model.covariance_matrix.requires_grad = False
         self.params = [self.model.loc, self.model.covariance_matrix]
 
     def calc_emp_model(self): 
