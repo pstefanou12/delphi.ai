@@ -35,6 +35,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         """
         # reparameterize distribution
         sigma = T.inverse()
+        print("T: ", T)
         mu = (sigma@v).flatten()
         # reparameterize distribution
         M = MultivariateNormal(mu, sigma)
@@ -47,6 +48,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         # z is a tensor of size batch size zeros, then fill with up to batch size num samples
         z = ch.zeros(S.size())
         elts = s[filtered][:S.size(0)]
+        print("elts: ", elts.size(0))
         z[:elts.size(0)] = elts
         # standard negative log likelihood
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T

@@ -1,5 +1,5 @@
 """
-Truncated Lasso Regression.
+Truncated Ridge Regression.
 """
 
 import torch as ch
@@ -51,9 +51,9 @@ DEFAULTS = {
 }
 
 
-class TruncatedLassoRegression(TruncatedLinearRegression):
+class TruncatedRidgeRegression(TruncatedLinearRegression):
     '''
-    Truncated LASSO regression class. Supports truncated LASSO regression
+    Truncated ridge regression class. Supports truncated ridge regression
     with known noise, unknown noise, and confidence intervals. Module uses 
     delphi.trainer.Trainer to train truncated linear regression by performing 
     projected stochastic gradient descent on the truncated population log likelihood. 
@@ -123,7 +123,7 @@ class TruncatedLassoRegression(TruncatedLinearRegression):
             return self.trunc_reg.model(x)
 
 
-class LassoKnownVariance(KnownVariance):
+class RidgeKnownVariance(KnownVariance):
     '''
     Truncated linear regression with known noise variance model.
     '''
@@ -164,7 +164,7 @@ class LassoKnownVariance(KnownVariance):
         self.params = None
 
 
-class LassoUnknownVariance(UnknownVariance):
+class RidgeUnknownVariance(UnknownVariance):
     '''
     Parent/abstract class for models to be passed into trainer.  
     '''

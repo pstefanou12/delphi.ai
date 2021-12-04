@@ -121,11 +121,11 @@ class CensoredMultivariateNormalModel(CensoredNormalModel):
             prec5 (float) : accuracy for top-5 predictions
         '''
         if self.args.clamp:
-            eig_decomp = LA.eig(self.model.covariance_matrix) 
             self.model.loc.data = ch.cat(
                 [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))])
             if self.args.covariance_matrix is None:
+                eig_decomp = LA.eig(self.model.covariance_matrix) 
                 self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
                 [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()

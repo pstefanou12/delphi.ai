@@ -17,6 +17,7 @@ import warnings
 from abc import abstractmethod
 
 from .. import delphi
+from .linear_model import TruncatedLinearModel
 from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
@@ -115,7 +116,7 @@ class TruncatedLinearRegression(stats):
             self.coef = self.trunc_reg.model.weight.clone()
             if self.args.fit_intercept: self.intercept = self.trunc_reg.model.bias.clone()
             if self.args.noise_var is None: 
-                self.variance = self.trunc_reg.model.lambda_.clone().inverse()
+                self.variance = self.trunc_reg.scale.clone().inverse()
                 self.coef *= self.variance
                 if self.args.fit_intercept: self.intercept *= self.variance.flatten()
             
@@ -165,7 +166,7 @@ class TruncatedLinearRegression(stats):
         '''
         return self.val_loader_
 
-class KnownVariance(delphi.delphi):
+class KnownVariance(TruncatedLinearModel):
     '''
     Truncated linear regression with known noise variance model.
     '''
@@ -174,16 +175,8 @@ class KnownVariance(delphi.delphi):
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args)
-        X, y = train_loader.dataset[:]
-        self.phi = phi
-        # calculate empirical estimates
-        self.emp_model = LinearRegression(fit_intercept=self.args.fit_intercept).fit(X, y)
-        self.emp_weight = Tensor(self.emp_model.coef_)
-        if self.args.fit_intercept:
-            self.emp_bias = Tensor(self.emp_model.intercept_)
-        self.emp_var = ch.var(Tensor(self.emp_model.predict(X)) - y, dim=0)[..., None]
-
+        super().__init__(args, train_loader, phi)
+        
     def pretrain_hook(self):
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
@@ -199,7 +192,6 @@ class KnownVariance(delphi.delphi):
         else:
             pass
 
-        self.model = Linear(in_features=self.emp_weight.size(1), out_features=1, bias=self.args.fit_intercept)
         # assign empirical estimates
         self.model.weight.data = self.emp_weight
         if self.args.fit_intercept:
@@ -237,6 +229,16 @@ class KnownVariance(delphi.delphi):
                 self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(self.model.bias.size())
         else: 
             pass
+    
+    def regularize(self, batch):
+        '''
+        L1 regularizer for LASSO regression.
+        '''
+        if self.args.l1 == 0.0: return 0.0
+        reg_term = 0
+        for param in self.model.parameters(): 
+            reg_term += param.norm()
+        return self.args.l1 * reg_term
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
@@ -268,14 +270,13 @@ class UnknownVariance(KnownVariance):
         else:
             pass
 
-        self.model = LinearUnknownVariance(in_features=self.emp_weight.size(1), out_features=1, bias=self.args.fit_intercept)
         # assign empirical estimates
-        self.model.lambda_.data = self.emp_var.inverse()
-        self.model.weight.data = self.emp_weight * self.model.lambda_
+        self.scale.data = self.emp_var.inverse()
+        self.model.weight.data = self.emp_weight * self.scale
         if self.args.fit_intercept:
-            self.model.bias.data = (self.emp_bias * self.model.lambda_).flatten()
+            self.model.bias.data = (self.emp_bias * self.scale).flatten()
         self.params = [{'params': [self.model.weight, self.model.bias]},
-            {'params': self.model.lambda_, 'lr': self.args.var_lr}]
+            {'params': self.scale, 'lr': self.args.var_lr}]
         
     def __call__(self, batch):
         '''
@@ -284,8 +285,8 @@ class UnknownVariance(KnownVariance):
             batch (Iterable) : iterable of inputs that 
         '''
         X, y = batch
-        pred = self.model(X)
-        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.model.lambda_, self.phi, self.args.num_samples, self.args.eps)
+        pred = self.model(X) * self.scale.inverse()
+        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.scale, self.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -300,15 +301,16 @@ class UnknownVariance(KnownVariance):
         '''
         # project model parameters back to domain 
         if self.args.clamp: 
-            var = self.model.lambda_.inverse()
+            var = self.scale.inverse()
             weight = self.model.weight * var
-            self.model.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+            self.scale.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
             # project weights
             self.model.weight.data = ch.cat([ch.clamp(weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i])
-                for i in range(weight.size(1))])[None,...] * self.model.lambda_
+                for i in range(weight.size(1))])[None,...] * self.scale
             if self.args.fit_intercept: 
                 # project bias
                 bias = self.model.bias * var
-                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.model.lambda_).reshape(self.model.bias.size())
+                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.scale).reshape(self.model.bias.size())
         else: 
             pass
+
