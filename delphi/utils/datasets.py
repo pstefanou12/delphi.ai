@@ -7,6 +7,7 @@ Currently supported datasets:
 
 import torch as ch
 from torch import Tensor
+import torch.linalg as LA
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -333,14 +334,14 @@ def make_train_and_val(args, X, y):
 
     return train_loader, val_loader
 
-def make_train_and_val_distr(args, S): 
+def make_train_and_val_distr(args, S, ds): 
     # separate into training and validation set
     rand_indices = ch.randperm(S.size(0))
     val = int(args.val * S.size(0))
     train_indices, val_indices = rand_indices[val:], rand_indices[:val]
     X_train, X_val = S[train_indices], S[val_indices]
-    train_ds = CensoredNormalDataset(X_train)
-    val_ds = CensoredNormalDataset(X_val)
+    train_ds = ds(X_train)
+    val_ds = ds(X_val)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size)
     val_loader = DataLoader(val_ds, batch_size=len(val_ds))
 
@@ -370,11 +371,6 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
     def covariance_matrix(self):
         return self._covariance_matrix.clone()
 
-    def randomize(self): 
-        rand_ind = ch.randperm(self.S.size(0))
-        self.S = self.S[rand_ind]
-        self.S_grad = self.S_grad[rand_ind]
-    
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
@@ -396,13 +392,6 @@ class TruncatedNormalDataset(ch.utils.data.Dataset):
         """
         return self.S[idx], self.pdf[idx], self.loc_grad[idx], self.cov_grad[idx]
 
-    def randomize(self): 
-        rand_ind = ch.randperm(self.S.size(0))
-        self.S = self.S[rand_ind]
-        self.loc_grad = self.loc_grad[rand_ind]
-        self.cov_grad = self.cov_grad[rand_ind]
-        self.pdf = self.pdf[rand_ind]
-    
     @property
     def loc(self): 
         return self._loc.clone()

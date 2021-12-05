@@ -35,7 +35,6 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         """
         # reparameterize distribution
         sigma = T.inverse()
-        print("T: ", T)
         mu = (sigma@v).flatten()
         # reparameterize distribution
         M = MultivariateNormal(mu, sigma)
@@ -105,8 +104,6 @@ class TruncatedMSE(ch.autograd.Function):
         ctx.save_for_backward(pred, targ, z)
         return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
 
-        # return (-.5 * targ.pow(2) + targ * pred + .5 * z_2 - z * pred).mean(0)
-
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, z = ctx.saved_tensors
@@ -132,30 +129,44 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
+        # stacked = pred[None, ...].repeat(num_samples, 1, 1)
+        stacked = pred[..., None].repeat(1, num_samples, 1)
+
         # add noise to regression predictions
         noised = stacked + sigma * ch.randn(stacked.size())
         # filter out copies that fall outside of truncation set
         filtered = phi(noised)
         out = noised * filtered
-        z = out.sum(dim=0) / (filtered.sum(dim=0) + eps)
-        z_2 = out.pow(2).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        const = (-0.5 * lambda_ * out.pow(2) + lambda_ * out * pred).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        # import pdb; pdb.set_trace()
+        z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
+        # z = out.sum(dim=0) / (filtered.sum(dim=0) + eps)
+        z_2 = Tensor([])
+        for i in range(filtered.size(0)):
+            z_2 = ch.cat([z_2, noised[i][filtered[i].squeeze(-1).sort(descending=True).indices[0]].pow(2)[None,...]])
+        z_2_ = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+        nll = -0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred
+        const = -0.5 * lambda_ * z_2 + z * pred * lambda_
 
-        ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        return (0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred + const).mean(0) 
+        ctx.save_for_backward(pred, targ, lambda_, z, z_2, z_2_)
+        return nll - const
 
 #        return (0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred - 0.5 * lambda_ * z_2 + lambda_ * z * pred).mean(0) 
 
     @staticmethod
     def backward(ctx, grad_output):
-        pred, targ, lambda_, z, z_2 = ctx.saved_tensors
+        pred, targ, lambda_, z, z_2, z_2_ = ctx.saved_tensors
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
         lambda_grad = .5 * (targ.pow(2) - z_2)
+        lambda_grad_ = .5 * (targ.pow(2) - z_2_)
+
+        print("lambda grad: ", lambda_grad.mean())
+        print("lambda grad 2: ", lambda_grad_.mean())
+        print("y grad: ", (lambda_ * (z - targ)).mean())
+    
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
 

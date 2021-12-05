@@ -13,55 +13,56 @@ from scipy.linalg import sqrtm
 from .truncated_normal import TruncatedNormal, TruncatedNormalModel, Exp_h
 from ..trainer import Trainer
 from ..grad import TruncatedMultivariateNormalNLL
-from ..utils.datasets import TruncatedNormalDataset
-from ..utils.helpers import Bounds, cov, Parameters
+from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
+from ..utils.helpers import Bounds, check_and_fill_args, cov, Parameters
 
+# CONSTANTS 
+DEFAULTS = {
+        'epochs': (int, 1),
+        'num_trials': (int, 3),
+        'clamp': (bool, True), 
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+        'covariance_matrix': (ch.Tensor, None), 
+        'd': (int, 100),
+}
 
 class TruncatedMultivariateNormal(TruncatedNormal):
     """
     Truncated multivariate normal distribution class.
     """
-    def __init__(
-            self,
+    def __init__(self,
             alpha: float,
-            d: int=100,
-            epochs: int=1,
-            clamp: bool=True,
-            val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
-            bs: int=1,
-            lr: float=1e-1,
-            step_lr: int=100, 
-            custom_lr_multiplier: str=None,
-            lr_interpolation: str=None,
-            step_lr_gamma: float=.9,
-            momentum: float=0.0, 
-            eps: float=1e-5, 
-            **kwargs):
-        super().__init__(alpha, d, epochs, clamp, val, tol, r, bs, lr, step_lr, custom_lr_multiplier, step_lr_gamma, eps)
+            kwargs: dict=None):
+        super().__init__(alpha, kwargs)
 
     def fit(self, S: Tensor):
-        self.emp_loc, self.emp_covariance_matrix = S.mean(0), cov(S)
-        self.S_norm = (S - self.emp_loc) @ Tensor(sqrtm(self.emp_covariance_matrix.numpy())).inverse()
-        rand_indices = ch.randperm(S.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train = self.S_norm[train_indices]
-        self.X_val = self.S_norm[val_indices]
-        self.train_ds = TruncatedNormalDataset(self.X_train)
-        self.val_ds = TruncatedNormalDataset(self.X_val)
-        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
-        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
-
-        self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_ds, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        
+        assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
+        assert S.size(0) > S.size(1), "input expected to bee num samples by dimenions, current input is size {}.".format(S.size()) 
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TruncatedNormalDataset)
+        self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_loader_.dataset)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.truncated)
+        self.trainer = Trainer(self.truncated, self.args.epochs, self.args.num_trials, self.args.tol)
         # run PGD for parameter estimation 
         self.trainer.train_model((self.train_loader_, self.val_loader_))
 
-        # rescale/standardize
-        self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
-        self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
+#        # rescale/standardize
+#        self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
+#        self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
     
     @property 
     def covariance_matrix(self): 
@@ -75,22 +76,37 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
     '''
     Model for truncated normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, train_ds, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds):
         '''
         Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (delphi.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_ds, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+        super().__init__(args, train_ds)
        
     def pretrain_hook(self):
+        # parameterize projection set
+        if self.args.covariance_matrix is not None:
+            B = self.args.covariance_matrix.clone().inverse()
+        else:
+            B = self.train_ds.covariance_matrix.inverse() 
+        u = (self.train_ds.loc[None,...] @ B).flatten()
         # initialize projection set
         self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
-        eig_decomp = LA.eig(self.train_ds.covariance_matrix)
         # upper and lower bounds
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
+            self.loc_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius)
+            if self.args.covariance_matrix is None:  
+                eig_decomp = LA.eig(self.train_ds.covariance_matrix)
+                self.scale_bounds = Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
+
         else:
             pass
+
+        self.model = MultivariateNormal(u, B)
+        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # if distribution with known variance, remove from computation graph
+        if self.args.covariance_matrix is not None: self.model.covariance_matrix.requires_grad = False
+        self.params = [self.model.loc, self.model.covariance_matrix]
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -103,11 +119,12 @@ class TruncatedMultivariateNormalModel(TruncatedNormalModel):
             prec5 (float) : accuracy for top-5 predictions
         '''
         if self.args.clamp:
-            eig_decomp = LA.eig(self.model.covariance_matrix) 
             self.model.loc.data = ch.cat(
                 [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))])
-            self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
+            if self.args.covariance_matrix is None:
+                eig_decomp = LA.eig(self.model.covariance_matrix) 
+                self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
                 [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
                  range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()
         else:

@@ -29,7 +29,7 @@ class TruncatedLinearModel(delphi.delphi):
         self.calc_emp_model()
         self.model = Linear(in_features=self.X.size(1), out_features=self.y.size(1), bias=self.args.fit_intercept)
         # noise distribution scale
-        self.scale = ch.nn.Parameter(ch.ones(1, 1) )
+        self.lambda_ = ch.nn.Parameter(ch.ones(1, 1))
 
     def calc_emp_model(self): 
         '''

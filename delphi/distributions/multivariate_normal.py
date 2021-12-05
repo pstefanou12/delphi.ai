@@ -57,7 +57,7 @@ class CensoredMultivariateNormal(CensoredNormal):
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(0) > S.size(1), "input expected to bee num samples by dimenions, current input is size {}.".format(S.size()) 
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S)
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
         self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset, self.phi)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.censored, self.args.epochs, self.args.num_trials, self.args.tol)

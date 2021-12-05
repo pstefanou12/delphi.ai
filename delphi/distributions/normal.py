@@ -73,7 +73,7 @@ class CensoredNormal(distributions):
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(1) == 1, "censored normal class only accepts 1 dimensional distributions." 
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S)
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
         self.censored = CensoredNormalModel(self.args, self.train_loader_.dataset, self.phi)
         # run PGD to predict actual estimates
         self.trainer = Trainer(self.censored, self.args.epochs, self.args.num_trials, self.args.tol)
@@ -124,7 +124,7 @@ class CensoredNormalModel(delphi.delphi):
 
         if self.args.clamp:
             self.loc_bounds = Bounds(v - self.radius, v + self.radius)
-            if self.args.covariance_matrix is None:
+            if self.args.variance is None:
                 self.scale_bounds = Bounds(ch.square(self.args.alpha / 12.0), T + self.radius)
         else:
             pass
@@ -164,7 +164,8 @@ class CensoredNormalModel(delphi.delphi):
         '''
         if self.args.clamp:
             self.model.loc.data = ch.clamp(self.model.loc.data, float(self.loc_bounds.lower), float(self.loc_bounds.upper))
-            self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
+            if self.args.variance is None:
+                self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
         else:
             pass
 

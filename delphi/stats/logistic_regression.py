@@ -4,9 +4,7 @@ Truncated Logistic Regression.
 
 import torch as ch
 from torch import Tensor
-from torch.nn import Linear
-from torch.nn import CrossEntropyLoss, Softmax
-from torch.utils.data import TensorDataset, DataLoader
+from torch.nn import CrossEntropyLoss, Softmax, Sigmoid
 from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from cox.store import Store
@@ -14,44 +12,52 @@ from sklearn.linear_model import LogisticRegression
 import copy
 
 from .. import delphi
+from .linear_model import TruncatedLinearModel
 from .stats import stats
 from ..oracle import oracle
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
-from ..utils.helpers import Bounds, ProcedureComplete, Parameters
+from ..utils.datasets import make_train_and_val
+from ..utils.helpers import Bounds, Parameters, check_and_fill_args
 
 
-# constants 
+
+# CONSTANTS 
 G = Gumbel(0, 1)
-
 softmax = Softmax()
+DEFAULTS = {
+        'epochs': (int, 1),
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'clamp': (bool, True), 
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'normalize': (bool, True), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-3),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+        'multi_class': ({'multinomial', 'ovr'}, 'ovr'),
+}
+
 
 class TruncatedLogisticRegression(stats):
     """
     Truncated Logistic Regression supports both binary cross entropy classification and truncated cross entropy classification.
     """
-    def __init__(
-            self,
+    def __init__(self,
             phi: oracle,
             alpha: float,
-            epochs: int=10,
-            clamp: bool=True,
-            n: int=10, 
-            val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
-            num_samples: int=100,
-            bs: int=10,
-            lr: float=1e-1,
-            var_lr: float=1e-1, 
-            step_lr: int=100, 
-            custom_lr_multiplier: str=None,
-            lr_interpolation: str=None,
-            step_lr_gamma: float=.9,
-            eps: float=1e-5, 
-            multi_class='ovr',
-            fit_intercept=True,
-            **kwargs):
+            kwargs: dict=None):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -67,7 +73,7 @@ class TruncatedLogisticRegression(stats):
             r (float) : size for projection set radius 
             rate (float): rate at which to increase the size of the projection set, when procedure does not converge - input as a decimal percentage
             num_samples (int) : number of samples to sample in gradient 
-            bs (int) : batch size
+            batch_size (int) : batch size
             lr (float) : initial learning rate for regression parameters 
             var_lr (float) : initial learning rate to use for variance parameter in the settign where the variance is unknown 
             step_lr (int) : number of gradient steps to take before decaying learning rate for step learning rate 
@@ -80,53 +86,32 @@ class TruncatedLogisticRegression(stats):
             store (cox.store.Store) : cox store object for logging 
         '''
         super(TruncatedLogisticRegression).__init__()
+        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
+        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # instance variables
         self.phi = phi 
         self.trunc_log_reg = None
-
-        self.custom_lr_multiplier = custom_lr_multiplier
-        self.step_lr = step_lr 
-        self.step_lr_gamma = step_lr_gamma
-        self.lr_interpolation = lr_interpolation
-
-
-        self.args = Parameters({ 
-            'alpha': Tensor([alpha]),
-            'bs': bs, 
-            'workers': 1,
-            'epochs':epochs,
-            'momentum': 0.0, 
-            'weight_decay': 0.0,   
-            'num_samples': num_samples,
-            'lr': lr,  
-            'eps': eps,
-            'tol': tol,
-            'val': val,
-            'clamp': clamp,
-            'fit_intercept': fit_intercept,
-            'multi_class': multi_class,
-            'r': r,
-            'verbose': False,
-        })
+        # algorithm hyperparameters
+        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
                 
     def fit(self, X: Tensor, y: Tensor):
         """
+        Train truncated logistic regression model by running PSGD on the truncated negative 
+        population log likelihood.
+        Args: 
+            X (torch.Tensor): input feature covariates num_samples by dims
+            y (torch.Tensor): dependent variable predictions num_samples by 1
         """
-        # separate into training and validation set
-        rand_indices = ch.randperm(X.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train, self.y_train = X[train_indices], y[train_indices]
-        self.X_val, self.y_val = X[val_indices], y[val_indices]
-        
-        self.train_ds = TensorDataset(self.X_train, self.y_train)
-        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs, num_workers=0)
-        
-        self.val_ds = TensorDataset(self.X_val, self.y_val)
-        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds), num_workers=0)
+        assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
+        assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
+        assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
+        assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
 
-        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.X_train, self.y_train, self.phi, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
+        self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
-        trainer = Trainer(self.trunc_log_reg) 
+        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, self.phi)
+
+        trainer = Trainer(self.trunc_log_reg, self.args.epochs, self.args.num_trials, self.args.tol) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
@@ -134,13 +119,23 @@ class TruncatedLogisticRegression(stats):
             self.coef = self.trunc_log_reg.model.weight.clone()
             self.intercept = self.trunc_log_reg.model.bias.clone()
 
-    def __call__(self, x: Tensor, latent=True): 
+
+    def __call__(x: Tensor):
         """
-        Make predictions with regression estimates.
+        Calculate logistic regression's latent variable, based off of regression estimates.
+        """
+        with ch.no_grad(): 
+            self.trunc_log_reg.model(x)
+
+    def predict(self, x: Tensor): 
+        """
+        Make class predictions with regression estimates.
         """
         with ch.no_grad():
-            return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
-        
+            if self.args.multi_class == 'multinomial':
+                return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
+            return sigmoid(self.trunc_log_reg.model(x)).argmax(dim=-1)
+
     @property
     def coef_(self): 
         """
@@ -156,35 +151,21 @@ class TruncatedLogisticRegression(stats):
         if self.args.fit_intercept:
             return self.intercept
 
-    @property 
-    def train_loader(self): 
-        return self.train_loader_
 
-    @property 
-    def val_loader(self): 
-        return self.val_loader_
-
-
-class TruncatedLogisticRegressionModel(delphi.delphi):
+class TruncatedLogisticRegressionModel(TruncatedLinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args,  X_train, y_train, phi, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_loader, phi): 
         '''
         Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
-        self.X_train, self.y_train = X_train, y_train
+        super().__init__(args, train_loader, phi)
         # use OLS as empirical estimate to define projection set
         self.phi = phi
 
-        # empirical estimates for logistic regression
-        self.emp_log_reg = LogisticRegression(penalty='none', fit_intercept=self.args.fit_intercept, multi_class=self.args.multi_class)
-        self.emp_log_reg.fit(self.X_train, self.y_train.flatten())
-        self.emp_weight = Tensor(self.emp_log_reg.coef_)
-        self.emp_bias = Tensor(self.emp_log_reg.intercept_)
-
+    def pretrain_hook(self): 
         # projection set radius
         self.radius = self.args.r * (ch.sqrt(2.0 * ch.log(1.0 / self.args.alpha)))
         if self.args.clamp:
@@ -196,11 +177,6 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         else: 
             pass
 
-        if self.args.multi_class == 'multinomial': 
-            self.model = Linear(in_features=self.X_train.size(1), out_features=len(self.y_train.unique()), bias=True)
-        else: 
-            self.model = Linear(in_features=self.X_train.size(1), out_features=1, bias=True)
-        
         """
         SkLearn sets up multinomial classification differenlty. So when doing 
         multinomial classification, we initialize with random estimates.
@@ -211,19 +187,17 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
             self.model.bias.data = self.emp_bias
         update_params = None
 
-    def calc_nll(self, X, y): 
+    def calc_emp_model(self): 
         """
-        Calculates the check_grad of the current regression estimates of the validation set. It 
-        then updates the best estimates accordingly based off of the check_grad's norm.
+        Calculate empirical logistic regression estimates using SKlearn module.
         """
-        pred = self.model(X)
-        if self.args.multi_class == 'multinomial': 
-            loss = TruncatedCE.apply(pred, y, self.phi, self.args.num_samples, self.args.eps) 
-        else: 
-            loss = TruncatedBCE.apply(pred, y, self.phi, self.args.num_samples, self.args.eps)
-        return loss
+        # empirical estimates for logistic regression
+        self.emp_log_reg = LogisticRegression(penalty='none', fit_intercept=self.args.fit_intercept, multi_class=self.args.multi_class)
+        self.emp_log_reg.fit(self.X, self.y.flatten())
+        self.emp_weight = Tensor(self.emp_log_reg.coef_)
+        self.emp_bias = Tensor(self.emp_log_reg.intercept_)
 
-    def train_step(self, i, batch):
+    def __call__(self, batch):
         '''
         Training step for defined model.
         Args: 
@@ -237,8 +211,6 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
             loss = TruncatedCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
         elif self.args.multi_class == 'ovr': 
             loss = TruncatedBCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
-        else: 
-            raise Exception('multi class input invalid')
 
         return loss, None, None
 
@@ -268,11 +240,7 @@ class TruncatedLogisticRegressionModel(delphi.delphi):
         else: 
             pass
 
-    def val_step(self, i, batch):
-        # check for convergence every at each epoch
-        loss = self.calc_nll(*batch)
-        return  loss, None, None
+    def post_training_hook(self): 
+        self.args.r *= self.args.rate
 
-    
-    
 

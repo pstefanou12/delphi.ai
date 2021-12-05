@@ -13,83 +13,67 @@ from .. import delphi
 from .distributions import distributions
 from ..oracle import oracle, UnknownGaussian
 from ..trainer import Trainer
-from ..utils.helpers import Bounds, cov, Parameters
-from ..utils.datasets import TruncatedNormalDataset
+from ..utils.helpers import Bounds, check_and_fill_args, Parameters
+from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL
+
+# CONSTANTS 
+DEFAULTS = {
+        'epochs': (int, 1),
+        'num_trials': (int, 3),
+        'clamp': (bool, True), 
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+        'variance': (ch.Tensor, None), 
+        'd': (int, 100),
+}
 
 
 class TruncatedNormal(distributions):
     """
     Truncated normal distribution class.
     """
-    def __init__(
-            self,
+    def __init__(self,
             alpha: float,
-            d: int=100,
-            epochs: int=1,
-            clamp: bool=True,
-            val: int=50,
-            tol: float=1e-2,
-            r: float=2.0,
-            bs: int=1,
-            lr: float=1e-1,
-            step_lr: int=100, 
-            custom_lr_multiplier: str=None,
-            lr_interpolation: str=None,
-            step_lr_gamma: float=.9,
-            momentum: float=0.0, 
-            eps: float=1e-5, 
-            **kwargs):
+            kwargs: dict=None):
         super(TruncatedNormal).__init__()
-        # instance variables
-        self.custom_lr_multiplier = custom_lr_multiplier
-        self.step_lr = step_lr 
-        self.step_lr_gamma = step_lr_gamma
-        self.lr_interpolation = lr_interpolation
-
-        self.args = Parameters({ 
-            'alpha': Tensor([alpha]),
-            'd': d,
-            'bs': bs, 
-            'epochs': epochs,
-            'momentum': momentum, 
-            'weight_decay': 0,
-            'lr': lr,  
-            'eps': eps,
-            'tol': tol,
-            'val': val,
-            'clamp': clamp,
-            'r': r,
-            'verbose': False,
-        })
+        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
+        # algorithm hyperparameters
+        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
 
     def fit(self, S: Tensor):
         """
-        :param S:
-        :return:
+        Runs PSGD to minimize the negative population log likelihood of the truncated distribution.
+        Args: 
+            S (torch.Tensor): censored samples dataset, expecting n by d matrix (num_samples by dimensions)
         """
-        self.emp_loc, self.emp_covariance_matrix = S.mean(0), cov(S)
-        self.S_norm = (S - self.emp_loc) @ Tensor(sqrtm(self.emp_covariance_matrix.numpy())).inverse()
-        rand_indices = ch.randperm(S.size(0))
-        train_indices, val_indices = rand_indices[self.args.val:], rand_indices[:self.args.val]
-        self.X_train = self.S_norm[train_indices]
-        self.X_val = self.S_norm[val_indices]
-        self.train_ds = TruncatedNormalDataset(self.X_train)
-        self.val_ds = TruncatedNormalDataset(self.X_val)
-        self.train_loader_ = DataLoader(self.train_ds, batch_size=self.args.bs)
-        self.val_loader_ = DataLoader(self.val_ds, batch_size=len(self.val_ds))
-
-        self.truncated = TruncatedNormalModel(self.args, self.train_ds, self.custom_lr_multiplier, self.lr_interpolation, self.step_lr, self.step_lr_gamma)
-        
+        assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
+        assert S.size(1) == 1, "truncated normal class only accepts 1 dimensional distributions." 
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TruncatedNormalDataset)
+        self.truncated = TruncatedNormalModel(self.args, self.train_loader_.dataset)
         # run PGD to predict actual estimates
-        self.trainer = Trainer(self.truncated)
+        self.trainer = Trainer(self.truncated, self.args.epochs, self.args.num_trials, self.args.tol)
+
         # run PGD for parameter estimation 
         self.trainer.train_model((self.train_loader_, self.val_loader_))
 
-        # rescale/standardize
-        self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
-        self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
-
+    #    # rescale/standardize
+    #    self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
+    #    self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
+    #
     @property 
     def loc(self): 
         """
@@ -116,12 +100,12 @@ class TruncatedNormalModel(delphi.delphi):
     '''
     Model for truncated normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, train_ds, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma): 
+    def __init__(self, args, train_ds): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, custom_lr_multiplier, lr_interpolation, step_lr, step_lr_gamma)
+        super().__init__(args) 
         self.train_ds = train_ds        
         # initialiaze pseudo oracle for gaussians with unknown truncation 
         self.phi = UnknownGaussian(self.train_ds.loc, self.train_ds.covariance_matrix, self.train_ds.S, self.args.d)
@@ -129,33 +113,33 @@ class TruncatedNormalModel(delphi.delphi):
         # exponent class
         self.exp_h = Exp_h(self.train_ds.loc, self.train_ds.covariance_matrix)
 
-        # establish empirical distribution
-        B = self.train_ds.covariance_matrix.inverse() 
-        u = (self.train_ds.loc[None,...] @ B).flatten()
-        self.model = MultivariateNormal(u, B)
-        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
-        self.params = [self.model.loc, self.model.covariance_matrix]
-
-    def calc_nll(self, S, pdf, loc_grad, cov_grad): 
-        """
-        Calculates the log likelihood of the current regression estimates of the validation set.
-        """
-        return TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, S,  pdf, loc_grad, cov_grad, self.phi, self.exp_h)
-
     def pretrain_hook(self):
+        # parameterize projection set
+        if self.args.variance is not None:
+            B = self.args.variance.clone()
+        else:
+            B = self.train_ds.covariance_matrix.inverse() 
+        u = (self.train_ds.loc[None,...] @ B).flatten()
         # initialize projection set
         self.radius = self.args.r * ch.sqrt(ch.log(1.0 / self.args.alpha))
         if self.args.clamp:
-            self.loc_bounds, self.scale_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius), Bounds(self.args.alpha.pow(2) / 12,
-                                                         self.train_ds.covariance_matrix + self.radius)
+            self.loc_bounds  = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius)             
+            if self.args.variance is None: 
+                self.scale_bounds = Bounds(self.args.alpha.pow(2) / 12,
+                                                         B + self.radius)
         else:
             pass
 
-    def train_step(self, i, batch):
+        self.model = MultivariateNormal(u, B)
+        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # if distribution with known variance, remove from computation graph
+        if self.args.variance is not None: self.model.covariance_matrix.requires_grad = False
+        self.params = [self.model.loc, self.model.covariance_matrix]
+
+    def __call__(self, batch):
         '''
         Training step for defined model.
         Args: 
-            i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
         loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi, self.exp_h)
@@ -173,27 +157,18 @@ class TruncatedNormalModel(delphi.delphi):
         '''
         if self.args.clamp:
             self.model.loc.data = ch.clamp(self.model.loc.data, float(self.loc_bounds.lower), float(self.loc_bounds.upper))
-            self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
+            if self.args.variance is None:
+                self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
         else:
             pass
 
-    def val_step(self, i, batch): 
-        # check for convergence every at each epoch
-        loss = self.calc_nll(*batch)
-        return loss, None, None
-
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        # re-randomize data points in training set 
-        self.train_ds.randomize() 
-
-    def post_training_hook(self, val_loader):
+    def post_training_hook(self):
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
         self.model.loc.data = (self.model.loc[None,...]  @ self.model.covariance_matrix).flatten()
         # set estimated distribution in membership oracle
         self.phi.dist = self.model
-        return True
 
     def phi_(self, x): 
         x_norm = (x - self.train_ds.loc) @ Tensor(sqrtm(self.train_ds.covariance_matrix.numpy())).inverse() 

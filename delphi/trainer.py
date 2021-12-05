@@ -202,6 +202,9 @@ class Trainer:
         for i, batch in iterator:
             self.model.optimizer.zero_grad()
             loss, prec1, prec5 = self.model(batch)
+            
+            if len(loss.shape) > 0: loss = loss.mean()
+
             # update average meters
             loss_.update(loss)
             if prec1 is not None: prec1_.update(prec1)

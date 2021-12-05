@@ -5,25 +5,18 @@ Truncated Linear Regression.
 import torch as ch
 import torch.linalg as LA
 from torch import Tensor
-import torch.nn as nn
-from torch.nn import Linear
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.linear_model import LinearRegression
-import math
 import cox
 from cox.store import Store
 import copy
 import warnings
-from abc import abstractmethod
 
-from .. import delphi
 from .linear_model import TruncatedLinearModel
 from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
-from ..utils import constants as consts
-from ..utils.helpers import Parameters, Bounds, LinearUnknownVariance, setup_store_with_metadata, ProcedureComplete, Normalize, make_train_and_val, check_and_fill_args
+from ..utils.datasets import make_train_and_val
+from ..utils.helpers import Parameters, Bounds, setup_store_with_metadata, check_and_fill_args
 
 
 # CONSTANTS 
@@ -92,15 +85,27 @@ class TruncatedLinearRegression(stats):
             store (cox.store.Store) : cox store object for logging 
         '''
         super(TruncatedLinearRegression).__init__()
+        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
+        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # instance variables
         self.phi = phi 
         self.trunc_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': alpha}, **kwargs}), DEFAULTS)
+        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
 
     def fit(self, X: Tensor, y: Tensor):
         """
+        Train truncated linear regression model by running PSGD on the truncated negative 
+        population log likelihood.
+        Args: 
+            X (torch.Tensor): input feature covariates num_samples by dims
+            y (torch.Tensor): dependent variable predictions num_samples by 1
         """
+        assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
+        assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
+        assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
+        assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
         if self.args.noise_var is None:
             self.trunc_reg = UnknownVariance(self.args, self.train_loader_, self.phi) 
@@ -116,7 +121,7 @@ class TruncatedLinearRegression(stats):
             self.coef = self.trunc_reg.model.weight.clone()
             if self.args.fit_intercept: self.intercept = self.trunc_reg.model.bias.clone()
             if self.args.noise_var is None: 
-                self.variance = self.trunc_reg.scale.clone().inverse()
+                self.variance = self.trunc_reg.lambda_.clone().inverse()
                 self.coef *= self.variance
                 if self.args.fit_intercept: self.intercept *= self.variance.flatten()
             
@@ -130,7 +135,7 @@ class TruncatedLinearRegression(stats):
     @property
     def coef_(self): 
         """
-        Regression weight.
+        Regression coefficient weights.
         """
         return self.coef
 
@@ -271,12 +276,12 @@ class UnknownVariance(KnownVariance):
             pass
 
         # assign empirical estimates
-        self.scale.data = self.emp_var.inverse()
-        self.model.weight.data = self.emp_weight * self.scale
+        self.lambda_.data = self.emp_var.inverse()
+        self.model.weight.data = self.emp_weight * self.lambda_
         if self.args.fit_intercept:
-            self.model.bias.data = (self.emp_bias * self.scale).flatten()
+            self.model.bias.data = (self.emp_bias * self.lambda_).flatten()
         self.params = [{'params': [self.model.weight, self.model.bias]},
-            {'params': self.scale, 'lr': self.args.var_lr}]
+            {'params': self.lambda_, 'lr': self.args.var_lr}]
         
     def __call__(self, batch):
         '''
@@ -285,8 +290,8 @@ class UnknownVariance(KnownVariance):
             batch (Iterable) : iterable of inputs that 
         '''
         X, y = batch
-        pred = self.model(X) * self.scale.inverse()
-        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.scale, self.phi, self.args.num_samples, self.args.eps)
+        pred = self.model(X) * self.lambda_.inverse()
+        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -301,16 +306,16 @@ class UnknownVariance(KnownVariance):
         '''
         # project model parameters back to domain 
         if self.args.clamp: 
-            var = self.scale.inverse()
+            var = self.lambda_.inverse()
             weight = self.model.weight * var
-            self.scale.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+            self.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
             # project weights
             self.model.weight.data = ch.cat([ch.clamp(weight[:,i], self.weight_bounds.lower[i], self.weight_bounds.upper[i])
-                for i in range(weight.size(1))])[None,...] * self.scale
+                for i in range(weight.size(1))])[None,...] * self.lambda_
             if self.args.fit_intercept: 
                 # project bias
                 bias = self.model.bias * var
-                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.scale).reshape(self.model.bias.size())
+                self.model.bias.data = (ch.clamp(bias, self.bias_bounds.lower, self.bias_bounds.upper) * self.lambda_).reshape(self.model.bias.size())
         else: 
             pass
 
