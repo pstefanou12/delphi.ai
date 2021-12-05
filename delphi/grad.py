@@ -8,7 +8,6 @@ from torch.distributions import Uniform, Gumbel, MultivariateNormal
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import math
-import config
 
 from .utils.helpers import logistic, censored_sample_nll
 
@@ -107,16 +106,6 @@ class TruncatedMSE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, z = ctx.saved_tensors
-        '''
-        # make args.num_samples copies of pred, N x B x 1
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        # add random noise to each copy
-        noised = stacked + math.sqrt(config.args.noise_var) * ch.randn(stacked.size()).to(config.args.device)
-        # filter out copies where pred is in bounds
-        filtered = ctx.phi(noised)
-        # average across truncated indices
-        out = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + config.args.eps)
-        '''
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
@@ -170,54 +159,32 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
 
-class LogisticBCE(ch.autograd.Function):
-    @staticmethod
-    def forward(ctx, pred, targ):
-        ctx.save_for_backward(pred, targ)
-        loss = ch.nn.BCEWithLogitsLoss()
-        return loss(pred, targ)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ = ctx.saved_tensors
-        stacked = pred[None, ...].repeat(config.args.num_samples, 1, 1)
-        rand_noise = logistic.sample(stacked.size())
-        # add noise
-        noised = stacked + rand_noise
-        noised_labs = noised > 0
-        # filter
-        mask = (noised_labs).eq(targ)
-        avg = 1 - 2*((sig(rand_noise) * mask).sum(0) / (mask.sum(0) + 1e-5))
-        return avg, None
-
-
 class TruncatedBCE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
         ctx.save_for_backward(pred, targ)
-        ctx.phi = phi
-        ctx.eps = eps
-        ctx.num_samples = num_samples
         loss = ch.nn.BCEWithLogitsLoss()
+        ctx.phi = phi
+        ctx.num_samples = num_samples
+        ctx.eps = eps
         return loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
-        
-        # logistic distribution
-        base_distribution = Uniform(0, 1)
-        transforms_ = [SigmoidTransform().inv]
-        logistic = TransformedDistribution(base_distribution, transforms_)
-
+        # import pdb; pdb.set_trace()
         stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
+        rand_noise = logistic.sample(stacked.size())
         # add noise
-        noised = stacked + logistic.sample(stacked.size())
+        noised = stacked + rand_noise
+        noised_labs = noised > 0
+        
         # filter
         filtered = ctx.phi(noised)
-        out = (noised * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
-        grad = ch.where(ch.abs(out) > 1e-5, sig(out), targ) - targ
-        return grad / pred.size(0), -grad / pred.size(0), None, None, None
+        mask = (noised_labs).eq(targ)
+        avg = 2*(sig(rand_noise) * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps) 
+        norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
+        return -(avg - norm_const) / pred.size(0), None, None, None, None
 
 
 class GumbelCE(ch.autograd.Function):
