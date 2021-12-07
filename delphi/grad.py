@@ -172,12 +172,11 @@ class TruncatedBCE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ = ctx.saved_tensors
-        # import pdb; pdb.set_trace()
         stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
         rand_noise = logistic.sample(stacked.size())
         # add noise
         noised = stacked + rand_noise
-        noised_labs = noised > 0
+        noised_labs = noised >= 0
         
         # filter
         filtered = ctx.phi(noised)
@@ -186,6 +185,31 @@ class TruncatedBCE(ch.autograd.Function):
         norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
         return -(avg - norm_const) / pred.size(0), None, None, None, None
 
+
+
+class TruncatedProbitMLE(ch.autograd.Function): 
+    @staticmethod
+    def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5): 
+        ctx.save_for_backward(pred, targ)
+        loss = ch.nn.BCEWithLogitsLoss()
+        ctx.phi = phi
+        ctx.num_samples = num_samples
+        ctx.eps = eps
+        return loss(pred, targ)
+
+    @staticmethod
+    def backward(ctx, grad_output): 
+        # import pdb; pdb.set_trace()
+        pred, targ = ctx.saved_tensors
+        stacked = pred[None,...].repeat(ctx.num_samples, 1, 1)
+        rand_noise = ch.randn(stacked.size())
+        noised = stacked + rand_noise 
+        noised_labs = noised >= 0
+        mask = noised_labs.eq(targ)
+        filtered = ctx.phi(noised)
+        nll = (mask * filtered * rand_noise).sum(dim=0) / ((mask * filtered).sum(dim=0) + ctx.eps)
+        const = (rand_noise * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
+        return -(nll - const) / pred.size(0), None, None, None, None
 
 class GumbelCE(ch.autograd.Function):
     @staticmethod
@@ -240,5 +264,6 @@ class TruncatedCE(ch.autograd.Function):
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None] * filtered
         inner_exp = (1 - ch.exp(-rand_noise))
-        avg = (((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5)) - ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))) / pred.size(0)
-        return -avg, None, None, None, None
+        nll = ((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5))
+        const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
+        return (-nll + const) / pred.size(0), None, None, None, None

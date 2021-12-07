@@ -49,7 +49,7 @@ class CensoredNormal(distributions):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            kwargs: dict=None):
+            kwargs: dict={}):
         """
         Args:
            phi (delphi.oracle): oracle for censored distribution; see delphi.oracle

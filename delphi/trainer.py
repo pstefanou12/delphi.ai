@@ -30,6 +30,7 @@ EVAL_LOGS_SCHEMA = {
     'time':float
 }
 
+
 # determine running environment
 if type_of_script() in {'jupyter', 'colab'}: 
     from tqdm.auto import tqdm
@@ -48,7 +49,8 @@ class Trainer:
                 early_stopping: bool=False,
                 n_iter_no_change: int=5,
                 disable_no_grad: bool=False,
-                verbose: bool=False) -> None:
+                verbose: bool=False,
+                store: cox.store.Store=None) -> None:
         """
         Train models. 
         Args: 
@@ -84,6 +86,9 @@ class Trainer:
         # print log output or not
         assert isinstance(verbose, bool), "verbose is type {}, Trainer expects type bool".format(type(verbose))
         self.verbose = verbose
+        
+        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(self.store))
+        self.store = store 
 
     def eval_model(self, loader):
         """
@@ -99,21 +104,21 @@ class Trainer:
         start_time = time.time()
 
         # if store provided, 
-        if store is not None:
-            store.add_table('eval', consts.EVAL_LOGS_SCHEMA)
+        if self.store is not None:
+            self.store.add_table('eval', consts.EVAL_LOGS_SCHEMA)
 
         # add 
         writer = store.tensorboard if store else None
         test_prec1, test_loss = self.model_loop(VAL, loader, 1)
 
         # log info 
-        if store:
+        if self.store:
             log_info = {
                 'test_prec1': test_prec1,
                 'test_loss': test_loss,
                 'time': time.time() - start_time
             }
-            store['eval'].append_row(log_info)
+            self.store['eval'].append_row(log_info)
         return log_info
 
     def train_model(self, loaders):
@@ -128,6 +133,16 @@ class Trainer:
         # check to make sure that the model's trainer has data in it
         if len(train_loader.dataset) == 0: 
             raise Exception('No Datapoints in Train Loader')
+        
+        if self.store is not None: 
+            self.store.add_table('logs', {
+                'epoch': int,
+                'train_loss': float, 
+                'train_prec1': float,
+                'train_prec5': float, 
+                'val_loss': float,
+                'val_prec1': float, 
+                'val_prec5': float})
 
         # keep track of whether procedure is done or not
         done = False
@@ -146,27 +161,40 @@ class Trainer:
             # do training loops until performing enough gradient steps or epochs
             for epoch in range(1, self.max_iter + 1):
                 # TRAIN LOOP
-                loss, prec1, prec5 = self.model_loop(TRAIN, train_loader, epoch)
+                train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, train_loader, epoch)
                 
                 # VALIDATION LOOP
                 if val_loader is not None:
                     with ch.no_grad():
-                        loss, prec1, prec5 = self.model_loop(VAL, val_loader, epoch)
+                        val_loss, val_prec1, val_prec5 = self.model_loop(VAL, val_loader, epoch)
 
-                    # check for early completion
-                    if self.early_stopping: 
-                        if self.tol > -INFINITY and loss > self.best_loss - self.tol:
-                            self.no_improvement_count += 1
-                        else: 
-                            self.no_improvement_count = 0
+                # if store provided, log epoch results
+                if self.store is not None:
+                    self.store['logs'].append_row({
+                        'epoch': epoch,
+                        'train_loss': train_loss, 
+                        'train_prec1': train_prec1,
+                        'train_prec5': train_prec5,
+                        'val_loss': val_loss,
+                        'val_prec1': val_prec1, 
+                        'val_prec5': val_prec5 })
 
-                        if loss < self.best_loss: 
-                            self.best_loss = loss
+                # check for early completion
+                if self.early_stopping: 
+                    if self.tol > -INFINITY and loss > self.best_loss - self.tol:
+                        self.no_improvement_count += 1
+                    else: 
+                        self.no_improvement_count = 0
 
-                    if self.no_improvement_count >= self.n_iter_no_change:
-                        if self.verbose: 
-                            print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
-                        return self.model
+                    if loss < self.best_loss: 
+                        self.best_loss = loss
+
+                if self.no_improvement_count >= self.n_iter_no_change:
+                    if self.verbose: 
+                        print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
+                    # POST TRAINING HOOK     
+                    self.model.post_training_hook()
+                    return self.model
 
             # POST TRAINING HOOK     
             self.model.post_training_hook()

@@ -9,7 +9,7 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 
-from .utils.helpers import has_attr
+from .utils.helpers import has_attr, check_and_fill_args
 
 # CONSTANTS 
 BY_ALG = 'by algorithm'  # default parameter depends on algorithm
@@ -17,6 +17,23 @@ ADAM = 'adam'
 CYCLIC = 'cyclic'
 COSINE = 'cosine'
 LINEAR = 'linear'
+# default parameters for delphi module (can be overridden by any class
+DEFAULTS = {
+        'epochs': (int, 1),
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'step_lr': (int, 100),
+        'step_lr_gamma': (float, .9), 
+        'custom_lr_multiplier': (str, None), 
+        'momentum': (float, 0.0), 
+        'weight_decay': (float, 0.0), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'batch_size': (int, 10),
+        'tol': (float, 1e-3),
+        'workers': (int, 0),
+}
 
 
 class delphi:
@@ -154,7 +171,7 @@ class delphi:
         '''
         pass 
 
-    def post_training_hook(self, val_loader) -> None:
+    def post_training_hook(self) -> None:
         '''
         Post training hook, called after sgd procedures completes. By default returns True, 
         so that procedure terminates by default after one trial.

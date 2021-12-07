@@ -24,7 +24,7 @@ class oracle(ABC):
         pass
 
 
-class Interval:
+class Interval(oracle):
     """
     Interval truncation
     """
@@ -33,7 +33,7 @@ class Interval:
         self.bounds = Bounds(lower, upper)
 
     def __call__(self, x):
-        return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))
+        return ((self.bounds.lower < x).prod(-1) * (x < self.bounds.upper).prod(-1))[...,None]
 
 
 class KIntervalUnion(oracle):
@@ -257,7 +257,7 @@ class Identity(oracle):
         return 'identity'
 
 
-class LogitBall: 
+class LogitBall(oracle): 
     """
     Truncation based off of norm of logits. Logt norm needs to be smaller than input bound.
     In other words, retain the input that the classifier is less certain on. Smaller 
@@ -273,7 +273,7 @@ class LogitBall:
         return 'logit ball'
    
 
-class LogitBallComplement: 
+class LogitBallComplement(oracle): 
     
     """
     Truncation based off of complement norm of logits. Logit norm needs to be greater than input bound.

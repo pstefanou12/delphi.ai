@@ -18,6 +18,7 @@ import git
 import math
 import pprint
 from typing import Iterable
+import warnings
 
 from . import constants as consts
 
@@ -367,17 +368,24 @@ def check_and_fill_args(args, defaults):
         Checks args (algorithm hyperparameters) and makes sure that all required parameters are 
         given.
         '''
+        # assign all of the default arguments and check that all necessary arguments are provided
         for arg_name, (arg_type, arg_default) in defaults.items():
             if has_attr(args, arg_name):
                 # check to make sure that hyperparameter inputs are the same type
                 if isinstance(arg_type, Iterable):
-                    if arg_name in arg_type: continue 
-                    raise ValueError('arg: {} is not in {}. fix hyperparameters and run again'.format(arg_name, arg_type))
+                    if args.__getattr__(arg_name) in arg_type: continue 
+                    raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
                 if isinstance(args.__getattr__(arg_name), arg_type): continue
                 raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
             if arg_default == REQ: raise ValueError(f"{arg_name} required")
             elif arg_default is not None: 
+                # use default arugment
                 setattr(args, arg_name, arg_default)
+        
+        # iterate over provided args to check to see if user input argument that isn't expected
+        for arg_name in args.params.keys(): 
+            if arg_name not in defaults:
+                warnings.warn("unknown argument: {}. procedure will continue, but results may not be as expected.".format(arg_name))
         return args
 
         

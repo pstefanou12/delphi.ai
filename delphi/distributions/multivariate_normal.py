@@ -47,7 +47,7 @@ class CensoredMultivariateNormal(CensoredNormal):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            kwargs: dict=None):
+            kwargs: dict={}):
         """
         """
         super().__init__(phi, alpha, kwargs)

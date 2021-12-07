@@ -46,7 +46,7 @@ class TruncatedMultivariateNormal(TruncatedNormal):
     """
     def __init__(self,
             alpha: float,
-            kwargs: dict=None):
+            kwargs: dict={}):
         super().__init__(alpha, kwargs)
 
     def fit(self, S: Tensor):

@@ -48,7 +48,7 @@ class TruncatedNormal(distributions):
     """
     def __init__(self,
             alpha: float,
-            kwargs: dict=None):
+            kwargs: dict={}):
         super(TruncatedNormal).__init__()
         assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # algorithm hyperparameters

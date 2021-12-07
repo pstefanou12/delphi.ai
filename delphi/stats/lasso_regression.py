@@ -63,7 +63,7 @@ class TruncatedLassoRegression(TruncatedLinearRegression):
     def __init__(self,
             phi: oracle,
             alpha: float,
-            kwargs: dict=None):
+            kwargs: dict={}):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
