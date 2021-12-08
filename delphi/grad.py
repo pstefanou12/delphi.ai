@@ -160,30 +160,33 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
 
 
 class TruncatedBCE(ch.autograd.Function):
+    """
+    Truncated binary cross entropy gradient for truncated binary classification tasks. 
+    """
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
-        ctx.save_for_backward(pred, targ)
-        loss = ch.nn.BCEWithLogitsLoss()
-        ctx.phi = phi
-        ctx.num_samples = num_samples
-        ctx.eps = eps
-        return loss(pred, targ)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ = ctx.saved_tensors
-        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
+        ctx.save_for_backward()
+        
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
         rand_noise = logistic.sample(stacked.size())
         # add noise
         noised = stacked + rand_noise
         noised_labs = noised >= 0
-        
         # filter
-        filtered = ctx.phi(noised)
+        filtered = phi(noised)
         mask = (noised_labs).eq(targ)
+        nll = logistic.log_prob((filtered * mask * rand_noise)).sum(0) / ((filtered * mask).sum(0) + eps)
+        const = logistic.log_prob(filtered * rand_noise).sum(0) / (filtered.sum(0) + eps)
+        ctx.save_for_backward(mask, filtered, rand_noise)
+        ctx.eps = eps
+        return -(nll - const) / pred.size(0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        mask, filtered, rand_noise = ctx.saved_tensors
         avg = 2*(sig(rand_noise) * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps) 
         norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
-        return -(avg - norm_const) / pred.size(0), None, None, None, None
+        return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
 
 
 
@@ -195,6 +198,13 @@ class TruncatedProbitMLE(ch.autograd.Function):
         ctx.phi = phi
         ctx.num_samples = num_samples
         ctx.eps = eps
+        stacked = pred[None,...].repeat(num_samples, 1, 1)
+        rand_noise = ch.randn(stacked.size())
+        noised = stacked + rand_noise 
+        noised_labs = noised >= 0
+        mask = noised_labs.eq(targ)
+        filtered = phi(noised)
+
         return loss(pred, targ)
 
     @staticmethod
@@ -246,7 +256,23 @@ class TruncatedCE(ch.autograd.Function):
         ctx.num_samples = num_samples
         ctx.eps = eps
         ce_loss = ch.nn.CrossEntropyLoss()
-        return ce_loss(pred, targ)
+
+        # initialize gumbel distribution
+        gumbel = Gumbel(0, 1)
+        # make num_samples copies of pred logits
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
+        # add gumbel noise to logits
+        rand_noise = gumbel.sample(stacked.size())
+        noised = stacked + rand_noise 
+        # truncate - if one of the noisy logits does not fall within the truncation set, remove it
+        filtered = phi(noised)
+        noised_labs = noised.argmax(-1)
+        # mask takes care of invalid logits and truncation set
+        mask = noised_labs.eq(targ)[..., None] * filtered
+        
+        nll = (gumbel.log_prob(rand_noise) * filtered * mask).sum(dim=-1)[...,None].sum(dim=0) / ((filtered * mask).sum(dim=0) + eps)
+        const = (gumbel.log_prob(rand_noise) * filtered).sum(dim=-1)[..., None].sum(dim=0) / (filtered.sum(dim=0) + eps) 
+        return -(nll - const) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):  

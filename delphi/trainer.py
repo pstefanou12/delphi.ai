@@ -33,7 +33,7 @@ EVAL_LOGS_SCHEMA = {
 
 # determine running environment
 if type_of_script() in {'jupyter', 'colab'}: 
-    from tqdm.auto import tqdm
+    from tqdm.notebook import tqdm
 else: 
     from tqdm import tqdm
 
@@ -62,7 +62,6 @@ class Trainer:
             n_iter_no_change (int): number of iteration with no improvement to wait before stopping
             disable_no_grad (bool) : if True, then even model evaluation will be
                 run with autograd enabled (otherwise it will be wrapped in a ch.no_grad())
-            verbose (bool) : print iterator output as procedure progresses
         """
         assert isinstance(model, delphi), "model type: {} is incompatible with Trainer class".format(type(model))
         self.model = model
@@ -83,12 +82,13 @@ class Trainer:
 
         assert isinstance(disable_no_grad, bool), "disable_no_grad is type {}, Trainer expects type bool".format(type(disable_no_grad))
         self.disable_no_grad = disable_no_grad
+               
+        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(self.store))
+        self.store = store 
+
         # print log output or not
         assert isinstance(verbose, bool), "verbose is type {}, Trainer expects type bool".format(type(verbose))
         self.verbose = verbose
-        
-        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(self.store))
-        self.store = store 
 
     def eval_model(self, loader):
         """
@@ -226,12 +226,12 @@ class Trainer:
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         
         # iterator
-        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar}{r_bar}') if self.verbose else enumerate(loader) 
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.verbose else enumerate(loader) 
         for i, batch in iterator:
             self.model.optimizer.zero_grad()
             loss, prec1, prec5 = self.model(batch)
             
-            if len(loss.shape) > 0: loss = loss.mean()
+            if len(loss.shape) > 0: loss = loss.sum()
 
             # update average meters
             loss_.update(loss)
@@ -250,7 +250,7 @@ class Trainer:
             
             # ITERATOR DESCRIPTION
             if self.verbose:
-                desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_)
+                desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                 iterator.set_description(desc)
            
             # ITERATION HOOK 

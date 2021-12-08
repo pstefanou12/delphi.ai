@@ -17,7 +17,7 @@ class TruncatedLinearModel(delphi.delphi):
     '''
     Truncated linear regression with known noise variance model.
     '''
-    def __init__(self, args, train_loader, phi, k=1): 
+    def __init__(self, args, train_loader, k=1): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
@@ -25,7 +25,6 @@ class TruncatedLinearModel(delphi.delphi):
         '''
         super().__init__(args)
         self.X, self.y = train_loader.dataset[:]
-        self.phi = phi
         self.k = k
         # calculate empirical estimates for truncated linear model
         self.calc_emp_model()

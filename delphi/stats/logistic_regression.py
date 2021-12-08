@@ -19,7 +19,7 @@ from ..oracle import oracle
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Bounds, Parameters, check_and_fill_args
+from ..utils.helpers import Bounds, Parameters, check_and_fill_args, accuracy
 
 
 # CONSTANTS 
@@ -27,6 +27,8 @@ G = Gumbel(0, 1)
 softmax = Softmax()
 sig = Sigmoid()
 DEFAULTS = {
+        'phi': (oracle, 'required'),
+        'alpha': (float, 'required'), 
         'epochs': (int, 1),
         'fit_intercept': (bool, True), 
         'num_trials': (int, 3),
@@ -48,7 +50,9 @@ DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10),
         'multi_class': ({'multinomial', 'ovr'}, 'ovr'),
-        'alpha': (Tensor, 'required')
+        'early_stopping': (bool, False), 
+        'n_iter_no_change': (int, 5),
+        'verbose': (bool, False),
 }
 
 
@@ -57,9 +61,7 @@ class TruncatedLogisticRegression(stats):
     Truncated Logistic Regression supports both binary cross entropy classification and truncated cross entropy classification.
     """
     def __init__(self,
-            phi: oracle,
-            alpha: float,
-            kwargs: dict={},
+            args: dict,
             store: cox.store.Store=None,
 ):
         '''
@@ -89,14 +91,11 @@ class TruncatedLogisticRegression(stats):
             store (cox.store.Store) : cox store object for logging 
         '''
         super(TruncatedLogisticRegression).__init__()
-        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
-        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # instance variables
-        self.phi = phi 
         self.store = store
         self.trunc_log_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
+        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
                 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -117,9 +116,9 @@ class TruncatedLogisticRegression(stats):
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
-        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, self.phi, len(ch.unique(y)))
+        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, len(ch.unique(y)))
 
-        trainer = Trainer(self.trunc_log_reg, max_iter=self.args.epochs, trials=self.args.num_trials, tol=self.args.tol, store=self.store) 
+        trainer = Trainer(self.trunc_log_reg, max_iter=self.args.epochs, trials=self.args.num_trials, tol=self.args.tol, store=self.store, verbose=self.args.verbose) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
@@ -164,18 +163,16 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args, train_loader, phi, k): 
+    def __init__(self, args, train_loader, k): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, phi, k)
-        # use OLS as empirical estimate to define projection set
-        self.phi = phi
+        super().__init__(args, train_loader, k)
 
     def pretrain_hook(self): 
         # projection set radius
-        self.radius = self.args.r * (ch.sqrt(2.0 * ch.log(1.0 / self.args.alpha)))
+        self.radius = self.args.r * (ch.sqrt(2.0 * ch.log(1.0 / Tensor([self.args.alpha]))))
         if self.args.clamp:
             self.weight_bounds = Bounds((self.emp_weight - self.radius).flatten(),
                                         (self.emp_weight + self.radius).flatten())
@@ -215,13 +212,19 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
         '''
         inp, targ = batch
 
-        pred = self.model(inp)
+        z = self.model(inp)
         if self.args.multi_class == 'multinomial': 
-            loss = TruncatedCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
+            loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
+            pred = z.argmax(-1)
         elif self.args.multi_class == 'ovr': 
-            loss = TruncatedBCE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
-
-        return loss, None, None
+            loss = TruncatedBCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
+            pred = z >= 0
+        # calculate precision accuracies 
+        if z.size(1) >= 5:
+            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1, 5))
+        else: 
+            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1,))
+        return loss, prec1, prec5
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''

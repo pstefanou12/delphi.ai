@@ -252,8 +252,7 @@ def accuracy(output, target, topk=(1,), exact=False):
         if len(target.shape) > 1:
             assert output.shape == target.shape, \
                 "Detected binary classification but output shape != target shape"
-            return [ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean()], [-1.0] 
-
+            return [ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean(), -1.0] 
         maxk = max(topk)
         batch_size = target.size(0)
 
