@@ -211,7 +211,6 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             batch (Iterable) : iterable of inputs that 
         '''
         inp, targ = batch
-
         z = self.model(inp)
         if self.args.multi_class == 'multinomial': 
             loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)

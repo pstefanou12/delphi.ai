@@ -175,8 +175,8 @@ class TruncatedBCE(ch.autograd.Function):
         # filter
         filtered = phi(noised)
         mask = (noised_labs).eq(targ)
-        nll = logistic.log_prob((filtered * mask * rand_noise)).sum(0) / ((filtered * mask).sum(0) + eps)
-        const = logistic.log_prob(filtered * rand_noise).sum(0) / (filtered.sum(0) + eps)
+        nll = (filtered * mask * logistic.log_prob(rand_noise)).sum(0) / ((filtered * mask).sum(0) + eps)
+        const = (filtered * logistic.log_prob(rand_noise)).sum(0) / (filtered.sum(0) + eps)
         ctx.save_for_backward(mask, filtered, rand_noise)
         ctx.eps = eps
         return -(nll - const) / pred.size(0)
