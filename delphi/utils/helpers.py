@@ -14,7 +14,6 @@ import torch.nn as nn
 import cox
 from typing import NamedTuple
 import os
-import git
 import math
 import pprint
 from typing import Iterable
@@ -205,15 +204,6 @@ def setup_store_with_metadata(args, store):
     Sets up a store for training according to the arguments object. See the
     argparse object above for options.
     '''
-    # Add git commit to args
-    try:
-        repo = git.Repo(path=os.path.dirname(os.path.realpath('__file__')),
-                            search_parent_directories=True)
-        version = repo.head.object.hexsha
-    except git.exc.InvalidGitRepositoryError:
-        version = __version__
-    args.version = version
-
     args_dict = args.as_dict()
     schema = cox.store.schema_from_dict(args_dict)
     store.add_table('metadata', schema)
