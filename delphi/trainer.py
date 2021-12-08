@@ -83,7 +83,7 @@ class Trainer:
         assert isinstance(disable_no_grad, bool), "disable_no_grad is type {}, Trainer expects type bool".format(type(disable_no_grad))
         self.disable_no_grad = disable_no_grad
                
-        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(self.store))
+        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
 
         # print log output or not
