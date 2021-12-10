@@ -11,6 +11,20 @@ projects using the library can found in:
 We demonstrate how to use the library in a set of walkthroughs and our API
 reference. Functionality provided by the library includes:
 
+
+Contents:
+--------
+* ``stats``
+  * ``TruncatedLinearRegression``:ref:`TruncatedLinearRegression`
+  * ``TruncatedLassoRegression``
+  * ``TruncatedLogisticRegression``
+  * ``TruncatedProbitRegression``
+* ``distributions``
+  * ``CensoredNormal``
+  * ``CensoredMultivariateNormal``
+  * ``TruncatedNormal``
+  * ``TruncatedMultivariateNormal``
+
 TruncatedLinearRegression:
 --------------------------
 ``TruncatedLinearRegression`` learns from truncated linear regression model's with the noise 
