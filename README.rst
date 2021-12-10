@@ -26,6 +26,7 @@ the ``delphi.oracle`` class and the ``TruncatedLinearRegression`` object. You ca
 about selecting and or defining the oracle in <>. The ``TruncatedLinearRegression`` module accepts 
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
+
 * ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``epochs`` (int): maximum number of times to iterate over dataset
@@ -54,7 +55,7 @@ The possible arguments are:
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
-For example in the code block here:
+In the following code block, here, we show an example of how to use the library with unknown noise variance: 
    
 .. code-block:: python
 
