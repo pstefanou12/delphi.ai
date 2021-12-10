@@ -2,14 +2,20 @@ delphi.ai package
 =================
 Install via ``pip``: ``pip install delphi.ai``
 
-This library holds a collection of algorithms that can be used debias models that have been defected due to truncation, or missing data. 
+This library holds a collection of algorithms that can be used 
+debias models that have been defected due to truncation, or missing data. A few 
+projects using the library can found in: 
+`Code for "Efficient Truncated Linear Regression with Unknown Noise Variance" <https://github.com/pstefanou12/Truncated-Regression-With-Unknown-Noise-Variance-NeurIPS-2021>`
 
-We
-demonstrate how to use the library in a set of walkthroughs and our API
+
+We demonstrate how to use the library in a set of walkthroughs and our API
 reference. Functionality provided by the library includes:
 
-- Evaluating truncated linear regression models, using PSGD on the truncated negative log-likelihood
+Truncated Linear with Regression with Known and Unknown Noise Variance:
 
+When evaluating truncated regression models, the user needs to ``import`` two objects 
+to anaylze the model; an oracle object and the ``TruncatedLinearRegression`` object.
+For example in the code block here:
 .. code-block:: bash
 
   from delphi.stats.linear_regression import TruncatedLinearRegression
