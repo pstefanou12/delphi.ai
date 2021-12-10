@@ -5,7 +5,7 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="delphi.ai",
-    version="0.1.7",
+    version="0.1.8",
     author="Patroklos Stefanou",
     author_email="patstefanou@gmail.com",
     description="Package for Robust Statistics",
