@@ -10,6 +10,7 @@ import numpy as np
 import torch as ch
 from torch import Tensor
 import cox
+from cox.store import Store
 from typing import Any, Iterable, Callable
 from abc import ABC
 from time import time
@@ -108,7 +109,7 @@ class Trainer:
             self.store.add_table('eval', consts.EVAL_LOGS_SCHEMA)
 
         # add 
-        writer = store.tensorboard if store else None
+        writer = self.store.tensorboard if self.store else None
         test_prec1, test_loss = self.model_loop(VAL, loader, 1)
 
         # log info 
@@ -181,13 +182,13 @@ class Trainer:
 
                 # check for early completion
                 if self.early_stopping: 
-                    if self.tol > -INFINITY and loss > self.best_loss - self.tol:
+                    if self.tol > -INFINITY and val_loss > self.best_loss - self.tol:
                         self.no_improvement_count += 1
                     else: 
                         self.no_improvement_count = 0
 
-                    if loss < self.best_loss: 
-                        self.best_loss = loss
+                    if val_loss < self.best_loss: 
+                        self.best_loss = val_loss
 
                 if self.no_improvement_count >= self.n_iter_no_change:
                     if self.verbose: 

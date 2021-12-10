@@ -3,29 +3,21 @@ Truncated Ridge Regression.
 """
 
 import torch as ch
-import torch.linalg as LA
 from torch import Tensor
-import torch.nn as nn
-from torch.nn import Linear
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.linear_model import LassoCV
-import math
+from sklearn.linear_model import Ridge
 import cox
-from cox.store import Store
-import copy
-import warnings
-from abc import abstractmethod
 
-from .. import delphi
 from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
-from .linear_regression import TruncatedLinearRegression, KnownVariance, UnknownVariance
-from ..utils.helpers import Parameters, Bounds, make_train_and_val, check_and_fill_args
+from .linear_regression import KnownVariance, UnknownVariance
+from ..utils.helpers import Parameters, make_train_and_val, check_and_fill_args
 
 
 # CONSTANTS 
 DEFAULTS = {
+        'phi': (oracle, 'required'), 
+        'alpha': (float, 'required'), 
         'epochs': (int, 1),
         'noise_var': (float, None), 
         'fit_intercept': (bool, True), 
@@ -48,10 +40,13 @@ DEFAULTS = {
         'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
+        'early_stopping': (bool, False), 
+        'n_iter_no_change': (int, 5),
+        'verbose': (bool, False),
 }
 
 
-class TruncatedRidgeRegression(TruncatedLinearRegression):
+class TruncatedRidgeRegression(stats):
     '''
     Truncated ridge regression class. Supports truncated ridge regression
     with known noise, unknown noise, and confidence intervals. Module uses 
@@ -61,9 +56,8 @@ class TruncatedRidgeRegression(TruncatedLinearRegression):
     and the survival probability. 
     '''
     def __init__(self,
-            phi: oracle,
-            alpha: float,
-            kwargs: dict={}):
+                args: dict, 
+                store: cox.store.Store=None):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -90,28 +84,46 @@ class TruncatedRidgeRegression(TruncatedLinearRegression):
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         '''
-        super().__init__(phi, alpha, kwargs)
-        
+        super(TruncatedRidgeRegression).__init__()
+        # instance variables
+        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
+        self.store = store 
+        self.trunc_ridge = None
+        # algorithm hyperparameters
+        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
+
+        assert self.args.weight_decay > 0, "ridge regression requires l2 coefficient to be nonzero"
+
     def fit(self, X: Tensor, y: Tensor):
         """
+        Train truncated ridge regression model by running PSGD on the truncated negative 
+        population log likelihood.
+        Args: 
+            X (torch.Tensor): input feature covariates num_samples by dims
+            y (torch.Tensor): dependent variable predictions num_samples by 1
         """
+        assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
+        assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
+        assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
+        assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
         if self.args.noise_var is None:
-            self.trunc_reg = LassoUnknownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_ridge = RidgeUnknownVariance(self.args, self.train_loader_) 
         else: 
-            self.trunc_reg = LassoKnownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_ridge = RidgeKnownVariance(self.args, self.train_loader_) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_reg, self.args.epochs, self.args.num_trials, self.args.tol)
+        trainer = Trainer(self.trunc_ridge, self.args.epochs, self.args.num_trials, self.args.tol)
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
             # assign results from procedure to instance variables
-            self.coef = self.trunc_reg.model.weight.clone()
-            if self.args.fit_intercept: self.intercept = self.trunc_reg.model.bias.clone()
+            self.coef = self.trunc_ridge.model.weight.clone()
+            if self.args.fit_intercept: self.intercept = self.trunc_ridge.model.bias.clone()
             if self.args.noise_var is None: 
-                self.variance = self.trunc_reg.scale.clone().inverse()
+                self.variance = self.trunc_ridge.scale.clone().inverse()
                 self.coef *= self.variance
                 if self.args.fit_intercept: self.intercept *= self.variance.flatten()
 
@@ -120,53 +132,32 @@ class TruncatedRidgeRegression(TruncatedLinearRegression):
         Make predictions with regression estimates.
         """
         with ch.no_grad():
-            return self.trunc_reg.model(x)
+            return self.trunc_ridge.model(x)
 
 
 class RidgeKnownVariance(KnownVariance):
     '''
-    Truncated linear regression with known noise variance model.
+    Truncated ridge regression with known noise variance model.
     '''
-    def __init__(self, args, train_loader, phi): 
+    def __init__(self, args, train_loader): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, phi)
+        super().__init__(args, train_loader)
         
     def calc_emp_model(self):
         # calculate empirical estimates
-        self.emp_model = LassoCV(fit_intercept=self.args.fit_intercept, alphas=[self.args.l1]).fit(self.X, self.y.flatten())
+        self.emp_model = Ridge(fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay).fit(self.X, self.y.flatten())
         self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
         if self.args.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
-
-    def pretrain_hook(self):
-        # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
-
-        if self.args.clamp:
-            self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
-                                        self.emp_weight.flatten() + self.radius)
-            # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / self.args.alpha.pow(2))) if self.args.noise_var is None else None
-            if self.args.fit_intercept:
-                self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
-                                      float(self.emp_bias.flatten() + self.radius))
-        else:
-            pass
-
-        # assign empirical estimates
-        self.model.weight.data = self.emp_weight
-        if self.args.fit_intercept:
-            self.model.bias.data = self.emp_bias
-        self.params = None
 
 
 class RidgeUnknownVariance(UnknownVariance):
     '''
-    Parent/abstract class for models to be passed into trainer.  
+    Truncated ridge regression with unknown noise variance model.
     '''
     def __init__(self, args, train_loader, phi): 
         '''
@@ -177,33 +168,8 @@ class RidgeUnknownVariance(UnknownVariance):
 
     def calc_emp_model(self):
         # calculate empirical estimates
-        self.emp_model = LassoCV(fit_intercept=self.args.fit_intercept, alphas=[self.args.l1]).fit(self.X, self.y.flatten())
+        self.emp_model = Ridge(fit_intercept=self.args.fit_intercept, alpha=self.weight_decay).fit(self.X, self.y.flatten())
         self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
         if self.args.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
-
-    def pretrain_hook(self):
-        # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
-
-        if self.args.clamp:
-            self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
-                                        self.emp_weight.flatten() + self.radius)
-            # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / self.args.alpha.pow(2))) 
-            if self.args.fit_intercept:
-                self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
-                                      float(self.emp_bias.flatten() + self.radius))
-        else:
-            pass
-
-        # assign empirical estimates
-        self.scale.data = self.emp_var.inverse()
-        self.model.weight.data = self.emp_weight * self.scale
-        if self.args.fit_intercept:
-            self.model.bias.data = (self.emp_bias * self.scale).flatten()
-        self.params = [{'params': [self.model.weight, self.model.bias]},
-            {'params': self.scale, 'lr': self.args.var_lr}]
-        
-

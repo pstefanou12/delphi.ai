@@ -6,23 +6,22 @@ import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader
-from cox.utils import Parameters
-import config
-import copy
+import cox
 
 from .. import delphi
-from .distributions import distributions
+from .censored_multivariate_normal import CensoredMultivariateNormal, CensoredMultivariateNormalModel
 from ..oracle import oracle
 from ..trainer import Trainer
 from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
-from ..grad import CensoredMultivariateNormalNLL
 from ..utils import defaults
-from ..utils.helpers import Bounds, check_and_fill_args
+from ..utils.helpers import Bounds, PSDError   
 
 # CONSTANTS 
 DEFAULTS = {
+        'phi': (oracle, 'required'),
+        'alpha': (float, 'required'), 
         'epochs': (int, 1),
-        'num_trials': (int, 3),
+        'num_trials': (int, 1),
         'clamp': (bool, True), 
         'val': (float, .2),
         'lr': (float, 1e-1), 
@@ -39,31 +38,26 @@ DEFAULTS = {
         'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
-        'variance': (ch.Tensor, None)
+        'variance': (Tensor, None),
+        'early_stopping': (bool, False), 
+        'n_iter_no_change': (int, 5),
+        'verbose': (bool, False),
 }
 
-class CensoredNormal(distributions):
+class CensoredNormal(CensoredMultivariateNormal):
     """
     Censored normal distribution class.
     """
-    def __init__(self,
-            phi: oracle,
-            alpha: float,
-            kwargs: dict={}):
+    def __init__(self, 
+            args: dict,
+            store: cox.store.Store=None):
         """
         Args:
            phi (delphi.oracle): oracle for censored distribution; see delphi.oracle
            alpha (float): survival probability
            kwargs (dict): hyperparameters for censored algorithm 
         """
-        super(CensoredNormal).__init__()
-        # instance variables
-        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
-        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
-        self.phi = phi
-
-        # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
+        super().__init__(args, store=store)
 
     def fit(self, S: Tensor):
         """
@@ -73,14 +67,23 @@ class CensoredNormal(distributions):
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(1) == 1, "censored normal class only accepts 1 dimensional distributions." 
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
-        self.censored = CensoredNormalModel(self.args, self.train_loader_.dataset, self.phi)
-        # run PGD to predict actual estimates
-        self.trainer = Trainer(self.censored, self.args.epochs, self.args.num_trials, self.args.tol)
+        while True: 
+            try:
+                self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
+                self.censored = CensoredNormalModel(self.args, self.train_loader_.dataset)
+                # run PGD to predict actual estimates
+                self.trainer = Trainer(self.censored, max_iter=self.args.epochs, trials=self.args.num_trials, 
+                                        tol=self.args.tol, store=self.store, verbose=self.args.verbose, 
+                                        early_stopping=self.args.early_stopping)
+                # run PGD for parameter estimation 
+                self.trainer.train_model((self.train_loader_, self.val_loader_))
+                return self 
+            except PSDError as psd:
+                print(psd.message) 
+                continue
+            except Exception as e: 
+                raise e
 
-        # run PGD for parameter estimation 
-        self.trainer.train_model((self.train_loader_, self.val_loader_))
-        
     @property 
     def loc(self): 
         """
@@ -96,25 +99,19 @@ class CensoredNormal(distributions):
         return self.censored.model.covariance_matrix.clone()
 
 
-class CensoredNormalModel(delphi.delphi):
+class CensoredNormalModel(CensoredMultivariateNormalModel):
     '''
     Model for censored normal distributions to be passed into trainer.
     '''
-    def __init__(self, args, train_ds, phi): 
+    def __init__(self, args, train_ds): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args)
-        self.phi = phi 
-        self.train_ds = train_ds
-        self.model = None
-        self.emp_loc, self.emp_covariance_matrix = None, None
-        # initialize empirical estimates
-        self.calc_emp_model()
-
+        super().__init__(args, train_ds) 
+       
     def pretrain_hook(self):
-        self.radius = self.args.r * (ch.log(1.0 / self.args.alpha) / self.args.alpha.pow(2))
+        self.radius = self.args.r * (ch.log(1.0 / Tensor([self.args.alpha])) / Tensor([self.args.alpha]).pow(2))
         # parameterize projection set
         if self.args.variance is not None:
             T = self.args.variance.clone().inverse()
@@ -125,7 +122,7 @@ class CensoredNormalModel(delphi.delphi):
         if self.args.clamp:
             self.loc_bounds = Bounds(v - self.radius, v + self.radius)
             if self.args.variance is None:
-                self.scale_bounds = Bounds(ch.square(self.args.alpha / 12.0), T + self.radius)
+                self.scale_bounds = Bounds(ch.square(Tensor([self.args.alpha]) / 12.0), T + self.radius)
         else:
             pass
 
@@ -135,22 +132,6 @@ class CensoredNormalModel(delphi.delphi):
         # if distribution with known variance, remove from computation graph
         if self.args.variance is not None: self.model.covariance_matrix.requires_grad = False
         self.params = [self.model.loc, self.model.covariance_matrix]
-
-    def calc_emp_model(self): 
-        # initialize projection set
-        self.emp_covariance_matrix = self.train_ds.covariance_matrix
-        self.emp_loc = self.train_ds.loc
-        self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
-
-    def __call__(self, batch):
-        '''
-        Training step for defined model.
-        Args: 
-            i (int) : gradient step or epoch number
-            batch (Iterable) : iterable of inputs that 
-        '''
-        loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi, self.args.num_samples, self.args.eps)
-        return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -168,10 +149,3 @@ class CensoredNormalModel(delphi.delphi):
                 self.model.covariance_matrix.data = ch.clamp(self.model.covariance_matrix.data, float(self.scale_bounds.lower), float(self.scale_bounds.upper))
         else:
             pass
-
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
-        # reparamterize distribution
-        self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
-        self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
-        self.model.loc.data = self.model.loc  @ self.model.covariance_matrix

@@ -388,3 +388,10 @@ class ProcedureComplete(Exception):
     def __init__(self, message='procedure complete'): 
         super(ProcedureComplete, self).__init__(message)
 
+
+class PSDError(Exception): 
+    def __init__(self, message='psd error'): 
+        super(PSDError, self).__init__(message)
+        self.message = message
+
+

@@ -4,9 +4,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
-from torch.distributions import Uniform, Gumbel, MultivariateNormal
-from torch.distributions.transforms import SigmoidTransform
-from torch.distributions.transformed_distribution import TransformedDistribution
+from torch.distributions import Gumbel, MultivariateNormal
 import math
 
 from .utils.helpers import logistic, censored_sample_nll
@@ -46,7 +44,6 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         # z is a tensor of size batch size zeros, then fill with up to batch size num samples
         z = ch.zeros(S.size())
         elts = s[filtered][:S.size(0)]
-        print("elts: ", elts.size(0))
         z[:elts.size(0)] = elts
         # standard negative log likelihood
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
@@ -139,8 +136,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         ctx.save_for_backward(pred, targ, lambda_, z, z_2, z_2_)
         return nll - const
 
-#        return (0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred - 0.5 * lambda_ * z_2 + lambda_ * z * pred).mean(0) 
-
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, lambda_, z, z_2, z_2_ = ctx.saved_tensors
@@ -150,12 +145,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         factor
         """
         lambda_grad = .5 * (targ.pow(2) - z_2)
-        lambda_grad_ = .5 * (targ.pow(2) - z_2_)
-
-        print("lambda grad: ", lambda_grad.mean())
-        print("lambda grad 2: ", lambda_grad_.mean())
-        print("y grad: ", (lambda_ * (z - targ)).mean())
-    
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
 
@@ -189,27 +178,26 @@ class TruncatedBCE(ch.autograd.Function):
         return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
 
 
-
 class TruncatedProbitMLE(ch.autograd.Function): 
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5): 
-        ctx.save_for_backward(pred, targ)
-        loss = ch.nn.BCEWithLogitsLoss()
-        ctx.phi = phi
-        ctx.num_samples = num_samples
-        ctx.eps = eps
+        M = MultivariateNormal(ch.zeros(1,), ch.eye(1, 1))
         stacked = pred[None,...].repeat(num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())
         noised = stacked + rand_noise 
         noised_labs = noised >= 0
         mask = noised_labs.eq(targ)
         filtered = phi(noised)
-
-        return loss(pred, targ)
+        pdf = M.log_prob(rand_noise)[...,None]
+        nll = (pdf * filtered * mask).sum(0) / ((filtered * mask).sum(0) + eps)
+        const = (filtered * pdf).sum(0) / (filtered.sum(0) + eps)
+        ctx.save_for_backward(rand_noise, filtered, mask)
+        ctx.eps = eps
+        return -(nll - const) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output): 
-        # import pdb; pdb.set_trace()
+        '''
         pred, targ = ctx.saved_tensors
         stacked = pred[None,...].repeat(ctx.num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())
@@ -217,9 +205,11 @@ class TruncatedProbitMLE(ch.autograd.Function):
         noised_labs = noised >= 0
         mask = noised_labs.eq(targ)
         filtered = ctx.phi(noised)
+        '''
+        rand_noise, filtered, mask = ctx.saved_tensors
         nll = (mask * filtered * rand_noise).sum(dim=0) / ((mask * filtered).sum(dim=0) + ctx.eps)
         const = (rand_noise * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
-        return -(nll - const) / pred.size(0), None, None, None, None
+        return -(nll - const) / rand_noise.size(1), None, None, None, None
 
 class GumbelCE(ch.autograd.Function):
     @staticmethod
@@ -256,7 +246,6 @@ class TruncatedCE(ch.autograd.Function):
         ctx.num_samples = num_samples
         ctx.eps = eps
         ce_loss = ch.nn.CrossEntropyLoss()
-
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits

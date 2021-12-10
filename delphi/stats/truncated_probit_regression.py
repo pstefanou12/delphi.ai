@@ -4,27 +4,24 @@ Truncated Logistic Regression.
 
 import torch as ch
 from torch import Tensor
-from torch.nn import CrossEntropyLoss, Softmax, Sigmoid
-from torch.distributions import Gumbel
 from torch import sigmoid as sig
-from cox.store import Store
 from statsmodels.discrete.discrete_model import Probit
 from statsmodels.tools.tools import add_constant
-import copy
+import cox
 
-from .. import delphi
-from .linear_model import TruncatedLinearModel
 from .linear_regression import KnownVariance
 from .stats import stats
 from ..oracle import oracle
 from ..grad import TruncatedProbitMLE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Bounds, Parameters, check_and_fill_args
+from ..utils.helpers import Bounds, Parameters, check_and_fill_args, accuracy
 
 
 # CONSTANTS 
 DEFAULTS = {
+        'phi': (oracle, 'required'), 
+        'alpha': (float, 'required'), 
         'epochs': (int, 1),
         'fit_intercept': (bool, True), 
         'num_trials': (int, 3),
@@ -45,7 +42,9 @@ DEFAULTS = {
         'tol': (float, 1e-3),
         'workers': (int, 0),
         'num_samples': (int, 10),
-        'multi_class': ({'multinomial', 'ovr'}, 'ovr'),
+        'early_stopping': (bool, False), 
+        'n_iter_no_change': (int, 5),
+        'verbose': (bool, False),
 }
 
 
@@ -54,9 +53,8 @@ class TruncatedProbitRegression(stats):
     Truncated Probit Regression supports both binary classification, when the noise distribution in the latent variable model in N(0, 1).
     """
     def __init__(self,
-            phi: oracle,
-            alpha: float,
-            kwargs: dict={}):
+                args: dict, 
+                store: cox.store.Store=None):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -85,17 +83,16 @@ class TruncatedProbitRegression(stats):
             store (cox.store.Store) : cox store object for logging 
         '''
         super(TruncatedProbitRegression).__init__()
-        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
-        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # instance variables
-        self.phi = phi 
-        self.trunc_log_reg = None
+        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
+        self.store = store
+        self.trunc_prob_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
+        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
                 
     def fit(self, X: Tensor, y: Tensor):
         """
-        Train truncated logistic regression model by running PSGD on the truncated negative 
+        Train truncated probit regression model by running PSGD on the truncated negative 
         population log likelihood.
         Args: 
             X (torch.Tensor): input feature covariates num_samples by dims
@@ -108,32 +105,29 @@ class TruncatedProbitRegression(stats):
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
-        self.trunc_log_reg = TruncatedProbitRegressionModel(self.args, self.train_loader_, self.phi)
-
-        trainer = Trainer(self.trunc_log_reg, self.args.epochs, self.args.num_trials, self.args.tol) 
+        self.trunc_prob_reg = TruncatedProbitRegressionModel(self.args, self.train_loader_)
+        trainer = Trainer(self.trunc_prob_reg, max_iter=self.args.epochs, trials=self.args.num_trials, 
+                            tol=self.args.tol, store=self.store, verbose=self.args.verbose) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
-            self.coef = self.trunc_log_reg.model.weight.clone()
-            self.intercept = self.trunc_log_reg.model.bias.clone()
+            self.coef = self.trunc_prob_reg.model.weight.clone()
+            self.intercept = self.trunc_prob_reg.model.bias.clone()
 
-
-    def __call__(x: Tensor):
+    def __call__(self, x: Tensor):
         """
         Calculate probit regression's latent variable, based off of regression estimates.
         """
         with ch.no_grad(): 
-            self.trunc_log_reg.model(x)
+            self.trunc_prob_reg.model(x)
 
     def predict(self, x: Tensor): 
         """
         Make class predictions with regression estimates.
         """
         with ch.no_grad():
-            if self.args.multi_class == 'multinomial':
-                return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
-            return sigmoid(self.trunc_log_reg.model(x)).argmax(dim=-1)
+            return sig(self.trunc_prob_reg.model(x)).argmax(dim=-1)
 
     @property
     def coef_(self): 
@@ -155,31 +149,28 @@ class TruncatedProbitRegressionModel(KnownVariance):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args, train_loader, phi): 
+    def __init__(self, args, train_loader): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, phi)
-        self.phi = phi
+        super().__init__(args, train_loader)
 
     def pretrain_hook(self): 
         # projection set radius
-        self.radius = self.args.r * (ch.sqrt(ch.log(1.0 / self.args.alpha)))
+        self.radius = self.args.r * (ch.sqrt(ch.log(1.0 / Tensor([self.args.alpha]))))
         if self.args.clamp:
             self.weight_bounds = Bounds((self.emp_weight - self.radius).flatten(),
                                         (self.emp_weight + self.radius).flatten())
-            if self.args.fit_intercept_:
+            if self.args.fit_intercept:
                 self.bias_bounds = Bounds(float(self.emp_bias - self.radius),
                                           float(self.emp_bias + self.radius))
         else: 
             pass
 
         # assign empirical estimates
-        if self.args.multi_class == 'ovr':
-            self.model.weight.data = self.emp_weight
-            self.model.bias.data = self.emp_bias
-        update_params = None
+        self.model.weight.data = self.emp_weight
+        self.model.bias.data = self.emp_bias
 
     def calc_emp_model(self): 
         """
@@ -207,8 +198,9 @@ class TruncatedProbitRegressionModel(KnownVariance):
         '''
         inp, targ = batch
         pred = self.model(inp)
-        loss = TruncatedProbitMLE.apply(pred, targ, self.phi, self.args.num_samples, self.args.eps)
-        return loss, None, None
+        loss = TruncatedProbitMLE.apply(pred, targ, self.args.phi, self.args.num_samples, self.args.eps)
+        prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1,))
+        return loss, prec1, prec5
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
@@ -216,21 +208,18 @@ class TruncatedProbitRegressionModel(KnownVariance):
         training update.
         Args:
             loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
+            loss (torch.Tensor) : loss for that iteration
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
         # project model parameters back to domain 
         if self.args.clamp: 
-            if self.args.multi_class: 
-               pass 
-            else: 
-                # project weight coefficients
-                self.model.weight.data = ch.stack([ch.clamp(self.model.weight.data[i], float(self.weight_bounds.lower[i]),
-                                                             float(self.weight_bounds.upper[i])) for i in
-                                                    range(model.weight.size(0))])
-                # project bias coefficient
-                if self.args.fit_intercept:
+            # project weight coefficients
+            self.model.weight.data = ch.stack([ch.clamp(self.model.weight.data[i], float(self.weight_bounds.lower[i]),
+                                                            float(self.weight_bounds.upper[i])) for i in
+                                                range(self.model.weight.size(0))])
+            # project bias coefficient
+            if self.args.fit_intercept:
                     self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
                         self.model.bias.size())
         else: 

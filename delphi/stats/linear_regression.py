@@ -6,8 +6,6 @@ import torch as ch
 import torch.linalg as LA
 from torch import Tensor
 import cox
-from cox.store import Store
-import copy
 import warnings
 
 from .linear_model import TruncatedLinearModel
@@ -16,11 +14,13 @@ from ..oracle import oracle
 from ..trainer import Trainer
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, Bounds, setup_store_with_metadata, check_and_fill_args
+from ..utils.helpers import Parameters, Bounds, check_and_fill_args
 
 
 # CONSTANTS 
 DEFAULTS = {
+        'phi': (oracle, 'required'),
+        'alpha': (float, 'required'), 
         'epochs': (int, 1),
         'noise_var': (float, None), 
         'fit_intercept': (bool, True), 
@@ -33,7 +33,7 @@ DEFAULTS = {
         'step_lr_gamma': (float, .9), 
         'custom_lr_multiplier': (str, None), 
         'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
+        'weight_decay': (float, 1e-3), 
         'l1': (float, 0.0), 
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -43,7 +43,11 @@ DEFAULTS = {
         'tol': (float, 1e-3),
         'workers': (int, 0),
         'num_samples': (int, 10),
+        'early_stopping': (bool, False), 
+        'n_iter_no_change': (int, 5),
+        'verbose': (bool, False),
 }
+
 
 class TruncatedLinearRegression(stats):
     '''
@@ -55,9 +59,8 @@ class TruncatedLinearRegression(stats):
     and the survival probability. 
     '''
     def __init__(self,
-            phi: oracle,
-            alpha: float,
-            kwargs: dict={}:
+                args: dict, 
+                store: cox.store.Store=None):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -85,13 +88,12 @@ class TruncatedLinearRegression(stats):
             store (cox.store.Store) : cox store object for logging 
         '''
         super(TruncatedLinearRegression).__init__()
-        assert isinstance(phi, oracle), "phi is type: {}. expected type oracle.oracle".format(type(phi))
-        assert isinstance(alpha, float), "alpha is type: {}. expected type float.".format(type(alpha))
         # instance variables
-        self.phi = phi 
+        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
+        self.store = store 
         self.trunc_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters({**{'alpha': Tensor([alpha])}, **kwargs}), DEFAULTS)
+        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -108,12 +110,14 @@ class TruncatedLinearRegression(stats):
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
         if self.args.noise_var is None:
-            self.trunc_reg = UnknownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_reg = UnknownVariance(self.args, self.train_loader_) 
         else: 
-            self.trunc_reg = KnownVariance(self.args, self.train_loader_, self.phi) 
+            self.trunc_reg = KnownVariance(self.args, self.train_loader_) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_reg, self.args.epochs, self.args.num_trials, self.args.tol)
+        trainer = Trainer(self.trunc_reg, max_iter=self.args.epochs, trials=self.args.num_trials, 
+                                        tol=self.args.tol, store=self.store, verbose=self.args.verbose, 
+                                        early_stopping=self.args.early_stopping)
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         with ch.no_grad():
@@ -157,40 +161,27 @@ class TruncatedLinearRegression(stats):
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
 
-    @property
-    def train_loader(self): 
-        '''
-        Get the train loader for model.
-        '''
-        return self.train_loader_
-
-    @property
-    def val_loader(self): 
-        '''
-        Get the train loader for model.
-        '''
-        return self.val_loader_
 
 class KnownVariance(TruncatedLinearModel):
     '''
     Truncated linear regression with known noise variance model.
     '''
-    def __init__(self, args, train_loader, phi): 
+    def __init__(self, args, train_loader): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, phi)
+        super().__init__(args, train_loader)
         
     def pretrain_hook(self):
         # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
-
+        self.radius = self.args.r * (7.0 + 4.0 * ch.log(2.0 / Tensor([self.args.alpha])))
+        
         if self.args.clamp:
             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
                                         self.emp_weight.flatten() + self.radius)
             # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / self.args.alpha.pow(2))) if self.args.noise_var is None else None
+            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / Tensor([self.args.alpha]).pow(2))) if self.args.noise_var is None else None
             if self.args.fit_intercept:
                 self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
                                       float(self.emp_bias.flatten() + self.radius))
@@ -212,7 +203,7 @@ class KnownVariance(TruncatedLinearModel):
         """
         X, y = batch
         pred = self.model(X)
-        loss = TruncatedMSE.apply(pred, y, self.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
+        loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
         return [loss, None, None]
         
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -253,22 +244,21 @@ class UnknownVariance(KnownVariance):
     '''
     Parent/abstract class for models to be passed into trainer.  
     '''
-    def __init__(self, args, train_loader, phi): 
+    def __init__(self, args, train_loader): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, phi)
+        super().__init__(args, train_loader)
         
     def pretrain_hook(self):
         # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / self.args.alpha)) if self.args.noise_var is None else self.args.r * (7.0 + 4.0 * ch.log(2.0 / self.args.alpha))
-
+        self.radius = self.args.r * (12.0 + 4.0 * ch.log(2.0 / Tensor([self.args.alpha]))) 
         if self.args.clamp:
             self.weight_bounds = Bounds(self.emp_weight.flatten() - self.radius,
                                         self.emp_weight.flatten() + self.radius)
             # generate noise variance radius bounds if unknown 
-            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / self.args.alpha.pow(2))) 
+            self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
             if self.args.fit_intercept:
                 self.bias_bounds = Bounds(float(self.emp_bias.flatten() - self.radius),
                                       float(self.emp_bias.flatten() + self.radius))
@@ -291,7 +281,7 @@ class UnknownVariance(KnownVariance):
         '''
         X, y = batch
         pred = self.model(X) * self.lambda_.inverse()
-        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.phi, self.args.num_samples, self.args.eps)
+        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):

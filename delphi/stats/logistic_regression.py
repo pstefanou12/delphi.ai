@@ -4,15 +4,12 @@ Truncated Logistic Regression.
 
 import torch as ch
 from torch import Tensor
-from torch.nn import CrossEntropyLoss, Softmax, Sigmoid
+from torch.nn import Softmax, Sigmoid
 from torch.distributions import Gumbel
 from torch import sigmoid as sig
-from cox.store import Store
 from sklearn.linear_model import LogisticRegression
-import copy
 import cox
 
-from .. import delphi
 from .linear_model import TruncatedLinearModel
 from .stats import stats
 from ..oracle import oracle
@@ -92,6 +89,7 @@ class TruncatedLogisticRegression(stats):
         '''
         super(TruncatedLogisticRegression).__init__()
         # instance variables
+        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store
         self.trunc_log_reg = None
         # algorithm hyperparameters
@@ -237,13 +235,13 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
         '''
         # project model parameters back to domain 
         if self.args.clamp: 
-            if self.args.multi_class: 
+            if self.args.multi_class == 'multinomial': 
                pass 
             else: 
                 # project weight coefficients
                 self.model.weight.data = ch.stack([ch.clamp(self.model.weight.data[i], float(self.weight_bounds.lower[i]),
                                                              float(self.weight_bounds.upper[i])) for i in
-                                                    range(model.weight.size(0))])
+                                                    range(self.model.weight.size(0))])
                 # project bias coefficient
                 if self.args.fit_intercept:
                     self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
