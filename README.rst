@@ -17,7 +17,7 @@ Contents:
 
 * ``stats``
  
-  * ``TruncatedLinearRegression`` :ref:`<TruncatedLinearRegression>`
+  * ``TruncatedLinearRegression`` :ref:`trunc-reg`
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
@@ -30,6 +30,7 @@ Contents:
   * ``TruncatedMultivariateNormal``
 
 
+.. _trunc-reg
 TruncatedLinearRegression:
 --------------------------
 ``TruncatedLinearRegression`` learns from truncated linear regression model's with the noise 
