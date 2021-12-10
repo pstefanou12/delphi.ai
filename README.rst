@@ -16,11 +16,14 @@ Contents:
 --------
 
 * ``stats``
+ 
   * ``TruncatedLinearRegression``:ref:`TruncatedLinearRegression`
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
+  
 * ``distributions``
+ 
   * ``CensoredNormal``
   * ``CensoredMultivariateNormal``
   * ``TruncatedNormal``
