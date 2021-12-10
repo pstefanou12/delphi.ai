@@ -30,10 +30,8 @@ The possible arguments are:
 
 For example in the code block here:
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 
-outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
-
 * ``epochs`` (int): maximum number of times to iterate over dataset
 * ``noise_var`` (float): provide noise variance, if the noise variance for the truncated regression model is known, else unknown variance procedure is run by default
 * ``fit_intercept`` (bool): whether to fit the intercept or not; default to True
