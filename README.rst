@@ -14,6 +14,7 @@ reference. Functionality provided by the library includes:
 
 Contents:
 --------
+
 * ``stats``
   * ``TruncatedLinearRegression``:ref:`TruncatedLinearRegression`
   * ``TruncatedLassoRegression``
