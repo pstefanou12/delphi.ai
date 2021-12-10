@@ -17,7 +17,7 @@ Contents:
 
 * ``stats``
  
-  * ``TruncatedLinearRegression`` :ref:`truncatedlinearregression <trunc_reg>`
+  * ``TruncatedLinearRegression`` :ref:`TruncatedLinearRegression <trunc_reg>`
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
@@ -73,6 +73,10 @@ The possible arguments are:
    
 Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
 from MadryLab. The store will track the regression's train and validation losses.
+
+
+* ``TruncatedLinearRegression`` :ref:`TruncatedLinearRegression <trunc_reg>`
+
 
 In the following code block, here, we show an example of how to use the library with unknown noise variance: 
    
