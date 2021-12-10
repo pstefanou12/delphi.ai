@@ -67,7 +67,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -136,7 +136,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -200,7 +200,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change` epochs, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -261,7 +261,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -321,7 +321,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -381,7 +381,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
@@ -441,7 +441,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
 * ``d`` (int): degree of expansion to use for Hermite polynomial when learning truncation set; default 100
@@ -503,7 +503,7 @@ The possible arguments are:
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
 * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if $best_loss - curr_loss$ < tol for ``n_iter_no_change``, then procedure terminates; default False
+* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
 * ``d`` (int): degree of expansion to use for Hermite polynomial when learning truncation set; default 100
