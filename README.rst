@@ -17,7 +17,7 @@ Contents:
 
 * ``stats``
  
-  * ``TruncatedLinearRegression`` :ref:`TruncatedLinearRegression <trunc_reg>`
+  * `TruncatedLinearRegression` :ref:`TruncatedLinearRegression <trunc_reg>`
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
@@ -143,7 +143,7 @@ The possible arguments are:
 In the following code block, here, we show an example of how to use the truncated lasso regression module with known noise variance: 
    
 .. code-block:: python
-
+  
   from delphi.stats.truncated_lasso_regression import TruncatedLassoRegression
   from delphi import oracle
   from cox.store import Store
