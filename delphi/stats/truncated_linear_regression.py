@@ -16,12 +16,11 @@ from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters, Bounds, check_and_fill_args
 
-
 # CONSTANTS 
 DEFAULTS = {
         'phi': (oracle, 'required'),
         'alpha': (float, 'required'), 
-        'epochs': (int, 1),
+        'epochs': (int, 5),
         'noise_var': (float, None), 
         'fit_intercept': (bool, True), 
         'num_trials': (int, 3),
@@ -39,7 +38,7 @@ DEFAULTS = {
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
         'normalize': (bool, True), 
-        'batch_size': (int, 10),
+        'batch_size': (int, 50),
         'tol': (float, 1e-3),
         'workers': (int, 0),
         'num_samples': (int, 10),
