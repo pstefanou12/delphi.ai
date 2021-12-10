@@ -30,7 +30,7 @@ Contents:
   * ``TruncatedMultivariateNormal``
 
 
-.. _trunc-reg
+.. _trunc-reg:
 TruncatedLinearRegression:
 --------------------------
 ``TruncatedLinearRegression`` learns from truncated linear regression model's with the noise 
