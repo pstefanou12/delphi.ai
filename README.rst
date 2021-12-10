@@ -49,8 +49,7 @@ For example in the code block here:
 * ``eps`` (float): epsilon denominator for gradients (ie. to prevent divide by zero calculations); default 1e-5
 * ``r`` (float): initial projection set radius; default 1.0
 * ``rate`` (float): at the end of each trial, the projection set radius is increased at rate `rate`; default 1.5
-* ``normalize`` (bool): our methods assume that the :math:`max(||x_{i}||_{2}) <= 1`, so before running the procedure, you must  divide the input featurers :math:`\mathcal{X} = \{x_{(1)}, x_{(2)}, ... , x_{(n)}\}` by :math:`max(||x_{i}||_{2}) \dot \sqrt(k)`, where :math:`\mathcal{k}`
-represents the number of dimensions the input features have; by default the procedure normalizes the features for the user
+* ``normalize`` (bool): our methods assume that the :math:`max(||x_{i}||_{2}) <= 1`, so before running the procedure, you must  divide the input featurers :math:`\mathcal{X} = \{x_{(1)}, x_{(2)}, ... , x_{(n)}\}` by :math:`max(||x_{i}||_{2}) \dot \sqrt(k)`, where :math:`\mathcal{k}` represents the number of dimensions the input features have; by default the procedure normalizes the features for the user
 * ``batch_size`` (int): the number of samples to use for each gradient step; default 50
 * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
 * ``workers`` (int): number of workers to use for procedure; default 1
