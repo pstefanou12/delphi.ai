@@ -17,7 +17,7 @@ Contents:
 
 * ``stats``
  
-  * ``TruncatedLinearRegression``:ref:`TruncatedLinearRegression`
+  * ``TruncatedLinearRegression`` :ref:`TruncatedLinearRegression`
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
