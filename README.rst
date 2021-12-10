@@ -6,7 +6,7 @@ This library holds a collection of algorithms that can be used
 debias models that have been defected due to truncation, or missing data. A few 
 projects using the library can found in: 
   
-* `Code for "Efficient Truncated Linear Regression with Unknown Noise Variance" <https://github.com/pstefanou12/Truncated-Regression-With-Unknown-Noise-Variance-NeurIPS-2021>`_
+* `Code for "Efficient Truncated Linear Regression with Unknown Noise Variance <https://github.com/pstefanou12/Truncated-Regression-With-Unknown-Noise-Variance-NeurIPS-2021>`_
 
 We demonstrate how to use the library in a set of walkthroughs and our API
 reference. Functionality provided by the library includes:
@@ -15,7 +15,7 @@ TruncatedLinearRegression:
 --------------------------
 ``TruncatedLinearRegression`` learns from truncated linear regression model's with the noise 
 variance is known or unknown. In the known setting we use the algorithm described in the following
-paper: `Computationally and Statistically Efficient Truncated Regression "https://arxiv.org/abs/2010.12000"_`. When 
+paper: `Computationally and Statistically Efficient Truncated Regression <https://arxiv.org/abs/2010.12000>`_. When 
 the variance of the ground-truth linear regression's model is unknown, we use the algorithm described in 
 the following paper: `Efficient Truncated Linear Regression with Unknown Noise Variance`.
 
@@ -51,7 +51,7 @@ The possible arguments are:
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
-Additionally, the user can also provide a `Store` object which is a logging object from the `cox "https://github.com/MadryLab/cox"`, an experimental design and analysis framework 
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
 from MadryLab. The store will track the regression's train and validation losses.
 
 In the following code block, here, we show an example of how to use the library with unknown noise variance: 
@@ -83,7 +83,7 @@ TruncatedLassoRegression:
 --------------------------
 ``TruncatedLassoRegression`` learns from truncated LASSO regression model's with the noise 
 variance is known. In the known setting we use the algorithm described in the following
-paper `Truncated Linear Regression in High Dimensions "https://arxiv.org/abs/2007.14539"_`
+paper `Truncated Linear Regression in High Dimensions <https://arxiv.org/abs/2007.14539>`_
 
 To use the package, the user needs 
 
@@ -150,7 +150,7 @@ TruncatedLogisticRegression:
 --------------------------
 ``TruncatedLogisticRegression`` learns truncated logistic regression models by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples "https://proceedings.mlr.press/v108/ilyas20a.html"_`.
+paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>_`.
 
 When evaluating truncated logistic regression models, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedLogisticRegression`` object. You can read 
@@ -212,7 +212,7 @@ TruncatedProbitRegression:
 --------------------------
 ``TruncatedProbitRegression`` learns truncated probit regression models, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples "https://proceedings.mlr.press/v108/ilyas20a.html"_`.
+paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>_`.
 
 When evaluating truncated logistic regression models, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedProbitRegression`` object. You can read 
@@ -273,7 +273,7 @@ CensoredNormal:
 --------------------------
 ``CensoredNormal`` learns censored normal distributions, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Statistics in High Dimensions from Truncated Samples "https://arxiv.org/abs/1809.03986"_`.
+paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>_`.
 
 When evaluating censored normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``CensoredNormal`` object. You can read 
@@ -329,12 +329,11 @@ In the following code block, here, we show an example of how to use the censored
   # close store 
   store.close()
 
-
 CensoredMultivariateNormal:
 --------------------------
 ``CensoredMultivariateNormal`` learns censored multivariate normal distributions, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Statistics in High Dimensions from Truncated Samples "https://arxiv.org/abs/1809.03986"_`.
+paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>_`.
 
 When evaluating censored multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``CensoredMultivariateNormal`` object. You can read 
@@ -390,12 +389,11 @@ In the following code block, here, we show an example of how to use the censored
   # close store 
   store.close()
 
-
 TruncatedNormal:
 --------------------------
 ``TruncatedNormal`` learns truncated normal distributions, with unknown truncation, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Truncated Statistics with Unknown Truncation"https://arxiv.org/abs/1908.01034"_`.
+paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>_`.
 
 When evaluating truncated normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedNormal`` object. You can read 
@@ -457,7 +455,7 @@ TruncatedMultivariateNormal:
 --------------------------
 ``TruncatedMultivariateNormal`` learns truncated multivariate normal distributions, with unknown truncation, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Truncated Statistics with Unknown Truncation"https://arxiv.org/abs/1908.01034"_`.
+paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>_`.
 
 When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedMultivariateNormal`` object. You can read 
