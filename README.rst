@@ -20,6 +20,7 @@ Contents:
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
+
 #* ``distributions``
 #  * ``CensoredNormal``
 #  * ``CensoredMultivariateNormal``
