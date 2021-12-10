@@ -20,8 +20,7 @@ papers `Computationally and Statistically Efficient Truncated Regression "https:
 When evaluating truncated regression models, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedLinearRegression`` object.
 For example in the code block here:
-.. code-block:: bash
-
+.. code-block:: python
   from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
   from delphi import oracle
   # left truncate linear regression at 0 (ie. S = {x >= 0 for all x in S})
