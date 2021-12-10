@@ -150,7 +150,8 @@ TruncatedLogisticRegression:
 --------------------------
 ``TruncatedLogisticRegression`` learns truncated logistic regression models by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>_`.
+paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
+.
 
 When evaluating truncated logistic regression models, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedLogisticRegression`` object. You can read 
@@ -212,7 +213,7 @@ TruncatedProbitRegression:
 --------------------------
 ``TruncatedProbitRegression`` learns truncated probit regression models, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>_`.
+paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
 
 When evaluating truncated logistic regression models, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedProbitRegression`` object. You can read 
@@ -273,7 +274,7 @@ CensoredNormal:
 --------------------------
 ``CensoredNormal`` learns censored normal distributions, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>_`.
+paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
 When evaluating censored normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``CensoredNormal`` object. You can read 
@@ -333,7 +334,7 @@ CensoredMultivariateNormal:
 --------------------------
 ``CensoredMultivariateNormal`` learns censored multivariate normal distributions, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>_`.
+paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
 When evaluating censored multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``CensoredMultivariateNormal`` object. You can read 
@@ -393,7 +394,7 @@ TruncatedNormal:
 --------------------------
 ``TruncatedNormal`` learns truncated normal distributions, with unknown truncation, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>_`.
+paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
 When evaluating truncated normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedNormal`` object. You can read 
@@ -455,7 +456,7 @@ TruncatedMultivariateNormal:
 --------------------------
 ``TruncatedMultivariateNormal`` learns truncated multivariate normal distributions, with unknown truncation, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
-paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>_`.
+paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
 When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
 the ``delphi.oracle`` class and the ``TruncatedMultivariateNormal`` object. You can read 
