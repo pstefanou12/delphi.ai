@@ -247,15 +247,16 @@ class Trainer:
                 loss.backward()
                 self.model.optimizer.step()
                 
-                if self.model.schedule is not None: self.model.schedule.step()
+                if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             
             # ITERATOR DESCRIPTION
             if self.verbose:
                 desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                 iterator.set_description(desc)
-           
+ 
             # ITERATION HOOK 
             self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
+        if self.model.schedule is not None and self.model.args.epoch_step: self.model.scheduler.step() 
         # EPOCH HOOK
         self.model.epoch_hook(epoch, loop_type, loss, prec1, prec5)
 
