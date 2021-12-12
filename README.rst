@@ -3,7 +3,7 @@
 
 
 
-:raw-math:`$$ \frac{s}{\sqrt{N}} $$`
+:raw-math:`$$ \\frac{s}{\\sqrt{N}} $$`
 
 
 delphi.ai package
