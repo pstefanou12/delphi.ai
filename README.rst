@@ -15,22 +15,24 @@ reference. Functionality provided by the library includes:
 Contents:
 --------
 
-* ``stats``
+* `stats <#stats>`
  
   * `TruncatedLinearRegression <#TruncatedLinearRegression>`__
-  * ``TruncatedLassoRegression``
-  * ``TruncatedLogisticRegression``
-  * ``TruncatedProbitRegression``
-  
-* ``distributions``
- 
-  * ``CensoredNormal``
-  * ``CensoredMultivariateNormal``
-  * ``TruncatedNormal``
-  * ``TruncatedMultivariateNormal``
+  * `TruncatedLassoRegression <#TruncatedLassoRegression>`__
+  * `TruncatedLogisticRegression <#TruncatedLogisticRegression>`__
+  * `TruncatedProbitRegression <#TruncatedProbitRegression>`__
+
+* `distributions <#distributions>`
+
+  * `CensoredNormal <#CensoredNormal>`
+  * `CensoredMultivariateNormal <#CensoredMultivariateNormal>`
+  * `TruncatedNormal <#TruncatedNormal>`
+  * `TruncatedMultivariateNormal <#TruncatedMultivariateNormal>`
 
 
-.. _trunc-reg:
+stats
+=====
+
 TruncatedLinearRegression:
 --------------------------
 ``TruncatedLinearRegression`` learns from truncated linear regression model's with the noise 
@@ -289,6 +291,10 @@ In the following code block, here, we show an example of how to use the truncate
 
   # close store 
   store.close()
+
+
+distributions
+=============
 
 CensoredNormal:
 --------------------------
