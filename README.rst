@@ -15,14 +15,14 @@ reference. Functionality provided by the library includes:
 Contents:
 --------
 
-* `stats <#stats>`__
+* `stats <#stats>`__ : ``stats`` module includes models for regression and classification from truncated samples
  
   * `TruncatedLinearRegression <#TruncatedLinearRegression>`__
   * `TruncatedLassoRegression <#TruncatedLassoRegression>`__
   * `TruncatedLogisticRegression <#TruncatedLogisticRegression>`__
   * `TruncatedProbitRegression <#TruncatedProbitRegression>`__
 
-* `distributions <#distributions>`__
+* `distributions <#distributions>`__: ``distributions`` module includes algorithms for learning from censored (known truncation) and truncated (unknown truncation; unsupervised learning) distributions
 
   * `CensoredNormal <#CensoredNormal>`__
   * `CensoredMultivariateNormal <#CensoredMultivariateNormal>`__
