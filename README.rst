@@ -15,19 +15,19 @@ reference. Functionality provided by the library includes:
 Contents:
 --------
 
-* `stats <#stats>`
+* `stats <#stats>`__
  
   * `TruncatedLinearRegression <#TruncatedLinearRegression>`__
   * `TruncatedLassoRegression <#TruncatedLassoRegression>`__
   * `TruncatedLogisticRegression <#TruncatedLogisticRegression>`__
   * `TruncatedProbitRegression <#TruncatedProbitRegression>`__
 
-* `distributions <#distributions>`
+* `distributions <#distributions>`__
 
-  * `CensoredNormal <#CensoredNormal>`
-  * `CensoredMultivariateNormal <#CensoredMultivariateNormal>`
-  * `TruncatedNormal <#TruncatedNormal>`
-  * `TruncatedMultivariateNormal <#TruncatedMultivariateNormal>`
+  * `CensoredNormal <#CensoredNormal>`__
+  * `CensoredMultivariateNormal <#CensoredMultivariateNormal>`__
+  * `TruncatedNormal <#TruncatedNormal>`__
+  * `TruncatedMultivariateNormal <#TruncatedMultivariateNormal>`__
 
 
 stats
@@ -297,7 +297,7 @@ distributions
 =============
 
 CensoredNormal:
---------------------------
+---------------
 ``CensoredNormal`` learns censored normal distributions, by maximizing the truncated log likelihood.
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
