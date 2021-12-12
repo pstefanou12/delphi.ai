@@ -1,11 +1,3 @@
-.. role:: raw-math(raw)
-    :format: latex html
-
-
-
-:raw-math:`$$ \\frac{s}{\\sqrt{N}} $$`
-
-
 delphi.ai package
 =================
 Install via ``pip``: ``pip install delphi.ai``
