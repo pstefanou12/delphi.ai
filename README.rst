@@ -17,7 +17,7 @@ Contents:
 
 * ``stats``
  
-  * ` ``TruncatedLinearRegression`` <#TruncatedLinearRegression>`__
+  * `TruncatedLinearRegression <#TruncatedLinearRegression>`__
   * ``TruncatedLassoRegression``
   * ``TruncatedLogisticRegression``
   * ``TruncatedProbitRegression``
