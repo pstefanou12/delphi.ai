@@ -296,7 +296,7 @@ class UnknownVariance(KnownVariance):
         self.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
                 
         if self.args.fit_intercept: 
-            temp_w = ch.cat([self.model.weight.flatten(), self.model.bias])
+            temp_w = ch.cat([self.model.weight.flatten(), self.model.bias.flatten()])
             w_diff = temp_w - self.w
             w_diff = w_diff[None, ...].renorm(p=2, dim=0, maxnorm=self.radius)
             self.model.weight.data, self.model.bias.data = self.emp_weight + w_diff[:,:-1], self.emp_bias + w_diff[:,-1]

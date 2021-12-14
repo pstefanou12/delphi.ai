@@ -114,7 +114,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
-        # stacked = pred[None, ...].repeat(num_samples, 1, 1)
         stacked = pred[..., None].repeat(1, num_samples, 1)
 
         # add noise to regression predictions
@@ -122,9 +121,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         # filter out copies that fall outside of truncation set
         filtered = phi(noised)
         out = noised * filtered
-        # import pdb; pdb.set_trace()
         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
-        # z = out.sum(dim=0) / (filtered.sum(dim=0) + eps)
         z_2 = Tensor([])
         for i in range(filtered.size(0)):
             z_2 = ch.cat([z_2, noised[i][filtered[i].squeeze(-1).sort(descending=True).indices[0]].pow(2)[None,...]])
@@ -209,6 +206,7 @@ class TruncatedProbitMLE(ch.autograd.Function):
         nll = (mask * filtered * rand_noise).sum(dim=0) / ((mask * filtered).sum(dim=0) + ctx.eps)
         const = (rand_noise * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
         return -(nll - const) / rand_noise.size(1), None, None, None, None
+
 
 class GumbelCE(ch.autograd.Function):
     @staticmethod
