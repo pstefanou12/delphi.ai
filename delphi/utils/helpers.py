@@ -371,10 +371,6 @@ def check_and_fill_args(args, defaults):
                 # use default arugment
                 setattr(args, arg_name, arg_default)
         
-        # iterate over provided args to check to see if user input argument that isn't expected
-        for arg_name in args.params.keys(): 
-            if arg_name not in defaults:
-                warnings.warn("unknown argument: {}. procedure will continue, but results may not be as expected.".format(arg_name))
         return args
 
         

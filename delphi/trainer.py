@@ -2,6 +2,7 @@
 General training format for training models with SGD/backprop.
 """
 
+from re import A, I
 import time
 import os
 import warnings
@@ -17,7 +18,7 @@ from time import time
 
 from .delphi import delphi
 from . import oracle
-from .utils.helpers import has_attr, ckpt_at_epoch, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, ProcedureComplete
+from .utils.helpers import has_attr, ckpt_at_epoch, check_and_fill_args, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, ProcedureComplete, Parameters
 from .utils import constants as consts
 
 # CONSTANTS
@@ -32,6 +33,17 @@ EVAL_LOGS_SCHEMA = {
 }
 
 
+DEFAULTS = { 
+    'epochs': (int, 5),
+    'trials': (int, 3),
+    'tol': (float, 1e-3),
+    'early_stopping': (bool, False), 
+    'n_iter_no_change': (int, 5),
+    'verbose': (bool, False),
+    'disable_no_grad': (bool, False), 
+    'epoch_step': (bool, False)
+}
+
 # determine running environment
 if type_of_script() in {'jupyter', 'colab'}: 
     from tqdm.notebook import tqdm
@@ -44,13 +56,7 @@ class Trainer:
     """
     def __init__(self, 
                 model: delphi,
-                max_iter: int,
-                trials: int=1,
-                tol: float=1e-3, 
-                early_stopping: bool=False,
-                n_iter_no_change: int=5,
-                disable_no_grad: bool=False,
-                verbose: bool=False,
+                args: Parameters,
                 store: cox.store.Store=None) -> None:
         """
         Train models. 
@@ -66,31 +72,17 @@ class Trainer:
         """
         assert isinstance(model, delphi), "model type: {} is incompatible with Trainer class".format(type(model))
         self.model = model
-        assert isinstance(max_iter, int), "max_iter is type {}, Trainer expects type int".format(type(max_iter))
-        self.max_iter = max_iter 
-        assert isinstance(trials, int), "trials is type {}, Trainer expects type int".format(type(tol))
-        self.trials = trials 
-
-        # procedure early termination parameters
-        assert isinstance(tol, float), "tol is type {}, Trainer expects type float".format(type(tol))
-        self.tol = tol 
-        assert isinstance(early_stopping, bool), "early_stopping is type {}, Trainer expects type bool".format(type(early_stopping))
-        self.early_stopping = early_stopping
-        assert isinstance(n_iter_no_change, int), "n_iter_no_change is type {}, Trainer expects type int".format(type(n_iter_no_change))
-        self.n_iter_no_change = n_iter_no_change
+        # check and fill trainer hyperparameters
+        self.args = check_and_fill_args(args, DEFAULTS)
+        assert store is None or isinstance(store, cox.store.Store), "provided store is type: {}. expecting logging store cox.store.Store".format(type(store))
+        self.store = store 
+        
         self.no_improvement_count = 0
         self.best_loss = -INFINITY
 
-        assert isinstance(disable_no_grad, bool), "disable_no_grad is type {}, Trainer expects type bool".format(type(disable_no_grad))
-        self.disable_no_grad = disable_no_grad
-               
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
-
-        # print log output or not
-        assert isinstance(verbose, bool), "verbose is type {}, Trainer expects type bool".format(type(verbose))
-        self.verbose = verbose
-
+        
     def eval_model(self, loader):
         """
         Evaluate a model for standard (and optionally adversarial) accuracy.
@@ -100,7 +92,6 @@ class Trainer:
         Returns: 
             schema with model performance metrics
         """
-        train_loader, val_loader = loaders
         # start timer
         start_time = time.time()
 
@@ -146,9 +137,8 @@ class Trainer:
                 'val_prec5': float})
 
         # keep track of whether procedure is done or not
-        done = False
         t_start = time()
-        for trial in range(self.trials):
+        for trial in range(self.args.trials):
             # PRETRAIN HOOK
             self.model.pretrain_hook()
             
@@ -160,7 +150,7 @@ class Trainer:
                 best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
         
             # do training loops until performing enough gradient steps or epochs
-            for epoch in range(1, self.max_iter + 1):
+            for epoch in range(1, self.args.epochs + 1):
                 # TRAIN LOOP
                 train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, train_loader, epoch)
                 
@@ -181,8 +171,8 @@ class Trainer:
                         'val_prec5': val_prec5 })
 
                 # check for early completion
-                if self.early_stopping: 
-                    if self.tol > -INFINITY and val_loss > self.best_loss - self.tol:
+                if self.args.early_stopping: 
+                    if self.args.tol > -INFINITY and val_loss > self.best_loss - self.args.tol:
                         self.no_improvement_count += 1
                     else: 
                         self.no_improvement_count = 0
@@ -190,8 +180,8 @@ class Trainer:
                     if val_loss < self.best_loss: 
                         self.best_loss = val_loss
 
-                if self.no_improvement_count >= self.n_iter_no_change:
-                    if self.verbose: 
+                if self.no_improvement_count >= self.args.n_iter_no_change:
+                    if self.args.verbose: 
                         print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
                     # POST TRAINING HOOK     
                     self.model.post_training_hook()
@@ -227,7 +217,7 @@ class Trainer:
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         
         # iterator
-        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.verbose else enumerate(loader) 
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose else enumerate(loader) 
         for i, batch in iterator:
             self.model.optimizer.zero_grad()
             loss, prec1, prec5 = self.model(batch)
@@ -250,7 +240,7 @@ class Trainer:
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             
             # ITERATOR DESCRIPTION
-            if self.verbose:
+            if self.args.verbose:
                 desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                 iterator.set_description(desc)
  

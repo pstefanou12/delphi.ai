@@ -94,7 +94,6 @@ class TruncatedMSE(ch.autograd.Function):
         filtered = phi(noised)
         # average across truncated indices
         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        z_2 =  -.5 * (filtered * noised.pow(2)).sum(dim=0) / (filtered.sum(dim=0) + eps)
         out = ((-.5 * noised.pow(2) + noised * pred) * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
 
         ctx.save_for_backward(pred, targ, z)
@@ -259,7 +258,7 @@ class TruncatedCE(ch.autograd.Function):
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None] * filtered
         
-        nll = (gumbel.log_prob(rand_noise) * filtered * mask).sum(dim=-1)[...,None].sum(dim=0) / ((filtered * mask).sum(dim=0) + eps)
+        nll = (gumbel.log_prob(rand_noise) * mask).sum(dim=-1)[...,None].sum(dim=0) / (mask.sum(dim=0) + eps)
         const = (gumbel.log_prob(rand_noise) * filtered).sum(dim=-1)[..., None].sum(dim=0) / (filtered.sum(dim=0) + eps) 
         return -(nll - const) / pred.size(0)
 

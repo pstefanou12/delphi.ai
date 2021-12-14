@@ -1,5 +1,6 @@
 import warnings
 import torch as ch
+import torch.linalg as LA
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal, _batch_mahalanobis
 from abc import ABC
@@ -115,9 +116,11 @@ class Right_Distribution(oracle):
     def __init__(self, right):
         """
         Args: 
-            right: right truncation
+            right (torch.Tensor): right truncation
         """
         super(Right_Distribution, self).__init__()
+        assert isinstance(right, Tensor), "right is type: {}. expecting right to be type torch.Tensor.".format(type(right)) 
+        assert right.dim() == 1, "right size: {}. expecting right size (d,).".format(right.size())
         self.right = right
 
     def __call__(self, x): 
@@ -146,7 +149,7 @@ class Sphere(oracle):
     Spherical truncation
     """
     def __init__(self, covariance_matrix, centroid, radius):
-        self._unbroadcasted_scale_tril = covariance_matrix.cholesky()
+        self._unbroadcasted_scale_tril = LA.cholesky(covariance_matrix)
         self.centroid = centroid
         self.radius = radius
 

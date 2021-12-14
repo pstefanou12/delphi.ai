@@ -6,28 +6,26 @@ Truncated multivariate normal distribution without oracle access (ie. unknown tr
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-import torch.linalg as LA
-from scipy.linalg import sqrtm
 import cox 
 
-from .. import delphi
+from .censored_multivariate_normal import CensoredMultivariateNormalModel
 from ..oracle import UnknownGaussian
 from .distributions import distributions
 from ..trainer import Trainer
 from ..grad import TruncatedMultivariateNormalNLL
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..utils.helpers import Bounds, check_and_fill_args, cov, Parameters, PSDError
+from ..utils.helpers import check_and_fill_args, Parameters, PSDError
 
 # CONSTANTS 
 DEFAULTS = {
         'alpha': (float, 'required'), 
         'epochs': (int, 1),
-        'num_trials': (int, 1),
-        'clamp': (bool, True), 
+        'trials': (int, 1),
         'val': (float, .2),
         'lr': (float, 1e-1), 
         'step_lr': (int, 100),
         'step_lr_gamma': (float, .9), 
+        'adam': (bool, False),
         'custom_lr_multiplier': (str, None), 
         'momentum': (float, 0.0), 
         'weight_decay': (float, 0.0), 
@@ -52,29 +50,26 @@ class TruncatedMultivariateNormal(distributions):
     Truncated multivariate normal distribution class.
     """
     def __init__(self,
-            args: dict, 
+            args: Parameters, 
             store: cox.store.Store=None):
         super(TruncatedMultivariateNormal).__init__()
         # instance variables 
+        assert isinstance(args, Parameters), "args is type {}. expecting type delphi.utils.helper.Parameters.".format(type(args))
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
         self.truncated = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
+        self.args = check_and_fill_args(args, DEFAULTS)
 
     def fit(self, S: Tensor):
         
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
-        assert S.size(0) > S.size(1), "input expected to bee num samples by dimenions, current input is size {}.".format(S.size()) 
-        # run PGD for parameter estimation 
-        self.trainer.train_model((self.train_loader_, self.val_loader_))
+        assert S.size(0) > S.size(1), "input expected to be num samples by dimensions, current input is size {}.".format(S.size()) 
         while True:
             try:
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TruncatedNormalDataset)
                 self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_loader_.dataset)
-                # run PGD to predict actual estimates
-                self.trainer = Trainer(self.truncated, max_iter=self.args.epochs, trials=self.args.num_trials, tol=self.args.tol, 
-                                    store=self.store, verbose=self.args.verbose, early_stopping=self.args.early_stopping)
+                self.trainer = Trainer(self.truncated, self.args, store=self.store) 
         
                 # run PGD for parameter estimation 
                 self.trainer.train_model((self.train_loader_, self.val_loader_))
@@ -85,10 +80,13 @@ class TruncatedMultivariateNormal(distributions):
             except Exception as e: 
                     raise e
 
-#        # rescale/standardize
-#        self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
-#        self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
-    
+    @property 
+    def loc(self): 
+        """
+        Returns the mean of the normal disribution.
+        """
+        return self.truncated.model.loc.clone()
+  
     @property 
     def covariance_matrix(self): 
         """
@@ -96,15 +94,8 @@ class TruncatedMultivariateNormal(distributions):
         """
         return self.truncated.model.covariance_matrix.clone()
 
-    def phi_(self, x: Tensor): 
-        """
-        After running procedure and learning truncation set, can call function 
-        to see if samples fall within S.
-        """
-        return self.truncated.phi_(x)
 
-
-class TruncatedMultivariateNormalModel(delphi.delphi):
+class TruncatedMultivariateNormalModel(CensoredMultivariateNormalModel):
     '''
     Model for truncated normal distributions to be passed into trainer.
     '''
@@ -113,40 +104,14 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         Args: 
             args (delphi.utils.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args)
-        self.args = args
-        self.train_ds = train_ds        
+        super().__init__(args, train_ds)
         # initialiaze pseudo oracle for gaussians with unknown truncation 
-        self.phi = UnknownGaussian(self.train_ds.loc, self.train_ds.covariance_matrix, self.train_ds.S, self.args.d)
-        # exponent class
-        self.exp_h = Exp_h(self.train_ds.loc, self.train_ds.covariance_matrix)
+        self.args.__setattr__('phi', UnknownGaussian(self.train_ds.loc, self.train_ds.covariance_matrix, self.train_ds.S, self.args.d))
         self.emp_loc, self.emp_covariance_matrix = None, None
         # initialize empirical estimates
         self.calc_emp_model()
-       
-    def pretrain_hook(self):
-        # parameterize projection set
-        if self.args.covariance_matrix is not None:
-            B = self.args.covariance_matrix.clone().inverse()
-        else:
-            B = self.train_ds.covariance_matrix.inverse() 
-        u = (self.train_ds.loc[None,...] @ B).flatten()
-        # initialize projection set
-        self.radius = self.args.r * ch.sqrt(ch.log(1.0 / Tensor([self.args.alpha])))
-        # upper and lower bounds
-        if self.args.clamp:
-            self.loc_bounds = Bounds(self.train_ds.loc - self.radius, self.train_ds.loc + self.radius)
-            if self.args.covariance_matrix is None:  
-                eig_decomp = LA.eig(self.train_ds.covariance_matrix)
-                self.scale_bounds = Bounds(ch.full((self.train_ds.S.size(1),), float((Tensor([self.args.alpha]) / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
-        else:
-            pass
-
-        self.model = MultivariateNormal(u, B)
-        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
-        # if distribution with known variance, remove from computation graph
-        if self.args.covariance_matrix is not None: self.model.covariance_matrix.requires_grad = False
-        self.params = [self.model.loc, self.model.covariance_matrix]
+        # exponent class
+        self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
 
     def __call__(self, batch):
         '''
@@ -154,30 +119,8 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         Args: 
             batch (Iterable) : iterable of inputs that 
         '''
-        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.phi, self.exp_h)
+        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.exp_h)
         return loss, None, None
-
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        '''
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
-        '''
-        if self.args.clamp:
-            self.model.loc.data = ch.cat([ch.clamp(self.model.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(self.model.loc.shape[0])])
-            if self.args.covariance_matrix is None:
-                u, s, v = self.model.covariance_matrix.svd()  # decompose covariance estimate
-                self.model.covariance_matrix.data = u.matmul(ch.diag(ch.cat([ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in range(s.shape[0])]))).matmul(v.t())
-        else:
-            pass
-
-        # check that the covariance matrix is PSD
-        if (LA.eig(self.model.covariance_matrix).eigenvalues.float() < 0).any(): 
-            raise PSDError('covariance matrix is not PSD, rerunning procedure')
 
     def calc_emp_model(self): 
         # initialize projection set
@@ -191,11 +134,8 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
         self.model.loc.data = (self.model.loc[None,...]  @ self.model.covariance_matrix).flatten()
         # set estimated distribution in membership oracle
-        self.phi.dist = self.model
+        self.args.phi.dist = self.model
 
-    def phi_(self, x): 
-        x_norm = (x - self.train_ds.loc) @ Tensor(sqrtm(self.train_ds.covariance_matrix.numpy())).inverse() 
-        return self.phi(x_norm)
 
 # HELPER FUNCTIONS
 class Exp_h:

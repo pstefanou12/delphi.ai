@@ -8,27 +8,28 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import torch.linalg as LA
 import cox
 from cox.utils import Parameters
+import math
+from typing import Callable
 
 from .. import delphi
 from .distributions import distributions
 from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
-from ..oracle import oracle
 from ..grad import CensoredMultivariateNormalNLL
 from ..trainer import Trainer
-from ..utils.helpers import Bounds, check_and_fill_args, PSDError
+from ..utils.helpers import check_and_fill_args, PSDError
 from ..utils.datasets import CensoredNormalDataset
 
 # CONSTANTS 
 DEFAULTS = {
-        'phi': (oracle, 'required'),
+        'phi': (Callable, 'required'),
         'alpha': (float, 'required'), 
         'epochs': (int, 1),
-        'num_trials': (int, 3),
-        'clamp': (bool, True), 
+        'trials': (int, 3),
         'val': (float, .2),
         'lr': (float, 1e-1), 
         'step_lr': (int, 100),
         'step_lr_gamma': (float, .9), 
+        'adam': (bool, False),
         'custom_lr_multiplier': (str, None), 
         'momentum': (float, 0.0), 
         'weight_decay': (float, 0.0), 
@@ -58,6 +59,7 @@ class CensoredMultivariateNormal(distributions):
         """
         super(CensoredMultivariateNormal).__init__()
         # instance variables
+        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
         self.censored = None
@@ -75,9 +77,7 @@ class CensoredMultivariateNormal(distributions):
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
                 self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
                 # run PGD to predict actual estimates
-                trainer = Trainer(self.censored, max_iter=self.args.epochs, trials=self.args.num_trials, 
-                                        tol=self.args.tol, store=self.store, verbose=self.args.verbose, 
-                                        early_stopping=self.args.early_stopping)
+                trainer = Trainer(self.censored, self.args, store=self.store)
                 trainer.train_model((self.train_loader_, self.val_loader_))
                 return self
             except PSDError as psd:
@@ -85,6 +85,14 @@ class CensoredMultivariateNormal(distributions):
                 continue
             except Exception as e: 
                 raise e
+    
+    @property 
+    def loc(self): 
+        """
+        Returns the mean of the normal disribution.
+        """
+        return self.censored.model.loc.clone()
+    
     @property
     def covariance_matrix(self): 
         '''
@@ -110,26 +118,16 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.calc_emp_model()
 
     def pretrain_hook(self):
-        self.radius = self.args.r * (ch.log(1.0 / Tensor([self.args.alpha])) / Tensor([self.args.alpha]).pow(2))
+        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2))
         # parameterize projection set
         if self.args.covariance_matrix is not None:
-            T = self.args.covariance_matrix.clone().inverse()
+            self.T = self.args.covariance_matrix.clone().inverse()
         else:
-            T = self.emp_covariance_matrix.clone().inverse()
-        v = self.emp_loc.clone() @ T
-
-        # upper and lower bounds
-        if self.args.clamp:
-            self.loc_bounds = Bounds(v - self.radius, self.train_ds.loc + self.radius)
-            if self.args.covariance_matrix is None:
-                # initialize covaraince matrix projection set around its empirical eigenvalues
-                eig_decomp = LA.eig(T)
-                self.scale_bounds = Bounds(ch.full((self.train_ds.S.size(1),), float((self.args.alpha / 12.0).pow(2))), eig_decomp.eigenvalues.float() + self.radius)
-        else:
-            pass
+            self.T = self.emp_covariance_matrix.clone().inverse()
+        self.v = self.emp_loc.clone() @ self.T
 
         # initialize empirical model 
-        self.model = MultivariateNormal(v, T)
+        self.model = MultivariateNormal(self.v, self.T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         # if distribution with known variance, remove from computation graph
         if self.args.covariance_matrix is not None: self.model.covariance_matrix.requires_grad = False
@@ -161,26 +159,16 @@ class CensoredMultivariateNormalModel(delphi.delphi):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        if self.args.clamp:
-            self.model.loc.data = ch.cat([ch.clamp(self.model.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(self.model.loc.shape[0])])
-           # self.model.loc.data = ch.cat(
-            #    [ch.clamp(self.model.loc[i], float(self.loc_bounds.lower[i]), float(self.loc_bounds.upper[i])).unsqueeze(0) for i in
-            #     range(self.model.loc.size(0))])
-            if self.args.covariance_matrix is None:
-            ##    eig_decomp = LA.eig(self.model.covariance_matrix) 
-            #    print("eig vals: ", eig_decomp.eigenvalues)
-            #    print("eig vectors: ", eig_decomp.eigenvectors)
-            #    project = ch.diag(ch.cat([ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
-            #     range(self.model.loc.size(0))]))
-            #    print("project: ", project)
-            #    self.model.covariance_matrix.data = eig_decomp.eigenvectors.float()@ch.diag(ch.cat(
-            #    [ch.clamp(eig_decomp.eigenvalues[i].float(), float(self.scale_bounds.lower[i]), float(self.scale_bounds.upper[i])).unsqueeze(0) for i in
-            #     range(self.model.loc.size(0))]))@eig_decomp.eigenvectors.T.float()
-                u, s, v = self.model.covariance_matrix.svd()  # decompose covariance estimate
-            #    self.model.loc.data = ch.cat([ch.clamp(self.model.loc[i], self.loc_bounds.lower[i], self.loc_bounds.upper[i]).unsqueeze(0) for i in range(self.model.loc.shape[0])])
-                self.model.covariance_matrix.data = u.matmul(ch.diag(ch.cat([ch.clamp(s[i], self.scale_bounds.lower[i], self.scale_bounds.upper[i]).unsqueeze(0) for i in range(s.shape[0])]))).matmul(v.t())
-        else:
-            pass
+        loc_diff = self.model.loc - self.v
+        loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+        self.model.loc.data = self.v + loc_diff
+        cov_diff = self.model.covariance_matrix - self.T
+        cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
+        self.model.covariance_matrix.data = self.T + cov_diff 
+        
+        cov_inv = self.model.covariance_matrix.inverse()
+        cov_inv = cov_inv.renorm(p=2, dim=0, maxnorm=self.radius)
+        self.model.covariance_matrix.data = cov_inv.inverse()
 
         # check that the covariance matrix is PSD
         if (LA.eig(self.model.covariance_matrix).eigenvalues.float() < 0).any(): 

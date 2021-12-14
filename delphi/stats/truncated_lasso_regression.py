@@ -7,11 +7,11 @@ from sklearn.linear_model import LassoCV
 import cox
 import warnings
 
-from .. import delphi
+from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
-from .linear_regression import KnownVariance, UnknownVariance
-from ..utils.helpers import make_train_and_val
+from .truncated_linear_regression import KnownVariance, UnknownVariance
+from ..utils.helpers import make_train_and_val, Parameters, check_and_fill_args
 
 
 # CONSTANTS 
@@ -22,7 +22,6 @@ DEFAULTS = {
         'noise_var': (float, None), 
         'fit_intercept': (bool, True), 
         'num_trials': (int, 3),
-        'clamp': (bool, True), 
         'val': (float, .2),
         'lr': (float, 1e-1), 
         'var_lr': (float, 1e-2), 
@@ -31,7 +30,7 @@ DEFAULTS = {
         'custom_lr_multiplier': (str, None), 
         'momentum': (float, 0.0), 
         'weight_decay': (float, 0.0), 
-        'l1': (float, 1e-3), 
+        'l1': (float, 'required'), 
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
@@ -46,7 +45,7 @@ DEFAULTS = {
 }
 
 
-class TruncatedLassoRegression(delphi.delphi):
+class TruncatedLassoRegression(stats):
     '''
     Truncated LASSO regression class. Supports truncated LASSO regression
     with known noise, unknown noise, and confidence intervals. Module uses 
@@ -56,7 +55,7 @@ class TruncatedLassoRegression(delphi.delphi):
     and the survival probability. 
     '''
     def __init__(self,
-                args: dict, 
+                args: Parameters, 
                 store: cox.store.Store=None):
         '''
         Args: 
@@ -64,15 +63,13 @@ class TruncatedLassoRegression(delphi.delphi):
             alpha (float) : survival probability for truncated regression model
             fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
             steps (int) : number of gradient steps to take
-            clamp (bool) : boolean indicating whether to clamp the projection set 
-            n (int) : number of gradient steps to take before checking gradient 
             val (int) : number of samples to use for validation set 
             tol (float) : gradient tolerance threshold 
             workers (int) : number of workers to spawn 
             r (float) : size for projection set radius 
             rate (float): rate at which to increase the size of the projection set, when procedure does not converge - input as a decimal percentage
             num_samples (int) : number of samples to sample in gradient 
-            bs (int) : batch size
+            batch_size (int) : batch size
             lr (float) : initial learning rate for regression parameters 
             var_lr (float) : initial learning rate to use for variance parameter in the settign where the variance is unknown 
             step_lr (int) : number of gradient steps to take before decaying learning rate for step learning rate 
@@ -84,16 +81,15 @@ class TruncatedLassoRegression(delphi.delphi):
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         '''
-        super(TruncatedLassoRegression).__init__()
+        super(TruncatedLassoRegression).__init__(args, store)
         # instance variables
+        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
         self.trunc_lasso = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
+        self.args = check_and_fill_args(args, DEFAULTS)
 
-        assert self.args.l1 > 0, "LASSO regression requires l1 coefficient to be non-zero"
-        
     def fit(self, X: Tensor, y: Tensor):
         """
         Train truncated lasso regression model by running PSGD on the truncated negative 
@@ -114,20 +110,17 @@ class TruncatedLassoRegression(delphi.delphi):
             self.trunc_lasso = LassoKnownVariance(self.args, self.train_loader_, self.args.phi) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_lasso, max_iter=self.args.epochs, trials=self.args.num_trials,
-                                        tol=self.args.tol, store=self.store, verbose=self.args.verbose, 
-                                        early_stopping=self.args.early_stopping)
-
+        trainer = Trainer(self.trunc_lasso, self.args, store=self.store) 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        with ch.no_grad():
-            # assign results from procedure to instance variables
-            self.coef = self.trunc_lasso.model.weight.clone()
-            if self.args.fit_intercept: self.intercept = self.trunc_lasso.model.bias.clone()
-            if self.args.noise_var is None: 
-                self.variance = self.trunc_lasso.scale.clone().inverse()
-                self.coef *= self.variance
-                if self.args.fit_intercept: self.intercept *= self.variance.flatten()
+        # assign results from procedure to instance variables
+        self.coef = self.trunc_lasso.model.weight.clone()
+        if self.args.fit_intercept: self.intercept = self.trunc_lasso.model.bias.clone()
+        if self.args.noise_var is None: 
+            self.variance = self.trunc_lasso.scale.clone().inverse()
+            self.coef *= self.variance
+            if self.args.fit_intercept: self.intercept *= self.variance.flatten()
+        return self
 
     def predict(self, x: Tensor): 
         """
@@ -148,7 +141,9 @@ class TruncatedLassoRegression(delphi.delphi):
         """
         Lasso regression intercept.
         """
-        return self.intercept
+        if self.intercept is not None:
+            return self.intercept
+        warnings.warn('intercept not fit, check args input.') 
 
     @property
     def variance_(self): 
@@ -172,6 +167,7 @@ class LassoKnownVariance(KnownVariance):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         '''
         super().__init__(args, train_loader)
+        self.base_radius = len(train_loader.dataset) ** (.5)
         
     def calc_emp_model(self):
         # calculate empirical estimates

@@ -181,7 +181,7 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             pass
 
         """
-        SkLearn sets up multinomial classification differenlty. So when doing 
+        SkLearn sets up multinomial classification differently. So when doing 
         multinomial classification, we initialize with random estimates.
         """
         # assign empirical estimates
