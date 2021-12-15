@@ -3,6 +3,7 @@
 Truncated multivariate normal distribution without oracle access (ie. unknown truncation set)
 """
 
+from re import I
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -14,35 +15,8 @@ from .distributions import distributions
 from ..trainer import Trainer
 from ..grad import TruncatedMultivariateNormalNLL
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..utils.helpers import check_and_fill_args, Parameters, PSDError
-
-# CONSTANTS 
-DEFAULTS = {
-        'alpha': (float, 'required'), 
-        'epochs': (int, 1),
-        'trials': (int, 1),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'step_lr': (int, 100),
-        'step_lr_gamma': (float, .9), 
-        'adam': (bool, False),
-        'custom_lr_multiplier': (str, None), 
-        'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'covariance_matrix': (ch.Tensor, None), 
-        'd': (int, 100),
-        'early_stopping': (bool, False), 
-        'n_iter_no_change': (int, 5),
-        'verbose': (bool, False),
-}
+from ..utils.helpers import Parameters, PSDError
+from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedMultivariateNormal(distributions):
@@ -59,7 +33,9 @@ class TruncatedMultivariateNormal(distributions):
         self.store = store 
         self.truncated = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(args, DEFAULTS)
+        TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
+        TRUNC_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
+        self.args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
 
     def fit(self, S: Tensor):
         
@@ -79,6 +55,13 @@ class TruncatedMultivariateNormal(distributions):
                 continue
             except Exception as e: 
                     raise e
+
+    @property
+    def defaults(self): 
+        """
+        Returns the default hyperparamaters for the algorithm.
+        """
+        return TRUNC_MULTI_NORM_DEFAULTS
 
     @property 
     def loc(self): 

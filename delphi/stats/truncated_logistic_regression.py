@@ -9,48 +9,22 @@ from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from sklearn.linear_model import LogisticRegression
 import cox
+import warnings
+import math
 
 from .linear_model import TruncatedLinearModel
 from .stats import stats
-from ..oracle import oracle
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Bounds, Parameters, check_and_fill_args, accuracy
+from ..utils.helpers import Parameters, accuracy
+from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_LOG_REG_DEFAULTS
 
 
 # CONSTANTS 
 G = Gumbel(0, 1)
 softmax = Softmax()
 sig = Sigmoid()
-DEFAULTS = {
-        'phi': (oracle, 'required'),
-        'alpha': (float, 'required'), 
-        'epochs': (int, 1),
-        'fit_intercept': (bool, True), 
-        'num_trials': (int, 3),
-        'clamp': (bool, True), 
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'step_lr': (int, 100),
-        'step_lr_gamma': (float, .9), 
-        'custom_lr_multiplier': (str, None), 
-        'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'normalize': (bool, True), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-3),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'multi_class': ({'multinomial', 'ovr'}, 'ovr'),
-        'early_stopping': (bool, False), 
-        'n_iter_no_change': (int, 5),
-        'verbose': (bool, False),
-}
 
 
 class TruncatedLogisticRegression(stats):
@@ -58,7 +32,7 @@ class TruncatedLogisticRegression(stats):
     Truncated Logistic Regression supports both binary cross entropy classification and truncated cross entropy classification.
     """
     def __init__(self,
-            args: dict,
+            args: Parameters,
             store: cox.store.Store=None,
 ):
         '''
@@ -89,11 +63,14 @@ class TruncatedLogisticRegression(stats):
         '''
         super(TruncatedLogisticRegression).__init__()
         # instance variables
+        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store
         self.trunc_log_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
+        TRUNC_LOG_REG_DEFAULTS.update(TRAINER_DEFAULTS)
+        TRUNC_LOG_REG_DEFAULTS.update(DELPHI_DEFAULTS)
+        self.args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
                 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -116,30 +93,33 @@ class TruncatedLogisticRegression(stats):
 
         self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, len(ch.unique(y)))
 
-        trainer = Trainer(self.trunc_log_reg, max_iter=self.args.epochs, trials=self.args.num_trials, tol=self.args.tol, store=self.store, verbose=self.args.verbose) 
+        trainer = Trainer(self.trunc_log_reg, self.args, store=self.store) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        with ch.no_grad():
-            self.coef = self.trunc_log_reg.model.weight.clone()
-            self.intercept = self.trunc_log_reg.model.bias.clone()
-
+        self.coef = self.trunc_log_reg.model.weight.clone()
+        self.intercept = self.trunc_log_reg.model.bias.clone()
+        return self
 
     def __call__(self, x: Tensor):
         """
         Calculate logistic regression's latent variable, based off of regression estimates.
         """
-        with ch.no_grad(): 
-            self.trunc_log_reg.model(x)
+        self.trunc_log_reg.model(x)
 
     def predict(self, x: Tensor): 
         """
         Make class predictions with regression estimates.
         """
-        with ch.no_grad():
-            if self.args.multi_class == 'multinomial':
-                return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
-            return (sig(self.trunc_log_reg.model(x)) > .5).float()
+        if self.args.multi_class == 'multinomial':
+            return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
+        return (sig(self.trunc_log_reg.model(x)) > .5).float()
+
+    def defaults(self): 
+        """
+        Returns the default hyperparamaters for the algorithm.
+        """
+        return TRUNC_LOG_REG_DEFAULTS
 
     @property
     def coef_(self): 
@@ -155,6 +135,7 @@ class TruncatedLogisticRegression(stats):
         """
         if self.args.fit_intercept:
             return self.intercept
+        warnings.warn('intercept not fit, check args input.') 
 
 
 class TruncatedLogisticRegressionModel(TruncatedLinearModel):
@@ -170,26 +151,21 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
 
     def pretrain_hook(self): 
         # projection set radius
-        self.radius = self.args.r * (ch.sqrt(2.0 * ch.log(1.0 / Tensor([self.args.alpha]))))
-        if self.args.clamp:
-            self.weight_bounds = Bounds((self.emp_weight - self.radius).flatten(),
-                                        (self.emp_weight + self.radius).flatten())
-            if self.emp_log_reg.intercept_:
-                self.bias_bounds = Bounds(float(self.emp_bias - self.radius),
-                                          float(self.emp_bias + self.radius))
-        else: 
-            pass
-
+        self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.args.alpha)))
         """
         SkLearn sets up multinomial classification differently. So when doing 
         multinomial classification, we initialize with random estimates.
         """
         # assign empirical estimates
-        if self.args.multi_class == 'ovr':
-            self.model.weight.data = self.emp_weight
-            self.model.bias.data = self.emp_bias
-        update_params = None
+        self.model.weight.requires_grad = True
+        self.model.weight.data = self.emp_weight
 
+        self.w = self.emp_weight 
+        if self.args.multi_class == 'ovr' and self.args.fit_intercept: 
+            self.model.bias.requires_grad = True
+            self.model.bias.data = self.emp_bias
+            self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
+        
     def calc_emp_model(self): 
         """
         Calculate empirical logistic regression estimates using SKlearn module.
@@ -233,23 +209,12 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         '''
-        # project model parameters back to domain 
-        if self.args.clamp: 
-            if self.args.multi_class == 'multinomial': 
-               pass 
-            else: 
-                # project weight coefficients
-                self.model.weight.data = ch.stack([ch.clamp(self.model.weight.data[i], float(self.weight_bounds.lower[i]),
-                                                             float(self.weight_bounds.upper[i])) for i in
-                                                    range(self.model.weight.size(0))])
-                # project bias coefficient
-                if self.args.fit_intercept:
-                    self.model.bias.data = ch.clamp(self.model.bias, self.bias_bounds.lower, self.bias_bounds.upper).reshape(
-                        self.model.bias.size())
-        else: 
-            pass
-
+        pass
+    
     def post_training_hook(self): 
         self.args.r *= self.args.rate
-
+        # remove model from computation graph
+        self.model.weight.requires_grad = False
+        if self.args.fit_intercept:
+            self.model.bias.requires_grad = False
 

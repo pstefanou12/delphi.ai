@@ -7,45 +7,16 @@ from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
 import torch.linalg as LA
 import cox
-from cox.utils import Parameters
 import math
-from typing import Callable
 
 from .. import delphi
 from .distributions import distributions
 from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
 from ..grad import CensoredMultivariateNormalNLL
 from ..trainer import Trainer
-from ..utils.helpers import check_and_fill_args, PSDError
+from ..utils.helpers import PSDError, Parameters
 from ..utils.datasets import CensoredNormalDataset
-
-# CONSTANTS 
-DEFAULTS = {
-        'phi': (Callable, 'required'),
-        'alpha': (float, 'required'), 
-        'epochs': (int, 1),
-        'trials': (int, 3),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'step_lr': (int, 100),
-        'step_lr_gamma': (float, .9), 
-        'adam': (bool, False),
-        'custom_lr_multiplier': (str, None), 
-        'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'covariance_matrix': (ch.Tensor, None),
-        'early_stopping': (bool, False), 
-        'n_iter_no_change': (int, 5),
-        'verbose': (bool, False),
-}
+from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, CENSOR_MULTI_NORM_DEFAULTS
 
 
 class CensoredMultivariateNormal(distributions):
@@ -53,7 +24,7 @@ class CensoredMultivariateNormal(distributions):
     Censored multivariate distribution class.
     """
     def __init__(self,
-            args: dict,
+            args: Parameters,
             store: cox.store.Store=None):
         """
         """
@@ -64,13 +35,15 @@ class CensoredMultivariateNormal(distributions):
         self.store = store 
         self.censored = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(Parameters(args), DEFAULTS)
+        CENSOR_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
+        CENSOR_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
+        self.args = check_and_fill_args(args, CENSOR_MULTI_NORM_DEFAULTS)
 
     def fit(self, S: Tensor):
         """
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
-        assert S.size(0) > S.size(1), "input expected to bee num samples by dimenions, current input is size {}.".format(S.size()) 
+        assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
         
         while True: 
             try: 
@@ -85,7 +58,13 @@ class CensoredMultivariateNormal(distributions):
                 continue
             except Exception as e: 
                 raise e
-    
+    @property
+    def defaults(self): 
+        """
+        Returns the default hyperparamaters for the algorithm.
+        """
+        return CENSOR_MULTI_NORM_DEFAULTS
+
     @property 
     def loc(self): 
         """
@@ -95,21 +74,21 @@ class CensoredMultivariateNormal(distributions):
     
     @property
     def covariance_matrix(self): 
-        '''
+        """
         Returns the covariance matrix of the distribution.
-        '''
+        """
         return self.censored.model.covariance_matrix.clone()
 
 
 class CensoredMultivariateNormalModel(delphi.delphi):
-    '''
+    """
     Model for censored normal distributions to be passed into trainer.
-    '''
+    """
     def __init__(self, args, train_ds): 
-        '''
+        """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
-        '''
+        """
         super().__init__(args)
         self.train_ds = train_ds
         self.model = None
@@ -140,25 +119,25 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
 
     def __call__(self, batch):
-        '''
+        """
         Training step for defined model.
         Args: 
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
-        '''
+        """
         loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        '''
+        """
         Iteration hook for defined model. Method is called after each 
         training update.
         Args:
-            loop_type (str) : 'train' or 'val'; indicating type of loop
+            loop_type (str) : "train" or "val"; indicating type of loop
             loss (ch.Tensor) : loss for that iteration
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
-        '''
+        """
         loc_diff = self.model.loc - self.v
         loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
         self.model.loc.data = self.v + loc_diff
@@ -172,7 +151,7 @@ class CensoredMultivariateNormalModel(delphi.delphi):
 
         # check that the covariance matrix is PSD
         if (LA.eig(self.model.covariance_matrix).eigenvalues.float() < 0).any(): 
-            raise PSDError('covariance matrix is not PSD, rerunning procedure')
+            raise PSDError("covariance matrix is not PSD, rerunning procedure")
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate

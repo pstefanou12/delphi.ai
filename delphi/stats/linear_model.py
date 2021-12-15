@@ -41,6 +41,7 @@ class TruncatedLinearModel(delphi.delphi):
             self.emp_bias = Tensor(self.emp_model.intercept_)
         self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X)) - self.y, dim=0)[..., None]
 
+    """
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         '''
         Iteration hook for defined model. Method is called after each 
@@ -60,3 +61,4 @@ class TruncatedLinearModel(delphi.delphi):
             w_diff = self.model.weight - self.w
             w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
             self.model.weight.data = self.emp_weight + w_diff 
+    """

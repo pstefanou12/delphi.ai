@@ -9,43 +9,15 @@ from statsmodels.discrete.discrete_model import Probit
 from statsmodels.tools.tools import add_constant
 import cox
 import math
+import warnings
 
 from .truncated_linear_regression import KnownVariance
 from .stats import stats
-from ..oracle import oracle
 from ..grad import TruncatedProbitMLE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Bounds, Parameters, check_and_fill_args, accuracy
-
-
-# CONSTANTS 
-DEFAULTS = {
-        'phi': (oracle, 'required'), 
-        'alpha': (float, 'required'), 
-        'epochs': (int, 1),
-        'fit_intercept': (bool, True), 
-        'trials': (int, 3),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'step_lr': (int, 100),
-        'step_lr_gamma': (float, .9), 
-        'custom_lr_multiplier': (str, None), 
-        'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'normalize': (bool, True), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-3),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'early_stopping': (bool, False), 
-        'n_iter_no_change': (int, 5),
-        'verbose': (bool, False),
-}
+from ..utils.helpers import Parameters, accuracy
+from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_PROB_REG_DEFAULTS
 
 
 class TruncatedProbitRegression(stats):
@@ -89,7 +61,9 @@ class TruncatedProbitRegression(stats):
         self.store = store
         self.trunc_prob_reg = None
         # algorithm hyperparameters
-        self.args = check_and_fill_args(args, DEFAULTS)
+        TRUNC_PROB_REG_DEFAULTS.update(TRAINER_DEFAULTS)
+        TRUNC_PROB_REG_DEFAULTS.update(DELPHI_DEFAULTS)
+        self.args = check_and_fill_args(args, TRUNC_PROB_REG_DEFAULTS)
                 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -111,16 +85,15 @@ class TruncatedProbitRegression(stats):
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        with ch.no_grad():
-            self.coef = self.trunc_prob_reg.model.weight.clone()
-            self.intercept = self.trunc_prob_reg.model.bias.clone()
+        self.coef = self.trunc_prob_reg.model.weight.clone()
+        self.intercept = self.trunc_prob_reg.model.bias.clone()
+        return self
 
     def __call__(self, x: Tensor):
         """
         Calculate probit regression's latent variable, based off of regression estimates.
         """
-        with ch.no_grad(): 
-            self.trunc_prob_reg.model(x)
+        self.trunc_prob_reg.model(x)
 
     def predict(self, x: Tensor): 
         """
@@ -128,6 +101,12 @@ class TruncatedProbitRegression(stats):
         """
         with ch.no_grad():
             return sig(self.trunc_prob_reg.model(x)).argmax(dim=-1)
+
+    def defaults(self): 
+        """
+        Returns the default hyperparamaters for the algorithm.
+        """
+        return TRUNC_PROB_REG_DEFAULTS
 
     @property
     def coef_(self): 
@@ -143,6 +122,7 @@ class TruncatedProbitRegression(stats):
         """
         if self.args.fit_intercept:
             return self.intercept
+        warnings.warn('intercept not fit, check args input.') 
 
 
 class TruncatedProbitRegressionModel(KnownVariance):
@@ -160,15 +140,16 @@ class TruncatedProbitRegressionModel(KnownVariance):
         # projection set radius
         self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.args.alpha)))
 
-        # import pdb; pdb.set_trace()  
         # empirical estimates for projection set
         self.w = self.emp_weight 
         if self.args.fit_intercept: 
             self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
         
         # assign empirical estimates
+        self.model.weight.requires_grad = True
         self.model.weight.data = self.emp_weight
         if self.args.fit_intercept:
+            self.model.bias.requires_grad = True
             self.model.bias.data = self.emp_bias
         self.params = None
 

@@ -63,20 +63,32 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
+    Calculates the population log-likelihood for the current batch in the forward step, and 
+    then calculates its gradient in the backwards step.
     """
     @staticmethod
     def forward(ctx, u, B, x, pdf, loc_grad, cov_grad, phi, exp_h):
+        """
+        Args: 
+            u (torch.Tensor): size (dims,) - current reparameterized mean estimate
+            B (torch.Tensor): size (dims, dims) - current reparameterized covariance matrix estimate
+            x (torch.Tensor): size (batch_size, dims) - batch of dataset samples 
+            pdf (torch.Tensor): size (batch_size, 1) - batch of pdf for dataset samples
+            loc_grad (torch.Tensor): (batch_size, dims) - precomputed gradient for mean for batch
+            cov_grad (torch.Tensor): (batch_size, dims * dims) - precomputed gradient for covariance matrix for batch 
+            phi (oracle.UnknownGaussian): oracle object for learning truncation set 
+            exp_h (Exp_h): helper class object for calculating exponential in the gradient
+        """
         exp = exp_h(u, B, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi
         ctx.save_for_backward(loss, loc_grad, cov_grad)
-        return loss.mean(0)
+        return loss / x.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):
         loss, loc_grad, cov_grad = ctx.saved_tensors
-        return (loc_grad * loss).mean(0), ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([loc_grad.size(1), loc_grad.size(1)]))).mean(
-            0), None, None, None, None, None, None
+        return (loc_grad * loss) / loc_grad.size(0), ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([loc_grad.size(1), loc_grad.size(1)]))) / loc_grad.size(0), None, None, None, None, None, None
 
 
 class TruncatedMSE(ch.autograd.Function):
@@ -86,6 +98,15 @@ class TruncatedMSE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, phi, noise_var, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            noise_var (float): noise distribution variance parameter
+            num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
         # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         # add random noise to each copy
@@ -112,6 +133,15 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            lambda_ (float): current reparameterized variance estimate for noise distribution
+            phi (oracle.oracle): dependent variable membership oracle
+            num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
         # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
         stacked = pred[..., None].repeat(1, num_samples, 1)
@@ -150,6 +180,14 @@ class TruncatedBCE(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
         ctx.save_for_backward()
         
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
@@ -177,6 +215,14 @@ class TruncatedBCE(ch.autograd.Function):
 class TruncatedProbitMLE(ch.autograd.Function): 
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5): 
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
         M = MultivariateNormal(ch.zeros(1,), ch.eye(1, 1))
         stacked = pred[None,...].repeat(num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())
@@ -193,15 +239,6 @@ class TruncatedProbitMLE(ch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output): 
-        '''
-        pred, targ = ctx.saved_tensors
-        stacked = pred[None,...].repeat(ctx.num_samples, 1, 1)
-        rand_noise = ch.randn(stacked.size())
-        noised = stacked + rand_noise 
-        noised_labs = noised >= 0
-        mask = noised_labs.eq(targ)
-        filtered = ctx.phi(noised)
-        '''
         rand_noise, filtered, mask = ctx.saved_tensors
         nll = (mask * filtered * rand_noise).sum(dim=0) / ((mask * filtered).sum(dim=0) + ctx.eps)
         const = (rand_noise * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
@@ -238,6 +275,14 @@ class GumbelCE(ch.autograd.Function):
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ, phi, num_samples=1000, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
         ctx.save_for_backward(pred, targ)
         ctx.phi = phi
         ctx.num_samples = num_samples

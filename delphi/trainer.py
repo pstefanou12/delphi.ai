@@ -2,23 +2,15 @@
 General training format for training models with SGD/backprop.
 """
 
-from re import A, I
 import time
-import os
-import warnings
-import dill
-import numpy as np
 import torch as ch
-from torch import Tensor
 import cox
-from cox.store import Store
-from typing import Any, Iterable, Callable
-from abc import ABC
 from time import time
+from tqdm import tqdm
 
 from .delphi import delphi
-from . import oracle
-from .utils.helpers import has_attr, ckpt_at_epoch, check_and_fill_args, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, ProcedureComplete, Parameters
+from .utils.helpers import ckpt_at_epoch, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, Parameters
+from .utils.defaults import check_and_fill_args, TRAINER_DEFAULTS
 from .utils import constants as consts
 
 # CONSTANTS
@@ -32,23 +24,6 @@ EVAL_LOGS_SCHEMA = {
     'time':float
 }
 
-
-DEFAULTS = { 
-    'epochs': (int, 5),
-    'trials': (int, 3),
-    'tol': (float, 1e-3),
-    'early_stopping': (bool, False), 
-    'n_iter_no_change': (int, 5),
-    'verbose': (bool, False),
-    'disable_no_grad': (bool, False), 
-    'epoch_step': (bool, False)
-}
-
-# determine running environment
-if type_of_script() in {'jupyter', 'colab'}: 
-    from tqdm.notebook import tqdm
-else: 
-    from tqdm import tqdm
 
 class Trainer: 
     """
@@ -73,7 +48,7 @@ class Trainer:
         assert isinstance(model, delphi), "model type: {} is incompatible with Trainer class".format(type(model))
         self.model = model
         # check and fill trainer hyperparameters
-        self.args = check_and_fill_args(args, DEFAULTS)
+        self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         assert store is None or isinstance(store, cox.store.Store), "provided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
         
@@ -135,6 +110,8 @@ class Trainer:
                 'val_loss': float,
                 'val_prec1': float, 
                 'val_prec5': float})
+            # record hyperparameters
+            setup_store_with_metadata(self.args, self.store)
 
         # keep track of whether procedure is done or not
         t_start = time()

@@ -9,7 +9,7 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 
-from .utils.helpers import has_attr, check_and_fill_args
+from .utils.defaults import DELPHI_DEFAULTS, check_and_fill_args
 
 # CONSTANTS 
 BY_ALG = 'by algorithm'  # default parameter depends on algorithm
@@ -80,7 +80,8 @@ class delphi:
                     attack, if False/0 use the last step
         '''
         super().__init__()
-        self.args = args
+        # check to make sure that hyperparameters arre valid
+        self.args = check_and_fill_args(args, DELPHI_DEFAULTS)
         self.params = None
         # algorithm optimizer and scheduler
         self.optimizer, self.schedule = None, None

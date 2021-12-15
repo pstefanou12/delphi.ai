@@ -10,7 +10,8 @@ import cox
 from .stats import stats
 from ..oracle import oracle
 from ..trainer import Trainer
-from .linear_regression import KnownVariance, UnknownVariance
+from .truncated_linear_regression import KnownVariance, UnknownVariance
+from ..utils.datasets import Parameters, make_train_and_val, check_and_fill_args
 from ..utils.helpers import Parameters, make_train_and_val, check_and_fill_args
 
 
@@ -21,8 +22,7 @@ DEFAULTS = {
         'epochs': (int, 1),
         'noise_var': (float, None), 
         'fit_intercept': (bool, True), 
-        'num_trials': (int, 3),
-        'clamp': (bool, True), 
+        'trials': (int, 3),
         'val': (float, .2),
         'lr': (float, 1e-1), 
         'var_lr': (float, 1e-2), 
@@ -115,24 +115,22 @@ class TruncatedRidgeRegression(stats):
             self.trunc_ridge = RidgeKnownVariance(self.args, self.train_loader_) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_ridge, self.args.epochs, self.args.num_trials, self.args.tol)
+        trainer = Trainer(self.trunc_ridge, self.args, store=self.store)
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        with ch.no_grad():
-            # assign results from procedure to instance variables
-            self.coef = self.trunc_ridge.model.weight.clone()
-            if self.args.fit_intercept: self.intercept = self.trunc_ridge.model.bias.clone()
-            if self.args.noise_var is None: 
-                self.variance = self.trunc_ridge.scale.clone().inverse()
-                self.coef *= self.variance
-                if self.args.fit_intercept: self.intercept *= self.variance.flatten()
+        # assign results from procedure to instance variables
+        self.coef = self.trunc_ridge.model.weight.clone()
+        if self.args.fit_intercept: self.intercept = self.trunc_ridge.model.bias.clone()
+        if self.args.noise_var is None: 
+            self.variance = self.trunc_ridge.scale.clone().inverse()
+            self.coef *= self.variance
+            if self.args.fit_intercept: self.intercept *= self.variance.flatten()
 
     def predict(self, x: Tensor): 
         """
         Make predictions with regression estimates.
         """
-        with ch.no_grad():
-            return self.trunc_ridge.model(x)
+        return self.trunc_ridge.model(x)
 
 
 class RidgeKnownVariance(KnownVariance):

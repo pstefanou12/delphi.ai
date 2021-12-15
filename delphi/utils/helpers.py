@@ -5,24 +5,17 @@ Helper code (functions, classes, etc.)
 
 import torch as ch
 from torch import Tensor
-import torch.linalg as LA
 from torch.distributions import Uniform
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
-from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 import cox
 from typing import NamedTuple
-import os
-import math
 import pprint
-from typing import Iterable
-import warnings
 
 from . import constants as consts
 
 # CONSTANTS
-REQ = 'required'
 JUPYTER = 'jupyter'
 TERMINAL = 'terminal'
 IPYTHON = 'ipython'
@@ -352,28 +345,6 @@ class DataPrefetcher():
                 break
 
 
-def check_and_fill_args(args, defaults): 
-        '''
-        Checks args (algorithm hyperparameters) and makes sure that all required parameters are 
-        given.
-        '''
-        # assign all of the default arguments and check that all necessary arguments are provided
-        for arg_name, (arg_type, arg_default) in defaults.items():
-            if has_attr(args, arg_name):
-                # check to make sure that hyperparameter inputs are the same type
-                if isinstance(arg_type, Iterable):
-                    if args.__getattr__(arg_name) in arg_type: continue 
-                    raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
-                if isinstance(args.__getattr__(arg_name), arg_type): continue
-                raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
-            if arg_default == REQ: raise ValueError(f"{arg_name} required")
-            elif arg_default is not None: 
-                # use default arugment
-                setattr(args, arg_name, arg_default)
-        
-        return args
-
-        
 # logistic distribution
 base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
