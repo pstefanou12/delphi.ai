@@ -591,6 +591,7 @@ After fitting the distribution, we now have a membership oracle that we learned 
 we show an example of how use the membership oracle: 
 
 .. code-block:: python
+
   import torch as ch
   from torch.distributions.multivariate_normal import MultivariateNormal 
 
@@ -682,6 +683,7 @@ After fitting the distribution, we now have a membership oracle that we learned 
 we show an example of how use the membership oracle: 
 
 .. code-block:: python
+
   import torch as ch
   from torch.distributions.multivariate_normal import MultivariateNormal 
 
