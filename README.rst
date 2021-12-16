@@ -13,6 +13,10 @@ reference. Functionality provided by the library includes:
 
 For best results using the package, the data should have mean 0 and variance 1.
 
+Before running PSGD, the library will check that all of the required 
+arguments are provided for runnning the procedure with an internal function. After this, all other hyperparameters can be provided by the user, or their defaults values will be used. The current 
+default hyperparameters can be seen by looking at the `delphi.utils.defaults` directory.
+
 
 Contents:
 --------
@@ -43,10 +47,9 @@ paper: `Computationally and Statistically Efficient Truncated Regression <https:
 the variance of the ground-truth linear regression's model is unknown, we use the algorithm described in 
 the following paper: `Efficient Truncated Linear Regression with Unknown Noise Variance`.
 
-When evaluating truncated regression models, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``TruncatedLinearRegression`` object. You can read 
-about selecting and or defining the oracle in <>. The ``TruncatedLinearRegression`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating truncated regression models, the user needs two objects; an oracle, an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``TruncatedLinearRegression`` module.  The ``TruncatedLinearRegression`` module accepts 
+a parameters object that the user can define for running the PSGD procedure.
 The possible arguments are: 
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -112,10 +115,9 @@ paper `Truncated Linear Regression in High Dimensions <https://arxiv.org/abs/200
 
 To use the package, the user needs 
 
-When evaluating truncated lasso regression models, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``TruncatedLassoRegression`` object. You can read 
-about selecting and or defining the oracle in <>. The ``TruncatedLassoRegression`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating truncated lasso regression models, the user needs two objects; an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``TruncatedLassoRegression`` module. The ``TruncatedLassoRegression`` module accepts 
+a parameters object that the user can define for running the PSGD procedure.
 The possible arguments are: 
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -144,7 +146,10 @@ The possible arguments are:
 * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
-   
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the regression's train and validation losses.
+
 In the following code block, here, we show an example of how to use the truncated lasso regression module with known noise variance: 
    
 .. code-block:: python
@@ -179,11 +184,9 @@ The algorithm that we use for this procedure is described in the following
 paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
 .
 
-When evaluating truncated logistic regression models, the user needs two objects; an oracle, which is a Callable 
-that accepts samples and returns a vector with ``1`` s and ``0`` s indicating whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` object.  The module accepts 
-a parameters object that the user can define for running the PSGD procedure. Before running PSGD, the library will check that all of the required 
-arguments arre provided for runnning the procedure with an internal function. After this, all other hyperparameters can be provided by the user, or their defaults values will be used. The current 
-default hyperparameters can be seen by looking at the `delphi.utils.defaults` directory.
+When evaluating truncated logistic regression models, the user needs two objects; an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` module. The ``TruncatedLogisticRegression`` module accepts 
+a parameters object that the user can define for running the PSGD procedure. 
 
 The possible arguments are: 
 
@@ -211,6 +214,9 @@ The possible arguments are:
 * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change` epochs, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False - just a tdqm output
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the regression's loss and accuracy on both the training and validation sets.
    
 In the following code block, here, we show an example of how to use the truncated logistic regression module: 
    
@@ -244,10 +250,9 @@ TruncatedProbitRegression:
 The algorithm that we use for this procedure is described in the following
 paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
 
-When evaluating truncated logistic regression models, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``TruncatedProbitRegression`` object. You can read 
-about selecting and or defining the oracle in <>. The ``TruncatedProbitRegression`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating truncated logistic regression models, the user needs two two objects, an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and ``TruncatedProbitRegression`` module.  The ``TruncatedProbitRegression`` module accepts 
+a parameters object that the user can define for running the PSGD procedure.
 The possible arguments are: 
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -273,7 +278,10 @@ The possible arguments are:
 * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
-   
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the regression's loss and accuracy on both the training and validation sets.
+
 In the following code block, here, we show an example of how to use the truncated probit regression module: 
    
 .. code-block:: python
@@ -289,11 +297,12 @@ In the following code block, here, we show an example of how to use the truncate
   # left truncate probit regression at 0 (ie. S = {x >= 0 for all x in S})
   phi = oracle.Left_Regression(0.0)
 
-  # define truncated probit regression object
   # pass algorithm parameters in through dictionary
-  trunc_prob_reg = TruncatedProbitRegression({'phi': phi, 
-                                          'alpha': alpha}, 
-                                            store=store)
+  train_kwargs = Parameters({'phi': phi, 
+                              'alpha': alpha})
+  # define truncated probit regression object
+  trunc_prob_reg = TruncatedProbitRegression(train_kwargs, store=store)
+
   # fit to dataset
   trunc_prob_reg.fit(X, y)
 
@@ -310,10 +319,9 @@ CensoredNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
-When evaluating censored normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``CensoredNormal`` object. You can read 
-about selecting and or defining the oracle in <>. The ``CensoredNormal`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating censored normal distributions, the user needs two objects; an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``CensoredNormal`` module. The ``CensoredNormal`` module accepts 
+a parameters object that the user can define for running the SGD procedure.
 The possible arguments are: 
 
 * ``phi`` (Callable)): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -338,7 +346,10 @@ The possible arguments are:
 * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
-   
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the distribution's train and validation losses. 
+
 In the following code block, here, we show an example of how to use the censored normal distribution module: 
    
 .. code-block:: python
@@ -371,10 +382,9 @@ CensoredMultivariateNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
-When evaluating censored multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``CensoredMultivariateNormal`` object. You can read 
-about selecting and or defining the oracle in <>. The ``CensoredMultivariateNormal`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating censored multivariate normal distributions, the user needs to ``import`` two objects, an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``CensoredMultivariateNormal`` module. The ``CensoredMultivariateNormal`` module accepts 
+a parameters object that the user can define for running the SGD procedure.
 The possible arguments are: 
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -399,7 +409,10 @@ The possible arguments are:
 * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
-   
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the distribution's train and validation losses. 
+
 In the following code block, here, we show an example of how to use the censored multivariate normal distribution module: 
    
 .. code-block:: python
@@ -465,6 +478,9 @@ The possible arguments are:
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
 * ``d`` (int): degree of expansion to use for Hermite polynomial when learning truncation set; default 100
    
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the distribution's train and validation losses. 
+
 In the following code block, here, we show an example of how to fit the truncated normal distribution module: 
    
 .. code-block:: python
@@ -512,10 +528,13 @@ TruncatedMultivariateNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
-When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
-the ``Callable`` class and the ``TruncatedMultivariateNormal`` object. You can read 
-about selecting and or defining the oracle in <>. The ``TruncatedNormal`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, which is a Callable that 
+indicates whether a sample falls within the truncation set, and the ``TruncatedMultivariateNormal`` module. The ``TruncatedNormal`` module accepts 
+a parameters object that the user can define for running the PSGD procedure.
+
+**NOTE:** when learning truncation sets, the user can not pass in a ``Parameters`` object directly into the ``TruncatedNormal`` object, because they will not 
+be able to access the ``Parameters`` object afterwards.
+
 The possible arguments are: 
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
@@ -541,7 +560,10 @@ The possible arguments are:
 * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
 * ``d`` (int): degree of expansion to use for Hermite polynomial when learning truncation set; default 100
-   
+
+Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
+from MadryLab. The store will track the distribution's train and validation losses. 
+
 In the following code block, here, we show an example of how to use the truncated multivariate normal distribution module: 
    
 .. code-block:: python
