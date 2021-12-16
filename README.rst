@@ -180,7 +180,7 @@ paper `A Theoretical and Practical Framework for Classification and Regression f
 .
 
 When evaluating truncated logistic regression models, the user needs two objects; an oracle, which is a Callable 
-that accepts samples and returns a vector with ``1``s and ``0``s indicating whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` object. You can read 
+that accepts samples and returns a vector with ``1`` s and ``0`` s indicating whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` object. You can read 
 ``TruncatedLogisticRegression`` module. The module accepts 
 a parameters dictionary that the user can define for running the PSGD procedure. Before running PSGD, the library will check that all of the required 
 arguments arre provided for runnning the procedure with an internal function. After this, all other hyperparameters can be provided by the user, or their defaults values will be used. The current 
