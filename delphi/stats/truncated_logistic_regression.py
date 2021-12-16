@@ -115,12 +115,6 @@ class TruncatedLogisticRegression(stats):
             return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
         return (sig(self.trunc_log_reg.model(x)) > .5).float()
 
-    def defaults(self): 
-        """
-        Returns the default hyperparamaters for the algorithm.
-        """
-        return TRUNC_LOG_REG_DEFAULTS
-
     @property
     def coef_(self): 
         """

@@ -101,12 +101,6 @@ class TruncatedLassoRegression(stats):
         """
         return self.trunc_lasso.model(x)
 
-    def defaults(self): 
-        """
-        Returns the default hyperparamaters for the algorithm.
-        """
-        return TRUNC_LASSO_DEFAULTS
-
     @property
     def coef_(self): 
         """

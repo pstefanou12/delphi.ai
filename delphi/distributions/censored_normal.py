@@ -49,7 +49,7 @@ class CensoredNormal(CensoredMultivariateNormal):
                 raise e
 
     @property 
-    def variance(self): 
+    def variance_(self): 
         """
         Returns the variance for the normal distribution.
         """

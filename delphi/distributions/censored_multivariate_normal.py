@@ -58,22 +58,16 @@ class CensoredMultivariateNormal(distributions):
                 continue
             except Exception as e: 
                 raise e
-    @property
-    def defaults(self): 
-        """
-        Returns the default hyperparamaters for the algorithm.
-        """
-        return CENSOR_MULTI_NORM_DEFAULTS
-
+    
     @property 
-    def loc(self): 
+    def loc_(self): 
         """
         Returns the mean of the normal disribution.
         """
         return self.censored.model.loc.clone()
     
     @property
-    def covariance_matrix(self): 
+    def covariance_matrix_(self): 
         """
         Returns the covariance matrix of the distribution.
         """
