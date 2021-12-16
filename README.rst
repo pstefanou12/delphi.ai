@@ -51,10 +51,10 @@ When evaluating truncated regression models, the user needs two objects; an orac
 indicates whether a sample falls within the truncation set, and the ``TruncatedLinearRegression`` module.  The ``TruncatedLinearRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
-Inputs:
-~~~~~~~
+Parameters:
+~~~~~~~~~~
 
-* ``args`` (delphi.utils.Parameters): parameters object that holds hyperparameters for experiment
+* ``args`` (delphi.utils.Parameters): parameters object that holds hyperparameters for experiment. Possible hyperparameters include:
 
   * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
   * ``alpha`` (float): required argument; survivial probability for truncated regression
@@ -81,12 +81,15 @@ Inputs:
   * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
   * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
   * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
-   
-Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
-from MadryLab. The store will track the regression's train and validation losses.
 
+* ``store`` (cox.store.Store): logging object to keep track regression's train and validation losses   
 
+Attributes:
+~~~~~~~~~~~
 
+* ``coef_`` (torch.Tensor): regression weight coefficients 
+* ``intercept_`` (torch.Tensor): regression intercept term 
+* ``variance_`` (torch.Tensor): if the noise variance is unknown, this property provides its estimate
 
 In the following code block, here, we show an example of how to use the library with unknown noise variance: 
    
@@ -102,7 +105,6 @@ In the following code block, here, we show an example of how to use the library 
 
   # left truncate linear regression at 0 (ie. S = {y >= 0 for all (x, y) in S})
   phi = oracle.Left_Regression(0.0)
-
   # pass algorithm parameters in through Parameters object
   train_kwargs = Parameters({'phi': phi, 
                               'alpha': alpha})
@@ -110,9 +112,15 @@ In the following code block, here, we show an example of how to use the library 
   trunc_reg = TruncatedLinearRegression(train_kwargs, store=store)
   # fit to dataset
   trunc_reg.fit(X, y)
-
   # close store 
   store.close()
+  # make predictions with new regression
+  print(trunc_reg.predict(X))
+
+Methods: 
+~~~~~~~~
+
+* ``predict(X)``: predict regression points for input feature matrix X (num_samples by features)
 
 TruncatedLassoRegression:
 --------------------------

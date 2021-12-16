@@ -100,12 +100,6 @@ class TruncatedLinearRegression(stats):
         """
         return self.trunc_reg.model(x)
     
-    def defaults(self): 
-        """
-        Returns the default hyperparamaters for the algorithm.
-        """
-        return TRUNC_REG_DEFAULTS
-
     @property
     def coef_(self): 
         """
