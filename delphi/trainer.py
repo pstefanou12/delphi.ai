@@ -5,11 +5,12 @@ General training format for training models with SGD/backprop.
 import time
 import torch as ch
 import cox
+from cox.store import Store
 from time import time
 from tqdm import tqdm
 
 from .delphi import delphi
-from .utils.helpers import ckpt_at_epoch, type_of_script, AverageMeter, accuracy, setup_store_with_metadata, Parameters
+from .utils.helpers import ckpt_at_epoch, AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import check_and_fill_args, TRAINER_DEFAULTS
 from .utils import constants as consts
 
@@ -32,12 +33,12 @@ class Trainer:
     def __init__(self, 
                 model: delphi,
                 args: Parameters,
-                store: cox.store.Store=None) -> None:
+                store: Store=None) -> None:
         """
         Train models. 
         Args: 
             model (delphi) : delphi model to train 
-            max_iter (int): maximum number of epocsh to perform on data
+            epochs(int): maximum number of epochs to perform on data
             trials (int): number of trials to pform procedure
             tol (float): the tolerance for the stopping criterion
             early_stopping (bool): whether to use a stopping criterion based on the validation set

@@ -1,6 +1,7 @@
 """
 Gradients for truncated and untruncated latent variable models. 
 """
+
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
