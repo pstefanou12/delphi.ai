@@ -50,7 +50,9 @@ the following paper: `Efficient Truncated Linear Regression with Unknown Noise V
 When evaluating truncated regression models, the user needs two objects; an oracle, an oracle, which is a Callable that 
 indicates whether a sample falls within the truncation set, and the ``TruncatedLinearRegression`` module.  The ``TruncatedLinearRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
-The possible arguments are: 
+
+Inputs:
+~~~~~~~
 
 * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
@@ -81,6 +83,9 @@ The possible arguments are:
 Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
 from MadryLab. The store will track the regression's train and validation losses.
 
+
+
+
 In the following code block, here, we show an example of how to use the library with unknown noise variance: 
    
 .. code-block:: python
@@ -93,7 +98,7 @@ In the following code block, here, we show an example of how to use the library 
   OUT_DIR = 'PATH_TO_EXPERIMENT_LOGGING_DIRECTORY'
   store = Store(OUT_DIR)
 
-  # left truncate linear regression at 0 (ie. S = {x >= 0 for all x in S})
+  # left truncate linear regression at 0 (ie. S = {y >= 0 for all (x, y) in S})
   phi = oracle.Left_Regression(0.0)
 
   # pass algorithm parameters in through Parameters object
@@ -162,7 +167,7 @@ In the following code block, here, we show an example of how to use the truncate
   OUT_DIR = 'PATH_TO_EXPERIMENT_LOGGING_DIRECTORY'
   store = Store(OUT_DIR)
 
-  # left truncate lasso regression at 0 (ie. S = {x >= 0 for all x in S})
+  # left truncate lasso regression at 0 (ie. S = {y>= 0 for all (x, y) in S})
   phi = oracle.Left_Regression(0.0)
 
   # pass algorithm parameters in through Parameters object
@@ -230,8 +235,8 @@ In the following code block, here, we show an example of how to use the truncate
   OUT_DIR = 'PATH_TO_EXPERIMENT_LOGGING_DIRECTORY'
   store = Store(OUT_DIR)
 
-  # left truncate logistic regression at 0 (ie. S = {x >= 0 for all x in S})
-  phi = oracle.Left_Regression(0.0)
+  # left truncate logistic regression at 0 (ie. S = {z >= -.1 for all (x, y) in S})
+  phi = oracle.Left_Regression(-0.1)
 
   # pass algorithm parameters in through dictionary
   train_kwargs = Parameters({'phi': phi, 
@@ -294,8 +299,8 @@ In the following code block, here, we show an example of how to use the truncate
   OUT_DIR = 'PATH_TO_EXPERIMENT_LOGGING_DIRECTORY'
   store = Store(OUT_DIR)
 
-  # left truncate probit regression at 0 (ie. S = {x >= 0 for all x in S})
-  phi = oracle.Left_Regression(0.0)
+  # left truncate probit regression at 0 (ie. S = {z >= -0.1 for all (x, y) in S})
+  phi = oracle.Left_Regression(-0.1)
 
   # pass algorithm parameters in through dictionary
   train_kwargs = Parameters({'phi': phi, 
@@ -417,6 +422,7 @@ In the following code block, here, we show an example of how to use the censored
    
 .. code-block:: python
 
+  from torch import Tensor
   from delphi.distributions.censored_multivariate_normal import CensoredMultivariateNormal
   from delphi import oracle
   from delphi.utils.helpers import Parameters
@@ -426,7 +432,7 @@ In the following code block, here, we show an example of how to use the censored
   store = Store(OUT_DIR)
 
   # left truncate 0 (ie. S = {x >= 0 for all x in S})
-  phi = oracle.Left_Distribution([0.0, 0.0])
+  phi = oracle.Left_Distribution(Tensor([0.0, 0.0]))
 
   # pass algorithm parameters in through Parameters object
   train_kwargs = Parameters({'phi': phi, 
@@ -445,8 +451,8 @@ TruncatedNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
-When evaluating truncated normal distributions, the user needs to ``import`` the ``TruncatedNormal`` object. The ``TruncatedNormal`` module accepts 
-a parameters object that the user can define for running the SGD procedure. When *debiasing* truncated normal distributions, we don't require a membership 
+When evaluating truncated normal distributions, the user needs to ``import`` the ``TruncatedNormal`` module. The ``TruncatedNormal`` module accepts 
+a parameters object that the user can define for running the PSGD procedure. When *debiasing* truncated normal distributions, we don't require a membership 
 oracle, as it is unknown. However, after running our procedure, we are able to provide an approximation of what the truncation set is. Since the user 
 inputs a membership oracle in the ``args`` object, when the truncation set is known, we add the learned membership oracle to the ``args`` object as well.
 
@@ -528,11 +534,13 @@ TruncatedMultivariateNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
-When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``TruncatedMultivariateNormal`` module. The ``TruncatedNormal`` module accepts 
-a parameters object that the user can define for running the PSGD procedure.
+When evaluating truncated multivariate normal distributions, the user needs to ``import`` the ``TruncatedMultivariateNormal`` module. The ``TruncatedMultivariateNormal`` module accepts 
+a parameters object that the user can define for running the PSGD procedure. When *debiasing* truncated normal distributions, we don't require a membership 
+oracle, as it is unknown. However, after running our procedure, we are able to provide an approximation of what the truncation set is. Since the user 
+inputs a membership oracle in the ``args`` object, when the truncation set is known, we add the learned membership oracle to the ``args`` object as well.
 
-**NOTE:** when learning truncation sets, the user can not pass in a ``Parameters`` object directly into the ``TruncatedNormal`` object, because they will not 
+
+**NOTE:** when learning truncation sets, the user can not pass in a ``Parameters`` object directly into the ``TruncatedMultivariateNormal`` object, because they will not 
 be able to access the ``Parameters`` object afterwards.
 
 The possible arguments are: 
@@ -568,6 +576,7 @@ In the following code block, here, we show an example of how to use the truncate
    
 .. code-block:: python
 
+  from torch import Tensor
   from delphi.distributions.truncated_multivariate_normal import TruncatedMultivariateNormal
   from delphi.utils.helpers import Parameters
   from delphi import oracle
@@ -577,7 +586,7 @@ In the following code block, here, we show an example of how to use the truncate
   store = Store(OUT_DIR)
 
   # left truncate 0 (ie. S = {x >= 0 for all x in S})
-  phi = oracle.Left_Distribution(0.0)
+  phi = oracle.Left_Distribution(Tensor([0.0, 0.0]))
 
   # pass algorithm parameters in through Parameters object
   train_kwargs = Parameters({'phi': phi, 
@@ -599,7 +608,7 @@ we show an example of how use the membership oracle:
   from torch.distributions.multivariate_normal import MultivariateNormal 
 
   # generate samples from a standard multivariate normal distribution
-  M = MultivariateNormal(ch.zeros(k,), ch.eye(k))
+  M = MultivariateNormal(ch.zeros(2,), ch.eye(2))
   samples = M.rsample([1000,])
 
   # filter samples with learning membership oracle
