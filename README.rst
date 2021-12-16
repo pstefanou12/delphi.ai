@@ -15,7 +15,7 @@ For best results using the package, the data should have mean 0 and variance 1.
 
 Before running PSGD, the library will check that all of the required 
 arguments are provided for runnning the procedure with an internal function. After this, all other hyperparameters can be provided by the user, or their defaults values will be used. The current 
-default hyperparameters can be seen by looking at the `delphi.utils.defaults` directory.
+default hyperparameters can be seen by looking at the ``delphi.utils.defaults.py`` file.
 
 For logging experiment information, we use MadryLab's `cox <https://github.com/MadryLab/cox>`_. More information and tutorials on how to use the logging framework, check out the link.
 
@@ -48,8 +48,8 @@ paper: `Computationally and Statistically Efficient Truncated Regression <https:
 the variance of the ground-truth linear regression's model is unknown, we use the algorithm described in 
 the following paper: `Efficient Truncated Linear Regression with Unknown Noise Variance`.
 
-When evaluating truncated regression models, the user needs two objects; an oracle, an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``TruncatedLinearRegression`` module.  The ``TruncatedLinearRegression`` module accepts 
+When evaluating truncated regression models, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and the ``TruncatedLinearRegression`` module.  The ``TruncatedLinearRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
 Parameters:
@@ -131,8 +131,8 @@ paper `Truncated Linear Regression in High Dimensions <https://arxiv.org/abs/200
 
 To use the package, the user needs 
 
-When evaluating truncated lasso regression models, the user needs two objects; an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``TruncatedLassoRegression`` module. The ``TruncatedLassoRegression`` module accepts 
+When evaluating truncated lasso regression models, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and the ``TruncatedLassoRegression`` module. The ``TruncatedLassoRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
 Parameters:
@@ -215,8 +215,8 @@ The algorithm that we use for this procedure is described in the following
 paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
 .
 
-When evaluating truncated logistic regression models, the user needs two objects; an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` module. The ``TruncatedLogisticRegression`` module accepts 
+When evaluating truncated logistic regression models, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and the ``TruncatedLogisticRegression`` module. The ``TruncatedLogisticRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure. 
 
 Parameters:
@@ -296,8 +296,8 @@ TruncatedProbitRegression:
 The algorithm that we use for this procedure is described in the following
 paper `A Theoretical and Practical Framework for Classification and Regression from Truncated Samples <https://proceedings.mlr.press/v108/ilyas20a.html>`_.
 
-When evaluating truncated logistic regression models, the user needs two two objects, an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and ``TruncatedProbitRegression`` module.  The ``TruncatedProbitRegression`` module accepts 
+When evaluating truncated logistic regression models, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and ``TruncatedProbitRegression`` module.  The ``TruncatedProbitRegression`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
 Parameters:
@@ -377,8 +377,8 @@ CensoredNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
-When evaluating censored normal distributions, the user needs two objects; an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``CensoredNormal`` module. The ``CensoredNormal`` module accepts 
+When evaluating censored normal distributions, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and the ``CensoredNormal`` module. The ``CensoredNormal`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
 Parameters:
@@ -447,8 +447,8 @@ CensoredMultivariateNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Statistics in High Dimensions from Truncated Samples <https://arxiv.org/abs/1809.03986>`_.
 
-When evaluating censored multivariate normal distributions, the user needs to ``import`` two objects, an oracle, which is a Callable that 
-indicates whether a sample falls within the truncation set, and the ``CensoredMultivariateNormal`` module. The ``CensoredMultivariateNormal`` module accepts 
+When evaluating censored multivariate normal distributions, the user needs three things; an oracle, a Callable that 
+indicates whether a sample falls within the truncation set, the model's ``alpha``, survival probability, and the ``CensoredMultivariateNormal`` module. The ``CensoredMultivariateNormal`` module accepts 
 a parameters object that the user can define for running the PSGD procedure.
 
 Parameters:
