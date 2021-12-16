@@ -54,31 +54,33 @@ a parameters object that the user can define for running the PSGD procedure.
 Inputs:
 ~~~~~~~
 
-* ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
-* ``alpha`` (float): required argument; survivial probability for truncated regression
-* ``epochs`` (int): maximum number of times to iterate over dataset
-* ``noise_var`` (float): provide noise variance, if the noise variance for the truncated regression model is known, else unknown variance procedure is run by default
-* ``fit_intercept`` (bool): whether to fit the intercept or not; default to True
-* ``trials`` (int): maximum number of trials to perform PSGD; after trials, model with smallest loss on the dataset is returned
-* ``val`` (float): percentage of dataset to use for validation set; default .2
-* ``lr`` (float): initial learning rate to use for regression weights; default 1e-1
-* ``var_lr`` (float): initial learning rate to use variance parameters, when running unknown variance 
-* ``step_lr`` (int): number of gradient steps to take before adjusting learning rate by value ``step_lr_gamma``; default 100
-* ``step_lr_gamma`` (float): amount to adjust learning rate, every ``step_lr`` steps ``new_lr = curr_lr * step_lr_gamma``
-* ``custom_lr_multiplier`` (str): `cosine` or `cyclic` for cosine annealing learning rate scheduling or cyclic learning rate scheduling; default None
-* ``momentum`` (float): momentum; default 0.0 
-* ``adam`` (bool): use adam adaptive learning rate optimizer; default False
-* ``eps`` (float): epsilon denominator for gradients (ie. to prevent divide by zero calculations); default 1e-5
-* ``r`` (float): initial projection set radius; default 1.0
-* ``rate`` (float): at the end of each trial, the projection set radius is increased at rate `rate`; default 1.5
-* ``normalize`` (bool): our methods assume that the :math:`max(||x_{i}||_{2}) <= 1`, so before running the procedure, you must  divide the input featurers :math:`X = {x_{(1)}, x_{(2)}, ... , x_{(n)}}` by :math:`\max(||x_{i}||_{2}) \dot \sqrt(k)`, where :math:`k` represents the number of dimensions the input features have; by default the procedure normalizes the features for the user
-* ``batch_size`` (int): the number of samples to use for each gradient step; default 50
-* ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
-* ``workers`` (int): number of workers to use for procedure; default 1
-* ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
-* ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
-* ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
-* ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
+* ``args`` (delphi.utils.Parameters): parameters object that holds hyperparameters for experiment
+
+  * ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+  * ``alpha`` (float): required argument; survivial probability for truncated regression
+  * ``epochs`` (int): maximum number of times to iterate over dataset
+  * ``noise_var`` (float): provide noise variance, if the noise variance for the truncated regression model is known, else unknown variance procedure is run by default
+  * ``fit_intercept`` (bool): whether to fit the intercept or not; default to True
+  * ``trials`` (int): maximum number of trials to perform PSGD; after trials, model with smallest loss on the dataset is returned
+  * ``val`` (float): percentage of dataset to use for validation set; default .2
+  * ``lr`` (float): initial learning rate to use for regression weights; default 1e-1
+  * ``var_lr`` (float): initial learning rate to use variance parameters, when running unknown variance 
+  * ``step_lr`` (int): number of gradient steps to take before adjusting learning rate by value ``step_lr_gamma``; default 100
+  * ``step_lr_gamma`` (float): amount to adjust learning rate, every ``step_lr`` steps ``new_lr = curr_lr * step_lr_gamma``
+  * ``custom_lr_multiplier`` (str): `cosine` or `cyclic` for cosine annealing learning rate scheduling or cyclic learning rate scheduling; default None
+  * ``momentum`` (float): momentum; default 0.0 
+  * ``adam`` (bool): use adam adaptive learning rate optimizer; default False
+  * ``eps`` (float): epsilon denominator for gradients (ie. to prevent divide by zero calculations); default 1e-5
+  * ``r`` (float): initial projection set radius; default 1.0
+  * ``rate`` (float): at the end of each trial, the projection set radius is increased at rate `rate`; default 1.5
+  * ``normalize`` (bool): our methods assume that the :math:`max(||x_{i}||_{2}) <= 1`, so before running the procedure, you must  divide the input featurers :math:`X = {x_{(1)}, x_{(2)}, ... , x_{(n)}}` by :math:`\max(||x_{i}||_{2}) \dot \sqrt(k)`, where :math:`k` represents the number of dimensions the input features have; by default the procedure normalizes the features for the user
+  * ``batch_size`` (int): the number of samples to use for each gradient step; default 50
+  * ``tol`` (float): if using early stopping, threshold for when to stop; default 1e-3
+  * ``workers`` (int): number of workers to use for procedure; default 1
+  * ``num_samples`` (int): number of samples to sample from distribution in gradient for each sample in batch (ie. if batch size is 10, and num_samples is 100, the each gradient step with sample 100 * 10 samples from a gaussian distribution); default 50
+  * ``early_stopping`` (bool): whether to check loss for convergence; compares the best avg validation loss at the end of an epoch, with current avg epoch loss estimate, if :math:`best_loss - curr_loss < tol` for `n_iter_no_change`, then procedure terminates; default False
+  * ``n_iter_no_change`` (int): number of iterations to check for change before declaring convergence; default 5
+  * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
    
 Additionally, the user can also provide a `Store` object which is a logging object from the `cox <https://github.com/MadryLab/cox>`_, an experimental design and analysis framework 
 from MadryLab. The store will track the regression's train and validation losses.
