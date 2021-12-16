@@ -49,7 +49,7 @@ about selecting and or defining the oracle in <>. The ``TruncatedLinearRegressio
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``epochs`` (int): maximum number of times to iterate over dataset
 * ``noise_var`` (float): provide noise variance, if the noise variance for the truncated regression model is known, else unknown variance procedure is run by default
@@ -180,9 +180,8 @@ paper `A Theoretical and Practical Framework for Classification and Regression f
 .
 
 When evaluating truncated logistic regression models, the user needs two objects; an oracle, which is a Callable 
-that accepts samples and returns a vector with ``1`` s and ``0`` s indicating whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` object. You can read 
-``TruncatedLogisticRegression`` module. The module accepts 
-a parameters dictionary that the user can define for running the PSGD procedure. Before running PSGD, the library will check that all of the required 
+that accepts samples and returns a vector with ``1`` s and ``0`` s indicating whether a sample falls within the truncation set, and the ``TruncatedLogisticRegression`` object.  The module accepts 
+a parameters object that the user can define for running the PSGD procedure. Before running PSGD, the library will check that all of the required 
 arguments arre provided for runnning the procedure with an internal function. After this, all other hyperparameters can be provided by the user, or their defaults values will be used. The current 
 default hyperparameters can be seen by looking at the `delphi.utils.defaults` directory.
 
@@ -251,7 +250,7 @@ about selecting and or defining the oracle in <>. The ``TruncatedProbitRegressio
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``epochs`` (int): maximum number of times to iterate over dataset
 * ``fit_intercept`` (bool): whether to fit the intercept or not; default to True
@@ -317,7 +316,7 @@ about selecting and or defining the oracle in <>. The ``CensoredNormal`` module 
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (Callable)): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``variance`` (float): provide distribution's variance, if the distribution's variance is given, the mean is exclusively calculated 
 * ``epochs`` (int): maximum number of times to iterate over dataset
@@ -378,7 +377,7 @@ about selecting and or defining the oracle in <>. The ``CensoredMultivariateNorm
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``covariance_matrix`` (torch.Tensor): provide distribution's covariance_matrix, if the distribution's covariance_matrix is given, the mean vector is exclusively calculated 
 * ``epochs`` (int): maximum number of times to iterate over dataset
@@ -433,13 +432,16 @@ TruncatedNormal:
 The algorithm that we use for this procedure is described in the following
 paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
-When evaluating truncated normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``TruncatedNormal`` object. You can read 
-about selecting and or defining the oracle in <>. The ``TruncatedNormal`` module accepts 
-a parameters dictionary that the user can define for running the SGD procedure.
+When evaluating truncated normal distributions, the user needs to ``import`` the ``TruncatedNormal`` object. The ``TruncatedNormal`` module accepts 
+a parameters object that the user can define for running the SGD procedure. When *debiasing* truncated normal distributions, we don't require a membership 
+oracle, as it is unknown. However, after running our procedure, we are able to provide an approximation of what the truncation set is. Since the user 
+inputs a membership oracle in the ``args`` object, when the truncation set is known, we add the learned membership oracle to the ``args`` object as well.
+
+**NOTE:** when learning truncation sets, the user can not pass in a ``Parameters`` object directly into the ``TruncatedNormal`` object, because they will not 
+be able to access the ``Parameters`` object afterwards.
+
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``covariance_matrix`` (torch.Tensor): provide distribution's covariance_matrix, if the distribution's covariance_matrix is given, the mean vector is exclusively calculated 
 * ``epochs`` (int): maximum number of times to iterate over dataset
@@ -463,7 +465,7 @@ The possible arguments are:
 * ``verbose`` (bool): whether to print a verbose output with loss logs, etc.; default False 
 * ``d`` (int): degree of expansion to use for Hermite polynomial when learning truncation set; default 100
    
-In the following code block, here, we show an example of how to use the truncated normal distribution module: 
+In the following code block, here, we show an example of how to fit the truncated normal distribution module: 
    
 .. code-block:: python
 
@@ -490,6 +492,20 @@ In the following code block, here, we show an example of how to use the truncate
   # close store 
   store.close()
 
+After fitting the distribution, we now have a membership oracle that we learned through a hermite polynomial. In the following code block, 
+we show an example of how use the membership oracle: 
+
+.. code-block:: python
+  import torch as ch
+  from torch.distributions.multivariate_normal import MultivariateNormal 
+
+  # generate samples from a standard multivariate normal distribution
+  M = MultivariateNormal(ch.zeros(1,), ch.eye(1))
+  samples = M.rsample([1000,])
+
+  # filter samples with learning membership oracle
+  filtered = train_kwargs.phi(samples)
+
 TruncatedMultivariateNormal:
 --------------------------
 ``TruncatedMultivariateNormal`` learns truncated multivariate normal distributions, with unknown truncation, by maximizing the truncated log likelihood.
@@ -497,12 +513,12 @@ The algorithm that we use for this procedure is described in the following
 paper `Efficient Truncated Statistics with Unknown Truncation <https://arxiv.org/abs/1908.01034>`_.
 
 When evaluating truncated multivariate normal distributions, the user needs to ``import`` two objects; an oracle, derived from 
-the ``delphi.oracle`` class and the ``TruncatedMultivariateNormal`` object. You can read 
+the ``Callable`` class and the ``TruncatedMultivariateNormal`` object. You can read 
 about selecting and or defining the oracle in <>. The ``TruncatedNormal`` module accepts 
 a parameters dictionary that the user can define for running the SGD procedure.
 The possible arguments are: 
 
-* ``phi`` (delphi.oracle): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
+* ``phi`` (Callable): required argument; callable class that receives num_samples by 1 input ``torch.Tensor``, and returns a num_samples by 1 outputs a num_samples by 1 ``Tensor`` with ``(0, 1)`` representing membership in ``S`` or not.
 * ``alpha`` (float): required argument; survivial probability for truncated regression
 * ``variance`` (float): provide distribution's variance, if the distribution's variance is given, the mean is exclusively calculated 
 * ``epochs`` (int): maximum number of times to iterate over dataset
@@ -552,3 +568,17 @@ In the following code block, here, we show an example of how to use the truncate
 
   # close store 
   store.close()
+
+After fitting the distribution, we now have a membership oracle that we learned through a hermite polynomial. In the following code block, 
+we show an example of how use the membership oracle: 
+
+.. code-block:: python
+  import torch as ch
+  from torch.distributions.multivariate_normal import MultivariateNormal 
+
+  # generate samples from a standard multivariate normal distribution
+  M = MultivariateNormal(ch.zeros(k,), ch.eye(k))
+  samples = M.rsample([1000,])
+
+  # filter samples with learning membership oracle
+  filtered = train_kwargs.phi(samples)
