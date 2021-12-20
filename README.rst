@@ -900,8 +900,8 @@ Parameters:
 Attributes:
 ~~~~~~~~~~~
 
-* ``loc_`` (torch.Tensor): distribution's estimated mean 
-* ``covariance_matrix_`` (torch.Tensor): distribution's estimated covariance matrix 
+* ``probs_`` (torch.Tensor): distribution's d-dimensional probability vector 
+* ``logits_`` (torch.Tensor): distribution's d-dimensional logits vector (log probabilities) 
 
 In the following code block, here, we show an example of how to use the truncated multivariate normal distribution module: 
    
