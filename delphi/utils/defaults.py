@@ -189,8 +189,6 @@ TRUNC_BOOL_PROD_DEFAULTS = {
 }
 
 
-
-
 def check_and_fill_args(args, defaults): 
         '''
         Checks args (algorithm hyperparameters) and makes sure that all required parameters are 

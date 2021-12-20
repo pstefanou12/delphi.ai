@@ -295,7 +295,7 @@ class LogitBallComplement(oracle):
         return 'logit ball complement'
 
 
-class SumCeiling(oracle):
+class Sum_Ceiling(oracle):
     """
     Sums sample from a truncated boolean product distribution and returns True if x \in \S, 
     if sum <= ceiling, else False.
@@ -308,7 +308,7 @@ class SumCeiling(oracle):
         return (x.sum(1) <= self.ceil)
 
 
-class SumFloor(oracle):
+class Sum_Floor(oracle):
     """
     Sums sample from a truncated boolean product distribution and returns True if x \in \S, 
     if sum >= ceiling, else False.
