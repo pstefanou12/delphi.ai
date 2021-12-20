@@ -294,3 +294,28 @@ class LogitBallComplement(oracle):
     def __str__(self): 
         return 'logit ball complement'
 
+
+class SumCeiling(oracle):
+    """
+    Sums sample from a truncated boolean product distribution and returns True if x \in \S, 
+    if sum <= ceiling, else False.
+    """
+    # tensor inputs for vector interval truncation
+    def __init__(self, ceil):
+        self.ceil = ceil
+
+    def __call__(self, x):
+        return (x.sum(1) <= self.ceil)
+
+
+class SumFloor(oracle):
+    """
+    Sums sample from a truncated boolean product distribution and returns True if x \in \S, 
+    if sum >= ceiling, else False.
+    """
+    # tensor inputs for vector interval truncation
+    def __init__(self, floor):
+        self.floor = floor
+
+    def __call__(self, x):
+        return (x.sum(1) >= self.floor)

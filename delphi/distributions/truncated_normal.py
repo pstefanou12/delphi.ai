@@ -49,7 +49,7 @@ class TruncatedNormal(TruncatedMultivariateNormal):
     #    self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
     #
     @property 
-    def variance(self): 
+    def variance_(self): 
         """
         Returns the standard deviation for the normal distribution.
         """

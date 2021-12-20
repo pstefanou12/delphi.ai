@@ -4,7 +4,7 @@ Truncated Ridge Regression.
 
 import torch as ch
 from torch import Tensor
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import ElasticNet
 import cox
 import warnings
 
@@ -13,13 +13,13 @@ from ..trainer import Trainer
 from .truncated_linear_regression import KnownVariance, UnknownVariance
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_RIDGE_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_ELASTIC_NET_DEFAULTS
 
 
 
-class TruncatedRidgeRegression(stats):
+class TruncatedElasticNetRegression(stats):
     '''
-    Truncated ridge regression class. Supports truncated ridge regression
+    Truncated elastic net regression class. Supports truncated elastic net regression
     with known noise, unknown noise, and confidence intervals. Module uses 
     delphi.trainer.Trainer to train truncated linear regression by performing 
     projected stochastic gradient descent on the truncated population log likelihood. 
@@ -55,21 +55,21 @@ class TruncatedRidgeRegression(stats):
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         '''
-        super(TruncatedRidgeRegression).__init__()
+        super(TruncatedElasticNetRegression).__init__()
         # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
         self.trunc_ridge = None
         # algorithm hyperparameters
-        TRUNC_RIDGE_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_RIDGE_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_RIDGE_DEFAULTS)
+        TRUNC_ELASTIC_NET_DEFAULTS.update(TRAINER_DEFAULTS)
+        TRUNC_ELASTIC_NET_DEFAULTS.update(DELPHI_DEFAULTS)
+        self.args = check_and_fill_args(args, TRUNC_ELASTIC_NET_DEFAULTS)
         assert self.args.weight_decay > 0, "ridge regression requires l2 coefficient to be nonzero"
 
     def fit(self, X: Tensor, y: Tensor):
         """
-        Train truncated ridge regression model by running PSGD on the truncated negative 
+        Train truncated elastic net regression model by running PSGD on the truncated negative 
         population log likelihood.
         Args: 
             X (torch.Tensor): input feature covariates num_samples by dims
@@ -83,19 +83,19 @@ class TruncatedRidgeRegression(stats):
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
         if self.args.noise_var is None:
-            self.trunc_ridge = RidgeUnknownVariance(self.args, self.train_loader_) 
+            self.trunc_elastic_net = ElasticNetUnknownVariance(self.args, self.train_loader_) 
         else: 
-            self.trunc_ridge = RidgeKnownVariance(self.args, self.train_loader_) 
+            self.trunc_elastic_net = ElasticNetKnownVariance(self.args, self.train_loader_) 
         
         # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_ridge, self.args, store=self.store)
+        trainer = Trainer(self.trunc_elastic_net, self.args, store=self.store)
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         # assign results from procedure to instance variables
-        self.coef = self.trunc_ridge.model.weight.clone()
-        if self.args.fit_intercept: self.intercept = self.trunc_ridge.model.bias.clone()
+        self.coef = self.trunc_elastic_net.model.weight.clone()
+        if self.args.fit_intercept: self.intercept = self.trunc_elastic_net.model.bias.clone()
         if self.args.noise_var is None: 
-            self.variance = self.trunc_ridge.lambda_.clone().inverse()
+            self.variance = self.trunc_elastic_net.lambda_.clone().inverse()
             self.coef *= self.variance
             if self.args.fit_intercept: self.intercept *= self.variance.flatten()
         return self
@@ -104,7 +104,7 @@ class TruncatedRidgeRegression(stats):
         """
         Make predictions with regression estimates.
         """
-        return self.trunc_ridge.model(x)
+        return self.trunc_elastic_net.model(x)
 
     @property
     def coef_(self): 
@@ -123,7 +123,7 @@ class TruncatedRidgeRegression(stats):
         warnings.warn('intercept not fit, check args input.') 
 
 
-class RidgeKnownVariance(KnownVariance):
+class ElasticNetKnownVariance(KnownVariance):
     '''
     Truncated ridge regression with known noise variance model.
     '''
@@ -136,16 +136,16 @@ class RidgeKnownVariance(KnownVariance):
         
     def calc_emp_model(self):
         # calculate empirical estimates
-        self.emp_model = Ridge(fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay).fit(self.X, self.y.flatten())
+        self.emp_model = ElasticNet(fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay, l1_ratio=self.args.l1).fit(self.X, self.y.flatten())
         self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
         if self.args.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
 
 
-class RidgeUnknownVariance(UnknownVariance):
+class ElasticNetUnknownVariance(UnknownVariance):
     '''
-    Truncated ridge regression with unknown noise variance model.
+    Truncated elastic net regression with unknown noise variance model.
     '''
     def __init__(self, args, train_loader): 
         '''
@@ -156,7 +156,7 @@ class RidgeUnknownVariance(UnknownVariance):
 
     def calc_emp_model(self):
         # calculate empirical estimates
-        self.emp_model = Ridge(fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay).fit(self.X, self.y.flatten())
+        self.emp_model = ElasticNet(fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay, l1_ratio=self.args.l1).fit(self.X, self.y.flatten())
         self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
         if self.args.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])

@@ -5,7 +5,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
-from torch.distributions import Gumbel, MultivariateNormal
+from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
 from .utils.helpers import logistic, censored_sample_nll
@@ -325,3 +325,43 @@ class TruncatedCE(ch.autograd.Function):
         nll = ((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5))
         const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
         return (-nll + const) / pred.size(0), None, None, None, None
+
+
+class TruncatedBooleanProductNLL(ch.autograd.Function):
+    """
+    Computes the truncated negative population log likelihood for a truncated boolean product distribution. 
+    Function calculates the truncated negative log likelihood in the forward method and then calculates the 
+    gradients with respect to p in the backward method. When sampling from the conditional distribution, 
+    we sample batch_size * num_samples samples, we then filter out the samples that remain in the truncation set, 
+    and retainup to batch_size of the filtered samples. If there are fewer than batch_size number of samples remain,
+    we provide a vector of zeros and calculate the untruncated log likelihood. 
+    """
+    @staticmethod
+    def forward(ctx, z, x, phi, num_samples=10):
+        """
+        Args: 
+            p (torch.Tensor): current logit probability vector estimate for truncated boolean product distribution
+            x (torch.Tensor): batch_size * dims, sample batch 
+            phi (delphi.oracle): oracle for truncated boolean product distribution
+            num_samples (int): number of samples to sample for each sample in batch
+        """
+        # reparameterize distribution
+        B = Bernoulli(logits=z)
+        # sample num_samples * batch size samples from distribution
+        s = B.sample([num_samples * x.size(0)])
+        filtered = phi(s).nonzero(as_tuple=True)
+        # z is a tensor of size batch size zeros, then fill with up to batch size num samples
+        y = ch.zeros(x.size())
+        elts = s[filtered][:x.size(0)]
+        y[:elts.size(0)] = elts
+        # standard negative log likelihood
+        nll = -x*z
+        const = ch.log(ch.exp(y*z).sum(0))
+        ctx.save_for_backward(x, y)
+        return (nll + const) / x.size(0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x, y = ctx.saved_tensors
+        # calculate gradient
+        return (-x + y) / x.size(0), None, None, None, None

@@ -21,7 +21,7 @@ class CensoredNormal(CensoredMultivariateNormal):
             store: cox.store.Store=None):
         """
         Args:
-           args (delphii.utils.helpers.Parameters): hyperparameters for censored algorithm 
+           args (delphi.utils.helpers.Parameters): hyperparameters for censored algorithm 
         """
         super().__init__(args, store=store)
 

@@ -72,6 +72,46 @@ TRUNC_LASSO_DEFAULTS = {
 }
 
 
+TRUNC_RIDGE_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'var_lr': (float, 1e-2), 
+        'l1': (float, 0.0), 
+        'weight_decay': (float, REQ),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'normalize': (bool, True), 
+        'batch_size': (int, 10),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
+
+
+TRUNC_ELASTIC_NET_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'var_lr': (float, 1e-2), 
+        'l1': (float, REQ),
+        'weight_decay': (float, REQ),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'normalize': (bool, True), 
+        'batch_size': (int, 10),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
+
+
 TRUNC_LOG_REG_DEFAULTS = {
         'phi': (Callable, REQ),
         'epochs': (int, 1),
@@ -110,7 +150,6 @@ TRUNC_PROB_REG_DEFAULTS = {
 CENSOR_MULTI_NORM_DEFAULTS = {
         'phi': (Callable, REQ),
         'val': (float, .2),
-        'l1': (float, 0.0), 
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
@@ -124,7 +163,6 @@ CENSOR_MULTI_NORM_DEFAULTS = {
 
 TRUNC_MULTI_NORM_DEFAULTS = {
         'val': (float, .2),
-        'l1': (float, 0.0), 
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
@@ -135,6 +173,22 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'covariance_matrix': (ch.Tensor, None), 
         'd': (int, 100),
 }
+
+
+TRUNC_BOOL_PROD_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'val': (float, .2),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+        'step_lr_gamma': 1.0,
+}
+
+
 
 
 def check_and_fill_args(args, defaults): 

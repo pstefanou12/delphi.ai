@@ -56,22 +56,15 @@ class TruncatedMultivariateNormal(distributions):
             except Exception as e: 
                     raise e
 
-    @property
-    def defaults(self): 
-        """
-        Returns the default hyperparamaters for the algorithm.
-        """
-        return TRUNC_MULTI_NORM_DEFAULTS
-
     @property 
-    def loc(self): 
+    def loc_(self): 
         """
         Returns the mean of the normal disribution.
         """
         return self.truncated.model.loc.clone()
   
     @property 
-    def covariance_matrix(self): 
+    def covariance_matrix_(self): 
         """
         Returns the standard deviation for the normal distribution.
         """
