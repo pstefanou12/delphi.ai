@@ -61,7 +61,7 @@ class TruncatedBernoulli(distributions):
     @property
     def logits_(self): 
         """
-        Returns the logits vector the d dimensional Bernoulli distribution.
+        Returns the logits vector for the d dimensional Bernoulli distribution.
         """
         return self.trunc_bool.model.logits.clone()
 
