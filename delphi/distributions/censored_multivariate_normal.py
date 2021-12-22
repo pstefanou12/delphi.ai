@@ -139,12 +139,10 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
         self.model.covariance_matrix.data = self.T + cov_diff 
         
-        cov_inv = self.model.covariance_matrix.inverse()
-        cov_inv = cov_inv.renorm(p=2, dim=0, maxnorm=self.radius)
-        self.model.covariance_matrix.data = cov_inv.inverse()
-
         # check that the covariance matrix is PSD
-        if (LA.eig(self.model.covariance_matrix).eigenvalues.float() < 0).any(): 
+        eig_vals = ch.view_as_real(LA.eig(self.model.covariance_matrix).eigenvalues)[:,0]
+        # print("real eig vals: ", ch.view_as_real(eig_vals))
+        if (eig_vals < 0).any(): 
             raise PSDError("covariance matrix is not PSD, rerunning procedure")
 
     def post_training_hook(self): 

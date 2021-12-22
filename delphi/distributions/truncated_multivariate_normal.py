@@ -82,10 +82,11 @@ class TruncatedMultivariateNormalModel(CensoredMultivariateNormalModel):
         '''
         super().__init__(args, train_ds)
         # initialiaze pseudo oracle for gaussians with unknown truncation 
-        self.args.__setattr__('phi', UnknownGaussian(self.train_ds.loc, self.train_ds.covariance_matrix, self.train_ds.S, self.args.d))
         self.emp_loc, self.emp_covariance_matrix = None, None
         # initialize empirical estimates
         self.calc_emp_model()
+        self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
+
         # exponent class
         self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
 
@@ -93,7 +94,7 @@ class TruncatedMultivariateNormalModel(CensoredMultivariateNormalModel):
         '''
         Training step for defined model.
         Args: 
-            batch (Iterable) : iterable of inputs that 
+            batch (Iterable) : iterable of inputs
         '''
         loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.exp_h)
         return loss, None, None

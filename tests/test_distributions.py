@@ -18,7 +18,7 @@ class UnNorm_Sphere(oracle.oracle):
     Spherical truncation
     """
     def __init__(self, covariance_matrix, centroid, radius, loc, cov):
-        self._unbroadcasted_scale_tril = covariance_matrix.cholesky()
+        self._unbroadcasted_scale_tril = ch.linalg.cholesky(covariance_matrix)
         self.centroid = centroid
         self.radius = radius
         self.loc, self.cov = loc, cov
@@ -57,7 +57,8 @@ class TestDistributions(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'phi': phi_norm, 
                                 'alpha': alpha,
-                                'epochs': 5}) 
+                                'epochs': 10, 
+                                'batch_size': 50}) 
         censored = distributions.CensoredNormal(train_kwargs)
         censored.fit(S_norm)
         # rescale distribution
@@ -74,12 +75,14 @@ class TestDistributions(unittest.TestCase):
         M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
         samples = M.rsample([5000,])
         # generate ground-truth data
-        W = Uniform(-.5, .5)
-        centroid = W.sample([10,])
-        phi = oracle.Sphere(M.covariance_matrix, centroid, 3.0)
-        indices = phi(samples).nonzero()[:,0]
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
+        alpha = 0
+        while alpha < .3: 
+            W = Uniform(-.5, .5)
+            centroid = W.sample([10,])
+            phi = oracle.Sphere(M.covariance_matrix, centroid, 3.0)
+            indices = phi(samples).nonzero()[:,0]
+            S = samples[indices]
+            alpha = S.size(0) / samples.size(0)
         emp_loc = S.mean(0)
         emp_cov = cov(S)
         emp_scale = ch.from_numpy(sqrtm(emp_cov))
@@ -101,7 +104,7 @@ class TestDistributions(unittest.TestCase):
         kl_censored = kl_divergence(m, M)
         self.assertTrue(kl_censored <= 2e-1)
 
-    # sphere truncated multivariate normal distribution (10 D) with known truncation
+    # right truncated 1D normal distribution with unknown truncation
     def test_truncated_normal(self):
         M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
         samples = M.rsample([1000,])
@@ -117,7 +120,7 @@ class TestDistributions(unittest.TestCase):
 
         # train algorithm
         train_kwargs = Parameters({'alpha': alpha,
-                                'epochs': 10}) 
+                                'epochs': 25}) 
         truncated = distributions.TruncatedNormal(train_kwargs)
         truncated.fit(S_norm)
         # rescale distribution
@@ -129,7 +132,38 @@ class TestDistributions(unittest.TestCase):
         kl_censored = kl_divergence(m, M)
         self.assertTrue(kl_censored <= 1e-1) 
 
+    # 10D sphere truncated multivariate normal distribution with unknown truncation
+    def test_truncated_multivariate_normal(self):
+        M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
+        samples = M.rsample([5000,])
+        alpha = 0.0
+        while alpha < .5:
+            # generate ground-truth data
+            W = Uniform(-.5, .5)
+            centroid = W.sample([10,])
+            phi = oracle.Sphere(M.covariance_matrix, centroid, 3.5)
+            indices = phi(samples).nonzero(as_tuple=True)
+            S = samples[indices]
+            alpha = S.size(0) / samples.size(0)
 
+        # train algorithm
+        train_kwargs = Parameters({'alpha': alpha,
+                                'epochs': 25, 
+                                'batch_size': 100}) 
+        truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
+        truncated.fit(S)
+        # rescale distribution
+        rescale_loc = truncated.loc_
+        rescale_var = truncated.covariance_matrix_
+        m = MultivariateNormal(rescale_loc, rescale_var)
+        
+        # check distribution parameter estimates
+        kl_censored = kl_divergence(m, M)
+        self.assertTrue(kl_censored <= 1e-1)  
+
+
+    def test_truncated_bernoulli(self): 
+        pass        
 
 
 if __name__ == '__main__':
