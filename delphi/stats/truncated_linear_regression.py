@@ -126,6 +126,27 @@ class TruncatedLinearRegression(stats):
             return self.variance
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
+    
+    @property
+    def ols_coef_(self): 
+        """
+        OLS empirical estimates for coefficients.
+        """
+        return self.trunc_reg.emp_weight.clone()
+
+    @property
+    def ols_intercept_(self):
+        """
+        OLS empirical estimates for intercept.
+        """
+        return self.trunc_reg.emp_bias.clone()
+
+    @property
+    def ols_variance_(self): 
+        """
+        OLS empirical estimates for noise variance.
+        """
+        return self.trunc_reg.emp_var.clone()
 
 
 class KnownVariance(TruncatedLinearModel):

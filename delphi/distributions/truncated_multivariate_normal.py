@@ -126,6 +126,7 @@ class Exp_h:
         returns: evaluates exponential function
         """
         cov_term = ch.bmm(x.unsqueeze(1)@B, x.unsqueeze(2)).squeeze(1) / 2.0
+        # trace_term = ch.trace((B - self.emp_cov) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
         trace_term = ch.trace((B - ch.eye(u.size(0))) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
         loc_term = (x - self.emp_loc)@u.unsqueeze(1)
         return ch.exp((cov_term - trace_term - loc_term + self.pi_const).double())

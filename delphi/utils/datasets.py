@@ -379,7 +379,10 @@ class TruncatedNormalDataset(ch.utils.data.Dataset):
         self._loc = self.S.mean(0)
         self._covariance_matrix = cov(self.S)
         # compute gradients
+        M = MultivariateNormal(self._loc, self._covariance_matrix)
         self.pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))).log_prob(self.S))[...,None]
+       # self.pdf = ch.exp(M.log_prob(self.S))[...,None]
+
         self.loc_grad =  self._loc - self.S
         self.cov_grad = .5 * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc[...,None] @ self._loc[None,...]).flatten(1)
         
