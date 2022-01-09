@@ -23,6 +23,12 @@ TRAINER_DEFAULTS = {
     'epoch_step': (bool, False)
 }
 
+DATASET_DEFAULTS = {
+        'workers': (int, 1), 
+        'batch_size': (int, 100), 
+        'val': (float, .2), 
+        'normalize': (bool, False),
+}
 
 DELPHI_DEFAULTS = { 
     'alpha': (float, REQ), 

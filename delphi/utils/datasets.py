@@ -6,21 +6,16 @@ Currently supported datasets:
 """
 
 import torch as ch
-from torch import Tensor
 import torch.linalg as LA
 from torch.utils.data import DataLoader, TensorDataset
-from torch.distributions.normal import Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import transforms, datasets
-from scipy.linalg import sqrtm
-import copy
-import warnings
 
 from .helpers import censored_sample_nll, cov
+from .defaults import DATASET_DEFAULTS, check_and_fill_args
 from . import data_augmentation as da
 from .. import cifar_models
 from .. import imagenet_models
-from . import loaders
 
 
 ###
@@ -311,7 +306,10 @@ class Normalize:
     def l_inf(self):
         return self._l_inf
 
+
 def make_train_and_val(args, X, y): 
+    # check arguments are correct
+    args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     rand_indices = ch.randperm(X.size(0))
     val = int(args.val * X.size(0))
@@ -335,6 +333,8 @@ def make_train_and_val(args, X, y):
     return train_loader, val_loader
 
 def make_train_and_val_distr(args, S, ds): 
+    # check arguments are correct
+    args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     rand_indices = ch.randperm(S.size(0))
     val = int(args.val * S.size(0))
