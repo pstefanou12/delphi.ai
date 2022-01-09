@@ -31,7 +31,7 @@ DELPHI_DEFAULTS = {
     'step_lr_gamma': (float, .9), 
     'custom_lr_multiplier': (str, None), 
     'momentum': (float, 0.0), 
-    'weight_decay': (float, 1e-3), 
+    'weight_decay': (float, 0.0), 
     'device': (str, 'cpu')
 }
 

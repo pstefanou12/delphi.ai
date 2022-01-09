@@ -186,7 +186,7 @@ class delphi:
         Returns string description for model at each iteration.
         '''
         return ('{2} Epoch:{0} | Loss {loss.avg:.4f} | '
-        '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
+        'Prec1: {top1_acc:.3f} | Prec5: {top5_acc:.3f} | '
         'Reg term: {reg} ||'.format( epoch, i, loop_msg, 
         loss=loss_, top1_acc=float(prec1_.avg), top5_acc=float(prec5_.avg), reg=float(reg_term)))
 
