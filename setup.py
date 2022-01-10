@@ -5,7 +5,7 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="delphi.ai",
-    version="0.2.1",
+    version="0.2.1.2",
     author="Patroklos Stefanou",
     author_email="patstefanou@gmail.com",
     description="Package for Robust Statistics",
@@ -37,6 +37,10 @@ setuptools.setup(
               'delphi.cifar_models',],
     python_requires=">=3.6",
     py_modules=['train', 'oracle', 'attacker', 'grad' 'attacker_steps'],
+    setup_requires=['tqdm', 'grpcio', 'psutil', 'gitpython','py3nvml', 'cox',
+                    'scikit-learn', 'seaborn', 'torch', 'torchvision', 'pandas',
+                    'numpy', 'scipy', 'GPUtil', 'dill', 'tensorboardX', 'tables',
+                    'matplotlib', 'orthnet'],
     install_requires=['tqdm', 'grpcio', 'psutil', 'gitpython','py3nvml', 'cox',
                     'scikit-learn', 'seaborn', 'torch', 'torchvision', 'pandas',
                     'numpy', 'scipy', 'GPUtil', 'dill', 'tensorboardX', 'tables',

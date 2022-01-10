@@ -182,10 +182,10 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
         z = self.model(inp)
         if self.args.multi_class == 'multinomial': 
             loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
-            pred = z.argmax(-1)
+            pred = softmax(z).argmax(-1)
         elif self.args.multi_class == 'ovr': 
             loss = TruncatedBCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
-            pred = z >= 0
+            pred = sig(z) > .5
         # calculate precision accuracies 
         if z.size(1) >= 5:
             prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1, 5))

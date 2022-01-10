@@ -9,7 +9,7 @@ import torch as ch
 import torch.linalg as LA
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torchvision import transforms, datasets
+from torchvision import datasets
 
 from .helpers import censored_sample_nll, cov
 from .defaults import DATASET_DEFAULTS, check_and_fill_args
@@ -29,6 +29,7 @@ from .. import imagenet_models
 CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
                          'transform_train', 'transform_test']
 CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
+
 
 CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
 TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
@@ -272,6 +273,7 @@ class ImageNet(DataSet):
         return imagenet_models.__dict__[arch](num_classes=self.num_classes, 
                                         pretrained=pretrained)
 
+
 class Normalize:
     """
     Normalizes the input covariate features for truncated
@@ -331,6 +333,7 @@ def make_train_and_val(args, X, y):
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers)
 
     return train_loader, val_loader
+
 
 def make_train_and_val_distr(args, S, ds): 
     # check arguments are correct
