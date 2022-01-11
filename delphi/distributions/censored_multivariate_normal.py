@@ -91,7 +91,7 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.calc_emp_model()
 
     def pretrain_hook(self):
-        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2))
+        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
         # parameterize projection set
         if self.args.covariance_matrix is not None:
             self.T = self.args.covariance_matrix.clone().inverse()
