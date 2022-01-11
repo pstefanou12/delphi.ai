@@ -83,6 +83,7 @@ class TruncatedLogisticRegression(stats):
         assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
+        assert X.size(0) == y.size(0), 'number of samples in X and y is unequal. X has {} samples, and y has {} samples'.format(X.size(0), y.size(0))
         if self.args.multi_class == 'ovr':
             assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
         else: 
@@ -98,7 +99,8 @@ class TruncatedLogisticRegression(stats):
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         self.coef = self.trunc_log_reg.model.weight.clone()
-        self.intercept = self.trunc_log_reg.model.bias.clone()
+        if self.args.fit_intercept: 
+            self.intercept = self.trunc_log_reg.model.bias.clone()
         return self
 
     def __call__(self, x: Tensor):
