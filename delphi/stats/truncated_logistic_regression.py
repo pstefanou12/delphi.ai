@@ -107,7 +107,7 @@ class TruncatedLogisticRegression(stats):
         """
         Calculate logistic regression's latent variable, based off of regression estimates.
         """
-        self.trunc_log_reg.model(x)
+        return self.trunc_log_reg.model(x)
 
     def predict(self, x: Tensor): 
         """
