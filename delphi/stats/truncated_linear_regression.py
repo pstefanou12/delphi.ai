@@ -74,20 +74,25 @@ class TruncatedLinearRegression(stats):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
-
+        # add one feature to x when fitting intercept
+        if self.args.fit_intercept:
+            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
         if self.args.noise_var is None:
-            self.trunc_reg = UnknownVariance(self.args, self.train_loader_) 
+            self.trunc_reg = UnknownVariance(self.args, self.train_loader_, X.size(1)) 
         else: 
-            self.trunc_reg = KnownVariance(self.args, self.train_loader_) 
+            self.trunc_reg = KnownVariance(self.args, self.train_loader_, X.size(1)) 
         
         # run PGD for parameter estimation
         trainer = Trainer(self.trunc_reg, self.args, store=self.store) 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         # assign results from procedure to instance variables
-        self.coef = self.trunc_reg.model.weight.clone()
-        if self.args.fit_intercept: self.intercept = self.trunc_reg.model.bias.clone()
+        if self.args.fit_intercept: 
+            self.coef = self.trunc_reg.model[:-1]
+            self.intercept = self.trunc_reg.model[-1]
+        else: 
+            self.coef = self.trunc_reg.model[:]
         if self.args.noise_var is None: 
             self.variance = self.trunc_reg.lambda_.clone().inverse()
             self.coef *= self.variance
@@ -153,12 +158,12 @@ class KnownVariance(TruncatedLinearModel):
     """
     Truncated linear regression with known noise variance model.
     """
-    def __init__(self, args, train_loader): 
+    def __init__(self, args, train_loader, d): 
         """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
-        super().__init__(args, train_loader)
+        super().__init__(args, train_loader, d=d)
         self.base_radius = (7.0 + 4.0 * math.log(2.0 / self.args.alpha))
         
     def pretrain_hook(self):
@@ -166,17 +171,10 @@ class KnownVariance(TruncatedLinearModel):
         self.radius = self.args.r * self.base_radius
 
         # empirical estimates for projection set
-        self.w = self.emp_weight 
-        if self.args.fit_intercept: 
-            self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
-        
+        self.model.data = self.emp_weight.T
         # assign empirical estimates
-        self.model.weight.requires_grad = True
-        self.model.weight.data = self.emp_weight
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = True
-            self.model.bias.data = self.emp_bias
-        self.params = None
+        self.model.requires_grad = True
+        self.params = [self.model]
 
     def __call__(self, batch): 
         """
@@ -186,7 +184,7 @@ class KnownVariance(TruncatedLinearModel):
             a stochastic process, or someone is accessing the parent class"s property
         """
         X, y = batch
-        pred = self.model(X)
+        pred = X@self.model 
         loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
         return [loss, None, None]
         
@@ -225,9 +223,7 @@ class KnownVariance(TruncatedLinearModel):
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # remove model from computation graph
-        self.model.weight.requires_grad = False
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = False
+        self.model.requires_grad = False
 
 
 class UnknownVariance(KnownVariance):

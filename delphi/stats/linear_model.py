@@ -2,9 +2,10 @@
 Linear model class for delphi.
 """
 
+from delphi.utils.helpers import Parameters
 import torch as ch
 from torch import Tensor
-from torch.nn import Linear
+from torch.nn import Linear, Parameter
 from sklearn.linear_model import LinearRegression
 
 from .. import delphi
@@ -14,7 +15,11 @@ class TruncatedLinearModel(delphi.delphi):
     '''
     Truncated linear model parent class.
     '''
-    def __init__(self, args, train_loader, k=1): 
+    def __init__(self, 
+                args: Parameters, 
+                train_loader: ch.utils.data.DataLoader, 
+                d=1,
+                k=1): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
@@ -22,10 +27,12 @@ class TruncatedLinearModel(delphi.delphi):
         '''
         super().__init__(args)
         self.X, self.y = train_loader.dataset[:]
+        self.d = d
         self.k = k
         # calculate empirical estimates for truncated linear model
         self.calc_emp_model()
-        self.model = Linear(in_features=self.X.size(1), out_features=self.k, bias=self.args.fit_intercept)
+        # self.model = Linear(in_features=self.X.size(1), out_features=self.k, bias=self.args.fit_intercept)
+        self.model = Parameter(ch.randn(d, k))
         # noise distribution scale
         self.lambda_ = ch.nn.Parameter(ch.ones(1, 1))
         self.base_radius = 1.0
@@ -35,10 +42,8 @@ class TruncatedLinearModel(delphi.delphi):
         Calculates empirical estimates for a truncated linear model. Assigns 
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
-        self.emp_model = LinearRegression(fit_intercept=self.args.fit_intercept).fit(self.X, self.y)
+        self.emp_model = LinearRegression(fit_intercept=False).fit(self.X, self.y)
         self.emp_weight = Tensor(self.emp_model.coef_)
-        if self.args.fit_intercept:
-            self.emp_bias = Tensor(self.emp_model.intercept_)
         self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X)) - self.y, dim=0)[..., None]
 
     """

@@ -68,6 +68,8 @@ class delphi:
                 lr_interpolation (str)
                     How to drop the learning rate, either ``step`` or ``linear``,
                         ignored unless ``custom_lr_multiplier`` is provided.
+                constant (bool)
+                    Boolean indicating to have a constant learning rate for procedure
                 log_iters (int, *required*)
                     How frequently (in epochs) to save training logs
                 save_ckpt_iters (int, *required*)
@@ -97,7 +99,7 @@ class delphi:
         # setup optimizer
         if self.args.custom_lr_multiplier == ADAM:  # adam
             self.optimizer = Adam(self.parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
-        else: 
+        elif not self.args.constant: 
             # SGD optimizer
             self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
 
