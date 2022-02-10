@@ -166,15 +166,14 @@ class KnownVariance(TruncatedLinearModel):
         super().__init__(args, train_loader, d=d)
         self.base_radius = (7.0 + 4.0 * math.log(2.0 / self.args.alpha))
         
-    def pretrain_hook(self):
-        # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * self.base_radius
-
-        # empirical estimates for projection set
-        self.model.data = self.emp_weight.T
-        # assign empirical estimates
-        self.model.requires_grad = True
-        self.params = [self.model]
+    #def pretrain_hook(self):
+    #    # use OLS as empirical estimate to define projection set
+    #    self.radius = self.args.r * self.base_radius
+    #    # empirical estimates for projection set
+    #    self.model.data = self.emp_weight.T
+    #    # assign empirical estimates
+    #    self.model.requires_grad = True
+    #    self.params = [self.model]
 
     def __call__(self, batch): 
         """
@@ -184,7 +183,7 @@ class KnownVariance(TruncatedLinearModel):
             a stochastic process, or someone is accessing the parent class"s property
         """
         X, y = batch
-        pred = X@self.model 
+        pred = X@self.model.T 
         loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
         return [loss, None, None]
         
@@ -220,49 +219,34 @@ class KnownVariance(TruncatedLinearModel):
             reg_term += param.norm()
         return self.args.l1 * reg_term
 
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
-        # remove model from computation graph
-        self.model.requires_grad = False
-
 
 class UnknownVariance(KnownVariance):
     """
     Parent/abstract class for models to be passed into trainer.  
     """
-    def __init__(self, args, train_loader): 
+    def __init__(self, args, train_loader, d): 
         """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
-        super().__init__(args, train_loader)
+        super().__init__(args, train_loader, d)
         
-    def pretrain_hook(self):
-        # use OLS as empirical estimate to define projection set
-        self.radius = self.args.r * (12.0 + 4.0 * math.log(2.0 / self.args.alpha)) 
+    #def pretrain_hook(self):
+        ## use OLS as empirical estimate to define projection set
+        #self.radius = self.args.r * self.base_radius
         
-        # empirical estimates for projection set
-        self.w = self.emp_weight.clone() 
-        if self.args.fit_intercept: 
-            self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
+        ## empirical estimates for projection set
+        #self.model.data = self.emp_weight.T
+        ## assign empirical estimates
+        #self.model.requires_grad = True
 
-        # generate noise variance radius bounds if unknown 
-        self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
-        
-        # assign empirical estimates
-        self.lambda_.requires_grad = True 
-        self.lambda_.data = self.emp_var.inverse()
-        self.model.weight.requires_grad = True
-        self.model.weight.data = self.emp_weight * self.lambda_
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = True
-            self.model.bias.data = (self.emp_bias * self.lambda_).flatten()
-            self.params = [{"params": [self.model.weight, self.model.bias]},
-                {"params": self.lambda_, "lr": self.args.var_lr}]
-        else: 
-            self.params = [{"params": [self.model.weight]},
-                {"params": self.lambda_, "lr": self.args.var_lr}]
-
+        ## generate noise variance radius bounds if unknown 
+        #self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
+        ## assign empirical estimates
+        #self.lambda_.requires_grad = True 
+        #self.lambda_.data = self.emp_var.inverse()
+        #self.params = [{"params": [self.model]},
+            #{"params": self.lambda_, "lr": self.args.var_lr}]
     
     def __call__(self, batch):
         """
@@ -271,9 +255,10 @@ class UnknownVariance(KnownVariance):
             batch (Iterable) : iterable of inputs that 
         """
         X, y = batch
-        pred = self.model(X) * self.lambda_.inverse()
+        pred = X@self.model.T * self.lambda_.inverse()
         loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
+
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
         """
         Iteration hook for defined model. Method is called after each 
@@ -301,10 +286,4 @@ class UnknownVariance(KnownVariance):
             w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
             self.model.weight.data = (self.emp_weight + w_diff) * self.lambda_.inverse()
         """
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
-        # remove model from computation graph
-        self.model.weight.requires_grad = False
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = False
-        self.lambda_.requires_grad = False
+    

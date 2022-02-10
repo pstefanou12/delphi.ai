@@ -23,7 +23,7 @@ from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAU
 
 # CONSTANTS 
 G = Gumbel(0, 1)
-softmax = Softmax()
+softmax = Softmax(dim=0)
 sig = Sigmoid()
 
 
@@ -86,21 +86,26 @@ class TruncatedLogisticRegression(stats):
         assert X.size(0) == y.size(0), 'number of samples in X and y is unequal. X has {} samples, and y has {} samples'.format(X.size(0), y.size(0))
         if self.args.multi_class == 'ovr':
             assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+            k = 1
         else: 
-             assert y.dim() == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
-
+            assert y.dim() == 1, "y is size: {}. expecting y tensor with size num_samples.".format(y.size()) 
+            k = len(ch.unique(y))
+        # add one feature to x when fitting intercept
+        if self.args.fit_intercept:
+            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
-        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, len(ch.unique(y)))
+        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, k, X.size(1))
 
         trainer = Trainer(self.trunc_log_reg, self.args, store=self.store) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        self.coef = self.trunc_log_reg.model.weight.clone()
+        self.coef = self.trunc_log_reg.model.data[:]
         if self.args.fit_intercept: 
-            self.intercept = self.trunc_log_reg.model.bias.clone()
+            self.coef = self.trunc_log_reg.model.data[:-1]
+            self.intercept = self.trunc_log_reg.model.data[-1]
         return self
 
     def __call__(self, x: Tensor):
@@ -138,41 +143,38 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args, train_loader, k): 
+    def __init__(self, args, train_loader, k, d): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, k)
+        super().__init__(args, train_loader, k, d)
+
+        self.base_radius = math.sqrt(math.log(1.0 / self.args.alpha))
 
     def pretrain_hook(self): 
-        # projection set radius
-        self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.args.alpha)))
         """
         SkLearn sets up multinomial classification differently. So when doing 
         multinomial classification, we initialize with random estimates.
         """
+        self.radius = self.args.r * self.base_radius
+        # empirical estimates for projection set
+        self.model.data = self.weight.T
         # assign empirical estimates
-        self.model.weight.requires_grad = True
-        self.model.weight.data = self.emp_weight
-
-        self.w = self.emp_weight 
-        if self.args.multi_class == 'ovr' and self.args.fit_intercept: 
-            self.model.bias.requires_grad = True
-            self.model.bias.data = self.emp_bias
-            self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
+        self.model.requires_grad = True
+        # assign empirical estimates
+        self.params = [self.model]
         
     def calc_emp_model(self): 
         """
         Calculate empirical logistic regression estimates using SKlearn module.
         """
         # empirical estimates for logistic regression
-        self.emp_log_reg = LogisticRegression(penalty='none', fit_intercept=self.args.fit_intercept, multi_class=self.args.multi_class)
-        self.emp_log_reg.fit(self.X, self.y.flatten())
-        self.emp_weight = Tensor(self.emp_log_reg.coef_)
-        if self.args.fit_intercept:
-            self.emp_bias = Tensor(self.emp_log_reg.intercept_)
-
+        if self.args.multi_class == 'ovr':
+            self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
+            self.log_reg.fit(self.X, self.y.flatten())
+            self.weight = Tensor(self.log_reg.coef_)
+    
     def __call__(self, batch):
         '''
         Training step for defined model.
@@ -181,7 +183,7 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             batch (Iterable) : iterable of inputs that 
         '''
         inp, targ = batch
-        z = self.model(inp)
+        z = inp@self.model.T
         if self.args.multi_class == 'multinomial': 
             loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
             pred = softmax(z).argmax(-1)
@@ -210,7 +212,4 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # remove model from computation graph
-        self.model.weight.requires_grad = False
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = False
-
+        self.model.requires_grad = False
