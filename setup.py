@@ -5,7 +5,7 @@ with open("README.rst", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="delphi.ai",
-    version="0.2.1.6",
+    version="0.2.1.7",
     author="Patroklos Stefanou",
     author_email="patstefanou@gmail.com",
     description="Package for Robust Statistics",
@@ -31,8 +31,8 @@ setuptools.setup(
     ],
     packages=['delphi',
               'delphi.utils',
-              'delphi.distributions', 
-              'delphi.stats', 
+              'delphi.distributions',
+              'delphi.stats',
               'delphi.imagenet_models',
               'delphi.cifar_models',],
     python_requires=">=3.6",

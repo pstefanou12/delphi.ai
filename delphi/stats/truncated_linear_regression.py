@@ -103,7 +103,7 @@ class TruncatedLinearRegression(stats):
         """
         Make predictions with regression estimates.
         """
-        return self.trunc_reg.model(x)
+        return x@self.trunc_reg.model.T
     
     @property
     def coef_(self): 

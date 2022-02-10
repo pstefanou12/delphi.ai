@@ -119,8 +119,8 @@ class TruncatedLogisticRegression(stats):
         Make class predictions with regression estimates.
         """
         if self.args.multi_class == 'multinomial':
-            return softmax(self.trunc_log_reg.model(x)).argmax(dim=-1)
-        return (sig(self.trunc_log_reg.model(x)) > .5).float()
+            return softmax(x@self.trunc_log_reg.model.T).argmax(dim=-1)
+        return (sig(x@self.trunc_log_reg.model.T) > .5).float()
 
     @property
     def coef_(self): 
