@@ -214,7 +214,7 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.optimizer.step()
-                
+                # print(f'grad: {self.model.model.grad}')                
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             
             # ITERATOR DESCRIPTION

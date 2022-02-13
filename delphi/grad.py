@@ -208,6 +208,8 @@ class TruncatedBCE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         mask, filtered, rand_noise = ctx.saved_tensors
+
+        num_filtered =filtered.sum(0)
         avg = 2*(sig(rand_noise) * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps) 
         norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
         return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
@@ -289,6 +291,8 @@ class TruncatedCE(ch.autograd.Function):
         ctx.num_samples = num_samples
         ctx.eps = eps
         ce_loss = ch.nn.CrossEntropyLoss()
+        return ce_loss(pred, targ)
+        '''
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
         # make num_samples copies of pred logits
@@ -305,7 +309,7 @@ class TruncatedCE(ch.autograd.Function):
         nll = (gumbel.log_prob(rand_noise) * mask).sum(dim=-1)[...,None].sum(dim=0) / (mask.sum(dim=0) + eps)
         const = (gumbel.log_prob(rand_noise) * filtered).sum(dim=-1)[..., None].sum(dim=0) / (filtered.sum(dim=0) + eps) 
         return -(nll - const) / pred.size(0)
-
+        '''
     @staticmethod
     def backward(ctx, grad_output):  
         pred, targ = ctx.saved_tensors

@@ -1,7 +1,6 @@
 """
 Truncated Logistic Regression.
 """
-
 import torch as ch
 from torch import Tensor
 from torch.nn import Softmax, Sigmoid
@@ -104,8 +103,8 @@ class TruncatedLogisticRegression(stats):
 
         self.coef = self.trunc_log_reg.model.data[:]
         if self.args.fit_intercept: 
-            self.coef = self.trunc_log_reg.model.data[:-1]
-            self.intercept = self.trunc_log_reg.model.data[-1]
+            self.coef = self.trunc_log_reg.model.data[:,:-1]
+            self.intercept = self.trunc_log_reg.model.data[:,-1]
         return self
 
     def __call__(self, x: Tensor):
@@ -119,8 +118,8 @@ class TruncatedLogisticRegression(stats):
         Make class predictions with regression estimates.
         """
         if self.args.multi_class == 'multinomial':
-            return softmax(x@self.trunc_log_reg.model.T).argmax(dim=-1)
-        return (sig(x@self.trunc_log_reg.model.T) > .5).float()
+            return softmax(x@self.trunc_log_reg.model.T[:-1] + self.trunc_log_reg.model.T[-1]).argmax(-1)
+        return (sig(x@self.trunc_log_reg.model.T[:-1] + self.trunc_log_reg.model.T[-1]) > .5).float()
 
     @property
     def coef_(self): 
@@ -174,6 +173,7 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
             self.log_reg.fit(self.X, self.y.flatten())
             self.weight = Tensor(self.log_reg.coef_)
+            self.weight = ch.randn(self.weight.size())
     
     def __call__(self, batch):
         '''
