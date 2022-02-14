@@ -54,7 +54,7 @@ class Trainer:
         self.store = store 
         
         self.no_improvement_count = 0
-        self.best_loss = -INFINITY
+        self.best_loss = INFINITY
 
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
@@ -150,7 +150,7 @@ class Trainer:
 
                 # check for early completion
                 if self.args.early_stopping: 
-                    if self.args.tol > -INFINITY and val_loss > self.best_loss - self.args.tol:
+                    if self.args.tol > -INFINITY and val_loss > (self.best_loss - self.args.tol):
                         self.no_improvement_count += 1
                     else: 
                         self.no_improvement_count = 0
@@ -167,6 +167,8 @@ class Trainer:
 
             # POST TRAINING HOOK     
             self.model.post_training_hook()
+        if self.args.early_stopping and self.args.verbose: 
+            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
         return self.model
                 
     def model_loop(self, loop_type, loader, epoch):
@@ -214,7 +216,6 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.optimizer.step()
-                # print(f'grad: {self.model.model.grad}')                
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             
             # ITERATOR DESCRIPTION

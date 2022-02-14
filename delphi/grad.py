@@ -5,10 +5,13 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
+from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
 from .utils.helpers import logistic, censored_sample_nll
+
+softmax = Softmax(dim=1)
 
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
@@ -322,13 +325,14 @@ class TruncatedCE(ch.autograd.Function):
         noised = stacked + rand_noise 
         # truncate - if one of the noisy logits does not fall within the truncation set, remove it
         filtered = ctx.phi(noised)
+        # noised_labs = softmax(stacked).argmax(-1)
         noised_labs = noised.argmax(-1)
         # mask takes care of invalid logits and truncation set
         mask = noised_labs.eq(targ)[..., None] * filtered
         inner_exp = (1 - ch.exp(-rand_noise))
-        nll = ((inner_exp * mask).sum(0) / ((mask).sum(0) + 1e-5))
+        nll = ((inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps))
         const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
-        return (-nll + const) / pred.size(0), None, None, None, None
+        return (-nll) / pred.size(0), None, None, None, None
 
 
 class TruncatedBooleanProductNLL(ch.autograd.Function):
