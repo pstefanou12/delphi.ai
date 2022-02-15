@@ -212,7 +212,6 @@ class TruncatedBCE(ch.autograd.Function):
     def backward(ctx, grad_output):
         mask, filtered, rand_noise = ctx.saved_tensors
 
-        num_filtered =filtered.sum(0)
         avg = 2*(sig(rand_noise) * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps) 
         norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
         return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
