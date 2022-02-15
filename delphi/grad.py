@@ -332,7 +332,7 @@ class TruncatedCE(ch.autograd.Function):
         inner_exp = (1 - ch.exp(-rand_noise))
         nll = ((inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps))
         const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
-        return (-nll) / pred.size(0), None, None, None, None
+        return (-nll + const) / pred.size(0), None, None, None, None
 
 
 class TruncatedBooleanProductNLL(ch.autograd.Function):

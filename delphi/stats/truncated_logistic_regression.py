@@ -16,7 +16,7 @@ from .stats import stats
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, accuracy
+from ..utils.helpers import Parameters, accuracy, logistic
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_LOG_REG_DEFAULTS
 
 
@@ -94,7 +94,6 @@ class TruncatedLogisticRegression(stats):
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
-
         self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, k, X.size(1))
 
         trainer = Trainer(self.trunc_log_reg, self.args, store=self.store) 
@@ -117,9 +116,12 @@ class TruncatedLogisticRegression(stats):
         """
         Make class predictions with regression estimates.
         """
+        stacked = (ch.cat([x, ch.ones(x.size(0), 1)], axis=1)@self.trunc_log_reg.model.T).repeat(self.args.num_samples, 1, 1)
         if self.args.multi_class == 'multinomial':
-            return softmax(x@self.trunc_log_reg.model.T[:-1] + self.trunc_log_reg.model.T[-1]).argmax(-1)
-        return (sig(x@self.trunc_log_reg.model.T[:-1] + self.trunc_log_reg.model.T[-1]) > .5).float()
+            noised = stacked + G.sample(stacked.size())
+            return noised.mean(0).argmax(-1)
+        noised = stacked + logistic.sample(stacked.size())
+        return noised.mean(0) > 0
 
     @property
     def coef_(self): 
@@ -173,7 +175,8 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
             self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
             self.log_reg.fit(self.X, self.y.flatten())
             self.weight = Tensor(self.log_reg.coef_)
-            self.weight = ch.randn(self.weight.size())
+            temp = ch.nn.Linear(in_features=self.weight.size(0), out_features=self.weight.size(1))
+            self.weight = temp.weight
     
     def __call__(self, batch):
         '''
@@ -186,7 +189,9 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
         z = inp@self.model.T
         if self.args.multi_class == 'multinomial': 
             loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
-            pred = softmax(z).argmax(-1)
+            stacked = (inp@self.model.T).repeat(self.args.num_samples, 1, 1)
+            noised = stacked + G.sample(stacked.size())
+            pred = noised.mean(0).argmax(-1)
         elif self.args.multi_class == 'ovr': 
             loss = TruncatedBCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
             pred = sig(z) > .5

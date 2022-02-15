@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import torch as ch
 from torch import Tensor
-from torch.distributions import MultivariateNormal, Uniform
+from torch.distributions import MultivariateNormal, Uniform, Gumbel
 from torch.distributions.kl import kl_divergence
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.distributions.transforms import SigmoidTransform
@@ -34,6 +34,7 @@ logistic = TransformedDistribution(base_distribution, transforms_)
 cos_sim = CosineSimilarity()
 softmax = Softmax(dim=0)
 ce = CrossEntropyLoss()
+G = Gumbel(0, 1)
 
 
 seed = random.randint(0, 100)
@@ -54,7 +55,9 @@ class GumbelCEModel(delphi.delphi):
         
     def predict(self, x): 
         with ch.no_grad():
-            return softmax(self.model(x)).argmax(dim=-1)
+            stacked = self.model(x).repeat(self.args.num_samples, 1, 1)
+            noised = stacked + G.sample(stacked.size())
+            return noised.mean(0).argmax(-1)
 
     def __call__(self, batch):
         '''
@@ -195,10 +198,14 @@ class TestStats(unittest.TestCase):
         result_store.add_table('models', {
             'sklearn': '__object__', 
             'trunc_sklearn': '__object__', 
+            'softmax_diff': '__object__',
             'softmax': '__object__',
+            'gumbel_diff': '__object__',
             'gumbel': '__object__', 
             'trunc_log_reg': '__object__', 
+            'trunc_multi_log_reg_diff': '__object__', 
             'trunc_multi_log_reg': '__object__', 
+            'X': '__object__', 'y': '__object__'
         })
 
         d, k = 10, 1
@@ -222,6 +229,10 @@ class TestStats(unittest.TestCase):
         y_trunc = y[indices]
         alpha = x_trunc.size(0) / X.size(0)
         print(f'alpha: {alpha}')
+        result_store['models'].update_row({ 
+            'X': x_trunc, 
+            'y': y_trunc,
+        })
         
         log_reg = LogisticRegression(penalty='none', fit_intercept=True)
         log_reg.fit(X, y.flatten())
@@ -251,7 +262,6 @@ class TestStats(unittest.TestCase):
         trunc_log_reg_conf_matrix = confusion_matrix(y, pred)
         print(f'trunc sklearn confusion matrix: \n {trunc_log_reg_conf_matrix}')
 
-        OUT_DIR = '/Users/patroklos/Desktop/exp/'
         trunc_log_reg_store = Store(OUT_DIR + 'trunc_log_reg')
         train_kwargs = Parameters({'phi': phi,
                             'alpha': alpha,
@@ -297,14 +307,15 @@ class TestStats(unittest.TestCase):
         ch.manual_seed(seed)
         trunc_multi_log_reg = stats.TruncatedLogisticRegression(train_kwargs, store=trunc_multi_log_reg_store)
         trunc_multi_log_reg.fit(x_trunc, y_trunc.flatten().long()) 
-        trunc_multi_log_reg_ = ch.cat([trunc_multi_log_reg.coef_[1] - trunc_multi_log_reg.coef_[0], 
+        trunc_multi_log_reg_diff = ch.cat([trunc_multi_log_reg.coef_[1] - trunc_multi_log_reg.coef_[0], 
         (trunc_multi_log_reg.intercept_[1] - trunc_multi_log_reg.intercept_[0])[...,None]])
+        trunc_multi_log_reg_ = ch.cat([trunc_multi_log_reg.coef_, trunc_multi_log_reg.intercept_[...,None]], axis=1)
         result_store['models'].update_row({ 
-            'trunc_multi_log_reg': trunc_multi_log_reg_
+            'trunc_multi_log_reg': trunc_multi_log_reg_,
+            'trunc_multi_log_reg_diff': trunc_multi_log_reg_diff
         })
 
-        print(f'trunc multi log reg: {trunc_multi_log_reg_}')
-        trunc_multi_cos_sim = float(cos_sim(trunc_multi_log_reg_[None,...], log_reg_[None,...]))
+        trunc_multi_cos_sim = float(cos_sim(trunc_multi_log_reg_diff[None,...], log_reg_[None,...]))
         trunc_multi_log_reg_pred = trunc_multi_log_reg.predict(X)
         trunc_multi_log_reg_acc = trunc_multi_log_reg_pred.eq(y.flatten()).sum() / len(y)
         print(f'trunc multi log reg accuracy: {trunc_multi_log_reg_acc}')
@@ -329,14 +340,15 @@ class TestStats(unittest.TestCase):
         trainer = Trainer(gumbel_model, train_kwargs, store=gumbel_store)
         train_loader, val_loader = make_train_and_val(train_kwargs, x_trunc, y_trunc.flatten().long())
         trainer.train_model((train_loader, val_loader))
-        gumbel_ = ch.cat([gumbel_model.model.weight[1] - gumbel_model.model.weight[0], 
+        gumbel_diff = ch.cat([gumbel_model.model.weight[1] - gumbel_model.model.weight[0], 
         (gumbel_model.model.bias[1] - gumbel_model.model.bias[0])[...,None]])
+        gumbel_ = ch.cat([gumbel_model.model.weight, gumbel_model.model.bias[...,None]], axis=1)
         result_store['models'].update_row({ 
-            'gumbel': gumbel_
+            'gumbel_diff': gumbel_diff,
+            'gumbel': gumbel_ 
         })
 
-        print(f'trunc gumbel: {gumbel_}')
-        gumbel_cos_sim = float(cos_sim(gumbel_[None,...], log_reg_[None,...]))
+        gumbel_cos_sim = float(cos_sim(gumbel_diff[None,...], log_reg_[None,...]))
         gumbel_pred = gumbel_model.predict(X)
         gumbel_acc = gumbel_pred.eq(y.flatten()).sum() / len(y)
         print(f'gumbel accuracy: {gumbel_acc}')
@@ -359,14 +371,15 @@ class TestStats(unittest.TestCase):
         trainer = Trainer(softmax_model, train_kwargs, store=softmax_store)
         train_loader, val_loader = make_train_and_val(train_kwargs, x_trunc, y_trunc.flatten().long())
         trainer.train_model((train_loader, val_loader))
-        softmax_ = ch.cat([softmax_model.model.weight[1] - softmax_model.model.weight[0], 
+        softmax_diff = ch.cat([softmax_model.model.weight[1] - softmax_model.model.weight[0], 
         (softmax_model.model.bias[1] - softmax_model.model.bias[0])[...,None]])
+        softmax_ = ch.cat([softmax_model.model.weight, softmax_model.model.bias[...,None]], axis=1)
         result_store['models'].update_row({ 
-            'softmax': softmax_
+            'softmax_diff': softmax_diff, 
+            'softmax': softmax_,
         })
 
-        print(f'softmax: {softmax_}')
-        softmax_cos_sim = float(cos_sim(softmax_[None,...], log_reg_[None,...]))
+        softmax_cos_sim = float(cos_sim(softmax_diff[None,...], log_reg_[None,...]))
         softmax_pred = softmax_model.predict(X)
         softmax_acc = softmax_pred.eq(y.flatten()).sum() / len(y)
         print(f'softmax accuracy: {softmax_acc}')
