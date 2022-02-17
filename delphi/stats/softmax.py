@@ -24,11 +24,10 @@ from cox.store import Store
 
 from delphi import delphi
 from delphi.trainer import Trainer
-from delphi import stats 
 from delphi import oracle
 from delphi.utils.helpers import Parameters, cov, accuracy
 from delphi.utils.datasets import make_train_and_val
-from delphi.grad import GumbelCE
+from .linear_model import LinearModel
 
 # CONSTANT
 mse_loss =  MSELoss()
@@ -42,7 +41,7 @@ G = Gumbel(0, 1)
 
 
 
-class SoftmaxModel(stats.LinearModel):
+class SoftmaxModel(LinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.
     '''

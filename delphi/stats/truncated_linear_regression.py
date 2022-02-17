@@ -163,7 +163,8 @@ class KnownVariance(LinearModel):
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
-        super().__init__(args, train_loader, d=d)
+        super().__init__(args, d=d, k=1)
+        self.X, self.y = train_loader.dataset[:]
         self.base_radius = (7.0 + 4.0 * math.log(2.0 / self.args.alpha))
         
     #def pretrain_hook(self):

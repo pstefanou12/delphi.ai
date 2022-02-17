@@ -31,7 +31,7 @@ DATASET_DEFAULTS = {
 }
 
 DELPHI_DEFAULTS = { 
-    'alpha': (float, REQ), 
+    #'alpha': (float, REQ), 
     'lr': (float, 1e-1), 
     'step_lr': (int, 100),
     'step_lr_gamma': (float, .9), 

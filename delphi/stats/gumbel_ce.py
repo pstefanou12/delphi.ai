@@ -6,7 +6,7 @@ import torch as ch
 from torch.distributions import Gumbel
 from torch.nn import MSELoss
 
-from delphi import stats 
+from .linear_model import LinearModel
 from delphi.utils.helpers import accuracy
 from delphi.grad import GumbelCE
 
@@ -15,7 +15,7 @@ mse_loss =  MSELoss()
 G = Gumbel(0, 1)
 
 
-class GumbelCEModel(stats.LinearModel):
+class GumbelCEModel(LinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.
     '''
