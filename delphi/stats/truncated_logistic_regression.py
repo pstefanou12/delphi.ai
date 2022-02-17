@@ -11,7 +11,7 @@ import cox
 import warnings
 import math
 
-from .linear_model import TruncatedLinearModel
+from .linear_model import LinearModel
 from .stats import stats
 from ..grad import TruncatedBCE, TruncatedCE
 from ..trainer import Trainer
@@ -32,6 +32,7 @@ class TruncatedLogisticRegression(stats):
     """
     def __init__(self,
             args: Parameters,
+            weight: ch.Tensor=None,
             store: cox.store.Store=None,
 ):
         '''
@@ -70,7 +71,10 @@ class TruncatedLogisticRegression(stats):
         TRUNC_LOG_REG_DEFAULTS.update(TRAINER_DEFAULTS)
         TRUNC_LOG_REG_DEFAULTS.update(DELPHI_DEFAULTS)
         self.args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
-                
+
+        assert weight is None or weight.dim() == 2, 'weight is size: {}. expecting two dims, with size 1 * d'.format(weight.size())
+        self.weight = weight
+
     def fit(self, X: Tensor, y: Tensor):
         """
         Train truncated logistic regression model by running PSGD on the truncated negative 
@@ -94,7 +98,7 @@ class TruncatedLogisticRegression(stats):
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
-        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.train_loader_, k, X.size(1))
+        self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.weight, self.train_loader_, k, X.size(1))
 
         trainer = Trainer(self.trunc_log_reg, self.args, store=self.store) 
         # run PGD for parameter estimation 
@@ -140,17 +144,19 @@ class TruncatedLogisticRegression(stats):
         warnings.warn('intercept not fit, check args input.') 
 
 
-class TruncatedLogisticRegressionModel(TruncatedLinearModel):
+class TruncatedLogisticRegressionModel(LinearModel):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args, train_loader, k, d): 
+    def __init__(self, args, weight, train_loader, k, d): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader, k, d)
-
+        super().__init__(args, k, d)
+        if weight is not None:
+            self.weight = weight
+        self.X, self.y = train_loader.dataset[:]
         self.base_radius = math.sqrt(math.log(1.0 / self.args.alpha))
 
     def pretrain_hook(self): 
@@ -158,6 +164,8 @@ class TruncatedLogisticRegressionModel(TruncatedLinearModel):
         SkLearn sets up multinomial classification differently. So when doing 
         multinomial classification, we initialize with random estimates.
         """
+        # calculate empirical estimates for truncated linear model
+        self.calc_emp_model()
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
         self.model.data = self.weight.T

@@ -319,3 +319,28 @@ class Sum_Floor(oracle):
 
     def __call__(self, x):
         return (x.sum(1) >= self.floor)
+
+
+class GumbelLogisticLeftTruncation(oracle):
+    """
+    The difference beween two samples from a Gumbel distribution is equivalent to 
+    a sample from a logistic distribution. Thus, this oracle takes noised logits 
+    from a multinomial logistic regression, calculates the difference and uses the
+    left truncation mechanism for truncated logistic regression.
+    """
+    def __init__(self, left): 
+        """
+        Args: 
+           left (float): left truncation threshold
+        """
+        self.left = left 
+        
+    def __call__(self, x): 
+        """
+        Args: 
+            x (torch.Tensor): n by 2 array of gumbel noised logits
+        """
+        return ((x[:,:,1] - x[:,:,0]) > self.left)[...,None]
+
+    def __str__(self): 
+      return 'Gumbel Logistic Left Truncation Set'

@@ -8,7 +8,7 @@ import cox
 import warnings
 import math
 
-from .linear_model import TruncatedLinearModel
+from .linear_model import LinearModel
 from .stats import stats
 from ..trainer import Trainer
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
@@ -154,7 +154,7 @@ class TruncatedLinearRegression(stats):
         return self.trunc_reg.emp_var.clone()
 
 
-class KnownVariance(TruncatedLinearModel):
+class KnownVariance(LinearModel):
     """
     Truncated linear regression with known noise variance model.
     """

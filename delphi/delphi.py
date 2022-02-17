@@ -6,8 +6,9 @@ Parent class for models to train in delphi trainer.
 import torch as ch
 from torch.optim import SGD, Adam, lr_scheduler
 import numpy as np
-
+import warnings
 from abc import ABC, abstractmethod
+from typing import Any
 
 from .utils.defaults import DELPHI_DEFAULTS, check_and_fill_args
 
@@ -88,6 +89,7 @@ class delphi:
         # algorithm optimizer and scheduler
         self.optimizer, self.schedule = None, None
         self.checkpoint = None
+        self._model= None
 
     def make_optimizer_and_schedule(self):
         """
@@ -96,13 +98,11 @@ class delphi:
         """
         if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
         # initialize optimizer, scheduler, and then get parameters
-        # setup optimizer
+        # default SGD optimizer
+        self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
             self.optimizer = Adam(self.parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
         elif not self.args.constant: 
-            # SGD optimizer
-            self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
-
             # setup learning rate scheduler
             if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
                 lr_func = lambda t: np.interp([t], [0, self.M*4//15, self.M], [0, 1, 0])[0]
@@ -132,10 +132,10 @@ class delphi:
         if self.checkpoint:
             self.optimizer.load_state_dict(self.checkpoint['optimizer'])
             try:
-                schedule.load_state_dict(checkpoint['schedule'])
+                schedule.load_state_dict(self.checkpoint['schedule'])
             # if can't load scheduler state, take epoch steps
             except:
-                steps_to_take = checkpoint['epoch']
+                steps_to_take = self.checkpoint['epoch']
                 print('Could not load schedule (was probably LambdaLR).'
                     f' Stepping {steps_to_take} times instead...')
                 for i in range(steps_to_take):
@@ -198,6 +198,22 @@ class delphi:
         '''
         return ch.zeros(1, 1)
 
+    @property
+    def model(self): 
+        '''
+        Model property.
+        '''
+        if self._model is None: 
+            warnings.warn('model is None')
+        return self._model
+
+    @model.setter
+    def model(self, model: Any): 
+        '''
+        Model setter.
+        '''
+        self._model = model
+    
     @property
     def parameters(self): 
         if self.params: 

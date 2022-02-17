@@ -5,20 +5,19 @@ Linear model class for delphi.
 from delphi.utils.helpers import Parameters
 import torch as ch
 from torch import Tensor
-from torch.nn import Linear, Parameter
+from torch.nn import Parameter
 from sklearn.linear_model import LinearRegression
 
 from .. import delphi
 from ..utils.helpers import Bounds
 
 
-class TruncatedLinearModel(delphi.delphi):
+class LinearModel(delphi.delphi):
     '''
     Truncated linear model parent class.
     '''
     def __init__(self, 
                 args: Parameters, 
-                train_loader: ch.utils.data.DataLoader, 
                 d=1,
                 k=1): 
         '''
@@ -27,11 +26,8 @@ class TruncatedLinearModel(delphi.delphi):
             k (int): number of output logits
         '''
         super().__init__(args)
-        self.X, self.y = train_loader.dataset[:]
         self.d = d
         self.k = k
-        # calculate empirical estimates for truncated linear model
-        self.calc_emp_model()
         self.weight = ch.randn(k, d)
         self.model = Parameter()
         # noise distribution scale
@@ -39,6 +35,8 @@ class TruncatedLinearModel(delphi.delphi):
         self.base_radius = 1.0
 
     def pretrain_hook(self):
+        # calculate empirical estimates for truncated linear model
+        self.calc_emp_model()
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
@@ -85,7 +83,7 @@ class TruncatedLinearModel(delphi.delphi):
     """
 
     def post_training_hook(self): 
-        self.args.r *= self.args.rate
+        if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         self.model.requires_grad = False
 

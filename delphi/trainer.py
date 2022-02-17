@@ -48,14 +48,14 @@ class Trainer:
         """
         assert isinstance(model, delphi), "model type: {} is incompatible with Trainer class".format(type(model))
         self.model = model
+        # keep track of the best model based off the best nll
+        best_loss, best_model = None, None
+
         # check and fill trainer hyperparameters
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         assert store is None or isinstance(store, cox.store.Store), "provided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
         
-        self.no_improvement_count = 0
-        self.best_loss = INFINITY
-
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
         
@@ -104,6 +104,7 @@ class Trainer:
         
         if self.store is not None: 
             self.store.add_table('logs', {
+                'trial': int,
                 'epoch': int,
                 'train_loss': float, 
                 'train_prec1': float,
@@ -114,9 +115,11 @@ class Trainer:
             # record hyperparameters
             setup_store_with_metadata(self.args, self.store)
 
-        # keep track of whether procedure is done or not
-        t_start = time()
+        best_loss, best_model = INFINITY, None
         for trial in range(self.args.trials):
+            t_start = time()
+            no_improvement_count = 0
+
             # PRETRAIN HOOK
             self.model.pretrain_hook()
             
@@ -140,35 +143,42 @@ class Trainer:
                 # if store provided, log epoch results
                 if self.store is not None:
                     self.store['logs'].append_row({
+                        'trial': trial,
                         'epoch': epoch,
                         'train_loss': train_loss, 
                         'train_prec1': train_prec1,
                         'train_prec5': train_prec5,
                         'val_loss': val_loss,
                         'val_prec1': val_prec1, 
-                        'val_prec5': val_prec5 })
+                        'val_prec5': val_prec5})
 
                 # check for early completion
                 if self.args.early_stopping: 
-                    if self.args.tol > -INFINITY and val_loss > (self.best_loss - self.args.tol):
-                        self.no_improvement_count += 1
+                    if self.args.tol > -INFINITY and ch.abs(val_loss - best_loss) <= self.args.tol:
+                        no_improvement_count += 1
                     else: 
-                        self.no_improvement_count = 0
+                        no_improvement_count = 0
 
-                    if val_loss < self.best_loss: 
-                        self.best_loss = val_loss
+                    if best_model is None or val_loss < best_loss: 
+                        best_model, best_loss = self.model.model[:], val_loss
 
-                if self.no_improvement_count >= self.args.n_iter_no_change:
-                    if self.args.verbose: 
-                        print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
-                    # POST TRAINING HOOK     
-                    self.model.post_training_hook()
-                    return self.model
-
+                    # model convergence
+                    if no_improvement_count >= self.args.n_iter_no_change:
+                        if self.args.verbose: 
+                            print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
+                        break
+                    
             # POST TRAINING HOOK     
             self.model.post_training_hook()
-        if self.args.early_stopping and self.args.verbose: 
-            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
+            # update best model and best loss
+            if best_model is None or val_loss < best_loss: 
+                best_model, best_loss = self.model.model[:], val_loss 
+
+        # if converge and self.args.verbose: 
+        #    print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
+        # set best model in delphi model object 
+        self.model.model = best_model        
+
         return self.model
                 
     def model_loop(self, loop_type, loader, epoch):

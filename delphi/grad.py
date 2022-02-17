@@ -2,6 +2,7 @@
 Gradients for truncated and untruncated latent variable models. 
 """
 
+from re import I
 import torch as ch
 from torch import Tensor
 from torch import sigmoid as sig
@@ -193,6 +194,7 @@ class TruncatedBCE(ch.autograd.Function):
             eps (float): denominator error constant to avoid divide by zero errors
         """
         ctx.save_for_backward()
+        bce_loss = ch.nn.BCEWithLogitsLoss()
         
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         rand_noise = logistic.sample(stacked.size())
@@ -206,7 +208,8 @@ class TruncatedBCE(ch.autograd.Function):
         const = (filtered * logistic.log_prob(rand_noise)).sum(0) / (filtered.sum(0) + eps)
         ctx.save_for_backward(mask, filtered, rand_noise)
         ctx.eps = eps
-        return -(nll - const) / pred.size(0)
+        # return -(nll - const) / pred.size(0)
+        return bce_loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):
