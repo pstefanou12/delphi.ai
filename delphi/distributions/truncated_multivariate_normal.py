@@ -106,6 +106,8 @@ class TruncatedMultivariateNormalModel(CensoredMultivariateNormalModel):
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
 
     def post_training_hook(self):
+        if self.model.loc.isnan() or self.model.covariance_matrix.isnan(): 
+            import pdb; pdb.set_trace()
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()

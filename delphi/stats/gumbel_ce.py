@@ -2,6 +2,7 @@
 Multinomial logistic rergression that uses gumbel max loss function.
 '''
 
+from tkinter import W
 import torch as ch
 from torch.distributions import Gumbel
 from torch.nn import MSELoss
@@ -35,7 +36,7 @@ class GumbelCEModel(LinearModel):
         self.params = [self.model]
 
     def predict(self, x): 
-        stacked = (x@self.model.T).repeat(self.args.num_samples, 1, 1)
+        stacked = (x@self.model).repeat(self.args.num_samples, 1, 1)
         noised = stacked + G.sample(stacked.size())
         return noised.mean(0).argmax(-1)
 
@@ -46,16 +47,16 @@ class GumbelCEModel(LinearModel):
             batch (Iterable) : iterable of inputs that
         '''
         inp, targ = batch
-        z = inp@self.model.T
+        z = inp@self.model
         loss = GumbelCE.apply(z, targ)
-        pred = z.argmax(-1)
         
         # calculate precision accuracies
+        prec1, prec5 = None, None
         if z.size(1) >= 5:
-            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1, 5))
+            prec1, prec5 = accuracy(z, targ, topk=(1, 5))
         else:
-            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1,))
+            prec1, = accuracy(z, targ, topk=(1,))
         return loss, prec1, prec5
     
     def calc_logits(self, inp): 
-        return inp@self.model.T
+        return inp@self.model

@@ -250,7 +250,6 @@ def accuracy(output, target, topk=(1,), exact=False):
             ck_sum = correct_k.sum(0, keepdim=True)
             res.append(ck_sum.mul_(100.0 / batch_size))
             res_exact.append(correct_k)
-
         if not exact:
             return res
         else:

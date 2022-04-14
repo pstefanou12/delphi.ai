@@ -62,6 +62,9 @@ class TruncatedLinearRegression(stats):
         TRUNC_REG_DEFAULTS.update(DELPHI_DEFAULTS)
         self.args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
 
+        # property instance variables 
+        self.coef, self.intercept = None, None
+
     def fit(self, X: Tensor, y: Tensor):
         """
         Train truncated linear regression model by running PSGD on the truncated negative 
@@ -103,7 +106,8 @@ class TruncatedLinearRegression(stats):
         """
         Make predictions with regression estimates.
         """
-        return x@self.trunc_reg.model.T
+        if self.args.fit_intercept: x = ch.cat([x, ch.ones((x.size(0), 1))], axis=1)
+        return x@self.trunc_reg.model
     
     @property
     def coef_(self): 
@@ -184,7 +188,7 @@ class KnownVariance(LinearModel):
             a stochastic process, or someone is accessing the parent class"s property
         """
         X, y = batch
-        pred = X@self.model.T 
+        pred = X@self.model
         loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
         return [loss, None, None]
         
@@ -256,7 +260,7 @@ class UnknownVariance(KnownVariance):
             batch (Iterable) : iterable of inputs that 
         """
         X, y = batch
-        pred = X@self.model.T * self.lambda_.inverse()
+        pred = X@self.model * self.lambda_.inverse()
         loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 

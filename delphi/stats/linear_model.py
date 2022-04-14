@@ -28,7 +28,7 @@ class LinearModel(delphi.delphi):
         super().__init__(args)
         self.d = d
         self.k = k
-        self.weight = ch.randn(k, d)
+        self.weight = ch.randn(self.d, self.k)
         self.model = Parameter()
         # noise distribution scale
         self.lambda_ = ch.nn.Parameter(ch.ones(1, 1))
@@ -47,9 +47,10 @@ class LinearModel(delphi.delphi):
         self.var_bounds = Bounds(float(self.noise_var.flatten() / self.args.r), float(self.noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
         # assign empirical estimates
         self.lambda_.requires_grad = True if self.args.noise_var is None else False
+        # import pdb; pdb.set_trace()
         self.lambda_.data = self.noise_var.inverse()
         self.params = [{"params": [self.model]},
-            {"params": self.lambda_, "lr": self.args.var_lr}]
+                        {"params": self.lambda_, "lr": self.args.var_lr}]
 
     def calc_emp_model(self): 
         '''
@@ -57,7 +58,7 @@ class LinearModel(delphi.delphi):
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
         self.ols = LinearRegression(fit_intercept=False).fit(self.X, self.y)
-        self.weight = Tensor(self.ols.coef_)
+        self.weight = Tensor(self.ols.coef_).T
         self.noise_var = ch.var(Tensor(self.ols.predict(self.X)) - self.y, dim=0)[..., None]
 
     """

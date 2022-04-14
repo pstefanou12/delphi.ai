@@ -8,6 +8,7 @@ import cox
 from cox.store import Store
 from time import time
 from tqdm import tqdm
+import copy
 
 from .delphi import delphi
 from .utils.helpers import ckpt_at_epoch, AverageMeter, setup_store_with_metadata, Parameters
@@ -117,6 +118,7 @@ class Trainer:
 
         best_loss, best_model = INFINITY, None
         for trial in range(self.args.trials):
+            if self.args.verbose: print(f'trial: {trial + 1}')
             t_start = time()
             no_improvement_count = 0
 
@@ -172,10 +174,10 @@ class Trainer:
             self.model.post_training_hook()
             # update best model and best loss
             if best_model is None or val_loss < best_loss: 
-                best_model, best_loss = self.model.model[:], val_loss 
+                best_model, best_loss = copy.copy(self.model.model), val_loss 
 
-        # if converge and self.args.verbose: 
-        #    print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
+        if self.args.converge and self.args.verbose: 
+           print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
         # set best model in delphi model object 
         self.model.model = best_model        
 

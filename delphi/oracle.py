@@ -55,6 +55,19 @@ class KIntervalUnion(oracle):
         return 'k-interval union'
 
 
+class DiffLogitOracle(oracle): 
+
+    def __init__(self, left): 
+        self.left = left
+
+    def __call__(self, x): 
+        topk = ch.topk(x, 2, dim=-1)[0]
+        return topk.diff() > self.left
+
+    def __str__(self): 
+        return 'diff logit oracle'
+
+
 class Left_Regression(oracle):
     """
     Left Regression Truncation.
@@ -73,6 +86,49 @@ class Left_Regression(oracle):
     def __str__(self): 
         return 'left regression'
 
+
+class Left_K_Logit(oracle):
+    """
+    Truncated the kth logit by, only accepting inputs the fall with z[k] > left.
+    """
+    def __init__(self, left, k):
+        """
+        Args: 
+            left: left truncation
+            k: logit to truncate
+        """
+        super(Left_K_Logit, self).__init__()
+        self.left = left
+        self.k = k
+
+    def __call__(self, x): 
+        return (x[...,self.k] > self.left)[...,None]
+
+    def __str__(self): 
+        return 'left truncate kth logit'
+
+
+class Right_K_Logit(oracle):
+    """
+    Truncated the kth logit by, only accepting inputs the fall with z[k] < right.
+    """
+    def __init__(self, right, k):
+        """
+        Args: 
+            right: right truncation
+            k: logit to truncate
+        """
+        super(Right_K_Logit, self).__init__()
+        self.right = right
+        self.k = k
+
+    def __call__(self, x): 
+        return (x[...,self.k] > self.right)[...,None]
+
+    def __str__(self): 
+        return 'right truncate kth logit'
+
+
 class Left_Distribution(oracle):
     """
     Left Distribution Truncation.
@@ -86,7 +142,7 @@ class Left_Distribution(oracle):
         self.left = left
 
     def __call__(self, x): 
-        return (x > self.left).prod(dim=-1)
+        return (x > self.left).prod(dim=-1, keepdim=True)
 
     def __str__(self): 
         return 'left'
@@ -274,7 +330,32 @@ class LogitBall(oracle):
 
     def __str__(self): 
         return 'logit ball'
+
+
+class LogitSum(oracle): 
+
+    def __init__(self, ceiling): 
+        self.ceiling = ceiling
+
+    def __call__(self, x): 
+        return x.sum(1, keepdim=True) < self.ceiling
+
+
+class TruncateLogit(oracle): 
+    def __init__(self, logit): 
+        self.logit = logit
+
+    def __call__(self, x):
+        return x.argmax(-1, keepdim=True) != self.logit
    
+class RandomTruncation(oracle): 
+    def __init__(self, threshold): 
+        self.threshold = threshold 
+
+    def __call__(self, x): 
+        if x.dim() == 3: 
+            return ch.rand(x.size(0), x.size(1), 1) > self.threshold
+        return ch.rand(x.size(0)) > self.threshold
 
 class LogitBallComplement(oracle): 
     

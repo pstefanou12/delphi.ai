@@ -5,6 +5,7 @@ Multinomial logistic regression that uses softmax loss function.
 # distribution tests 
 
 from re import A, I
+from tkinter import W
 import unittest
 import numpy as np
 import torch as ch
@@ -35,7 +36,7 @@ base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
 logistic = TransformedDistribution(base_distribution, transforms_)
 cos_sim = CosineSimilarity()
-softmax = Softmax(dim=0)
+softmax = Softmax(dim=1)
 ce = CrossEntropyLoss()
 G = Gumbel(0, 1)
 
@@ -62,7 +63,7 @@ class SoftmaxModel(LinearModel):
         
     def predict(self, x): 
         with ch.no_grad():
-            return softmax(x@self.model.T).argmax(dim=-1)
+            return softmax(x@self.model).argmax(dim=-1)
 
     def __call__(self, batch):
         '''
@@ -71,16 +72,16 @@ class SoftmaxModel(LinearModel):
             batch (Iterable) : iterable of inputs that
         '''
         inp, targ = batch
-        z = inp@self.model.T
+        z = inp@self.model
         loss = ce(z, targ)
-        pred = z.argmax(-1)
         
         # calculate precision accuracies
+        prec1, prec5 = None, None
         if z.size(1) >= 5:
-            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1, 5))
+            prec1, prec5 = accuracy(z, targ, topk=(1, 5))
         else:
-            prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1,))
+            prec1, = accuracy(z, targ, topk=(1,))
         return loss, prec1, prec5
     
     def calc_logits(self, inp): 
-        return inp@self.model.T
+        return inp@self.model

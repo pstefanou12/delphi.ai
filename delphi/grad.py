@@ -10,6 +10,7 @@ from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
+from . import oracle
 from .utils.helpers import logistic, censored_sample_nll
 
 softmax = Softmax(dim=1)
@@ -128,6 +129,7 @@ class TruncatedMSE(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, z = ctx.saved_tensors
+        # import pdb; pdb.set_trace()
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
@@ -157,19 +159,16 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         filtered = phi(noised)
         out = noised * filtered
         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
-        z_2 = Tensor([])
-        for i in range(filtered.size(0)):
-            z_2 = ch.cat([z_2, noised[i][filtered[i].squeeze(-1).sort(descending=True).indices[0]].pow(2)[None,...]])
-        z_2_ = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+        z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
         nll = -0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred
         const = -0.5 * lambda_ * z_2 + z * pred * lambda_
 
-        ctx.save_for_backward(pred, targ, lambda_, z, z_2, z_2_)
-        return nll - const
+        ctx.save_for_backward(pred, targ, lambda_, z, z_2)
+        return (nll - const).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        pred, targ, lambda_, z, z_2, z_2_ = ctx.saved_tensors
+        pred, targ, lambda_, z, z_2 = ctx.saved_tensors
         """
         multiply the v gradient by lambda, because autograd computes 
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
@@ -317,6 +316,8 @@ class TruncatedCE(ch.autograd.Function):
         '''
     @staticmethod
     def backward(ctx, grad_output):  
+        #if isinstance(ctx.phi, oracle.Left_Distribution):
+        #    import pdb; pdb.set_trace()
         pred, targ = ctx.saved_tensors
         # initialize gumbel distribution
         gumbel = Gumbel(0, 1)
