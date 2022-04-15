@@ -58,7 +58,8 @@ class LinearModel(delphi.delphi):
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
         self.ols = LinearRegression(fit_intercept=False).fit(self.X, self.y)
-        self.weight = Tensor(self.ols.coef_).T
+        self.emp_weight = Tensor(self.ols.coef_).T
+        self.weight = self.emp_weight.clone()
         self.noise_var = ch.var(Tensor(self.ols.predict(self.X)) - self.y, dim=0)[..., None]
 
     """

@@ -136,11 +136,14 @@ class Trainer:
             for epoch in range(1, self.args.epochs + 1):
                 # TRAIN LOOP
                 train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, train_loader, epoch)
-                
+
+                                
                 # VALIDATION LOOP
                 if val_loader is not None:
                     with ch.no_grad():
                         val_loss, val_prec1, val_prec5 = self.model_loop(VAL, val_loader, epoch)
+                    
+                    if self.args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
 
                 # if store provided, log epoch results
                 if self.store is not None:
@@ -175,8 +178,9 @@ class Trainer:
             # update best model and best loss
             if best_model is None or val_loss < best_loss: 
                 best_model, best_loss = copy.copy(self.model.model), val_loss 
-
-        if self.args.converge and self.args.verbose: 
+        
+        # inform user that SGD did not converge
+        if self.args.verbose and no_improvement_count <= self.args.n_iter_no_change: 
            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
         # set best model in delphi model object 
         self.model.model = best_model        

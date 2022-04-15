@@ -92,10 +92,10 @@ class TruncatedLinearRegression(stats):
 
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
-            self.coef = self.trunc_reg.model[:-1]
-            self.intercept = self.trunc_reg.model[-1]
+            self.coef = self.trunc_reg.model.data[:-1]
+            self.intercept = self.trunc_reg.model.data[-1]
         else: 
-            self.coef = self.trunc_reg.model[:]
+            self.coef = self.trunc_reg.model.data[:]
         if self.args.noise_var is None: 
             self.variance = self.trunc_reg.lambda_.clone().inverse()
             self.coef *= self.variance
@@ -274,21 +274,30 @@ class UnknownVariance(KnownVariance):
             prec1 (float) : accuracy for top prediction
             prec5 (float) : accuracy for top-5 predictions
         """
-        """
+        var = self.lambda_.inverse()
+        if var < 0: 
+            print('noise variance is no longer positive!!!!')
         # project model parameters back to domain 
         var = self.lambda_.inverse()
-        weight = (self.model.weight * var).flatten()
+        # weight = self.model * var
         self.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
-                
+        """        
         if self.args.fit_intercept: 
             bias = (self.model.bias * var).flatten()
             temp_w = ch.cat([weight, bias])
             w_diff = temp_w - self.w
             w_diff = w_diff[None, ...].renorm(p=2, dim=0, maxnorm=self.radius)
             self.model.weight.data, self.model.bias.data = (self.emp_weight + w_diff[:,:-1]) * self.lambda_.inverse(), self.emp_bias + w_diff[:,-1] * self.lambda_.inverse()
-        else: 
-            w_diff = self.model.weight - self.w
-            w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
-            self.model.weight.data = (self.emp_weight + w_diff) * self.lambda_.inverse()
+        else:
+        """ 
         """
-    
+        var = self.lambda_.inverse()
+        weight = self.model * var
+        w_diff = weight - self.emp_weight
+        w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
+
+        self.model.data.fill_(0)
+        self.model.data += (self.emp_weight + w_diff) * var
+        if (self.model.data != weight).any(): 
+            import pdb; pdb.set_trace()
+        """ 

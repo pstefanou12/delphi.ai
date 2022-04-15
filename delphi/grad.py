@@ -207,8 +207,8 @@ class TruncatedBCE(ch.autograd.Function):
         const = (filtered * logistic.log_prob(rand_noise)).sum(0) / (filtered.sum(0) + eps)
         ctx.save_for_backward(mask, filtered, rand_noise)
         ctx.eps = eps
-        # return -(nll - const) / pred.size(0)
-        return bce_loss(pred, targ)
+        return -(nll - const) / pred.size(0)
+       # return bce_loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -230,6 +230,7 @@ class TruncatedProbitMLE(ch.autograd.Function):
             num_samples (int): number of sampels to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
+#        import pdb; pdb.set_trace()
         M = MultivariateNormal(ch.zeros(1,), ch.eye(1, 1))
         stacked = pred[None,...].repeat(num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())

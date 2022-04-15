@@ -25,7 +25,8 @@ class TruncatedProbitRegression(stats):
     Truncated Probit Regression supports both binary classification, when the noise distribution in the latent variable model in N(0, 1).
     """
     def __init__(self,
-                args: Parameters, 
+                args: Parameters,
+                weight: ch.Tensor=None, 
                 store: cox.store.Store=None):
         '''
         Args: 
@@ -64,6 +65,9 @@ class TruncatedProbitRegression(stats):
         TRUNC_PROB_REG_DEFAULTS.update(TRAINER_DEFAULTS)
         TRUNC_PROB_REG_DEFAULTS.update(DELPHI_DEFAULTS)
         self.args = check_and_fill_args(args, TRUNC_PROB_REG_DEFAULTS)
+
+        assert weight is None or weight.dim() == 2, 'weight is size: {}. expecting two dims, with size 1 * d'.format(weight.size())
+        self.weight = weight
                 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -77,16 +81,24 @@ class TruncatedProbitRegression(stats):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+        # add one feature to x when fitting intercept
+        if self.args.fit_intercept:
+            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
+        k = 1
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
 
-        self.trunc_prob_reg = TruncatedProbitRegressionModel(self.args, self.train_loader_)
+        self.trunc_prob_reg = TruncatedProbitRegressionModel(self.args, self.weight, self.train_loader_, X.size(1), k)
         trainer = Trainer(self.trunc_prob_reg, self.args, store=self.store) 
         # run PGD for parameter estimation 
         trainer.train_model((self.train_loader_, self.val_loader_))
 
-        self.coef = self.trunc_prob_reg.model.weight.clone()
-        self.intercept = self.trunc_prob_reg.model.bias.clone()
+        # assign results from procedure to instance variables
+        if self.args.fit_intercept: 
+            self.coef = self.trunc_prob_reg.model.data[:-1]
+            self.intercept = self.trunc_prob_reg.model.data[-1]
+        else: 
+            self.coef = self.trunc_prob_reg.model.data[:]
         return self
 
     def __call__(self, x: Tensor):
@@ -129,29 +141,24 @@ class TruncatedProbitRegressionModel(KnownVariance):
     '''
     Truncated logistic regression model to pass into trainer framework.  
     '''
-    def __init__(self, args, train_loader): 
+    def __init__(self, args, weight, train_loader, d, k): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
         '''
-        super().__init__(args, train_loader)
+        super().__init__(args, train_loader, d)
+        if weight is not None:
+            self.weight = weight
 
     def pretrain_hook(self): 
+        self.calc_emp_model()
         # projection set radius
         self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.args.alpha)))
 
-        # empirical estimates for projection set
-        self.w = self.emp_weight 
-        if self.args.fit_intercept: 
-            self.w = ch.cat([self.emp_weight.flatten(), self.emp_bias])
-        
         # assign empirical estimates
-        self.model.weight.requires_grad = True
-        self.model.weight.data = self.emp_weight
-        if self.args.fit_intercept:
-            self.model.bias.requires_grad = True
-            self.model.bias.data = self.emp_bias
-        self.params = None
+        self.model.data.requires_grad = True
+        self.model.data = self.emp_weight
+        self.params = [self.model]
 
     def calc_emp_model(self): 
         """
@@ -164,11 +171,8 @@ class TruncatedProbitRegressionModel(KnownVariance):
         else: 
             self.emp_prob_reg = Probit(self.y.numpy(), self.X.numpy()).fit()
 
-        if self.args.fit_intercept:
-            self.emp_bias = Tensor([self.emp_prob_reg.params[0]])
-            self.emp_weight = Tensor(self.emp_prob_reg.params[1:].reshape(1, -1))
-        else: 
-            self.emp_weight = Tensor(self.emp_prob_reg.params[1:].reshape(1, -1))
+        self.emp_weight = Tensor(self.emp_prob_reg.params)[...,None]
+        self.weight = self.emp_weight.clone()
         
     def __call__(self, batch):
         '''
@@ -178,7 +182,7 @@ class TruncatedProbitRegressionModel(KnownVariance):
             batch (Iterable) : iterable of inputs that 
         '''
         inp, targ = batch
-        pred = self.model(inp)
+        pred = inp@self.model
         loss = TruncatedProbitMLE.apply(pred, targ, self.args.phi, self.args.num_samples, self.args.eps)
         prec1, prec5 = accuracy(pred.reshape(pred.size(0), 1), targ.reshape(targ.size(0), 1).float(), topk=(1,))
         return loss, prec1, prec5

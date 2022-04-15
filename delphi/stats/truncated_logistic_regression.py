@@ -109,8 +109,8 @@ class TruncatedLogisticRegression(stats):
 
         self.coef = self.trunc_log_reg.model.data[:]
         if self.args.fit_intercept: 
-            self.coef = self.trunc_log_reg.model.data[:,:-1]
-            self.intercept = self.trunc_log_reg.model.data[:,-1]
+            self.coef = self.coef[:-1]
+            self.intercept = self.coef[-1]
         return self
 
     def __call__(self, x: Tensor):
@@ -201,12 +201,12 @@ class TruncatedLogisticRegressionModel(LinearModel):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         inp, targ = batch
         z = inp@self.model
         loss = TruncatedBCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
         # calculate precision accuracies 
-        prec1, = accuracy(z, targ.reshape(targ.size(0), 1).float(), topk=(1,))
+        prec1, _ = accuracy(z, targ.reshape(targ.size(0), 1).float(), topk=(1,))
         return loss, prec1, None
 
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
@@ -264,7 +264,7 @@ class TruncatedMultinomialLogisticRegressionModel(LinearModel):
         # randomly assign initial estimates
         if self.weight is None:
             temp = ch.nn.Linear(in_features=self.d, out_features=self.k)
-            self.weight = temp.weight.T
+            self.weight = temp.weight
     
     def __call__(self, batch):
         '''
