@@ -187,12 +187,10 @@ class TruncatedLogisticRegressionModel(LinearModel):
         Calculate empirical logistic regression estimates using SKlearn module.
         """
         # empirical estimates for logistic regression
-        if self.args.multi_class == 'ovr':
-            self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
-            self.log_reg.fit(self.X, self.y.flatten())
-            self.weight = Tensor(self.log_reg.coef_)
-            temp = ch.nn.Linear(in_features=self.weight.size(0), out_features=self.weight.size(1))
-            self.weight = temp.weight
+        self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
+        self.log_reg.fit(self.X, self.y.flatten())
+        self.emp_weight = Tensor(self.log_reg.coef_).T
+        self.weight = self.emp_weight.clone()
     
     def __call__(self, batch):
         '''
