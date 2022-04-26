@@ -231,6 +231,7 @@ class Trainer:
             # if training loop, perform training step
             if is_train:
                 loss.backward()
+                # import pdb; pdb.set_trace()
                 self.model.optimizer.step()
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             

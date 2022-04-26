@@ -80,7 +80,7 @@ class TruncatedLassoRegression(stats):
         if self.args.noise_var is None:
             self.trunc_lasso = LassoUnknownVariance(self.args, self.train_loader_) 
         else: 
-            self.trunc_lasso = LassoKnownVariance(self.args, self.train_loader_) 
+            self.trunc_lasso = LassoKnownVariance(self.args, self.train_loader_, X.size(1)) 
         
         # run PGD for parameter estimation
         trainer = Trainer(self.trunc_lasso, self.args, store=self.store) 
@@ -133,12 +133,12 @@ class LassoKnownVariance(KnownVariance):
     """
     Truncated linear regression with known noise variance model.
     """
-    def __init__(self, args, train_loader): 
+    def __init__(self, args, train_loader, d): 
         """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
-        super().__init__(args, train_loader)
+        super().__init__(args, train_loader, d)
         self.base_radius = len(train_loader.dataset) ** (.5)
         
     def calc_emp_model(self):
@@ -147,7 +147,7 @@ class LassoKnownVariance(KnownVariance):
         self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
         if self.args.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
-        self.emp_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
+        self.noise_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
 
 
 class LassoUnknownVariance(UnknownVariance):

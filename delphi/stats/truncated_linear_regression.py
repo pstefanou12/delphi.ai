@@ -2,6 +2,7 @@
 Truncated Linear Regression.
 """
 
+from re import A
 import torch as ch
 from torch import Tensor
 import cox
@@ -187,6 +188,7 @@ class KnownVariance(LinearModel):
             proc (bool) : boolean indicating whether, the function is being called within 
             a stochastic process, or someone is accessing the parent class"s property
         """
+        # print('model before call: {}'.format(self.model))
         X, y = batch
         pred = X@self.model
         loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
@@ -220,7 +222,7 @@ class KnownVariance(LinearModel):
         """
         if self.args.l1 == 0.0: return 0.0
         reg_term = 0
-        for param in self.model.parameters(): 
+        for param in self.params[0]['params']: 
             reg_term += param.norm()
         return self.args.l1 * reg_term
 

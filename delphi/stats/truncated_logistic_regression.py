@@ -109,8 +109,8 @@ class TruncatedLogisticRegression(stats):
 
         self.coef = self.trunc_log_reg.model.data[:]
         if self.args.fit_intercept: 
-            self.coef = self.coef[:-1]
             self.intercept = self.coef[-1]
+            self.coef = self.coef[:-1]
         return self
 
     def __call__(self, x: Tensor):
@@ -236,6 +236,7 @@ class TruncatedMultinomialLogisticRegressionModel(LinearModel):
         '''
         super().__init__(args, d, k)
         if weight is not None:
+            assert weight.size() == ch.Size([d, k]), "input weight must be size d - num_features by k - num_logits"
             self.weight = weight
         self.X, self.y = train_loader.dataset[:]
         self.base_radius = math.sqrt(math.log(1.0 / self.args.alpha))
@@ -261,8 +262,8 @@ class TruncatedMultinomialLogisticRegressionModel(LinearModel):
         """
         # randomly assign initial estimates
         if self.weight is None:
-            temp = ch.nn.Linear(in_features=self.d, out_features=self.k)
-            self.weight = temp.weight
+            # temp = ch.nn.Linear(in_features=self.d, out_features=self.k)
+            self.weight = self.weight = ch.randn(self.d, self.k)
     
     def __call__(self, batch):
         '''
