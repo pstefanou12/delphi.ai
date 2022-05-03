@@ -2,79 +2,15 @@
 Gradients for truncated and untruncated latent variable models. 
 """
 
-from re import I
 import torch as ch
-from torch import Tensor
 from torch import sigmoid as sig
 from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
-from . import oracle
 from .utils.helpers import logistic, censored_sample_nll
 
 softmax = Softmax(dim=1)
-
-
-'''
-class CensoredMultivariateNormalNLL(ch.autograd.Function):
-    """
-    Computes the truncated negative population log likelihood for censored multivariate normal distribution. 
-    Function calculates the truncated negative log likelihood in the forward method and then calculates the 
-    gradients with respect mu and cov in the backward method. When sampling from the conditional distribution, 
-    we sample batch_size * num_samples samples, we then filter out the samples that remain in the truncation set, 
-    and retainup to batch_size of the filtered samples. If there are fewer than batch_size number of samples remain,
-    we provide a vector of zeros and calculate the untruncated log likelihood. 
-    """
-    @staticmethod
-    def forward(ctx, v, T, S, S_grad, phi, num_samples=10, eps=1e-5):
-        """
-        Args: 
-            v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
-            T (torch.Tensor): square reparameterized (cov^(-1)) covariance matrix with dim d
-            S (torch.Tensor): batch_size * dims, sample batch 
-            S_grad (torch.Tenosr): batch_size * (dims + dim * dims) gradient for batch
-            phi (delphi.oracle): oracle for censored distribution
-            num_samples (int): number of samples to sample for each sample in batch
-        """
-        # reparameterize distribution
-        sigma = T.inverse()
-        mu = (sigma@v).flatten()
-        # reparameterize distribution
-        M = MultivariateNormal(mu, sigma)
-        # sample num_samples * batch size samples from distribution
-        stacked = S.repeat(num_samples, 1, 1)
-       #  s = M.sample([num_samples * S.size(0)])
-        S = M.sample(stacked.size()[:-1])
-        filtered = phi(S)[...,None] 
-        """
-        TODO: see if there is a better way to do this
-        """
-        z = S * filtered
-        # standard negative log likelihood
-        # nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
-        # normalizing constant for nll
-        # norm_const = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
-        ctx.save_for_backward(S_grad.repeat(num_samples, 1, 1), z, filtered)
-        return ch.zeros(1)
-        # return (nll + norm_const).mean(0)
-   
-    @staticmethod
-    def backward(ctx, grad_output):
-        S_grad, z, filtered = ctx.saved_tensors
-        # calculate gradient
-        const_grad = Tensor([])
-        for i in range(z.size(0)): 
-            const_grad = ch.cat([const_grad, ch.bmm(z[i].unsqueeze(2), z[i].unsqueeze(1)).flatten(1)[None,...]])
-        const_grad = ch.cat([const_grad, z], axis=2)
-        if const_grad.size() != S_grad.size(): 
-            import pdb; pdb.set_trace()
-
-        import pdb; pdb.set_trace()
-        grad = (-S_grad * filtered + const_grad).sum(dim=0) / filtered.sum(dim=0)
-        # grad = -S_grad + censored_sample_nll(z)
-        return grad[:,z.size(-1) ** 2:] / grad.size(0), (grad[:,:z.size(-1) ** 2] / grad.size(0)).view(-1, z.size(-1), z.size(-1)), None, None, None, None, None
-'''
 
 
 class CensoredMultivariateNormalNLL(ch.autograd.Function):
@@ -111,6 +47,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         # z is a tensor of size batch size zeros, then fill with up to batch size num samples
         z = ch.zeros(S.size())
         elts = s[filtered][:S.size(0)]
+        if elts.dim() == 1: elts = elts[...,None]
         z[:elts.size(0)] = elts
         # standard negative log likelihood
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
@@ -160,7 +97,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
 
 class TruncatedMSE(ch.autograd.Function):
     """
-    Computes the gradient of the negative population log likelihood for censored regression
+    Computes the gradient of the negative population log likelihood for truncated regression
     with known noise variance.
     """
     @staticmethod
@@ -437,3 +374,41 @@ class TruncatedBooleanProductNLL(ch.autograd.Function):
         x, y = ctx.saved_tensors
         # calculate gradient
         return (-x + y) / x.size(0), None, None, None, None
+
+
+class TruncatedLASSOMSE(ch.autograd.Function):
+    """
+    Computes the gradient of the negative population log likelihood for truncated regression
+    with known noise variance.
+    """
+    @staticmethod
+    def forward(ctx, pred, targ, phi, noise_var, model, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            noise_var (float): noise distribution variance parameter
+            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
+        # make num_samples copies of pred, N x B x 1
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
+        # add random noise to each copy
+        noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
+        # filter out copies where pred is in bounds
+        filtered = phi(noised)
+        # average across truncated indices
+        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
+        out = ((-.5 * noised.pow(2) + noised * pred) * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
+
+        ctx.save_for_backward(pred, targ, z)
+        ctx.model = model
+        return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        pred, targ, z = ctx.saved_tensors
+        model = ctx.model
+        import pdb; pdb.set_trace()
+        return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None

@@ -209,7 +209,6 @@ class Trainer:
         loop_msg = 'Train' if is_train else 'Val'
         
         # if is_train, put model into train mode, else eval mode
-        # self.model = self.model.model.train() if is_train else self.model.model.eval()
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         
         # iterator
@@ -231,7 +230,6 @@ class Trainer:
             # if training loop, perform training step
             if is_train:
                 loss.backward()
-                # import pdb; pdb.set_trace()
                 self.model.optimizer.step()
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             

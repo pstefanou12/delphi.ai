@@ -147,6 +147,7 @@ class Left_Distribution(oracle):
     def __str__(self): 
         return 'left'
 
+
 class Right_Regression(oracle):
     """
     Right Regression Truncation.
@@ -164,6 +165,7 @@ class Right_Regression(oracle):
 
     def __str__(self): 
         return 'right'
+
 
 class Right_Distribution(oracle):
     """
@@ -347,6 +349,7 @@ class TruncateLogit(oracle):
 
     def __call__(self, x):
         return x.argmax(-1, keepdim=True) != self.logit
+
    
 class RandomTruncation(oracle): 
     def __init__(self, threshold): 
@@ -356,6 +359,7 @@ class RandomTruncation(oracle):
         if x.dim() == 3: 
             return ch.rand(x.size(0), x.size(1), 1) > self.threshold
         return ch.rand(x.size(0)) > self.threshold
+
 
 class LogitBallComplement(oracle): 
     

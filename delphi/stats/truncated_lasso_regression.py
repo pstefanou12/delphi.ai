@@ -13,6 +13,7 @@ from ..trainer import Trainer
 from .truncated_linear_regression import KnownVariance, UnknownVariance
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
+from ..grad import TruncatedLASSOMSE
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_LASSO_DEFAULTS
 
 
@@ -75,7 +76,9 @@ class TruncatedLassoRegression(stats):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
-
+        # add one feature to x when fitting intercept
+        if self.args.fit_intercept:
+            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
         if self.args.noise_var is None:
             self.trunc_lasso = LassoUnknownVariance(self.args, self.train_loader_) 
@@ -87,12 +90,11 @@ class TruncatedLassoRegression(stats):
         trainer.train_model((self.train_loader_, self.val_loader_))
 
         # assign results from procedure to instance variables
-        self.coef = self.trunc_lasso.model.weight.clone()
-        if self.args.fit_intercept: self.intercept = self.trunc_lasso.model.bias.clone()
-        if self.args.noise_var is None: 
-            self.variance = self.trunc_lasso.lambda_.clone().inverse()
-            self.coef *= self.variance
-            if self.args.fit_intercept: self.intercept *= self.variance.flatten()
+        if self.args.fit_intercept: 
+            self.coef = self.trunc_lasso.model.data[:-1]
+            self.intercept = self.trunc_lasso.model.data[-1]
+        else: 
+            self.coef = self.trunc_lasso.model.data[:]
         return self
 
     def predict(self, x: Tensor): 
@@ -143,11 +145,21 @@ class LassoKnownVariance(KnownVariance):
         
     def calc_emp_model(self):
         # calculate empirical estimates
-        self.emp_model = LassoCV(fit_intercept=self.args.fit_intercept, alphas=[self.args.l1]).fit(self.X, self.y.flatten())
-        self.emp_weight = Tensor(self.emp_model.coef_)[None,...]
-        if self.args.fit_intercept:
-            self.emp_bias = Tensor([self.emp_model.intercept_])
+        self.emp_model = LassoCV(fit_intercept=False, alphas=[self.args.l1]).fit(self.X, self.y.flatten())
+        self.emp_weight = Tensor(self.emp_model.coef_)[None,...].T
         self.noise_var = ch.var(Tensor(self.emp_model.predict(self.X))[...,None] - self.y, dim=0)[..., None]
+
+    def __call__(self, batch): 
+        """
+        Calculates the negative log likelihood of the current regression estimates of the validation set.
+        Args: 
+            proc (bool) : boolean indicating whether, the function is being called within 
+            a stochastic process, or someone is accessing the parent class"s property
+        """
+        X, y = batch
+        pred = X@self.model
+        loss = TruncatedLASSOMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.model, self.args.num_samples, self.args.eps)
+        return [loss, None, None]
 
 
 class LassoUnknownVariance(UnknownVariance):

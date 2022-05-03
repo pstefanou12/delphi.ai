@@ -172,15 +172,6 @@ class KnownVariance(LinearModel):
         self.X, self.y = train_loader.dataset[:]
         self.base_radius = (7.0 + 4.0 * math.log(2.0 / self.args.alpha))
         
-    #def pretrain_hook(self):
-    #    # use OLS as empirical estimate to define projection set
-    #    self.radius = self.args.r * self.base_radius
-    #    # empirical estimates for projection set
-    #    self.model.data = self.emp_weight.T
-    #    # assign empirical estimates
-    #    self.model.requires_grad = True
-    #    self.params = [self.model]
-
     def __call__(self, batch): 
         """
         Calculates the negative log likelihood of the current regression estimates of the validation set.
@@ -194,28 +185,6 @@ class KnownVariance(LinearModel):
         loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
         return [loss, None, None]
         
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        """
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : "train" or "val"; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
-        """
-        """
-        if self.args.fit_intercept: 
-            temp_w = ch.cat([self.model.weight.flatten(), self.model.bias])
-            w_diff = temp_w - self.w
-            w_diff = w_diff[None, ...].renorm(p=2, dim=0, maxnorm=self.radius)
-            self.model.weight.data, self.model.bias.data = self.emp_weight + w_diff[:,:-1], self.emp_bias + w_diff[:,-1]
-        else: 
-            w_diff = self.model.weight - self.w
-            w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
-            self.model.weight.data = self.emp_weight + w_diff 
-        """
-
     def regularize(self, batch):
         """
         L1 regularizer for LASSO regression.
@@ -238,23 +207,6 @@ class UnknownVariance(KnownVariance):
         """
         super().__init__(args, train_loader, d)
         
-    #def pretrain_hook(self):
-        ## use OLS as empirical estimate to define projection set
-        #self.radius = self.args.r * self.base_radius
-        
-        ## empirical estimates for projection set
-        #self.model.data = self.emp_weight.T
-        ## assign empirical estimates
-        #self.model.requires_grad = True
-
-        ## generate noise variance radius bounds if unknown 
-        #self.var_bounds = Bounds(float(self.emp_var.flatten() / self.args.r), float(self.emp_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
-        ## assign empirical estimates
-        #self.lambda_.requires_grad = True 
-        #self.lambda_.data = self.emp_var.inverse()
-        #self.params = [{"params": [self.model]},
-            #{"params": self.lambda_, "lr": self.args.var_lr}]
-    
     def __call__(self, batch):
         """
         Training step for defined model.
@@ -277,29 +229,7 @@ class UnknownVariance(KnownVariance):
             prec5 (float) : accuracy for top-5 predictions
         """
         var = self.lambda_.inverse()
-        if var < 0: 
-            print('noise variance is no longer positive!!!!')
         # project model parameters back to domain 
         var = self.lambda_.inverse()
         # weight = self.model * var
         self.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
-        """        
-        if self.args.fit_intercept: 
-            bias = (self.model.bias * var).flatten()
-            temp_w = ch.cat([weight, bias])
-            w_diff = temp_w - self.w
-            w_diff = w_diff[None, ...].renorm(p=2, dim=0, maxnorm=self.radius)
-            self.model.weight.data, self.model.bias.data = (self.emp_weight + w_diff[:,:-1]) * self.lambda_.inverse(), self.emp_bias + w_diff[:,-1] * self.lambda_.inverse()
-        else:
-        """ 
-        """
-        var = self.lambda_.inverse()
-        weight = self.model * var
-        w_diff = weight - self.emp_weight
-        w_diff = w_diff.renorm(p=2, dim=0, maxnorm=self.radius)
-
-        self.model.data.fill_(0)
-        self.model.data += (self.emp_weight + w_diff) * var
-        if (self.model.data != weight).any(): 
-            import pdb; pdb.set_trace()
-        """ 
