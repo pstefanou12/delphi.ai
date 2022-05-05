@@ -85,3 +85,6 @@ class SoftmaxModel(LinearModel):
     
     def calc_logits(self, inp): 
         return inp@self.model
+
+    def post_training_hook(self):
+        self.model.requires_grad = False

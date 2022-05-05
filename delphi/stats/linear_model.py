@@ -88,5 +88,4 @@ class LinearModel(delphi.delphi):
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         self.model.requires_grad = False
-
         self.lambda_.requires_grad = False
