@@ -174,6 +174,10 @@ class ResNet(delphi):
         """
         self.model = self.model.to(device)
 
+    @property 
+    def parameters(self): 
+        import pdb; pdb.set_trace()
+
 
 resnet50 = ResNet50
 # resnet18 = ResNet18
