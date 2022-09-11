@@ -385,7 +385,7 @@ class AttackerModel(delphi):
         # regularizer 
         self.reg_term = 0.0
         if has_attr(self.args, "regularizer") and isinstance(model, ch.nn.Module):
-            self.reg_term = args.regularizer(self.model, inp, targ)
+            self.reg_term = self.args.regularizer(self.model, inp, targ)
 
         # calculate loss and regularize
         loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
@@ -403,7 +403,7 @@ class AttackerModel(delphi):
         # calculate accuracy metrics
         maxk = min(5, model_logits.shape[-1])
         if has_attr(self.args, "custom_accuracy"):
-            prec1, prec5 = args.custom_accuracy(model_logits, targ)
+            prec1, prec5 = self.args.custom_accuracy(model_logits, targ)
         else:
             prec1, prec5 = accuracy(model_logits, targ, topk=(1, maxk))
             prec1, prec5 = prec1[0], prec5[0]
