@@ -175,6 +175,11 @@ class ResNet(delphi):
         """
         self.model = self.model.to(device)
 
+    @property
+    def parameters(self): 
+        print("CALLING PROPERTY INSIDE RESNET INSTEAD!!!")
+        return self.model.parameters()
+
 
 resnet50 = ResNet50
 # resnet18 = ResNet18
