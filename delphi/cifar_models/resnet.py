@@ -8,7 +8,10 @@ Reference:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from ..utils.helpers import SequentialWithArgs, FakeReLU
+from ..delphi import delphi
+from ..utils.helpers import Parameters, accuracy
 
 
 class BasicBlock(nn.Module):
@@ -69,10 +72,10 @@ class Bottleneck(nn.Module):
         return F.relu(out)
 
 
-class ResNet(nn.Module):
+class ResNet_(nn.Module):
     # feat_scale lets us deal with CelebA, other non-32x32 datasets
     def __init__(self, block, num_blocks, num_classes=10, feat_scale=1, wm=1):
-        super(ResNet, self).__init__()
+        super(ResNet_, self).__init__()
 
         widths = [64, 128, 256, 512]
         widths = [int(w * wm) for w in widths]
@@ -112,35 +115,59 @@ class ResNet(nn.Module):
 
 
 def ResNet18(**kwargs):
-    return ResNet(BasicBlock, [2,2,2,2], **kwargs)
+    return ResNet_(BasicBlock, [2,2,2,2], **kwargs)
 
 
 def ResNet18Wide(**kwargs):
-    return ResNet(BasicBlock, [2,2,2,2], wm=5, **kwargs)
+    return ResNet_(BasicBlock, [2,2,2,2], wm=5, **kwargs)
 
 
 def ResNet18Thin(**kwargs):
-    return ResNet(BasicBlock, [2,2,2,2], wd=.75, **kwargs)
+    return ResNet_(BasicBlock, [2,2,2,2], wd=.75, **kwargs)
 
 
 def ResNet34(**kwargs):
-    return ResNet(BasicBlock, [3,4,6,3], **kwargs)
+    return ResNet_(BasicBlock, [3,4,6,3], **kwargs)
 
 
 def ResNet50(**kwargs):
-    return ResNet(Bottleneck, [3,4,6,3], **kwargs)
+    return ResNet_(Bottleneck, [3,4,6,3], **kwargs)
 
 
 def ResNet101(**kwargs):
-    return ResNet(Bottleneck, [3,4,23,3], **kwargs)
+    return ResNet_(Bottleneck, [3,4,23,3], **kwargs)
 
 
 def ResNet152(**kwargs):
-    return ResNet(Bottleneck, [3,8,36,3], **kwargs)
+    return ResNet_(Bottleneck, [3,8,36,3], **kwargs)
+
+
+class ResNet(delphi):
+    def __init__(self, 
+                args: Parameters):
+        super().__init__(args)
+        self.model = ResNet18()
+        self.loss =  nn.CrossEntropyLoss()
+
+
+    def __call__(self, batch):
+        inp, targ = batch
+        pred = self.model(inp)
+        loss = self.loss(pred, targ)
+
+        # calculate precision accuracies
+        prec1, prec5 = None, None
+        if pred.size(1) >= 5:
+            prec1, prec5 = accuracy(pred, targ, topk=(1, 5))
+        else:
+            prec1, = accuracy(pred, targ, topk=(1,)) 
+
+        return loss, prec1, prec5
 
 
 resnet50 = ResNet50
-resnet18 = ResNet18
+# resnet18 = ResNet18
+resnet18 = ResNet
 resnet34 = ResNet34
 resnet101 = ResNet101
 resnet152 = ResNet152
