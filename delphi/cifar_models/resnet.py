@@ -147,7 +147,6 @@ class ResNet(delphi):
                 args: Parameters):
         super().__init__(args)
         self.model = ResNet18()
-        import pdb; pdb.set_trace()
         self.params = self.model.parameters()
         self.loss =  nn.CrossEntropyLoss()
 
