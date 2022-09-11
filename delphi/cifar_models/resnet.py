@@ -147,6 +147,7 @@ class ResNet(delphi):
                 args: Parameters):
         super().__init__(args)
         self.model = ResNet18()
+        self.params = self.model.parameters()
         self.loss =  nn.CrossEntropyLoss()
 
 
@@ -173,10 +174,6 @@ class ResNet(delphi):
             :param device: string that says the device to put on.
         """
         self.model = self.model.to(device)
-
-    @property 
-    def parameters(self): 
-        import pdb; pdb.set_trace()
 
 
 resnet50 = ResNet50

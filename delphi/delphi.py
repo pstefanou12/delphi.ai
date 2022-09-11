@@ -217,7 +217,8 @@ class delphi:
         self._model = model
     
     @property
-    def parameters(self): 
+    def parameters(self):
+        import pdb; pdb.set_trace() 
         if self.params: 
             return self.params 
         return self.model.parameters()
