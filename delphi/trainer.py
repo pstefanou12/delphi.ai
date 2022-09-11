@@ -225,7 +225,7 @@ class Trainer:
             if prec5 is not None: prec5_.update(prec5)
             # regularize
             reg_term = self.model.regularize(batch)
-            if self.args.cuda():
+            if self.args.cuda:
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
 
