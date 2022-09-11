@@ -152,6 +152,8 @@ class ResNet(delphi):
 
     def __call__(self, batch):
         inp, targ = batch
+        inp = inp.cuda()
+        targ = targ.cuda()
         pred = self.model(inp)
         loss = self.loss(pred, targ)
 

@@ -97,6 +97,8 @@ class delphi:
         for SGD procedure. 
         """
         if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
+        # if cuda parameter provided, place model on GPU
+        if self.args.cuda: self._model.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
         self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
