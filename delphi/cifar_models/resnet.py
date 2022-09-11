@@ -176,7 +176,6 @@ class ResNet(delphi):
 
     @property
     def parameters(self): 
-        print("CALLING PROPERTY INSIDE RESNET INSTEAD!!!")
         return self.model.parameters()
 
 
