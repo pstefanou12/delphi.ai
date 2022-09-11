@@ -297,9 +297,6 @@ class AttackerModel(delphi):
             sd = self.checkpoint[state_dict_path]
             self.model.load_state_dict(sd)
  
-        # put AttackerModel on GPU
-        self.model = self.model.cuda() 
-
         # run model in parallel model
         assert not hasattr(self.model, "module"), "model is already in DataParallel."
         if self.parallel and next(self.model.parameters()).is_cuda:
