@@ -235,12 +235,19 @@ class CIFAR(DataSet):
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
         super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path=data_path, **ds_kwargs)
 
-    def get_model(self, arch, pretrained):
+    # def get_model(self, arch, pretrained):
+        # """
+        # """
+        # if pretrained:
+            # raise ValueError('CIFAR does not support pytorch_pretrained=True')
+        # return cifar_models.__dict__[arch](num_classes=self.num_classes)
+
+    def get_model(self, arch, pretrained, args):
         """
         """
         if pretrained:
             raise ValueError('CIFAR does not support pytorch_pretrained=True')
-        return cifar_models.__dict__[arch](num_classes=self.num_classes)
+        return cifar_models.__dict__[arch](args)
 
 
 class ImageNet(DataSet):
