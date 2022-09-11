@@ -225,6 +225,7 @@ class Trainer:
             if prec5 is not None: prec5_.update(prec5)
             # regularize
             reg_term = self.model.regularize(batch)
+            import pdb; pdb.set_trace()
             loss = loss + reg_term
 
             # if training loop, perform training step
