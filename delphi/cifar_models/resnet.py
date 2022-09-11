@@ -166,6 +166,14 @@ class ResNet(delphi):
 
         return loss, prec1, prec5
 
+    def to(self, device): 
+        """
+        Wrapper method to put DNN onto a specific device GPU/CPU.
+        Args: 
+            :param device: string that says the device to put on.
+        """
+        self.model = self.model.to(device)
+
 
 resnet50 = ResNet50
 # resnet18 = ResNet18
