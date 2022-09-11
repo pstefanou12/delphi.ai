@@ -302,7 +302,7 @@ class AttackerModel(delphi):
         if self.parallel and next(self.model.parameters()).is_cuda:
             self.model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
-    def __call__(self, inp, target=None, make_adv=False, with_latent=False,
+    def __call__(self, inp, target=None, with_latent=False,
                 fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
         """
         Main function for running inference and generating adversarial
@@ -333,7 +333,7 @@ class AttackerModel(delphi):
                 (even if :samp:`make_adv == True`).
         """
         import pdb; pdb.set_trace()
-        if make_adv:
+        if self.args.adv:
             assert target is not None
             prev_training = bool(self.training)
             self.eval()
