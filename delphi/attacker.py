@@ -280,8 +280,7 @@ class AttackerModel(delphi):
     :doc:`our detailed walkthrough <../example_usage/input_space_manipulation>`.
     """
     def __init__(self, args, model, dataset, checkpoint = None, store=None, parallel=False, dp_device_ids=None, update_params=None):
-        import pdb; pdb.set_trace()
-        super().__init__(args, store)
+        super().__init__(args)
         self.model = model
         self.checkpoint = checkpoint
         self.parallel = parallel 
