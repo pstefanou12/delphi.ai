@@ -150,7 +150,6 @@ class ResNet(delphi):
         self.params = self.model.parameters()
         self.loss =  nn.CrossEntropyLoss()
 
-
     def __call__(self, batch):
         inp, targ = batch
         inp = inp.cuda()

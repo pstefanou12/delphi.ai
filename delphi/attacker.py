@@ -503,3 +503,7 @@ class AttackerModel(delphi):
 
     def post_train_hook(self):
         pass
+
+    @property
+    def parameters(self): 
+        return self.model.parameters
