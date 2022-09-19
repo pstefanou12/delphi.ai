@@ -159,6 +159,13 @@ class delphi:
         '''
         pass 
 
+    def pre_step_hook(self) -> None: 
+        '''
+        Hook called after .backward call, but before taking a step 
+        with the optimizer. 
+        ''' 
+        pass
+
     def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch) -> None:
         '''
         Iteration hook for defined model. Method is called after each 

@@ -233,6 +233,8 @@ class Trainer:
             if is_train:
                 loss.backward()
 
+                self.model.pre_step_hook()
+
                 self.model.optimizer.step()
                 if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
             
