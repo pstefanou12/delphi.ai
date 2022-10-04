@@ -180,7 +180,7 @@ class Trainer:
                 best_model, best_loss = copy.copy(self.model.model), val_loss 
         
         # inform user that SGD did not converge
-        if self.args.verbose and no_improvement_count <= self.args.n_iter_no_change: 
+        if self.args.early_stopping and self.args.verbose and no_improvement_count < self.args.n_iter_no_change: 
            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
         # set best model in delphi model object 
         self.model.model = best_model        
