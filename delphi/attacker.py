@@ -336,11 +336,12 @@ class AttackerModel(delphi):
         inp, target = batch
         if self.args.adv:
             assert target is not None
-            prev_training = bool(self.training)
-            self.eval()
+            # TODO: find a better way to do this --> inheritance weird here
+            prev_training = bool(self.model.model.training)
+            self.model.model.eval()
             adv = self.attacker(inp, target, **attacker_kwargs)
             if prev_training:
-                self.train()
+                self.model.model.train()
 
             inp = adv
 
