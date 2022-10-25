@@ -163,6 +163,7 @@ class Attacker(ch.nn.Module):
             Calculates the loss of an input with respect to target labels
             Uses custom loss (if provided) otherwise the criterion
             '''
+            import pdb; pdb.set_trace()
             if should_normalize:
                 inp = self.normalize(inp)
             output = self.model(inp)
@@ -173,7 +174,6 @@ class Attacker(ch.nn.Module):
 
         # Main function for making adversarial examples
         def get_adv_examples(x):
-            import pdb; pdb.set_trace()
             # Random start (to escape certain types of gradient masking)
             if random_start:
                 x = step.random_perturb(x)
