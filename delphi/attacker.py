@@ -341,8 +341,8 @@ class AttackerModel(delphi):
                 'step_size': self.args.attack_lr,
                 'iterations': self.args.attack_steps,
                 'random_start': self.args.random_start,
-                'custom_loss': self.adv_criterion,
-                'random_restarts': self.random_restarts,
+#                'custom_loss': self.adv_criterion,
+                'random_restarts': self.args.random_restarts,
                 'use_best': bool(self.args.use_best)
             }
             assert target is not None
