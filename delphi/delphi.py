@@ -39,7 +39,7 @@ DEFAULTS = {
 }
 
 
-class delphi(ch.nn.Module):
+class delphi:
     '''
     Parent/abstract class for models to be passed into trainer.
     '''
