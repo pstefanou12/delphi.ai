@@ -247,7 +247,7 @@ class CIFAR(DataSet):
         """
         if pretrained:
             raise ValueError('CIFAR does not support pytorch_pretrained=True')
-        return cifar_models.__dict__[arch](args)
+        return cifar_models.__dict__[arch](num_classes=self.num_classes)
 
 
 class ImageNet(DataSet):
