@@ -335,6 +335,16 @@ class AttackerModel(delphi):
         import pdb; pdb.set_trace()
         inp, target = batch
         if self.args.adv:
+            attacker_kwargs = {
+                'constraint': self.args.constraint,
+                'eps': self.eps,
+                'step_size': self.args.attack_lr,
+                'iterations': self.args.attack_steps,
+                'random_start': self.args.random_start,
+                'custom_loss': self.adv_criterion,
+                'random_restarts': self.random_restarts,
+                'use_best': bool(self.args.use_best)
+            }
             assert target is not None
             # TODO: find a better way to do this --> inheritance weird here
             prev_training = bool(self.model.model.training)
