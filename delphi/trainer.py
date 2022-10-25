@@ -4,6 +4,8 @@ General training format for training models with SGD/backprop.
 
 import time
 import torch as ch
+from torch.optim import SGD, Adam, lr_scheduler
+import numpy as np
 import cox
 from cox.store import Store
 from time import time
@@ -25,6 +27,14 @@ EVAL_LOGS_SCHEMA = {
     'test_loss':float,
     'time':float
 }
+
+# CONSTANTS 
+BY_ALG = 'by algorithm'  # default parameter depends on algorithm
+ADAM = 'adam'
+CYCLIC = 'cyclic'
+COSINE = 'cosine'
+LINEAR = 'linear'
+# default parameters for 
 
 
 class Trainer: 
@@ -52,13 +62,69 @@ class Trainer:
         # keep track of the best model based off the best nll
         best_loss, best_model = None, None
 
+        self.optimizer, self.schedule = None, None
+
+        self._model = self.model.model
+
         # check and fill trainer hyperparameters
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         assert store is None or isinstance(store, cox.store.Store), "provided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
         
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
-        self.store = store 
+        self.store = store
+
+    def make_optimizer_and_schedule(self):
+        """
+        Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
+        for SGD procedure. 
+        """
+        if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
+        # if cuda parameter provided, place model on GPU
+        if self.args.cuda: self._model.to('cuda')
+        # initialize optimizer, scheduler, and then get parameters
+        # default SGD optimizer
+        self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        if self.args.custom_lr_multiplier == ADAM:  # adam
+            self.optimizer = Adam(self.parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
+        elif not self.args.constant: 
+            # setup learning rate scheduler
+            if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
+                lr_func = lambda t: np.interp([t], [0, self.M*4//15, self.M], [0, 1, 0])[0]
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
+            # cosine annealing scheduler
+            elif self.args.custom_lr_multiplier == COSINE and self.M is not None:
+                schedule = lr_scheduler.CosineAnnealingLR(self.optimizer, self.M)
+            elif self.args.custom_lr_multiplier:
+                cs = self.args.custom_lr_multiplier
+                periods = eval(cs) if type(cs) is str else cs
+                # constant linear interpolation
+                if self.args.lr_interpolation == LINEAR:
+                    lr_func = lambda t: np.interp([t], *zip(*periods))[0]
+                # custom lr interpolation
+                else:
+                    def lr_func(ep):
+                        for (milestone, lr) in reversed(periods):
+                            if ep >= milestone: return lr
+                        return 1.0
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
+            # step learning rate
+            elif self.args.step_lr:
+                self.schedule = lr_scheduler.StepLR(self.optimizer, step_size=self.args.step_lr, 
+                gamma=self.args.step_lr_gamma)
+            
+        # if checkpoint load  optimizer and scheduler
+        if self.checkpoint:
+            self.optimizer.load_state_dict(self.checkpoint['optimizer'])
+            try:
+                schedule.load_state_dict(self.checkpoint['schedule'])
+            # if can't load scheduler state, take epoch steps
+            except:
+                steps_to_take = self.checkpoint['epoch']
+                print('Could not load schedule (was probably LambdaLR).'
+                    f' Stepping {steps_to_take} times instead...')
+                for i in range(steps_to_take):
+                    self.schedule.step() 
         
     def eval_model(self, loader):
         """
@@ -126,7 +192,7 @@ class Trainer:
             self.model.pretrain_hook()
             
             # make optimizer and scheduler for training neural network
-            self.model.make_optimizer_and_schedule()
+            self.make_optimizer_and_schedule()
             
             if self.model.checkpoint:
                 epoch = self.model.checkpoint['epoch']
