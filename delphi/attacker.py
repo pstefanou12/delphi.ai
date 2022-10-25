@@ -337,7 +337,7 @@ class AttackerModel(delphi):
         if self.args.adv:
             attacker_kwargs = {
                 'constraint': self.args.constraint,
-                'eps': self.eps,
+                'eps': self.args.eps,
                 'step_size': self.args.attack_lr,
                 'iterations': self.args.attack_steps,
                 'random_start': self.args.random_start,
