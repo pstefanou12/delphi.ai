@@ -145,7 +145,6 @@ class Attacker(ch.nn.Module):
             from the unit ball, and then use :math:`\delta_{N/2+i} =
             -\delta_{i}`.
         """
-        import pdb; pdb.set_trace()
         # Can provide a different input to make the feasible set around
         # instead of the initial point
         if orig_input is None: orig_input = x.detach()
@@ -174,6 +173,7 @@ class Attacker(ch.nn.Module):
 
         # Main function for making adversarial examples
         def get_adv_examples(x):
+            import pdb; pdb.set_trace()
             # Random start (to escape certain types of gradient masking)
             if random_start:
                 x = step.random_perturb(x)
