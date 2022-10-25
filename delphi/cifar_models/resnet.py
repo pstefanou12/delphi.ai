@@ -142,46 +142,58 @@ def ResNet152(**kwargs):
     return ResNet_(Bottleneck, [3,8,36,3], **kwargs)
 
 
-class ResNet(delphi):
-    def __init__(self, 
-                args: Parameters):
-        super().__init__(args)
-        self.model = ResNet18()
-        self.params = self.model.parameters()
-        self.loss =  nn.CrossEntropyLoss()
+# class ResNet(delphi):
+    # def __init__(self, 
+                # args: Parameters, 
+                # block, num_blocks, num_classes=10, feat_scale=1, wm=1):
+        # super().__init__(args)
+        # self.model = ResNet18()
+        # self.params = self.model.parameters()
+        # self.loss =  nn.CrossEntropyLoss()
 
-    def __call__(self, batch):
-        inp, targ = batch
-        inp = inp.cuda()
-        targ = targ.cuda()
-        pred = self.model(inp)
-        loss = self.loss(pred, targ)
+        # widths = [64, 128, 256, 512]
+        # widths = [int(w * wm) for w in widths]
 
-        # calculate precision accuracies
-        prec1, prec5 = None, None
-        if pred.size(1) >= 5:
-            prec1, prec5 = accuracy(pred, targ, topk=(1, 5))
-        else:
-            prec1, = accuracy(pred, targ, topk=(1,)) 
+        # self.in_planes = widths[0]
+        # self.conv1 = nn.Conv2d(3, self.in_planes, kernel_size=3, stride=1,
+                            #    padding=1, bias=False)
+        # self.bn1 = nn.BatchNorm2d(self.in_planes)
+        # self.layer1 = self._make_layer(block, widths[0], num_blocks[0], stride=1)
+        # self.layer2 = self._make_layer(block, widths[1], num_blocks[1], stride=2)
+        # self.layer3 = self._make_layer(block, widths[2], num_blocks[2], stride=2)
+        # self.layer4 = self._make_layer(block, widths[3], num_blocks[3], stride=2)
+        # self.linear = nn.Linear(feat_scale*widths[3]*block.expansion, num_classes)
+    
+    # def __call__(self, x, with_latent=False, fake_relu=False, no_relu=False):
+        # assert (not no_relu),  \
+            # "no_relu not yet supported for this architecture"
+        # out = F.relu(self.bn1(self.conv1(x)))
+        # out = self.layer1(out)
+        # out = self.layer2(out)
+        # out = self.layer3(out)
+        # out = self.layer4(out, fake_relu=fake_relu)
+        # out = F.avg_pool2d(out, 4)
+        # pre_out = out.view(out.size(0), -1)
+        # final = self.linear(pre_out)
+        # if with_latent:
+            # return final, pre_out
+        # return final
 
-        return loss, prec1, prec5
+    # def to(self, device): 
+        # """
+        # Wrapper method to put DNN onto a specific device GPU/CPU.
+        # Args: 
+            # :param device: string that says the device to put on.
+        # """
+        # self.model = self.model.to(device)
 
-    def to(self, device): 
-        """
-        Wrapper method to put DNN onto a specific device GPU/CPU.
-        Args: 
-            :param device: string that says the device to put on.
-        """
-        self.model = self.model.to(device)
-
-    @property
-    def parameters(self): 
-        return self.model.parameters()
+    # @property
+    # def parameters(self): 
+        # return self.model.parameters()
 
 
 resnet50 = ResNet50
-# resnet18 = ResNet18
-resnet18 = ResNet
+resnet18 = ResNet18
 resnet34 = ResNet34
 resnet101 = ResNet101
 resnet152 = ResNet152
