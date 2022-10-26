@@ -199,8 +199,7 @@ class Attacker(ch.nn.Module):
 
             # PGD iterates
             for _ in iterator:
-                x = x.clone().detach().requires_grad_(True)
-                import pdb; pdb.set_trace()
+                x = x.clone().detach().requires_grad_(True).cuda()
                 losses, out = calc_loss(step.to_image(x), target)
                 assert losses.shape[0] == x.shape[0], \
                         'Shape of losses must match input!'
