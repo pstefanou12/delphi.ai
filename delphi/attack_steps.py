@@ -89,7 +89,7 @@ class LinfStep(AttackerStep):
     def project(self, x):
         """
         """
-        import pdb; pdb.set_trace()
+        if self.orig_input.is_cuda: x = x.cuda()
         diff = x - self.orig_input
         diff = ch.clamp(diff, -self.eps, self.eps)
         return ch.clamp(diff + self.orig_input, 0, 1)
