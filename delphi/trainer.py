@@ -74,19 +74,24 @@ class Trainer:
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store
 
-    def make_optimizer_and_schedule(self):
+    def make_optimizer_and_schedule(self, model: delphi):
         """
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
         for SGD procedure. 
+        """
+        
+        """
+        TODO: change this
         """
         if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
         # if cuda parameter provided, place model on GPU
         if self.args.cuda: self._model.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
-        self.optimizer = SGD(self.parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        parameters = model.parameters
+        self.optimizer = SGD(parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
-            self.optimizer = Adam(self.parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
+            self.optimizer = Adam(parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
         elif not self.args.constant: 
             # setup learning rate scheduler
             if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
@@ -192,7 +197,7 @@ class Trainer:
             self.model.pretrain_hook()
             
             # make optimizer and scheduler for training neural network
-            self.make_optimizer_and_schedule()
+            self.make_optimizer_and_schedule(self.model)
             
             if self.model.checkpoint:
                 epoch = self.model.checkpoint['epoch']
