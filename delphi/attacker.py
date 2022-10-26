@@ -163,7 +163,7 @@ class Attacker(ch.nn.Module):
             Calculates the loss of an input with respect to target labels
             Uses custom loss (if provided) otherwise the criterion
             '''
-            import pdb; pdb.set_trace()
+            import pdb; pdb.set_trae()
             if should_normalize:
                 inp = self.normalize(inp)
             output = self.model(inp)
@@ -201,6 +201,7 @@ class Attacker(ch.nn.Module):
             # PGD iterates
             for _ in iterator:
                 x = x.clone().detach().requires_grad_(True)
+                import pdb; pdb.set_trace()
                 losses, out = calc_loss(step.to_image(x), target)
                 assert losses.shape[0] == x.shape[0], \
                         'Shape of losses must match input!'
