@@ -348,6 +348,7 @@ class AttackerModel(delphi):
             assert target is not None
             # TODO: find a better way to do this --> inheritance weird here
             prev_training = bool(self.model.model.training)
+            import pdb; pdb.set_trace()
             self.model.model.eval()
             adv = self.attacker(inp, target, **attacker_kwargs)
             if prev_training:
