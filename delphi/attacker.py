@@ -165,6 +165,8 @@ class Attacker(ch.nn.Module):
             '''
             if should_normalize:
                 inp = self.normalize(inp)
+            
+            if next(self.model.parameters()).is_cuda: inp = inp.cuda() 
             output = self.model(inp)
             if custom_loss:
                 return custom_loss(self.model, inp, target)
@@ -199,7 +201,7 @@ class Attacker(ch.nn.Module):
 
             # PGD iterates
             for _ in iterator:
-                x = x.clone().detach().requires_grad_(True).cuda()
+                x = x.clone().detach().requires_grad_(True)
                 losses, out = calc_loss(step.to_image(x), target)
                 assert losses.shape[0] == x.shape[0], \
                         'Shape of losses must match input!'
