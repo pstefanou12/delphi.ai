@@ -171,6 +171,7 @@ class Attacker(ch.nn.Module):
             if custom_loss:
                 return custom_loss(self.model, inp, target)
 
+            import pdb; pdb.set_trace()
             return criterion(output, target), output
 
         # Main function for making adversarial examples
