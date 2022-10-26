@@ -198,7 +198,7 @@ class Trainer:
             self.model.pretrain_hook()
             
             # make optimizer and scheduler for training neural network
-            self.make_optimizer_and_schedule(self.model)
+            self.make_optimizer_and_schedule()
             
             if self.model.checkpoint:
                 epoch = self.model.checkpoint['epoch']
