@@ -74,7 +74,7 @@ class Trainer:
         assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store
 
-    def make_optimizer_and_schedule(self, model: delphi):
+    def make_optimizer_and_schedule(self):
         """
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
         for SGD procedure. 
@@ -88,7 +88,8 @@ class Trainer:
         if self.args.cuda: self._model.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
-        parameters = model.parameters
+        import pdb; pdb.set_trace() 
+        parameters = self.model.parameters()
         self.optimizer = SGD(parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
             self.optimizer = Adam(parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
