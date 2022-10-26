@@ -89,6 +89,7 @@ class LinfStep(AttackerStep):
     def project(self, x):
         """
         """
+        import pdb; pdb.set_trace()
         diff = x - self.orig_input
         diff = ch.clamp(diff, -self.eps, self.eps)
         return ch.clamp(diff + self.orig_input, 0, 1)
@@ -96,7 +97,6 @@ class LinfStep(AttackerStep):
     def step(self, x, g):
         """
         """
-        import pdb; pdb.set_trace()
         step = ch.sign(g) * self.step_size
         return x + step
 
