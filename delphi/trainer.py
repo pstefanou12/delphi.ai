@@ -119,13 +119,13 @@ class Trainer:
                 gamma=self.args.step_lr_gamma)
             
         # if checkpoint load  optimizer and scheduler
-        if self.checkpoint:
-            self.optimizer.load_state_dict(self.checkpoint['optimizer'])
+        if self.model.checkpoint:
+            self.optimizer.load_state_dict(self.model.checkpoint['optimizer'])
             try:
-                schedule.load_state_dict(self.checkpoint['schedule'])
+                schedule.load_state_dict(self.model.checkpoint['schedule'])
             # if can't load scheduler state, take epoch steps
             except:
-                steps_to_take = self.checkpoint['epoch']
+                steps_to_take = self.model.checkpoint['epoch']
                 print('Could not load schedule (was probably LambdaLR).'
                     f' Stepping {steps_to_take} times instead...')
                 for i in range(steps_to_take):
