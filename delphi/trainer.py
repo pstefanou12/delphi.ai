@@ -88,7 +88,6 @@ class Trainer:
         if self.args.cuda: self._model.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
-        import pdb; pdb.set_trace() 
         parameters = self.model.parameters()
         self.optimizer = SGD(parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
