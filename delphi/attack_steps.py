@@ -96,6 +96,7 @@ class LinfStep(AttackerStep):
     def step(self, x, g):
         """
         """
+        import pdb; pdb.set_trace()
         step = ch.sign(g) * self.step_size
         return x + step
 
