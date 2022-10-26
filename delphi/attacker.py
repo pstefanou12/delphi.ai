@@ -163,7 +163,6 @@ class Attacker(ch.nn.Module):
             Calculates the loss of an input with respect to target labels
             Uses custom loss (if provided) otherwise the criterion
             '''
-            import pdb; pdb.set_trae()
             if should_normalize:
                 inp = self.normalize(inp)
             output = self.model(inp)
