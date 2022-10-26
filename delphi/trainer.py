@@ -285,7 +285,7 @@ class Trainer:
         # iterator
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose else enumerate(loader) 
         for i, batch in iterator:
-            self.model.optimizer.zero_grad()
+            self.optimizer.zero_grad()
             loss, prec1, prec5 = self.model(batch)
             
             if len(loss.shape) > 0: loss = loss.sum()
@@ -306,8 +306,8 @@ class Trainer:
 
                 self.model.pre_step_hook()
 
-                self.model.optimizer.step()
-                if self.model.schedule is not None and not self.model.args.epoch_step: self.model.schedule.step()
+                self.optimizer.step()
+                if self.schedule is not None and not self.model.args.epoch_step: self.schedule.step()
             
             # ITERATOR DESCRIPTION
             if self.args.verbose:
@@ -316,7 +316,7 @@ class Trainer:
  
             # ITERATION HOOK 
             self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
-        if self.model.schedule is not None and self.model.args.epoch_step: self.model.scheduler.step() 
+        if self.schedule is not None and self.model.args.epoch_step: self.scheduler.step() 
         # EPOCH HOOK
         self.model.epoch_hook(epoch, loop_type, loss, prec1, prec5)
 
