@@ -164,12 +164,11 @@ class Attacker(ch.nn.Module):
             Uses custom loss (if provided) otherwise the criterion
             '''
             if should_normalize:
-                inp = self.normalize(inp.cpu())
+                inp = self.normalize(inp)
             
-            if next(self.model.parameters()).is_cuda: inp, target = inp.cuda(), target.cuda()
-            output = self.model(inp)
+            output = self.model(inp.cuda())
             if custom_loss:
-                return custom_loss(self.model, inp, target)
+                return custom_loss(self.model, inp, target.cuda())
 
             return criterion(output, target), output
 
