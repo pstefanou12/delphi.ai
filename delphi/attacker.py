@@ -164,6 +164,7 @@ class Attacker(ch.nn.Module):
             Uses custom loss (if provided) otherwise the criterion
             '''
             if should_normalize:
+                import pdb; pdb.set_trace()
                 inp = self.normalize(inp)
             
             if next(self.model.parameters()).is_cuda: inp, target = inp.cuda(), target.cuda()
@@ -381,7 +382,6 @@ class AttackerModel(delphi):
     def step(self, batch, losses, top1, top5, is_train=False): 
         '''
         *INTERNAL FUNCTION* used for both train 
-        and validation steps. 
         '''
         # unpack input and target
         inp, targ = batch
