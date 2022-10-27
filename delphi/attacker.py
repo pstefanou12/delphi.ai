@@ -193,6 +193,7 @@ class Attacker(ch.nn.Module):
                     bx = x.clone().detach()
                     bloss = loss.clone().detach()
                 else:
+                    if x.is_cuda: import pdb; pdb.set_trace()
                     replace = m * bloss < m * loss
                     bx[replace] = x[replace].clone().detach()
                     bloss[replace] = loss[replace]
