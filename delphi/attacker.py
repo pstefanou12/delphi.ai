@@ -168,9 +168,9 @@ class Attacker(ch.nn.Module):
             
             output = self.model(inp.cuda())
             if custom_loss:
-                return custom_loss(self.model, inp, target.cuda())
+                return custom_loss(self.model, inp.cuda(), target.cuda())
 
-            return criterion(output, target), output
+            return criterion(output, target.cuda()), output
 
         # Main function for making adversarial examples
         def get_adv_examples(x):
