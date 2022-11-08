@@ -202,7 +202,8 @@ class delphi(ch.nn.Module):
         # if cuda parameter provided, place model on GPU
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
-        params = self.parameters if isinstance(self.parameters, list) else self.parameters.values()
+        # params = self.parameters if isinstance(self.parameters, list) else self.parameters.values()
+        params = self.named_parameters()
         if self.args.cuda: params.to('cuda')
         self.optimizer = SGD(params, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
