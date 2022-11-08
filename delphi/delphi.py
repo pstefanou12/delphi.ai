@@ -276,7 +276,7 @@ class delphi(ch.nn.Module):
             self.store['eval'].append_row(log_info)
         return log_info
 
-    def train_model(self):
+    def train_model(self, train_loader, val_loader):
         """
         Train model. 
         Args: 
@@ -285,7 +285,7 @@ class delphi(ch.nn.Module):
             Trained model
         """
         # check to make sure that the model's trainer has data in it
-        if len(self.train_loader_.dataset) == 0: 
+        if len(train_loader.dataset) == 0: 
             raise Exception('No Datapoints in Train Loader')
         
         if self.store is not None: 
@@ -320,13 +320,13 @@ class delphi(ch.nn.Module):
             # do training loops until performing enough gradient steps or epochs
             for epoch in range(1, self.args.epochs + 1):
                 # TRAIN LOOP
-                train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, self.train_loader_, epoch)
+                train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, train_loader, epoch)
 
                                 
                 # VALIDATION LOOP
                 if self.val_loader_ is not None:
                     with ch.no_grad():
-                        val_loss, val_prec1, val_prec5 = self.model_loop(VAL, self.val_loader_, epoch)
+                        val_loss, val_prec1, val_prec5 = self.model_loop(VAL, val_loader, epoch)
                     
                     if self.args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
 
@@ -433,7 +433,6 @@ class delphi(ch.nn.Module):
         self.epoch_hook(epoch, loop_type, loss)
 
         return loss_.avg, prec1_.avg, prec5_.avg
-
 
     @property
     def model(self): 
