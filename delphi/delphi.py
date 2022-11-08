@@ -200,6 +200,7 @@ class delphi(ch.nn.Module):
         TODO: change this
         """
         # if cuda parameter provided, place model on GPU
+        import pdb; pdb.set_trace()
         if self.args.cuda: self._parameters.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
