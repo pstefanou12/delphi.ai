@@ -14,7 +14,6 @@ import math
 from .linear_model import LinearModel
 from .stats import stats
 from ..grad import TruncatedBCE, TruncatedCE
-from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters, accuracy, logistic
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_LOG_REG_DEFAULTS

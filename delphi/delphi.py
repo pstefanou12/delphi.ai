@@ -12,9 +12,8 @@ from time import time
 from tqdm import tqdm
 import copy
 import warnings
-from typing import Any
+from typing import Any, Callable
 
-from .delphi import delphi
 from .utils.helpers import ckpt_at_epoch, AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, check_and_fill_args
 from .utils import constants as consts
@@ -64,7 +63,7 @@ class delphi(ch.nn.Module):
     '''
     Parent/abstract class for models to be passed into trainer.
     '''
-    def __init__(self, args: Parameters, store: Store=None): 
+    def __init__(self, args: Parameters, defaults: dict={}, store: Store=None, checkpoint=None): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
@@ -104,26 +103,28 @@ class delphi(ch.nn.Module):
                     attack, if False/0 use the last step
         '''
         super().__init__()
-        # check to make sure that hyperparameters arre valid
-        self.args = check_and_fill_args(args, DELPHI_DEFAULTS)
-        self.params = None
+        # update the default parameters
+        self.defaults = defaults
+        self.defaults.update(TRAINER_DEFAULTS)
+        self.defaults.update(DELPHI_DEFAULTS)
+        # check to make sure that hyperparameters are valid
+        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
+        self.args = check_and_fill_args(args, self.defaults)
         # algorithm optimizer and scheduler
-        self._model= None
+        self._model = None
 
         # keep track of the best model based off the best nll
-        best_loss, best_model = None, None
-
+        self.best_loss, self.best_model = None, None
         self.optimizer, self.schedule = None, None
 
-        self._model = self.model.model
-
-        # check and fill trainer hyperparameters
-        self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         assert store is None or isinstance(store, cox.store.Store), "provided store is type: {}. expecting logging store cox.store.Store".format(type(store))
         self.store = store 
         
-        assert store is None or isinstance(store, cox.store.Store), "prorvided store is type: {}. expecting logging store cox.store.Store".format(type(store))
-        self.store = store
+        assert checkpoint is None or isinstance(checkpoint, dict), "prorvided checkpoint is type: {}. expecting checkpoint dictionary".format(type(checkpoint))
+        self.checkpoint = checkpoint
+
+        self.criterion = ch.nn.CrossEntropyLoss()
+        self.criterion_params = []
 
     def pretrain_hook(self) -> None:
         '''
@@ -141,14 +142,14 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def pre_step_hook(self) -> None: 
+    def pre_step_hook(self, inp) -> None: 
         '''
         Hook called after .backward call, but before taking a step 
         with the optimizer. 
         ''' 
         pass
 
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch) -> None:
+    def iteration_hook(self, i, loop_type, loss, batch) -> None:
         '''
         Iteration hook for defined model. Method is called after each 
         training update.
@@ -160,7 +161,7 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def epoch_hook(self, i, loop_type, loss, prec1, prec5) -> None:
+    def epoch_hook(self, i, loop_type, loss) -> None:
         '''
         Epoch hook for defined model. Method is called after each 
         complete iteration through dataset.
@@ -189,8 +190,6 @@ class delphi(ch.nn.Module):
         '''
         return ch.zeros(1, 1)
 
-
-
     def make_optimizer_and_schedule(self):
         """
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
@@ -200,15 +199,14 @@ class delphi(ch.nn.Module):
         """
         TODO: change this
         """
-        if self.model is None and self.params is None: raise ValueError('need to inititalize model or self.params')
         # if cuda parameter provided, place model on GPU
-        if self.args.cuda: self._model.to('cuda')
+        if self.args.cuda: self._parameters.to('cuda')
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
-        parameters = self.model.parameters()
-        self.optimizer = SGD(parameters, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        params = self.parameters if isinstance(self.parameters, list) else self.parameters.values()
+        self.optimizer = SGD(params, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
-            self.optimizer = Adam(parameters, lr=self.args.lr, weight_decay=self.args.weight_decay)
+            self.optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
         elif not self.args.constant: 
             # setup learning rate scheduler
             if self.args.custom_lr_multiplier == CYCLIC and self.M is not None: # cyclic
@@ -236,13 +234,13 @@ class delphi(ch.nn.Module):
                 gamma=self.args.step_lr_gamma)
             
         # if checkpoint load  optimizer and scheduler
-        if self.model.checkpoint:
-            self.optimizer.load_state_dict(self.model.checkpoint['optimizer'])
+        if self.checkpoint:
+            self.optimizer.load_state_dict(self.checkpoint['optimizer'])
             try:
-                schedule.load_state_dict(self.model.checkpoint['schedule'])
+                schedule.load_state_dict(self.checkpoint['schedule'])
             # if can't load scheduler state, take epoch steps
             except:
-                steps_to_take = self.model.checkpoint['epoch']
+                steps_to_take = self.checkpoint['epoch']
                 print('Could not load schedule (was probably LambdaLR).'
                     f' Stepping {steps_to_take} times instead...')
                 for i in range(steps_to_take):
@@ -278,7 +276,7 @@ class delphi(ch.nn.Module):
             self.store['eval'].append_row(log_info)
         return log_info
 
-    def train_model(self, loaders):
+    def train_model(self):
         """
         Train model. 
         Args: 
@@ -286,9 +284,8 @@ class delphi(ch.nn.Module):
         Returns: 
             Trained model
         """
-        train_loader, val_loader = loaders
         # check to make sure that the model's trainer has data in it
-        if len(train_loader.dataset) == 0: 
+        if len(self.train_loader_.dataset) == 0: 
             raise Exception('No Datapoints in Train Loader')
         
         if self.store is not None: 
@@ -311,25 +308,25 @@ class delphi(ch.nn.Module):
             no_improvement_count = 0
 
             # PRETRAIN HOOK
-            self.model.pretrain_hook()
+            self.pretrain_hook()
             
             # make optimizer and scheduler for training neural network
             self.make_optimizer_and_schedule()
             
-            if self.model.checkpoint:
-                epoch = self.model.checkpoint['epoch']
-                best_prec1 = self.model.checkpoint['prec1'] if 'prec1' in self.model.checkpoint else self.model_loop(VAL, val_loader)[0]
+            if self.checkpoint:
+                epoch = self.checkpoint['epoch']
+                best_prec1 = self.checkpoint['prec1'] if 'prec1' in self.checkpoint else self.model_loop(VAL, self.val_loader_)[0]
         
             # do training loops until performing enough gradient steps or epochs
             for epoch in range(1, self.args.epochs + 1):
                 # TRAIN LOOP
-                train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, train_loader, epoch)
+                train_loss, train_prec1, train_prec5 = self.model_loop(TRAIN, self.train_loader_, epoch)
 
                                 
                 # VALIDATION LOOP
-                if val_loader is not None:
+                if self.val_loader_ is not None:
                     with ch.no_grad():
-                        val_loss, val_prec1, val_prec5 = self.model_loop(VAL, val_loader, epoch)
+                        val_loss, val_prec1, val_prec5 = self.model_loop(VAL, self.val_loader_, epoch)
                     
                     if self.args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
 
@@ -353,7 +350,7 @@ class delphi(ch.nn.Module):
                         no_improvement_count = 0
 
                     if best_model is None or val_loss < best_loss: 
-                        best_model, best_loss = self.model.model[:], val_loss
+                        best_model, best_loss = self._model[:], val_loss
 
                     # model convergence
                     if no_improvement_count >= self.args.n_iter_no_change:
@@ -362,18 +359,16 @@ class delphi(ch.nn.Module):
                         break
                     
             # POST TRAINING HOOK     
-            self.model.post_training_hook()
+            self.post_training_hook()
             # update best model and best loss
             if best_model is None or val_loss < best_loss: 
-                best_model, best_loss = copy.copy(self.model.model), val_loss 
+                best_model, best_loss = copy.copy(self._model), val_loss 
         
         # inform user that SGD did not converge
         if self.args.early_stopping and self.args.verbose and no_improvement_count < self.args.n_iter_no_change: 
            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
-        # set best model in delphi model object 
-        self.model.model = best_model        
 
-        return self.model
+        return self
                 
     def model_loop(self, loop_type, loader, epoch):
         """
@@ -403,16 +398,16 @@ class delphi(ch.nn.Module):
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose else enumerate(loader) 
         for i, batch in iterator:
             self.optimizer.zero_grad()
-            loss, prec1, prec5 = self.model(batch)
+            inp, targ = batch
+            pred = self(inp)
+            loss = self.criterion(pred, targ, *self.criterion_params)
             
             if len(loss.shape) > 0: loss = loss.sum()
 
             # update average meters
             loss_.update(loss)
-            if prec1 is not None: prec1_.update(prec1)
-            if prec5 is not None: prec5_.update(prec5)
             # regularize
-            reg_term = self.model.regularize(batch)
+            reg_term = self.regularize(batch)
             if self.args.cuda:
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
@@ -421,21 +416,21 @@ class delphi(ch.nn.Module):
             if is_train:
                 loss.backward()
 
-                self.model.pre_step_hook()
+                self.pre_step_hook(inp)
 
                 self.optimizer.step()
-                if self.schedule is not None and not self.model.args.epoch_step: self.schedule.step()
+                if self.schedule is not None and not self.args.epoch_step: self.schedule.step()
             
             # ITERATOR DESCRIPTION
             if self.args.verbose:
-                desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
+                desc = self.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                 iterator.set_description(desc)
  
             # ITERATION HOOK 
-            self.model.iteration_hook(i, loop_type, loss, prec1, prec5, batch)
-        if self.schedule is not None and self.model.args.epoch_step: self.scheduler.step() 
+            self.iteration_hook(i, loop_type, loss, batch)
+        if self.schedule is not None and self.args.epoch_step: self.scheduler.step() 
         # EPOCH HOOK
-        self.model.epoch_hook(epoch, loop_type, loss, prec1, prec5)
+        self.epoch_hook(epoch, loop_type, loss)
 
         return loss_.avg, prec1_.avg, prec5_.avg
 
@@ -458,6 +453,4 @@ class delphi(ch.nn.Module):
     
     @property
     def parameters(self):
-        if self.params: 
-            return self.params 
-        return self.model.parameters()
+        return self._parameters

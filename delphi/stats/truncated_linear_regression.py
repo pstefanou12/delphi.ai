@@ -7,18 +7,91 @@ import torch as ch
 from torch import Tensor
 import cox
 import warnings
-import math
+from typing import Callable
 
 from .linear_model import LinearModel
-from .stats import stats
-from ..trainer import Trainer
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, Bounds
-from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_REG_DEFAULTS
+from ..utils.helpers import Parameters
+from .linear_model import LinearModel
+
+REQ = 'required'
+
+# DEFAULT PARAMETERS
+TRUNC_REG_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'val': (float, .2),
+        'var_lr': (float, 1e-2), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 50),
+        'workers': (int, 0),
+        'num_samples': (int, 50),
+}
 
 
-class TruncatedLinearRegression(stats):
+TRUNC_LASSO_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'var_lr': (float, 1e-2), 
+        'l1': (float, REQ), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
+
+
+TRUNC_RIDGE_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'var_lr': (float, 1e-2), 
+        'l1': (float, 0.0), 
+        'weight_decay': (float, REQ),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
+
+
+TRUNC_ELASTIC_NET_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (float, None), 
+        'fit_intercept': (bool, True), 
+        'num_trials': (int, 3),
+        'val': (float, .2),
+        'lr': (float, 1e-1), 
+        'var_lr': (float, 1e-2), 
+        'l1': (float, REQ),
+        'weight_decay': (float, REQ),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'workers': (int, 0),
+        'num_samples': (int, 10),
+}
+
+
+
+class TruncatedLinearRegression(LinearModel):
     """
     Truncated linear regression class. Supports truncated linear regression
     with known noise, unknown noise, and confidence intervals. Module uses 
@@ -28,7 +101,7 @@ class TruncatedLinearRegression(stats):
     and the survival probability. 
     """
     def __init__(self,
-                args: Parameters, 
+                args: Parameters,
                 store: cox.store.Store=None):
         """
         Args: 
@@ -52,21 +125,24 @@ class TruncatedLinearRegression(stats):
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         """
-        super(TruncatedLinearRegression).__init__()
-        # instance variables
-        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
-        self.store = store 
-        self.trunc_reg = None
-        # algorithm hyperparameters
-        TRUNC_REG_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_REG_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
+        super().__init__(args, defaults=TRUNC_REG_DEFAULTS, store=store)
 
+        del self.criterion
+        if self.args.noise_var is None: 
+            self.criterion = TruncatedUnknownVarianceMSE.apply
+        else: 
+            self.criterion = TruncatedMSE.apply
+            self.criterion_params = [ 
+                self.args.phi, self.args.noise_var,
+                self.args.num_samples, self.args.eps,
+            ]
         # property instance variables 
         self.coef, self.intercept = None, None
 
-    def fit(self, X: Tensor, y: Tensor):
+
+    def fit(self, 
+            X: Tensor, 
+            y: Tensor):
         """
         Train truncated linear regression model by running PSGD on the truncated negative 
         population log likelihood.
@@ -82,34 +158,32 @@ class TruncatedLinearRegression(stats):
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
-        if self.args.noise_var is None:
-            self.trunc_reg = UnknownVariance(self.args, self.train_loader_, X.size(1)) 
-        else: 
-            self.trunc_reg = KnownVariance(self.args, self.train_loader_, X.size(1)) 
         
-        # run PGD for parameter estimation
-        trainer = Trainer(self.trunc_reg, self.args, store=self.store) 
-        trainer.train_model((self.train_loader_, self.val_loader_))
+        self.train_model()
+
+        # reparameterize the regression's parameters
+        if self.args.noise_var is None: 
+            self.variance = self.lambda_.inverse()
+            self.weight *= self.variance
 
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
-            self.coef = self.trunc_reg.model.data[:-1]
-            self.intercept = self.trunc_reg.model.data[-1]
+            self.coef = self.weight[:-1]
+            self.intercept = self.weight[-1]
         else: 
-            self.coef = self.trunc_reg.model.data[:]
-        if self.args.noise_var is None: 
-            self.variance = self.trunc_reg.lambda_.clone().inverse()
-            self.coef *= self.variance
-            if self.args.fit_intercept: self.intercept *= self.variance.flatten()
+            self.coef = self.weight[:]
         return self
 
-    def predict(self, x: Tensor): 
+    def predict(self, 
+                X: Tensor): 
         """
         Make predictions with regression estimates.
         """
-        if self.args.fit_intercept: x = ch.cat([x, ch.ones((x.size(0), 1))], axis=1)
-        return x@self.trunc_reg.model
-    
+        assert self.coef is not None, "must fit model before using predict method"
+        if self.args.fit_intercept: 
+            return X@self.coef + self.intercept
+        return X@self.coef
+
     @property
     def coef_(self): 
         """
@@ -158,78 +232,20 @@ class TruncatedLinearRegression(stats):
         """
         return self.trunc_reg.emp_var.clone()
 
+    def __call__(self, X: ch.Tensor):
+        if self.args.noise_var is None:
+            weight = self._parameters[0]['params'][0]
+            lambda_ = self._parameters[1]['params'][0]
+            return X@weight * lambda_.inverse() 
+        return X@self.weight
+       
+    def pre_step_hook(self, inp) -> None:
+        # l1 regularization
+        if self.args.noise_var is not None:
+            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
 
-class KnownVariance(LinearModel):
-    """
-    Truncated linear regression with known noise variance model.
-    """
-    def __init__(self, args, train_loader, d): 
-        """
-        Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
-        super().__init__(args, d=d, k=1)
-        self.X, self.y = train_loader.dataset[:]
-        self.base_radius = (7.0 + 4.0 * math.log(2.0 / self.args.alpha))
-        
-    def __call__(self, batch): 
-        """
-        Calculates the negative log likelihood of the current regression estimates of the validation set.
-        Args: 
-            proc (bool) : boolean indicating whether, the function is being called within 
-            a stochastic process, or someone is accessing the parent class"s property
-        """
-        # print('model before call: {}'.format(self.model))
-        X, y = batch
-        pred = X@self.model
-        loss = TruncatedMSE.apply(pred, y, self.args.phi, self.args.noise_var, self.args.num_samples, self.args.eps)
-        return [loss, None, None]
-        
-    def regularize(self, batch):
-        """
-        L1 regularizer for LASSO regression.
-        """
-        if self.args.l1 == 0.0: return 0.0
-        reg_term = 0
-        for param in self.params[0]['params']: 
-            reg_term += param.norm()
-        return self.args.l1 * reg_term
-
-
-class UnknownVariance(KnownVariance):
-    """
-    Parent/abstract class for models to be passed into trainer.  
-    """
-    def __init__(self, args, train_loader, d): 
-        """
-        Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
-        super().__init__(args, train_loader, d)
-        
-    def __call__(self, batch):
-        """
-        Training step for defined model.
-        Args: 
-            batch (Iterable) : iterable of inputs that 
-        """
-        X, y = batch
-        pred = X@self.model * self.lambda_.inverse()
-        loss = TruncatedUnknownVarianceMSE.apply(pred, y, self.lambda_, self.args.phi, self.args.num_samples, self.args.eps)
-        return loss, None, None
-
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        """
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : "train" or "val"; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
-        """
-        var = self.lambda_.inverse()
-        # project model parameters back to domain 
-        var = self.lambda_.inverse()
-        # weight = self.model * var
-        self.lambda_.data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+    def iteration_hook(self, i, loop_type, loss, batch) -> None:
+        if self.args.noise_var is None:
+            # project model parameters back to domain 
+            var = self._parameters[1]['params'][0].inverse()
+            self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
