@@ -74,7 +74,7 @@ class LinearModel(delphi):
         if self.args.noise_var is None:
             self._parameters[0]['params'][0].requires_grad = False
             self.weight = self._parameters[0]['params'][0].data 
-            self.parameters[1]['params'][0].requires_grad = False
+            self._parameters[1]['params'][0].requires_grad = False
             self.lambda_ = self._parameters[1]['params'][0].data
         else: 
             self.weight.requires_grad = False

@@ -203,10 +203,10 @@ class delphi(ch.nn.Module):
         # initialize optimizer, scheduler, and then get parameters
         # default SGD optimizer
         # params = self.parameters if isinstance(self.parameters, list) else self.parameters.values()
-        params = self.named_parameters()
+        params = self._parameters if self._parameters is None else [i[1] for i in self.named_parameters()]
         if self.args.cuda: self.to('cuda')
         import pdb; pdb.set_trace()
-        self.optimizer = SGD([i[1] for i in self.named_parameters()], lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        self.optimizer = SGD(params, lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         # self.optimizer = SGD(params, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
             self.optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
