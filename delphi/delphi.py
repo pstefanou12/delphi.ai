@@ -132,7 +132,7 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def __call__(self, batch) -> [ch.Tensor, float, float]:
+    def __call__(self, inp, targ=None) -> [ch.Tensor, float, float]:
         '''
         Forward pass for the model during training/evaluation.
         Args: 
@@ -278,6 +278,10 @@ class delphi(ch.nn.Module):
             self.store['eval'].append_row(log_info)
         return log_info
 
+
+    """
+    TODO: make this a static method
+    """
     def train_model(self, train_loader, val_loader):
         """
         Train model. 
@@ -371,7 +375,10 @@ class delphi(ch.nn.Module):
            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
 
         return self
-                
+
+    """
+    
+    """         
     def model_loop(self, loop_type, loader, epoch):
         """
         *Internal method* (refer to the train_model and eval_model functions for
@@ -401,7 +408,7 @@ class delphi(ch.nn.Module):
         for i, batch in iterator:
             self.optimizer.zero_grad()
             inp, targ = batch
-            pred = self(inp)
+            pred = self(inp, targ)
             loss = self.criterion(pred, targ, *self.criterion_params)
             
             if len(loss.shape) > 0: loss = loss.sum()

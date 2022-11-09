@@ -157,9 +157,8 @@ class TruncatedLinearRegression(LinearModel):
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
-        train_loader, val_loader = make_train_and_val(self.args, X, y) 
-        
-        self.train_model(train_loader, val_loader)
+        self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
+        self.train_model(self.train_loader_, self.val_loader_)
 
         # reparameterize the regression's parameters
         if self.args.noise_var is None: 
