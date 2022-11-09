@@ -12,7 +12,8 @@ from time import time
 from tqdm import tqdm
 import copy
 import warnings
-from typing import Any, Callable
+from typing import Any
+import collections
 
 from .utils.helpers import ckpt_at_epoch, AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, check_and_fill_args
@@ -204,8 +205,8 @@ class delphi(ch.nn.Module):
         # default SGD optimizer
         # params = self.parameters if isinstance(self.parameters, list) else self.parameters.values()
         params = self._parameters if self._parameters is not None else [i[1] for i in self.named_parameters()]
+        if isinstance(params, collections.OrderedDict): params = params.values()
         if self.args.cuda: self.to('cuda')
-        import pdb; pdb.set_trace()
         self.optimizer = SGD(params, lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         # self.optimizer = SGD(params, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
