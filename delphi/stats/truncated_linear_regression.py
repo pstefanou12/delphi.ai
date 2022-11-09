@@ -231,7 +231,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         return self.trunc_reg.emp_var.clone()
 
-    def __call__(self, X: ch.Tensor):
+    def __call__(self, X: ch.Tensor, y: ch.Tensor):
         if self.args.noise_var is None:
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
