@@ -304,6 +304,8 @@ class AttackerModel(delphi):
         if self.parallel and next(self.model.parameters()).is_cuda:
             self.model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
+        import pdb; pdb.set_trace()
+
     def __call__(self, inp, target, with_latent=False,
                 fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
         """
@@ -347,6 +349,7 @@ class AttackerModel(delphi):
             }
             assert target is not None
             # TODO: find a better way to do this --> inheritance weird here
+            import pdb; pdb.set_trace()
             prev_training = bool(self.model.training)
             self.model.eval()
             adv = self.attacker(inp, target, **attacker_kwargs)
