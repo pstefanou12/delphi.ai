@@ -283,7 +283,7 @@ class AttackerModel(delphi):
     """
     def __init__(self, args, model, dataset, checkpoint = None, store=None, parallel=False, dp_device_ids=None, update_params=None):
         super().__init__(args)
-        self.model = model
+        self._model = model
         self.checkpoint = checkpoint
         self.parallel = parallel 
         self.dp_device_ids = dp_device_ids
@@ -302,9 +302,7 @@ class AttackerModel(delphi):
         # run model in parallel model
         assert not hasattr(self.model, "module"), "model is already in DataParallel."
         if self.parallel and next(self.model.parameters()).is_cuda:
-            self.model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
-
-        import pdb; pdb.set_trace()
+            self._model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
     def __call__(self, inp, target, with_latent=False,
                 fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
@@ -519,5 +517,4 @@ class AttackerModel(delphi):
         pass
 
     @property
-    def parameters(self): 
-        return self.model.parameters
+    def parameters(self): self.model.parameters
