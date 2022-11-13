@@ -174,6 +174,100 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         lambda_grad = .5 * (targ.pow(2) - z_2)
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
+def Test(mu, phi, c_gamma, alpha, T): 
+  """
+  Test function that checks which gradient to take 
+  at timestep t. 
+  Args: 
+    :param mu: current conditional mean for LDS 
+    :param phi: oracle 
+    :param c_gamma: constant 
+    :param alpha: survival probability
+    :param T: number of timesteps in dataset
+  """
+  M = ch.distributions.MultivariateNormal(ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0)))
+
+  # threshold constant
+  gamma = (alpha / 2) ** c_gamma
+
+  # number of samples
+  k = int((4 / gamma) * math.log(T))
+  stacked = mu.repeat(k, 1, 1)
+  noise = M.sample(stacked.size()[:-1])
+  ci = stacked + noise
+  p = phi(ci).float().mean(0).flatten()
+  """
+  check whether the probability that a sample falls within the 
+  truncation set is greater than the survival probability
+  """
+  return p >= (2 * gamma)
+
+
+class SwitchGrad(ch.autograd.Function):
+    """
+    Computes the gradient of the negative population log likelihood for truncated regression
+    with known noise variance.
+    """
+    @staticmethod
+    def forward(ctx, pred, targ, phi, c_gamma, alpha, T, noise_var, num_samples=10, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, d) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, d) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            c_gamma (float) : large constant >= 0
+            alpha (float) : survival probability
+            T (int) : number of samples within dataset 
+            noise_var (float): noise distribution variance parameter
+            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """
+        z = pred.clone()
+        # make num_samples copies of pred, N x B x 1
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
+
+        '''
+        test whether to use censor-aware or censor-oblivious function 
+        for computing gradient
+        '''
+        M = ch.distributions.MultivariateNormal(ch.zeros(pred[0].size(0)), ch.eye(pred[0].size(0)))
+
+        result = Test(pred, phi, c_gamma, alpha, T)[...,None]
+        # take inverse of result; result = [0, 1], result_inv = [1, 0]
+        result_inv = ~result
+
+        # add random noise to each copy
+        # noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())
+        noised = stacked + M.sample(stacked.size()[:-1])
+        
+        # filter out copies where pred is in bounds
+        filtered = phi(noised)
+        # average across truncated indices
+        z_ = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
+
+        """
+        result and result_inv are masks, so that you keep the noised 
+        and the unnoised samples
+        """
+        z = result.float()*z_ + result_inv.float()*z
+
+        ctx.save_for_backward(pred, targ, z)
+        loss = (-.5 * (targ - pred).norm(p=2, keepdim=True, dim=-1).pow(2) + \
+                .5 * (z - pred).norm(p=2, keepdim=True, dim=-1).pow(2))
+        loss_avg = loss.mean(0)
+
+        if ch.isnan(loss_avg): 
+          print(f'pred: {pred}')
+          import pdb; pdb.set_trace()
+
+        return loss.mean(0)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        pred, targ, z = ctx.saved_tensors
+        return (z - targ) / pred.size(0), targ / pred.size(0), None, \
+        None, None, None, None, None, None, None
+
 
 class TruncatedBCE(ch.autograd.Function):
     """
@@ -374,41 +468,3 @@ class TruncatedBooleanProductNLL(ch.autograd.Function):
         x, y = ctx.saved_tensors
         # calculate gradient
         return (-x + y) / x.size(0), None, None, None, None
-
-
-class TruncatedLASSOMSE(ch.autograd.Function):
-    """
-    Computes the gradient of the negative population log likelihood for truncated regression
-    with known noise variance.
-    """
-    @staticmethod
-    def forward(ctx, pred, targ, phi, noise_var, model, num_samples=10, eps=1e-5):
-        """
-        Args: 
-            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
-            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
-            phi (oracle.oracle): dependent variable membership oracle
-            noise_var (float): noise distribution variance parameter
-            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
-            eps (float): denominator error constant to avoid divide by zero errors
-        """
-        # make num_samples copies of pred, N x B x 1
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        # add random noise to each copy
-        noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
-        # filter out copies where pred is in bounds
-        filtered = phi(noised)
-        # average across truncated indices
-        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        out = ((-.5 * noised.pow(2) + noised * pred) * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
-
-        ctx.save_for_backward(pred, targ, z)
-        ctx.model = model
-        return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        pred, targ, z = ctx.saved_tensors
-        model = ctx.model
-        import pdb; pdb.set_trace()
-        return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None

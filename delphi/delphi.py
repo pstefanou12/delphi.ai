@@ -207,6 +207,7 @@ class delphi(ch.nn.Module):
         params = self._parameters if self._parameters is not None else [i[1] for i in self.named_parameters()]
         if isinstance(params, collections.OrderedDict): params = params.values()
         if self.args.cuda: self.to('cuda')
+        import pdb; pdb.set_trace()
         self.optimizer = SGD(params, lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         # self.optimizer = SGD(params, self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         if self.args.custom_lr_multiplier == ADAM:  # adam
