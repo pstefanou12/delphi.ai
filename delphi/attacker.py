@@ -223,7 +223,7 @@ class Attacker(ch.nn.Module):
                     grad = None
 
                 with ch.no_grad():
-                    args = [losses, best_loss, x, best_x]
+                    args = [losses, best_loss, x.cpu(), best_x]
                     best_loss, best_x = replace_best(*args) if use_best else (losses, x)
 
                     x = step.step(x, grad)
@@ -236,7 +236,7 @@ class Attacker(ch.nn.Module):
                 return step.to_image(ret) if return_image else ret
 
             losses, _ = calc_loss(step.to_image(x), target)
-            args = [losses, best_loss, x, best_x]
+            args = [losses, best_loss, x.cpu(), best_x]
             best_loss, best_x = replace_best(*args)
             return step.to_image(best_x) if return_image else best_x
 
