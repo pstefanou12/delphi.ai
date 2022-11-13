@@ -253,6 +253,7 @@ class Attacker(ch.nn.Module):
                     to_ret = adv.detach()
 
                 _, output = calc_loss(adv, target)
+                import pdb; pdb.set_trace()
                 corr, = accuracy(output, target, topk=(1,), exact=True)
                 corr = corr.byte()
                 misclass = ~corr
