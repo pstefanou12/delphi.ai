@@ -304,7 +304,7 @@ class AttackerModel(delphi):
         if self.parallel and next(self.model.parameters()).is_cuda:
             self.model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
-    def __call__(self, batch, with_latent=False,
+    def __call__(self, inp, targ, with_latent=False,
                 fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
         """
         Main function for running inference and generating adversarial
@@ -383,17 +383,16 @@ class AttackerModel(delphi):
         *INTERNAL FUNCTION* used for both train 
         '''
         # unpack input and target
-        inp, targ = batch
         inp, targ = inp.cuda(), targ.cuda()
         model_logits = self.model(inp)
 
         # AttackerModel returns both output and final input
         if isinstance(model_logits, tuple):
-            model_logits, _ = output
+            model_logits, _ = model_logits
 
         # regularizer 
         self.reg_term = 0.0
-        if has_attr(self.args, "regularizer") and isinstance(model, ch.nn.Module):
+        if has_attr(self.args, "regularizer") and isinstance(self.model, ch.nn.Module):
             self.reg_term = self.args.regularizer(self.model, inp, targ)
 
         # calculate loss and regularize
