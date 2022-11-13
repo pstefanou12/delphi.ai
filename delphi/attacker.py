@@ -164,8 +164,7 @@ class Attacker(ch.nn.Module):
             Uses custom loss (if provided) otherwise the criterion
             '''
             if should_normalize:
-                import pdb; pdb.set_trace()
-                inp = self.normalize(inp.cpu())
+                inp = self.normalize(inp.cuda())
             
             output = self.model(inp.cuda())
             if custom_loss:
