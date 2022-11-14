@@ -162,7 +162,7 @@ class TruncatedLinearRegression(LinearModel):
                 args.phi, args.noise_var,
                 args.num_samples, args.eps,
             ]
-            TRUNC_REG_DEFAULTS = TRUNC_REG_DEFAULTS
+            defaults = TRUNC_REG_DEFAULTS
 
         super().__init__(args, criterion, criterion_params=criterion_params, defaults=defaults, store=store)
  
