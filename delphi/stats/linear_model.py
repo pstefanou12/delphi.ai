@@ -8,7 +8,6 @@ from torch import Tensor
 from torch.nn import Parameter
 from sklearn.linear_model import LinearRegression
 import cox
-from typing import List
 
 from ..delphi import delphi
 from ..utils.helpers import Bounds
@@ -68,5 +67,3 @@ class LinearModel(delphi):
         if self.args.noise_var is None:
             self.weight = self._parameters[0]['params'][0].data 
             self.lambda_ = self._parameters[1]['params'][0].data
-            self.lambda_.requires_grad = False
-        self.weight.requires_grad = False

@@ -41,6 +41,7 @@ class TestStats(unittest.TestCase):
 
         print(f"gt weight: {W}")
         print(f"gt intercept: {W0}")
+        print(f"gt noise var: {noise_var}")
         # generate data
         X = M.sample(ch.Size([SAMPLES, D])) if isinstance(M, Uniform) else M.sample(ch.Size([SAMPLES]))
         y = X@W.T + W0 
@@ -102,6 +103,7 @@ class TestStats(unittest.TestCase):
 
         print(f"gt weight: {W}")
         print(f"gt intercept: {W0}")
+        print(f"gt noise var: {noise_var}")
         # generate data
         X = M.sample(ch.Size([SAMPLES, D])) if isinstance(M, Uniform) else M.sample(ch.Size([SAMPLES]))
         y = X@W.T + W0 
