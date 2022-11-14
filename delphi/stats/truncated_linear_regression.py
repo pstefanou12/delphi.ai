@@ -33,24 +33,6 @@ TRUNC_REG_DEFAULTS = {
         'num_samples': (int, 50),
 }
 
-TRUNC_DEPENDENT_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'c_gamma': (float, REQ),
-        'T': (int, REQ),
-        'noise_var': (float, 1.0), 
-        'fit_intercept': (bool, True), 
-        'val': (float, .2),
-        'var_lr': (float, 1e-2), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 1),
-        'workers': (int, 0),
-        'num_samples': (int, 50),
-}
-
-
 TRUNC_LASSO_DEFAULTS = {
         'phi': (Callable, REQ),
         'noise_var': (float, None), 
@@ -86,26 +68,6 @@ TRUNC_RIDGE_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10),
 }
-
-
-TRUNC_ELASTIC_NET_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'noise_var': (float, None), 
-        'fit_intercept': (bool, True), 
-        'num_trials': (int, 3),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'var_lr': (float, 1e-2), 
-        'l1': (float, REQ),
-        'weight_decay': (float, REQ),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-}
-
 
 
 class TruncatedLinearRegression(LinearModel):
@@ -145,30 +107,23 @@ class TruncatedLinearRegression(LinearModel):
             store (cox.store.Store) : cox store object for logging 
         """
         self.dependent = dependent
-        criterion, criterion_params = None, None
-        if self.dependent: 
-            criterion = SwitchGrad.apply
-            criterion_params = [ 
-                args.phi, args.c_gamma, args.alpha, args.T, 
-                args.noise_var, args.num_samples, args.eps,
-            ]
-            defaults = TRUNC_DEPENDENT_DEFAULTS
-        elif args.noise_var is None: 
-            criterion = TruncatedUnknownVarianceMSE.apply
-            defaults = TRUNC_REG_DEFAULTS
-        else: 
-            criterion = TruncatedMSE.apply
-            criterion_params = [ 
-                args.phi, args.noise_var,
-                args.num_samples, args.eps,
-            ]
-            defaults = TRUNC_REG_DEFAULTS
+        super().__init__(args, defaults=TRUNC_REG_DEFAULTS, store=store)
 
-        super().__init__(args, criterion, criterion_params=criterion_params, defaults=defaults, store=store)
- 
+        del self.criterion
+        del self.criterion_params 
+        if self.dependent: 
+            self.criterion = SwitchGrad.apply
+        elif args.noise_var is None: 
+            self.criterion = TruncatedUnknownVarianceMSE.apply
+        else: 
+            self.criterion = TruncatedMSE.apply
+            self.criterion_params = [ 
+                self.args.phi, self.args.noise_var,
+                self.args.num_samples, self.args.eps,
+            ]
+
         # property instance variables 
         self.coef, self.intercept = None, None
-
 
     def fit(self, 
             X: Tensor, 
@@ -184,6 +139,14 @@ class TruncatedLinearRegression(LinearModel):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) < X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
+
+        # add number of samples to args 
+        self.args.__setattr__('T', X.size(0))
+        if self.dependent:
+            self.criterion_params = [ 
+                self.args.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
+                self.args.noise_var, self.args.num_samples, self.args.eps,
+            ]
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)

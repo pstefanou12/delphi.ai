@@ -20,8 +20,6 @@ class LinearModel(delphi):
     '''
     def __init__(self, 
                 args: Parameters,
-                criterion: ch.autograd.Function,
-                criterion_params: List=None,
                 defaults: dict={},
                 store: cox.store.Store=None): 
         '''
@@ -29,7 +27,7 @@ class LinearModel(delphi):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
             k (int): number of output logits
         '''
-        super().__init__(args, criterion=criterion, criterion_params=criterion_params, defaults=defaults, store=store)
+        super().__init__(args, defaults=defaults, store=store)
         self.d, self.k = None, None
         self.base_radius = 1.0
 
@@ -38,19 +36,20 @@ class LinearModel(delphi):
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
-        # assign empirical estimates
-        self.weight.requires_grad = True
         # generate noise variance radius bounds if unknown 
-        self.var_bounds = Bounds(float(self.noise_var.flatten() / self.args.r), float(self.noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
+        self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
         
         if self.args.noise_var is None:
-            self._parameters = [{"params": [Parameter(self.weight)]},
-                                {"params": Parameter(self.lambda_.data), "lr": self.args.var_lr}]
+            lambda_ = self.emp_noise_var.inverse()
+            self._parameters = [{"params": [Parameter(self.emp_weight * lambda_)]},
+                                {"params": Parameter(lambda_), "lr": self.args.var_lr}]
 
             self.criterion_params = [ 
                 self._parameters[1]["params"], self.args.phi,
                 self.args.num_samples, self.args.eps,
             ]
+        else:
+            self.register_parameter("weight", Parameter(self.emp_weight))
 
     def calc_emp_model(self): 
         '''
@@ -59,23 +58,15 @@ class LinearModel(delphi):
         '''
         X, y = self.train_loader_.dataset.tensors
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
-        self.emp_weight = Tensor(self.ols.coef_).T
-        self.noise_var = ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None]
 
-        self.register_parameter('lambda_', Parameter(self.noise_var.inverse()))
-        if self.args.noise_var is None:
-            self.register_parameter('weight', Parameter(self.emp_weight * self.lambda_))
-        else: 
-             self.register_parameter('weight', Parameter(self.emp_weight))
+        self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
+        self.register_buffer('emp_weight', Tensor(self.ols.coef_).T)
 
     def post_training_hook(self): 
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         if self.args.noise_var is None:
-            self._parameters[0]['params'][0].requires_grad = False
             self.weight = self._parameters[0]['params'][0].data 
-            self._parameters[1]['params'][0].requires_grad = False
             self.lambda_ = self._parameters[1]['params'][0].data
-        else: 
-            self.weight.requires_grad = False
             self.lambda_.requires_grad = False
+        self.weight.requires_grad = False

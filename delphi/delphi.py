@@ -66,8 +66,6 @@ class delphi(ch.nn.Module):
     '''
     def __init__(self, 
                 args: Parameters, 
-                criterion: ch.autograd.Function=ch.nn.CrossEntropyLoss(), 
-                criterion_params: List=[], 
                 defaults: dict={},
                 store: Store=None, 
                 checkpoint=None): 
@@ -130,8 +128,8 @@ class delphi(ch.nn.Module):
         assert checkpoint is None or isinstance(checkpoint, dict), "prorvided checkpoint is type: {}. expecting checkpoint dictionary".format(type(checkpoint))
         self.checkpoint = checkpoint
 
-        self.criterion = criterion
-        self.criterion_params = criterion_params
+        self.criterion = ch.nn.CrossEntropyLoss()
+        self.criterion_params = []
 
     def pretrain_hook(self) -> None:
         '''
