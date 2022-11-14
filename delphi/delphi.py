@@ -12,7 +12,7 @@ from time import time
 from tqdm import tqdm
 import copy
 import warnings
-from typing import Any
+from typing import Any, List
 import collections
 
 from .utils.helpers import ckpt_at_epoch, AverageMeter, setup_store_with_metadata, Parameters
@@ -64,7 +64,13 @@ class delphi(ch.nn.Module):
     '''
     Parent/abstract class for models to be passed into trainer.
     '''
-    def __init__(self, args: Parameters, defaults: dict={}, store: Store=None, checkpoint=None): 
+    def __init__(self, 
+                args: Parameters, 
+                criterion: ch.autograd.Function=ch.nn.CrossEntropyLoss(), 
+                criterion_params: List=[], 
+                defaults: dict={},
+                store: Store=None, 
+                checkpoint=None): 
         '''
         Args: 
             args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
@@ -124,8 +130,8 @@ class delphi(ch.nn.Module):
         assert checkpoint is None or isinstance(checkpoint, dict), "prorvided checkpoint is type: {}. expecting checkpoint dictionary".format(type(checkpoint))
         self.checkpoint = checkpoint
 
-        self.criterion = ch.nn.CrossEntropyLoss()
-        self.criterion_params = []
+        self.criterion = criterion
+        self.criterion_params = criterion_params
 
     def pretrain_hook(self) -> None:
         '''

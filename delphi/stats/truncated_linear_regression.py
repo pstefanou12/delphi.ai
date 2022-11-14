@@ -10,7 +10,7 @@ import warnings
 from typing import Callable
 
 from .linear_model import LinearModel
-from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE
+from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
 from .linear_model import LinearModel
@@ -29,6 +29,23 @@ TRUNC_REG_DEFAULTS = {
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
         'batch_size': (int, 50),
+        'workers': (int, 0),
+        'num_samples': (int, 50),
+}
+
+TRUNC_DEPENDENT_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'c_gamma': (float, REQ),
+        'T': (int, REQ),
+        'noise_var': (float, 1.0), 
+        'fit_intercept': (bool, True), 
+        'val': (float, .2),
+        'var_lr': (float, 1e-2), 
+        'l1': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 1),
         'workers': (int, 0),
         'num_samples': (int, 50),
 }
@@ -102,6 +119,7 @@ class TruncatedLinearRegression(LinearModel):
     """
     def __init__(self,
                 args: Parameters,
+                dependent: bool=False,
                 store: cox.store.Store=None):
         """
         Args: 
@@ -123,19 +141,31 @@ class TruncatedLinearRegression(LinearModel):
             step_lr_gamma (float) : amount to decay learning rate when running step learning rate
             momentum (float) : momentum for SGD optimizer 
             eps (float) :  epsilon value for gradient to prevent zero in denominator
+            dependent (bool) : boolean indicating whether dataset is dependent and you should run SwitchGrad instead
             store (cox.store.Store) : cox store object for logging 
         """
-        super().__init__(args, defaults=TRUNC_REG_DEFAULTS, store=store)
-
-        del self.criterion
-        if self.args.noise_var is None: 
-            self.criterion = TruncatedUnknownVarianceMSE.apply
-        else: 
-            self.criterion = TruncatedMSE.apply
-            self.criterion_params = [ 
-                self.args.phi, self.args.noise_var,
-                self.args.num_samples, self.args.eps,
+        self.dependent = dependent
+        criterion, criterion_params = None, None
+        if self.dependent: 
+            criterion = SwitchGrad.apply
+            criterion_params = [ 
+                args.phi, args.c_gamma, args.alpha, args.T, 
+                args.noise_var, args.num_samples, args.eps,
             ]
+            defaults = TRUNC_DEPENDENT_DEFAULTS
+        elif args.noise_var is None: 
+            criterion = TruncatedUnknownVarianceMSE.apply
+            defaults = TRUNC_REG_DEFAULTS
+        else: 
+            criterion = TruncatedMSE.apply
+            criterion_params = [ 
+                args.phi, args.noise_var,
+                args.num_samples, args.eps,
+            ]
+            TRUNC_REG_DEFAULTS = TRUNC_REG_DEFAULTS
+
+        super().__init__(args, criterion, criterion_params=criterion_params, defaults=defaults, store=store)
+ 
         # property instance variables 
         self.coef, self.intercept = None, None
 
@@ -153,7 +183,7 @@ class TruncatedLinearRegression(LinearModel):
         assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
-        assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+        assert y.dim() == 2 and y.size(1) < X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)

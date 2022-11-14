@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.nn import Parameter
 from sklearn.linear_model import LinearRegression
 import cox
+from typing import List
 
 from ..delphi import delphi
 from ..utils.helpers import Bounds
@@ -19,18 +20,17 @@ class LinearModel(delphi):
     '''
     def __init__(self, 
                 args: Parameters,
+                criterion: ch.autograd.Function,
+                criterion_params: List=None,
                 defaults: dict={},
-                store: cox.store.Store=None,
-                d: int=1,
-                k: int=1): 
+                store: cox.store.Store=None): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
             k (int): number of output logits
         '''
-        super().__init__(args, defaults=defaults, store=store)
-        self.d = d
-        self.k = k
+        super().__init__(args, criterion=criterion, criterion_params=criterion_params, defaults=defaults, store=store)
+        self.d, self.k = None, None
         self.base_radius = 1.0
 
     def pretrain_hook(self):
