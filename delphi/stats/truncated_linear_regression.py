@@ -162,6 +162,7 @@ class TruncatedLinearRegression(LinearModel):
                 args.phi, args.noise_var,
                 args.num_samples, args.eps,
             ]
+            import pdb; pdb.set_trace()
             defaults = TRUNC_REG_DEFAULTS
 
         super().__init__(args, criterion, criterion_params=criterion_params, defaults=defaults, store=store)
