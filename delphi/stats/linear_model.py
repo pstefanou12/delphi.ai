@@ -30,13 +30,16 @@ class LinearModel(delphi):
         self.d, self.k = None, None
         self.base_radius = 1.0
 
+        self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
+
     def pretrain_hook(self):
         self.calc_emp_model()
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
         # generate noise variance radius bounds if unknown 
-        self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
+        if self.args.noise_var is None:
+            self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
         
         if self.args.noise_var is None:
             lambda_ = self.emp_noise_var.inverse()
@@ -48,7 +51,7 @@ class LinearModel(delphi):
                 self.args.num_samples, self.args.eps,
             ]
         else:
-            self.register_parameter("weight", Parameter(self.emp_weight))
+            self.register_parameter("weight", Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self): 
         '''
@@ -58,8 +61,16 @@ class LinearModel(delphi):
         X, y = self.train_loader_.dataset.tensors
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
 
+        XXT = ch.bmm(X.view(X.size(0), X.size(1), 1), \
+                    X.view(X.size(0), 1, X.size(1)))
+        XXT_sum = XXT.sum(0)
+
+        self.register_buffer('Sigma_0',(1 / (self.s * len(X))) * XXT_sum )
+        assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
+        self.register_buffer('Sigma', self.Sigma_0.clone())
+
         self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
-        self.register_buffer('emp_weight', Tensor(self.ols.coef_).T)
+        self.register_buffer('emp_weight', Tensor(self.ols.coef_.T))
 
     def post_training_hook(self): 
         if self.args.r is not None: self.args.r *= self.args.rate

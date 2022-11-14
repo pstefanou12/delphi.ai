@@ -225,7 +225,6 @@ class SwitchGrad(ch.autograd.Function):
         z = pred.clone()
         # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
-
         '''
         test whether to use censor-aware or censor-oblivious function 
         for computing gradient
@@ -237,8 +236,7 @@ class SwitchGrad(ch.autograd.Function):
         result_inv = ~result
 
         # add random noise to each copy
-        # noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())
-        noised = stacked + M.sample(stacked.size()[:-1])
+        noised = stacked + (noise_var ** .5) * M.sample(stacked.size()[:-1])
         
         # filter out copies where pred is in bounds
         filtered = phi(noised)
@@ -257,7 +255,6 @@ class SwitchGrad(ch.autograd.Function):
         loss_avg = loss.mean(0)
 
         if ch.isnan(loss_avg): 
-          print(f'pred: {pred}')
           import pdb; pdb.set_trace()
 
         return loss.mean(0)
@@ -299,7 +296,6 @@ class TruncatedBCE(ch.autograd.Function):
         ctx.save_for_backward(mask, filtered, rand_noise)
         ctx.eps = eps
         return -(nll - const) / pred.size(0)
-       # return bce_loss(pred, targ)
 
     @staticmethod
     def backward(ctx, grad_output):

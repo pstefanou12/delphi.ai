@@ -31,6 +31,7 @@ TRUNC_REG_DEFAULTS = {
         'batch_size': (int, 50),
         'workers': (int, 0),
         'num_samples': (int, 50),
+        'c_s': (float, 100.0)
 }
 
 TRUNC_LASSO_DEFAULTS = {
@@ -108,6 +109,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         self.dependent = dependent
         super().__init__(args, defaults=TRUNC_REG_DEFAULTS, store=store)
+        if self.dependent: assert self.dependent and self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 
         del self.criterion
         del self.criterion_params 
@@ -119,8 +121,7 @@ class TruncatedLinearRegression(LinearModel):
             self.criterion = TruncatedMSE.apply
             self.criterion_params = [ 
                 self.args.phi, self.args.noise_var,
-                self.args.num_samples, self.args.eps,
-            ]
+                self.args.num_samples, self.args.eps]
 
         # property instance variables 
         self.coef, self.intercept = None, None
@@ -138,7 +139,7 @@ class TruncatedLinearRegression(LinearModel):
         assert isinstance(X, Tensor), "X is type: {}. expected type torch.Tensor.".format(type(X))
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
-        assert y.dim() == 2 and y.size(1) < X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
+        assert y.dim() == 2 and y.size(1) <= X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
 
         # add number of samples to args 
         self.args.__setattr__('T', X.size(0))
@@ -147,6 +148,8 @@ class TruncatedLinearRegression(LinearModel):
                 self.args.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
                 self.args.noise_var, self.args.num_samples, self.args.eps,
             ]
+            self.args.__setattr__('lr', (1/self.args.alpha) ** self.args.c_gamma)
+
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
@@ -229,12 +232,18 @@ class TruncatedLinearRegression(LinearModel):
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
             return X@weight * lambda_.inverse() 
+        if self.dependent: 
+            self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
+            return (self.weight@X.T).T
         return X@self.weight
-       
+
     def pre_step_hook(self, inp) -> None:
         # l1 regularization
         if self.args.noise_var is not None:
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
+
+        if self.dependent: 
+            self.weight.grad = self.weight.grad@self.Sigma.inverse()
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
         if self.args.noise_var is None:

@@ -90,7 +90,6 @@ class TestStats(unittest.TestCase):
         print(f'known mse loss: {known_mse_loss}')
         self.assertTrue(known_mse_loss <= 3e-1, f'known mse loss: {known_mse_loss}')
 
-
     def test_unknown_truncated_regression(self):
         D, K = 10, 1
         SAMPLES = 5000
@@ -156,6 +155,68 @@ class TestStats(unittest.TestCase):
         print(f'unknown var l1: {unknown_var_l1}')
         self.assertTrue(unknown_mse_loss <= emp_mse_loss, f'unknown mse loss: {unknown_mse_loss}')
         self.assertTrue(unknown_var_l1 <= emp_var_l1, f'unknown var l1: {unknown_var_l1}')
+
+    def test_truncated_dependent_regression(self): 
+        # spectral norm is the largest singular value --> SVD
+        def calc_spectral_norm(A):
+            u, s, v = LA.svd(A)
+            return s.max()
+        
+        D = 10 # number of dimensions for A_{*} matrix
+        T = 10000
+        A = .1 * ch.randn((D, D))
+
+        spectral_norm = calc_spectral_norm(A)
+        print(f'Spectral Norm: {spectral_norm}')
+
+        phi = oracle.LogitBall(4.0)
+        X, Y = ch.Tensor([]), ch.Tensor([])
+        M = ch.distributions.MultivariateNormal(ch.zeros(D), ch.eye(D))
+        x_t = ch.zeros((1, D))
+        total_samples = 0
+        while X.size(0) < T: 
+            noise = M.sample([x_t.size(0)])
+            y_t = (A@x_t.T).T + noise
+            if phi(y_t): # returns a boolean 
+                X = ch.cat([X, x_t])
+                Y = ch.cat([Y, y_t])
+                x_t = y_t
+            else: 
+                x_t = ch.zeros((1, D))
+
+            total_samples += 1
+
+        alpha = T / total_samples
+        print(f'alpha: {alpha}')
+
+
+        train_kwargs = Parameters({
+            'phi': phi, 
+            'c_gamma': 2.0,
+            'epochs': 10, 
+            'trials': 1, 
+            'batch_size': 10,
+            'constant': True,
+            'fit_intercept': False,
+            'num_samples': 10,
+            'T': T,
+            'alpha': alpha,
+            'c_s': 100.0, 
+            'tol': 1e-1,
+            'noise_var': 1.0
+        })
+
+        trunc_lds = stats.TruncatedLinearRegression(train_kwargs, dependent=True)
+        trunc_lds.fit(X, Y)
+
+        A_ = trunc_lds.coef_
+        A0_ = trunc_lds.emp_weight
+        trunc_spec_norm = calc_spectral_norm(A - A_)
+        emp_spec_norm = calc_spectral_norm(A - A0_)
+        print(f"truncated spectral norm: {trunc_spec_norm}")
+        print(f"empirical spectral norm: {emp_spec_norm}")
+
+        self.assertTrue(trunc_spec_norm <= emp_spec_norm, f"truncated spectral norm {trunc_spec_norm}")
 
     # left truncated binary classification task
     def test_truncated_logistic_regression(self):
