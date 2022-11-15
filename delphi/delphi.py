@@ -131,7 +131,7 @@ class delphi(ch.nn.Module):
         self.criterion = ch.nn.CrossEntropyLoss()
         self.criterion_params = []
 
-    def pretrain_hook(self) -> None:
+    def pretrain_hook(self, train_loader) -> None:
         '''
         Hook called before training procedure begins.
         '''
@@ -320,14 +320,14 @@ class delphi(ch.nn.Module):
             no_improvement_count = 0
 
             # PRETRAIN HOOK
-            self.pretrain_hook()
+            self.pretrain_hook(train_loader)
             
             # make optimizer and scheduler for training neural network
             self.make_optimizer_and_schedule()
             
             if self.checkpoint:
                 epoch = self.checkpoint['epoch']
-                best_prec1 = self.checkpoint['prec1'] if 'prec1' in self.checkpoint else self.model_loop(VAL, self.val_loader_)[0]
+                best_prec1 = self.checkpoint['prec1'] if 'prec1' in self.checkpoint else self.model_loop(VAL, val_loader)[0]
         
             # do training loops until performing enough gradient steps or epochs
             for epoch in range(1, self.args.epochs + 1):
@@ -336,7 +336,7 @@ class delphi(ch.nn.Module):
 
                                 
                 # VALIDATION LOOP
-                if self.val_loader_ is not None:
+                if val_loader is not None:
                     with ch.no_grad():
                         val_loss, val_prec1, val_prec5 = self.model_loop(VAL, val_loader, epoch)
                     

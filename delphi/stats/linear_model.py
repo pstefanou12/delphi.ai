@@ -32,8 +32,8 @@ class LinearModel(delphi):
 
         self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
 
-    def pretrain_hook(self):
-        self.calc_emp_model()
+    def pretrain_hook(self, train_loader):
+        self.calc_emp_model(train_loader)
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
@@ -53,12 +53,12 @@ class LinearModel(delphi):
         else:
             self.register_parameter("weight", Parameter(self.emp_weight.clone()))
 
-    def calc_emp_model(self): 
+    def calc_emp_model(self, train_loader): 
         '''
         Calculates empirical estimates for a truncated linear model. Assigns 
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
-        X, y = self.train_loader_.dataset.tensors
+        X, y = train_loader.dataset.tensors
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
 
         XXT = ch.bmm(X.view(X.size(0), X.size(1), 1), \
