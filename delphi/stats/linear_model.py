@@ -19,6 +19,7 @@ class LinearModel(delphi):
     '''
     def __init__(self, 
                 args: Parameters,
+                dependent: bool,
                 defaults: dict={},
                 store: cox.store.Store=None): 
         '''
@@ -29,6 +30,7 @@ class LinearModel(delphi):
         super().__init__(args, defaults=defaults, store=store)
         self.d, self.k = None, None
         self.base_radius = 1.0
+        self.dependent = dependent
 
         self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
 
@@ -61,16 +63,20 @@ class LinearModel(delphi):
         X, y = train_loader.dataset.tensors
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
 
-        XXT = ch.bmm(X.view(X.size(0), X.size(1), 1), \
-                    X.view(X.size(0), 1, X.size(1)))
-        XXT_sum = XXT.sum(0)
+        if self.dependent:
+            XXT = ch.bmm(X.view(X.size(0), X.size(1), 1), \
+                        X.view(X.size(0), 1, X.size(1)))
+            XXT_sum = XXT.sum(0)
 
-        self.register_buffer('Sigma_0',(1 / (self.s * len(X))) * XXT_sum )
-        assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
-        self.register_buffer('Sigma', self.Sigma_0.clone())
+            self.register_buffer('Sigma_0',(1 / (self.s * len(X))) * XXT_sum)
+            assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
+            self.register_buffer('Sigma', self.Sigma_0.clone())
 
         self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
         self.register_buffer('emp_weight', Tensor(self.ols.coef_.T))
+
+    def iteration_hook(self, i, is_train, loss, batch):
+        self.schedule.step()
 
     def post_training_hook(self): 
         if self.args.r is not None: self.args.r *= self.args.rate
@@ -78,3 +84,5 @@ class LinearModel(delphi):
         if self.args.noise_var is None:
             self.weight = self._parameters[0]['params'][0].data 
             self.lambda_ = self._parameters[1]['params'][0].data
+            self.lambda_.requires_grad = False
+        self.weight.requires_grad = False

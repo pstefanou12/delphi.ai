@@ -14,6 +14,7 @@ from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
 from .linear_model import LinearModel
+from ..delphi import train_model
 
 REQ = 'required'
 
@@ -107,8 +108,7 @@ class TruncatedLinearRegression(LinearModel):
             dependent (bool) : boolean indicating whether dataset is dependent and you should run SwitchGrad instead
             store (cox.store.Store) : cox store object for logging 
         """
-        self.dependent = dependent
-        super().__init__(args, defaults=TRUNC_REG_DEFAULTS, store=store)
+        super().__init__(args, dependent, defaults=TRUNC_REG_DEFAULTS, store=store)
         if self.dependent: assert self.dependent and self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 
         del self.criterion
@@ -153,8 +153,8 @@ class TruncatedLinearRegression(LinearModel):
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
-        self.train_model(*make_train_and_val(self.args, X, y) )
-
+        best_params, best_loss = train_model(self.args, self, *make_train_and_val(self.args, X, y) )
+        
         # reparameterize the regression's parameters
         if self.args.noise_var is None: 
             self.variance = self.lambda_.inverse()
