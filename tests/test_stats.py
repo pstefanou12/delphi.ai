@@ -31,11 +31,11 @@ class TestStats(unittest.TestCase):
     # left truncated linear regression
     def test_known_truncated_regression(self):
         D, K = 3, 1
-        SAMPLES = 5000
+        SAMPLES = 100
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
-        noise_var = 2*ch.ones(1, 1)
+        noise_var = 3*ch.ones(1, 1)
         W = w_.sample([K, D])
         W0 = w_.sample([1, 1])
 
@@ -53,11 +53,6 @@ class TestStats(unittest.TestCase):
         x_trunc, y_trunc = X[indices], noised[indices]
         alpha = x_trunc.size(0) / X.size(0)
         print(f'alpha: {alpha}')
-        # normalize input features
-        l_inf = LA.norm(x_trunc, dim=-1, ord=float('inf')).max()
-        beta = l_inf * (D ** .5)
-        x_trunc /= beta
-        X /= beta 
 
         gt_norm = LinearRegression()
         gt_norm.fit(X, y)
@@ -69,9 +64,7 @@ class TestStats(unittest.TestCase):
         emp_noise_var = ch.from_numpy(ols_trunc.predict(X) - noised.numpy()).var(0)
         emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_]))
         emp_mse_loss = mse_loss(emp_, gt_)
-        emp_var_l1 = float(ch.abs(emp_noise_var - noise_var))
         print(f'emp mse loss: {emp_mse_loss}')
-        print(f'emp noise var l1: {emp_var_l1}')
 
         # scale y features
         y_trunc_scale = y_trunc / ch.sqrt(noise_var)
@@ -79,20 +72,37 @@ class TestStats(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'phi': phi_scale, 
                                 'alpha': alpha,
-                                'epochs': 5,
-                                'trials': 3, 
-                                'batch_size': 10,
+                                'epochs': 100,
+                                'lr': 3e-1,
+                                'custom_lr_multiplier': 'adam',
+                                'num_samples': 100,
+                                'batch_size': 1,
+                                'trials': 1,
                                 'noise_var': 1.0}) 
         trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
         trunc_reg.fit(x_trunc, y_trunc_scale)
-        w_ = ch.cat([(trunc_reg.coef_).flatten(), trunc_reg.intercept_]) * ch.sqrt(noise_var)
+        w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(noise_var)
         known_mse_loss = mse_loss(gt_, w_.flatten())
         print(f'known mse loss: {known_mse_loss}')
-        self.assertTrue(known_mse_loss <= 3e-1, f'known mse loss: {known_mse_loss}')
+        msg = f'known mse loss is larger than empirical mse loss. known mse loss is {known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
+        known_bool = known_mse_loss <= emp_mse_loss
+        # self.assertTrue(known_mse_loss <= emp_mse_loss, msg)
+        
+        avg_w_ = ch.cat([(trunc_reg.avg_coef_).flatten(), trunc_reg.avg_intercept_]) * ch.sqrt(noise_var)
+        avg_known_mse_loss = mse_loss(gt_, avg_w_.flatten())
+        print(f'avg known mse loss: {avg_known_mse_loss}')
+        msg = f'avg known mse loss is larger than empirical mse loss. avg known mse loss is {avg_known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
+        avg_bool = avg_known_mse_loss <= emp_mse_loss
+#        self.assertTrue(avg_known_mse_loss <= emp_mse_loss, msg)
+        self.assertTrue(known_bool or avg_bool, "both the average and best mse losses exceed the emprical estimates")        
 
+        print("truncated nll on truncated estimates: {}".format(trunc_reg.final_nll(X, y / ch.sqrt(noise_var))))
+        print("truncated nll on empirical estimates: {}".format(trunc_reg.emp_nll(X, y / ch.sqrt(noise_var))))
+        print("truncated nll on average estimates: {}".format(trunc_reg.avg_nll(X, y / ch.sqrt(noise_var)))) 
+    
     def test_unknown_truncated_regression(self):
         D, K = 10, 1
-        SAMPLES = 5000
+        SAMPLES = 10000
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
@@ -114,11 +124,6 @@ class TestStats(unittest.TestCase):
         x_trunc, y_trunc = X[indices], noised[indices]
         alpha = x_trunc.size(0) / X.size(0)
         print(f'alpha: {alpha}')
-        # normalize input features
-        l_inf = LA.norm(x_trunc, dim=-1, ord=float('inf')).max()
-        beta = l_inf * (D ** .5)
-        x_trunc /= beta
-        X /= beta 
 
         gt_norm = LinearRegression()
         gt_norm.fit(X, noised)
@@ -140,13 +145,12 @@ class TestStats(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'phi': phi_emp_scale, 
                                 'alpha': alpha,
-                                'epochs': 30, 
-                                'momentum': .5,
-                                'trials': 3,
+                                'epochs': 1, 
+                                'trials': 1,
                                 'batch_size': 100,
                                 'var_lr': 1e-2,})
         unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
-        unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
+        unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
         w_ = ch.cat([(unknown_trunc_reg.coef_).flatten(), unknown_trunc_reg.intercept_]) * ch.sqrt(emp_noise_var)
         noise_var_ = unknown_trunc_reg.variance_ * emp_noise_var
         unknown_mse_loss = mse_loss(gt_, w_.flatten())

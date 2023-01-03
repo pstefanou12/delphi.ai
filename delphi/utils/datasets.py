@@ -111,7 +111,7 @@ class DataSet(object):
 
     def make_loaders(self, workers, batch_size, data_aug=True,
                     subset=None, subset_type='rand', subset_start=0, val_batch_size=None,
-                    train=True, val=True, shuffle_train=True, shuffle_val=True, seed=1,
+                    train=True, val=True, shuffle=True, seed=1,
                     verbose=True):
         '''
         Args:
@@ -133,10 +133,8 @@ class DataSet(object):
                 different batch size for the validation set loader.
             only_val (bool) : If `True`, returns `None` in place of the
                 training data loader
-            shuffle_train (bool) : Whether or not to shuffle the training data
+            shuffle (bool) : Whether or not to shuffle the training data
                 in the returned DataLoader.
-            shuffle_val (bool) : Whether or not to shuffle the test data in the
-                returned DataLoader.
         Returns:
             A training loader and validation loader according to the
             parameters given. These are standard PyTorch data loaders, and
@@ -192,11 +190,11 @@ class DataSet(object):
                                         transform=self.transform_test, **self.custom_class_args)
         if train_set is not None:
             train_loader = DataLoader(train_set, batch_size=batch_size,
-                shuffle=shuffle_train, num_workers=workers, pin_memory=True)
+                shuffle=shuffle, num_workers=workers, pin_memory=True)
 
         if test_set is not None:
-            test_loader = DataLoader(test_set, batch_size=val_batch_size,
-                    shuffle=shuffle_val, num_workers=workers, pin_memory=True)
+            test_loader = DataLoader(test_set, batch_size=val_batch_size, 
+                                    num_workers=workers, pin_memory=True)
 
         return train_loader, test_loader
 
@@ -234,13 +232,6 @@ class CIFAR(DataSet):
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
         super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path=data_path, **ds_kwargs)
-
-    # def get_model(self, arch, pretrained):
-        # """
-        # """
-        # if pretrained:
-            # raise ValueError('CIFAR does not support pytorch_pretrained=True')
-        # return cifar_models.__dict__[arch](num_classes=self.num_classes)
 
     def get_model(self, arch, pretrained, args):
         """
@@ -336,7 +327,7 @@ def make_train_and_val(args, X, y):
     train_ds = TensorDataset(X_train, y_train)
     val_ds = TensorDataset(X_val, y_val)
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers, shuffle=args.shuffle)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers)
 
     return train_loader, val_loader

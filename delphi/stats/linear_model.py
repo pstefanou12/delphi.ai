@@ -44,8 +44,8 @@ class LinearModel(delphi):
             self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
         
         if self.args.noise_var is None:
-            lambda_ = self.emp_noise_var.inverse()
-            self._parameters = [{"params": [Parameter(self.emp_weight * lambda_)]},
+            lambda_ = self.emp_noise_var.clone().inverse()
+            self._parameters = [{"params": [Parameter(self.emp_weight.clone() * lambda_)]},
                                 {"params": Parameter(lambda_), "lr": self.args.var_lr}]
 
             self.criterion_params = [ 
@@ -76,7 +76,7 @@ class LinearModel(delphi):
         self.register_buffer('emp_weight', Tensor(self.ols.coef_.T))
 
     def iteration_hook(self, i, is_train, loss, batch):
-        self.schedule.step()
+        if not self.args.constant: self.schedule.step()
 
     def post_training_hook(self): 
         if self.args.r is not None: self.args.r *= self.args.rate
@@ -85,4 +85,6 @@ class LinearModel(delphi):
             self.weight = self._parameters[0]['params'][0].data 
             self.lambda_ = self._parameters[1]['params'][0].data
             self.lambda_.requires_grad = False
+
         self.weight.requires_grad = False
+        self.emp_weight /= self.beta

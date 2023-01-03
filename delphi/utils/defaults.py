@@ -13,6 +13,7 @@ REQ = 'required'
 
 
 TRAINER_DEFAULTS = { 
+    'num_trials': (int, 3),
     'epochs': (int, 20),
     'trials': (int, 3),
     'tol': (float, 1e-3),
@@ -20,7 +21,7 @@ TRAINER_DEFAULTS = {
     'n_iter_no_change': (int, 5),
     'verbose': (bool, False),
     'disable_no_grad': (bool, False), 
-    'epoch_step': (bool, False)
+    'epoch_step': (bool, False),
 }
 
 DATASET_DEFAULTS = {

@@ -111,22 +111,21 @@ class TruncatedMSE(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-        # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        # add random noise to each copy
         noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
-        # filter out copies where pred is in bounds
         filtered = phi(noised)
-        # average across truncated indices
         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        out = ((-.5 * noised.pow(2) + noised * pred) * filtered).sum(dim=0) / (filtered.sum(dim=0) + eps)
-
+        out = -.5 * (z.pow(2) + z * pred)
         ctx.save_for_backward(pred, targ, z)
+        #numerator =  -.5 * targ.pow(2)
+        #print(f"numerator: {numerator}")
+        #print(f"denominator: {out}")
         return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, z = ctx.saved_tensors
+        #print("Gradient in truncated mse: {}".format(((z - targ) / pred.size(0)).sum(0).norm()))
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
@@ -146,13 +145,10 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-        # calculate std deviation of noise distribution estimate
         sigma = ch.sqrt(lambda_.inverse())
         stacked = pred[..., None].repeat(1, num_samples, 1)
 
-        # add noise to regression predictions
         noised = stacked + sigma * ch.randn(stacked.size())
-        # filter out copies that fall outside of truncation set
         filtered = phi(noised)
         out = noised * filtered
         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
@@ -171,6 +167,7 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
+#        print("Gradient in unknown truncated mse: {}".format((lambda_ *(z - targ) / pred.size(0)).sum(0).norm()))
         lambda_grad = .5 * (targ.pow(2) - z_2)
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 

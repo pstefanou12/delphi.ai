@@ -5,16 +5,18 @@ Truncated Linear Regression.
 from re import A
 import torch as ch
 from torch import Tensor
+import torch.linalg as LA
 import cox
 import warnings
 from typing import Callable
+import collections
 
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
 from .linear_model import LinearModel
-from ..delphi import train_model
+from ..trainer import train_model
 
 REQ = 'required'
 
@@ -25,52 +27,17 @@ TRUNC_REG_DEFAULTS = {
         'fit_intercept': (bool, True), 
         'val': (float, .2),
         'var_lr': (float, 1e-2), 
-        'l1': (float, 0.0), 
+        'l1': (float, 0.0),
+        'weight_decay': (float, 0.0), 
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
         'rate': (float, 1.5), 
         'batch_size': (int, 50),
         'workers': (int, 0),
         'num_samples': (int, 50),
-        'c_s': (float, 100.0)
+        'c_s': (float, 100.0),
+        'shuffle': (bool, True)
 }
-
-TRUNC_LASSO_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'noise_var': (float, None), 
-        'fit_intercept': (bool, True), 
-        'num_trials': (int, 3),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'var_lr': (float, 1e-2), 
-        'l1': (float, REQ), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-}
-
-
-TRUNC_RIDGE_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'noise_var': (float, None), 
-        'fit_intercept': (bool, True), 
-        'num_trials': (int, 3),
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'var_lr': (float, 1e-2), 
-        'l1': (float, 0.0), 
-        'weight_decay': (float, REQ),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-}
-
 
 class TruncatedLinearRegression(LinearModel):
     """
@@ -153,19 +120,37 @@ class TruncatedLinearRegression(LinearModel):
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
-        best_params, best_loss = train_model(self.args, self, *make_train_and_val(self.args, X, y) )
-        
+
+        # normalize features so that the maximum l_2 norm is 1
+        self.beta = ch.ones(1, 1)
+        if X.norm(dim=1, p=2).max() > 1:  
+            l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
+            self.beta = l_inf * (X.size(1) ** .5)
+
+        best_params, self.history, best_loss = train_model(self.args, self, *make_train_and_val(self.args, X / self.beta, y), store=self.store)
         # reparameterize the regression's parameters
         if self.args.noise_var is None: 
-            self.variance = self.lambda_.inverse()
-            self.weight *= self.variance
+            lambda_ = best_params[1]['params'][0]
+            v = best_params[0]['params'][0]
+            self.variance = lambda_.inverse()
+            self.weight = v * self.variance
+        else: 
+            self.weight = best_params
+
+        self.avg_weight = self.history.mean(0)[...,None]
+        # re-scale coefficients
+        self.weight /= self.beta
+        self.avg_weight /= self.beta
 
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
             self.coef = self.weight[:-1]
             self.intercept = self.weight[-1]
+            self.avg_coef = self.avg_weight[:-1]
+            self.avg_intercept = self.avg_weight[-1]
         else: 
             self.coef = self.weight[:]
+            self.avg_coef = self.avg_weight[:]
         return self
 
     def predict(self, 
@@ -178,20 +163,64 @@ class TruncatedLinearRegression(LinearModel):
             return X@self.coef + self.intercept
         return X@self.coef
 
+    def final_nll(self, 
+            X: Tensor, 
+            y: Tensor) -> Tensor:
+        with ch.no_grad():
+            return self.criterion(self.predict(X), y, *self.criterion_params)
+
+    def avg_nll(self,
+            X: Tensor, 
+            y: Tensor) -> Tensor:
+        with ch.no_grad(): 
+            pred = X@self.avg_coef + self.avg_intercept
+            return self.criterion(pred, y, *self.criterion_params)
+
+
+    def best_nll(self,
+            X: Tensor, 
+            y: Tensor) -> Tensor:
+        with ch.no_grad(): 
+            return self.criterion(self.predict(X), y, *self.criterion_params)
+
+    def emp_nll(self, 
+            X: Tensor, 
+            y: Tensor) -> Tensor:
+        if self.args.fit_intercept: 
+            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
+        with ch.no_grad():
+            return self.criterion(X@self.emp_weight, y, *self.criterion_params)
+    
     @property
-    def coef_(self): 
+    def best_coef_(self): 
         """
         Regression coefficient weights.
         """
-        return self.coef
+        return self.coef.clone()
 
     @property
-    def intercept_(self): 
+    def best_intercept_(self): 
         """
         Regression intercept.
         """
         if self.intercept is not None:
-            return self.intercept
+            return self.intercept.clone()
+        warnings.warn("intercept not fit, check args input.") 
+    
+    @property
+    def avg_coef_(self): 
+        """
+        Regression coefficients, averaging over all gradient steps. 
+        """
+        return self.avg_coef.clone()
+
+    @property
+    def avg_intercept_(self): 
+        """
+        Regression intercept, averaging over all gradient steps. 
+        """
+        if self.avg_intercept is not None:
+            return self.avg_intercept.clone()
         warnings.warn("intercept not fit, check args input.") 
 
     @property
@@ -249,3 +278,11 @@ class TruncatedLinearRegression(LinearModel):
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()
             self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+
+    def parameters(self): 
+        if self._parameters is None: 
+            raise "model parameters are not set"
+        elif isinstance(self._parameters, collections.OrderedDict):
+            return self._parameters.values()
+        return self._parameters
+
