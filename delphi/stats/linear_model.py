@@ -86,5 +86,5 @@ class LinearModel(delphi):
             self.lambda_ = self._parameters[1]['params'][0].data
             self.lambda_.requires_grad = False
 
-        self.weight.requires_grad = False
+        self.weight.requires_grad= False
         self.emp_weight /= self.beta

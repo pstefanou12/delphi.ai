@@ -61,7 +61,6 @@ class TestStats(unittest.TestCase):
         # calculate empirical noise variance for regression 
         ols_trunc = LinearRegression()
         ols_trunc.fit(x_trunc, y_trunc)
-        emp_noise_var = ch.from_numpy(ols_trunc.predict(X) - noised.numpy()).var(0)
         emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_]))
         emp_mse_loss = mse_loss(emp_, gt_)
         print(f'emp mse loss: {emp_mse_loss}')

@@ -23,7 +23,7 @@ REQ = 'required'
 # DEFAULT PARAMETERS
 TRUNC_REG_DEFAULTS = {
         'phi': (Callable, REQ),
-        'noise_var': (float, None), 
+        'noise_var': (Tensor, None), 
         'fit_intercept': (bool, True), 
         'val': (float, .2),
         'var_lr': (float, 1e-2), 
@@ -76,7 +76,7 @@ class TruncatedLinearRegression(LinearModel):
             store (cox.store.Store) : cox store object for logging 
         """
         super().__init__(args, dependent, defaults=TRUNC_REG_DEFAULTS, store=store)
-        if self.dependent: assert self.dependent and self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
+        if self.dependent: assert self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 
         del self.criterion
         del self.criterion_params 
@@ -107,6 +107,7 @@ class TruncatedLinearRegression(LinearModel):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) <= X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
+        assert self.args.noise_var.size(0) == y.size(1), "noise var size is: {}. y size is: {}. expecting noise_var.size(0) == y.size(1)".format(self.args.noise_var.size(0), y.size(1))
 
         # add number of samples to args 
         self.args.__setattr__('T', X.size(0))
@@ -260,7 +261,7 @@ class TruncatedLinearRegression(LinearModel):
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
             return X@weight * lambda_.inverse() 
-        if self.dependent: 
+        if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
             return (self.weight@X.T).T
         return X@self.weight

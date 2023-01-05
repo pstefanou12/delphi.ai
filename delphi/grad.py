@@ -226,14 +226,15 @@ class SwitchGrad(ch.autograd.Function):
         test whether to use censor-aware or censor-oblivious function 
         for computing gradient
         '''
-        M = ch.distributions.MultivariateNormal(ch.zeros(pred[0].size(0)), ch.eye(pred[0].size(0)))
+        M = ch.distributions.MultivariateNormal(ch.zeros(pred[0].size(0)), noise_var) 
 
         result = Test(pred, phi, c_gamma, alpha, T)[...,None]
         # take inverse of result; result = [0, 1], result_inv = [1, 0]
         result_inv = ~result
 
         # add random noise to each copy
-        noised = stacked + (noise_var ** .5) * M.sample(stacked.size()[:-1])
+        noised = stacked + M.sample(stacked.size()[:-1])
+        # noised = stacked + (noise_var ** .5) * M.sample(stacked.size()[:-1])
         
         # filter out copies where pred is in bounds
         filtered = phi(noised)
