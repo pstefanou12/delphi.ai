@@ -260,11 +260,18 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.noise_var is None:
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
-            return X@weight * lambda_.inverse() 
+            return X@weight * lambda_.inverse()
+
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
+        
+        """
+        TODO: fix hack
+        """
+        try: 
+             return X@self.weight
+        except: 
             return (self.weight@X.T).T
-        return X@self.weight
 
     def pre_step_hook(self, inp) -> None:
         # l1 regularization
