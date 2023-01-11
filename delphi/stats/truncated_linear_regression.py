@@ -124,7 +124,7 @@ class TruncatedLinearRegression(LinearModel):
 
         # normalize features so that the maximum l_2 norm is 1
         self.beta = ch.ones(1, 1)
-        if X.norm(dim=1, p=2).max() > 1:  
+        if X.norm(dim=1, p=2).max() > 1 and not self.dependent:  
             l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
             self.beta = l_inf * (X.size(1) ** .5)
 
@@ -264,14 +264,8 @@ class TruncatedLinearRegression(LinearModel):
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
-        
-        """
-        TODO: fix hack
-        """
-        try: 
-             return X@self.weight
-        except: 
-            return (self.weight@X.T).T
+        out = X@self.weight
+        return out 
 
     def pre_step_hook(self, inp) -> None:
         # l1 regularization
@@ -279,7 +273,10 @@ class TruncatedLinearRegression(LinearModel):
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
 
         if self.dependent: 
-            self.weight.grad = self.weight.grad@self.Sigma.inverse()
+            try: 
+                self.weight.grad = self.weight.grad@self.Sigma.inverse()
+            except: 
+                self.weight.grad = self.Sigma.inverse()@self.weight.grad
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
         if self.args.noise_var is None:
