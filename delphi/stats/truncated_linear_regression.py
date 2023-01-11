@@ -264,8 +264,7 @@ class TruncatedLinearRegression(LinearModel):
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
-        out = X@self.weight
-        return out 
+        return X@self.weight
 
     def pre_step_hook(self, inp) -> None:
         # l1 regularization
