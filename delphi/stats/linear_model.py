@@ -61,6 +61,7 @@ class LinearModel(delphi):
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
         X, y = train_loader.dataset.tensors
+        # import pdb; pdb.set_trace()
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
 
         if self.dependent:
