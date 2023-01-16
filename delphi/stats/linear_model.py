@@ -67,8 +67,8 @@ class LinearModel(delphi):
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \
                         X.view(X.size(0), 1, X.size(1))).sum(0)
             XXT_sum = calc_sigma_0(X)
-
-            self.register_buffer('Sigma_0',(1 / (self.s * len(X))) * XXT_sum)
+            Sigma_0 = ((1 / (self.s * len(X))) * XXT_sum)
+            self.register_buffer('Sigma_0', Sigma_0)
             assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
             self.register_buffer('Sigma', self.Sigma_0.clone())
 

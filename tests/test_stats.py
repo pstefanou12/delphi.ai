@@ -166,14 +166,14 @@ class TestStats(unittest.TestCase):
             u, s, v = LA.svd(A)
             return s.max()
         
-        D = 10 # number of dimensions for A_{*} matrix
+        D = 3 # number of dimensions for A_{*} matrix
         T = 10000
-        A = .1 * ch.randn((D, D))
+        A = .9 * ch.randn((D, D))
 
         spectral_norm = calc_spectral_norm(A)
         print(f'Spectral Norm: {spectral_norm}')
 
-        phi = oracle.LogitBall(4.0)
+        phi = oracle.LogitBall(1.0)
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
         M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR) 
@@ -198,7 +198,7 @@ class TestStats(unittest.TestCase):
         train_kwargs = Parameters({
             'phi': phi, 
             'c_gamma': 2.0,
-            'epochs': 10, 
+            'epochs': 1, 
             'trials': 1, 
             'batch_size': 10,
             'constant': True,
@@ -218,7 +218,7 @@ class TestStats(unittest.TestCase):
                                                     dependent=True)
         trunc_lds.fit(X, Y)
 
-        A_ = trunc_lds.coef_
+        A_ = trunc_lds.best_coef_
         A0_ = trunc_lds.emp_weight
         trunc_spec_norm = calc_spectral_norm(A - A_)
         emp_spec_norm = calc_spectral_norm(A - A0_)

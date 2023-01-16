@@ -264,18 +264,15 @@ class TruncatedLinearRegression(LinearModel):
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
+            return (self.weight.T@X.T).T
         return X@self.weight
 
     def pre_step_hook(self, inp) -> None:
-        # l1 regularization
         if self.args.noise_var is not None:
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
 
         if self.dependent: 
-            try: 
-                self.weight.grad = self.weight.grad@self.Sigma.inverse()
-            except: 
-                self.weight.grad = self.Sigma.inverse()@self.weight.grad
+            self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
         if self.args.noise_var is None:
