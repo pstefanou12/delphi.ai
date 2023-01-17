@@ -61,7 +61,6 @@ class LinearModel(delphi):
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
         X, y = train_loader.dataset.tensors
-        # import pdb; pdb.set_trace()
         self.ols = LinearRegression(fit_intercept=False).fit(X, y)
 
         if self.dependent:
@@ -74,7 +73,7 @@ class LinearModel(delphi):
             self.register_buffer('Sigma', self.Sigma_0.clone())
 
         self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
-        self.register_buffer('emp_weight', Tensor(self.ols.coef_.T))
+        self.register_buffer('emp_weight', Tensor(self.ols.coef_))
 
     def iteration_hook(self, i, is_train, loss, batch):
         if not self.args.constant: self.schedule.step()
@@ -83,9 +82,9 @@ class LinearModel(delphi):
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         if self.args.noise_var is None:
-            self.weight = self._parameters[0]['params'][0].data 
+            self.weight = self._parameters[0]['params'][0].data
             self.lambda_ = self._parameters[1]['params'][0].data
             self.lambda_.requires_grad = False
 
-        self.weight.requires_grad= False
+        self.weight.requires_grad = False
         self.emp_weight /= self.beta

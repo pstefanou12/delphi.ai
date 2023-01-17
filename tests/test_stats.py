@@ -166,14 +166,15 @@ class TestStats(unittest.TestCase):
             u, s, v = LA.svd(A)
             return s.max()
         
-        D = 3 # number of dimensions for A_{*} matrix
+        D = 10 # number of dimensions for A_{*} matrix
         T = 10000
-        A = .9 * ch.randn((D, D))
+        A = .25 * ch.randn((D, D))
 
         spectral_norm = calc_spectral_norm(A)
         print(f'Spectral Norm: {spectral_norm}')
 
-        phi = oracle.LogitBall(1.0)
+        phi = oracle.LogitBall(5.0)
+        # phi = oracle.Identity()
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
         M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR) 
