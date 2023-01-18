@@ -216,7 +216,8 @@ class TestStats(unittest.TestCase):
         train_kwargs.__setattr__('lr', lr)
         print(f'learning rate: {lr}')
         trunc_lds = stats.TruncatedLinearRegression(train_kwargs, 
-                                                    dependent=True)
+                                                    dependent=True, 
+                                                    rand_seed=ch.randint(low=0, high=100, size=(1, 1)).data)
         trunc_lds.fit(X, Y)
 
         A_ = trunc_lds.best_coef_
