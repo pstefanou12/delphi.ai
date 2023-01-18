@@ -51,6 +51,7 @@ class TruncatedLinearRegression(LinearModel):
     def __init__(self,
                 args: Parameters,
                 dependent: bool=False,
+                rand_seed=0,
                 store: cox.store.Store=None):
         """
         Args: 
@@ -76,6 +77,7 @@ class TruncatedLinearRegression(LinearModel):
             store (cox.store.Store) : cox store object for logging 
         """
         super().__init__(args, dependent, defaults=TRUNC_REG_DEFAULTS, store=store)
+        self.rand_seed = rand_seed
         if self.dependent: assert self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 
         del self.criterion
@@ -128,7 +130,10 @@ class TruncatedLinearRegression(LinearModel):
             l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
             self.beta = l_inf * (X.size(1) ** .5)
 
-        best_params, self.history, best_loss = train_model(self.args, self, *make_train_and_val(self.args, X / self.beta, y), store=self.store)
+        best_params, self.history, best_loss = train_model(self.args, self, 
+                                                        *make_train_and_val(self.args, X / self.beta, y), 
+                                                        rand_seed=self.rand_seed,
+                                                        store=self.store)
         # reparameterize the regression's parameters
         if self.args.noise_var is None: 
             lambda_ = best_params[1]['params'][0]
