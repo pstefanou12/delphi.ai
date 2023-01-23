@@ -134,6 +134,7 @@ class TruncatedLinearRegression(LinearModel):
                                                         *make_train_and_val(self.args, X / self.beta, y), 
                                                         rand_seed=self.rand_seed,
                                                         store=self.store)
+
         # reparameterize the regression's parameters
         if self.args.noise_var is None: 
             lambda_ = best_params[1]['params'][0]
@@ -143,7 +144,7 @@ class TruncatedLinearRegression(LinearModel):
         else: 
             self.weight = best_params
 
-        self.avg_weight = self.history.mean(0)[...,None]
+        self.avg_weight = self.history.mean(0)
         # re-scale coefficients
         self.weight /= self.beta
         self.avg_weight /= self.beta

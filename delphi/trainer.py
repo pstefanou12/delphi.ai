@@ -122,7 +122,7 @@ def model_loop_(args: Parameters,
             iterator.set_description(desc)
  
         model.iteration_hook(i, is_train, loss, batch)
-        if is_train: history_ = ch.cat([history_, model.weight.data.T])
+        if is_train: history_ = ch.cat([history_, model.weight.data[None,...]])
     model.epoch_hook(epoch, is_train, loss)
 
     return loss_.avg, prec1_.avg, prec5_.avg, history_
@@ -156,7 +156,6 @@ def eval_model(args: Parameters,
         }
         store['eval'].append_row(log_info)
     return log_info
-
 
 
 def train_model(args, model, train_loader, val_loader, rand_seed=0, store=None, checkpoint=None):

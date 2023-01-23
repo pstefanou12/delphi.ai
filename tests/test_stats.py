@@ -222,10 +222,14 @@ class TestStats(unittest.TestCase):
 
         A_ = trunc_lds.best_coef_
         A0_ = trunc_lds.emp_weight
+        A_avg = trunc_lds.avg_coef_
+
         trunc_spec_norm = calc_spectral_norm(A - A_)
         emp_spec_norm = calc_spectral_norm(A - A0_)
+        avg_spec_norm = calc_spectral_norm(A - A_avg)
         print(f"truncated spectral norm: {trunc_spec_norm}")
         print(f"empirical spectral norm: {emp_spec_norm}")
+        print(f"average spectral norm: {avg_spec_norm}")
 
         self.assertTrue(trunc_spec_norm <= emp_spec_norm, f"truncated spectral norm {trunc_spec_norm}")
 
