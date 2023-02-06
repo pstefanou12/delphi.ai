@@ -20,6 +20,7 @@ class LinearModel(delphi):
     def __init__(self, 
                 args: Parameters,
                 dependent: bool,
+                emp_weight=None,
                 defaults: dict={},
                 store: cox.store.Store=None): 
         '''
@@ -28,6 +29,7 @@ class LinearModel(delphi):
             k (int): number of output logits
         '''
         super().__init__(args, defaults=defaults, store=store)
+        self.emp_weight = emp_weight
         self.d, self.k = None, None
         self.base_radius = 1.0
         self.dependent = dependent
@@ -61,7 +63,12 @@ class LinearModel(delphi):
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
         X, y = train_loader.dataset.tensors
-        self.ols = LinearRegression(fit_intercept=False).fit(X, y)
+        if self.emp_weight is None: 
+            self.ols = LinearRegression(fit_intercept=False).fit(X, y)
+            self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
+            self.register_buffer('emp_weight', Tensor(self.ols.coef_))
+        else: 
+            self.register_buffer("emp_weight", self.args.emp_weight)
 
         if self.dependent:
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \
@@ -71,14 +78,7 @@ class LinearModel(delphi):
             self.register_buffer('Sigma_0', Sigma_0)
             assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
             self.register_buffer('Sigma', self.Sigma_0.clone())
-
-        
-        if self.args.emp_weight is None:
-            self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
-            self.register_buffer('emp_weight', Tensor(self.ols.coef_))
-        else: 
-            self.register_buffer("emp_weight", self.args.emp_weight)
-
+       
     def iteration_hook(self, i, is_train, loss, batch):
         if not self.args.constant: self.schedule.step()
 
