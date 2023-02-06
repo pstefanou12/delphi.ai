@@ -29,6 +29,7 @@ class LinearModel(delphi):
             k (int): number of output logits
         '''
         super().__init__(args, defaults=defaults, store=store)
+        self.register_buffer('emp_weight', emp_weight)
         self.emp_weight = emp_weight
         self.d, self.k = None, None
         self.base_radius = 1.0
@@ -67,8 +68,6 @@ class LinearModel(delphi):
             self.ols = LinearRegression(fit_intercept=False).fit(X, y)
             self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
             self.register_buffer('emp_weight', Tensor(self.ols.coef_))
-        else: 
-            self.register_buffer("emp_weight", self.args.emp_weight)
 
         if self.dependent:
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \
