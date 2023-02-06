@@ -183,6 +183,7 @@ def train_model(args, model, train_loader, val_loader, rand_seed=0, store=None, 
             'val_prec5': float})
         setup_store_with_metadata(args, store)
 
+    # stores model estimates after each gradient step
     history = ch.Tensor([])
     best_loss, best_params = float('inf'), None
     for trial in range(args.trials):

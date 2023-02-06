@@ -72,8 +72,12 @@ class LinearModel(delphi):
             assert ch.det(self.Sigma_0) != 0, 'Sigma_0 is singular and non-invertible'
             self.register_buffer('Sigma', self.Sigma_0.clone())
 
-        self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
-        self.register_buffer('emp_weight', Tensor(self.ols.coef_))
+        
+        if self.args.emp_weight is None:
+            self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
+            self.register_buffer('emp_weight', Tensor(self.ols.coef_))
+        else: 
+            self.register_buffer("emp_weight", self.args.emp_weight)
 
     def iteration_hook(self, i, is_train, loss, batch):
         if not self.args.constant: self.schedule.step()
