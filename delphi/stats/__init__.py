@@ -1,4 +1,5 @@
 from .truncated_linear_regression import TruncatedLinearRegression
+from . import truncated_lqr
 # from .truncated_logistic_regression import TruncatedLogisticRegression
 # from .truncated_elastic_net_regression import TruncatedElasticNetRegression
 # from .truncated_lasso_regression import TruncatedLassoRegression

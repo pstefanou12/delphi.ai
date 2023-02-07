@@ -270,7 +270,8 @@ class TruncatedLinearRegression(LinearModel):
             return X@weight * lambda_.inverse()
 
         if self.dependent:
-            self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
+            self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
+                                X.view(X.size(0), 1, X.size(1))).mean(0)
             # import pdb; pdb.set_trace()
             if self.args.b:
                 # import pdb; pdb.set_trace()
