@@ -291,7 +291,6 @@ class TruncatedLinearRegression(LinearModel):
             self.weight.grad = self.weight.grad@self.Sigma.inverse()
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
-        print('weight: {}'.format(self.weight))
         if self.args.noise_var is None:
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()

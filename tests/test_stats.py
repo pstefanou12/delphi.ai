@@ -235,7 +235,6 @@ class TestStats(unittest.TestCase):
 
 
     def test_truncated_lqr(self): 
-        from delphi.grad import SwitchGrad
         TRAIN_KWARGS = Parameters({
             'c_gamma': 2.0,
             'epochs': 10, 
