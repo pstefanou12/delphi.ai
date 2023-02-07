@@ -274,7 +274,7 @@ class TruncatedLinearRegression(LinearModel):
             import pdb; pdb.set_trace()
             if self.args.b:
                 # import pdb; pdb.set_trace()
-                return (X.T@self.weight).T
+                return X@self.weight.T
             return (self.weight@X.T).T
         return X@self.weight
 
