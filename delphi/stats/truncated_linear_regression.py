@@ -271,9 +271,9 @@ class TruncatedLinearRegression(LinearModel):
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  X.view(X.size(0), 1, X.size(1))).mean(0)
-            # if self.args.b:
-            #     import pdb; pdb.set_trace()
-            #     return X@self.weight    
+            if self.args.b:
+                # import pdb; pdb.set_trace()
+                return X@self.weight    
             return (self.weight@X.T).T
         return X@self.weight
 
