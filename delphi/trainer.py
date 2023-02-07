@@ -1,4 +1,6 @@
-
+"""
+Module used for training models.
+"""
 import torch as ch
 import numpy as np
 from torch.optim import SGD, Adam, lr_scheduler
@@ -22,7 +24,9 @@ COSINE = 'cosine'
 LINEAR = 'linear'
 
 
-def make_optimizer_and_schedule(args: Parameters, params: Iterable, checkpoint: dict=None):
+def make_optimizer_and_schedule(args: Parameters, 
+                                params: Iterable, 
+                                checkpoint: dict=None):
     """
     Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
     for SGD procedure. 
@@ -158,7 +162,13 @@ def eval_model(args: Parameters,
     return log_info
 
 
-def train_model(args, model, train_loader, val_loader, rand_seed=0, store=None, checkpoint=None):
+def train_model(args: Parameters, 
+                model: delphi, 
+                train_loader: ch.utils.data.DataLoader, 
+                val_loader: ch.utils.data.DataLoader, 
+                rand_seed: int=0, 
+                store: Store=None, 
+                checkpoint=None):
     """
     Train model. 
     Args: 

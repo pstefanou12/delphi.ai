@@ -1,5 +1,4 @@
 # stats tests 
-
 import unittest
 import numpy as np
 import torch as ch
@@ -200,7 +199,7 @@ class TestStats(unittest.TestCase):
             'phi': phi, 
             'c_gamma': 2.0,
             'epochs': 1, 
-            'trials': 1, 
+            'trials': 3, 
             'batch_size': 10,
             'constant': True,
             'fit_intercept': False,
