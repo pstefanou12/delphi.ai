@@ -15,6 +15,7 @@ from delphi import stats
 from delphi import oracle
 from delphi.utils.helpers import Parameters, logistic
 from delphi.utils.datasets import make_train_and_val
+from delphi.grad import SwitchGrad
 
 # CONSTANT
 mse_loss =  MSELoss()
@@ -234,6 +235,7 @@ class TestStats(unittest.TestCase):
 
 
     def test_truncated_lqr(self): 
+        from delphi.grad import SwitchGrad
         TRAIN_KWARGS = Parameters({
             'c_gamma': 2.0,
             'epochs': 10, 
@@ -254,8 +256,8 @@ class TestStats(unittest.TestCase):
         gamma = gamma_default
 
         # Here, m >= d must hold
-        D = 3
-        M = 5
+        D = 2
+        M = 3
         assert M >= D, f'M is currently: {M}, but it needs to be larger than D: {D}'
 
         NOISE_VAR = ch.eye(D)

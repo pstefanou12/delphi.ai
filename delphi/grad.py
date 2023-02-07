@@ -252,8 +252,8 @@ class SwitchGrad(ch.autograd.Function):
                 .5 * (z - pred).norm(p=2, keepdim=True, dim=-1).pow(2))
         loss_avg = loss.mean(0)
 
-        if loss_avg < -20: 
-          import pdb; pdb.set_trace()
+        # if loss_avg < -20: 
+        #   import pdb; pdb.set_trace()
 
         return loss.mean(0)
 

@@ -131,6 +131,8 @@ class TruncatedLinearRegression(LinearModel):
             l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
             self.beta = l_inf * (X.size(1) ** .5)
 
+        print('beta: {}'.format(self.beta))
+
         best_params, self.history, best_loss = train_model(self.args, self, 
                                                         *make_train_and_val(self.args, X / self.beta, y), 
                                                         rand_seed=self.rand_seed,
@@ -273,6 +275,7 @@ class TruncatedLinearRegression(LinearModel):
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
             # import pdb; pdb.set_trace()
+            # if X.size(0) == 1: import pdb; pdb.set_trace()
             if self.args.b:
                 # import pdb; pdb.set_trace()
                 return X@self.weight.T
@@ -288,6 +291,7 @@ class TruncatedLinearRegression(LinearModel):
             self.weight.grad = self.weight.grad@self.Sigma.inverse()
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
+        print('weight: {}'.format(self.weight))
         if self.args.noise_var is None:
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()

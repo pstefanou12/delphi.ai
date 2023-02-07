@@ -343,7 +343,8 @@ def find_estimate(train_kwargs,
         train_kwargs.__setattr__('noise_var', gen_data.noise_var)
         train_kwargs.__setattr__('b', False)
         train_kwargs.__setattr__('verbose', True)
-        train_kwargs.__setattr__('batch_size', 1)
+        train_kwargs.__setattr__('batch_size', 10)
+        train_kwargs.__setattr__('shuffle', False)
 
         lr = (1/train_kwargs.alpha) ** train_kwargs.c_gamma
         train_kwargs.__setattr__('lr', lr)
