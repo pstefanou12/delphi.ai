@@ -67,7 +67,7 @@ class LinearModel(delphi):
         if self._emp_weight is None: 
             self.ols = LinearRegression(fit_intercept=False).fit(X, y)
             self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
-            self.register_buffer('emp_weight', Tensor(self.ols.coef_))
+            self.register_buffer('emp_weight', Tensor(self.ols.coef_.T))
         else: 
             self.register_buffer('emp_weight', self._emp_weight)
 
@@ -82,6 +82,8 @@ class LinearModel(delphi):
        
     def iteration_hook(self, i, is_train, loss, batch):
         if not self.args.constant: self.schedule.step()
+
+        print(f'gradient: {self.weight.grad}')
 
     def post_training_hook(self): 
         if self.args.r is not None: self.args.r *= self.args.rate

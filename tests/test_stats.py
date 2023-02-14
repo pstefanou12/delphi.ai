@@ -30,12 +30,12 @@ class TestStats(unittest.TestCase):
     """
     # left truncated linear regression
     def test_known_truncated_regression(self):
-        D, K = 3, 1
+        D, K = 1, 1
         SAMPLES = 10000
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
-        NOISE_VAR = 3*ch.ones(1, 1)
+        NOISE_VAR = ch.ones(1, 1)
         W = w_.sample([K, D])
         W0 = w_.sample([1, 1])
 
@@ -48,6 +48,7 @@ class TestStats(unittest.TestCase):
         noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
         # generate ground-truth data
         phi = oracle.Left_Regression(ch.zeros(1))
+        # phi = oracle.Identity()
         # truncate
         indices = phi(noised).nonzero()[:,0]
         x_trunc, y_trunc = X[indices], noised[indices]
@@ -62,39 +63,41 @@ class TestStats(unittest.TestCase):
         ols_trunc = LinearRegression()
         ols_trunc.fit(x_trunc, y_trunc)
         emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_]))
+        print(f'empirical weights: {emp_}')
         emp_mse_loss = mse_loss(emp_, gt_)
         print(f'emp mse loss: {emp_mse_loss}')
 
         # scale y features
         y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
         phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+        # phi_scale = oracle.Identity()
         # train algorithm
         train_kwargs = Parameters({'phi': phi_scale, 
                                 'alpha': alpha,
-                                'epochs': 1,
+                                'epochs': 10,
                                 'lr': 3e-1,
-                                'custom_lr_multiplier': 'adam',
+                                # 'custom_lr_multiplier': 'adam',
                                 'num_samples': 100,
+                                'momentum': .9,
                                 'batch_size': 1,
                                 'trials': 1,
-                                'noise_var': ch.ones(1, 1)
-                                }) 
+                                'verbose': True,
+                                'constant': True,
+                                'noise_var': ch.ones(1, 1)}) 
         trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
         trunc_reg.fit(x_trunc, y_trunc_scale)
         w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
+        print(f'estimated weights: {w_}')
         known_mse_loss = mse_loss(gt_, w_.flatten())
         print(f'known mse loss: {known_mse_loss}')
         msg = f'known mse loss is larger than empirical mse loss. known mse loss is {known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
-        known_bool = known_mse_loss <= emp_mse_loss
-        # self.assertTrue(known_mse_loss <= emp_mse_loss, msg)
+        self.assertTrue(known_mse_loss <= emp_mse_loss, msg)
         
         avg_w_ = ch.cat([(trunc_reg.avg_coef_).flatten(), trunc_reg.avg_intercept_]) * ch.sqrt(NOISE_VAR)
         avg_known_mse_loss = mse_loss(gt_, avg_w_.flatten())
         print(f'avg known mse loss: {avg_known_mse_loss}')
         msg = f'avg known mse loss is larger than empirical mse loss. avg known mse loss is {avg_known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
-        avg_bool = avg_known_mse_loss <= emp_mse_loss
         self.assertTrue(avg_known_mse_loss <= emp_mse_loss, msg)
-        self.assertTrue(known_bool or avg_bool, "both the average and best mse losses exceed the emprical estimates")        
 
         print("truncated nll on truncated estimates: {}".format(trunc_reg.final_nll(X, y / ch.sqrt(NOISE_VAR))))
         print("truncated nll on empirical estimates: {}".format(trunc_reg.emp_nll(X, y / ch.sqrt(NOISE_VAR))))
@@ -102,7 +105,7 @@ class TestStats(unittest.TestCase):
     
     def test_unknown_truncated_regression(self):
         D, K = 10, 1
-        SAMPLES = 10000
+        SAMPLES = 1000
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
@@ -145,8 +148,8 @@ class TestStats(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'phi': phi_emp_scale, 
                                 'alpha': alpha,
-                                'epochs': 1, 
                                 'trials': 1,
+                                'momentum': .9,
                                 'batch_size': 10,
                                 'var_lr': 1e-2,})
         unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs)

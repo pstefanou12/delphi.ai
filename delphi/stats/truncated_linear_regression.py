@@ -132,8 +132,6 @@ class TruncatedLinearRegression(LinearModel):
             l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
             self.beta = l_inf * (X.size(1) ** .5)
 
-        print('beta: {}'.format(self.beta))
-
         best_params, self.history, best_loss = train_model(self.args, self, 
                                                         *make_train_and_val(self.args, X / self.beta, y), 
                                                         rand_seed=self.rand_seed,
@@ -155,10 +153,10 @@ class TruncatedLinearRegression(LinearModel):
 
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
-            self.coef = self.weight[:,:-1]
-            self.intercept = self.weight[:,-1]
-            self.avg_coef = self.avg_weight[:,:-1]
-            self.avg_intercept = self.avg_weight[:,-1]
+            self.coef = self.weight[:-1]
+            self.intercept = self.weight[-1]
+            self.avg_coef = self.avg_weight[:-1]
+            self.avg_intercept = self.avg_weight[-1]
         else: 
             self.coef = self.weight[:]
             self.avg_coef = self.avg_weight[:]
@@ -171,8 +169,8 @@ class TruncatedLinearRegression(LinearModel):
         """
         assert self.coef is not None, "must fit model before using predict method"
         if self.args.fit_intercept: 
-            return X@self.coef.T + self.intercept
-        return X@self.coef.T
+            return X@self.coef + self.intercept
+        return X@self.coef
 
     def final_nll(self, 
             X: Tensor, 
@@ -184,7 +182,7 @@ class TruncatedLinearRegression(LinearModel):
             X: Tensor, 
             y: Tensor) -> Tensor:
         with ch.no_grad(): 
-            pred = X@self.avg_coef.T + self.avg_intercept
+            pred = X@self.avg_coef + self.avg_intercept
             return self.criterion(pred, y, *self.criterion_params)
 
 
@@ -200,7 +198,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.fit_intercept: 
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         with ch.no_grad():
-            return self.criterion(X@self.emp_weight.T, y, *self.criterion_params)
+            return self.criterion(X@self.emp_weight, y, *self.criterion_params)
     
     @property
     def best_coef_(self): 
@@ -270,7 +268,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.noise_var is None:
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
-            return X@weight.T * lambda_.inverse()
+            return X@weight * lambda_.inverse()
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
@@ -278,12 +276,12 @@ class TruncatedLinearRegression(LinearModel):
             if self.args.b:
                 return X@self.weight.T
             return (self.weight@X.T).T
-        return X@self.weight.T
+        return X@self.weight
 
     def pre_step_hook(self, inp) -> None:
         # TODO: find a cleaner way to do this
         if self.args.noise_var is not None and not self.dependent:
-            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[None,...]
+            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
 
         if self.dependent: 
             self.weight.grad = self.weight.grad@self.Sigma.inverse()
