@@ -126,7 +126,12 @@ def model_loop_(args: Parameters,
             iterator.set_description(desc)
  
         model.iteration_hook(i, is_train, loss, batch)
-        if is_train: history_ = ch.cat([history_, model.weight.data[None,...]])
+        if is_train: 
+            try: 
+                history_ = ch.cat([history_, model.weight.data[None,...]])
+            except: 
+                history_ = ch.cat([history_, model._parameters[0]['params'][0].data[None,...]])
+
     model.epoch_hook(epoch, is_train, loss)
 
     return loss_.avg, prec1_.avg, prec5_.avg, history_
@@ -236,8 +241,12 @@ def train_model(args: Parameters,
             then procedure has converged.
             """
             if best_params is None or val_loss < best_loss: 
-                best_params, best_loss = copy.copy(list(model.parameters())[0]), val_loss
-                best_params.requires_grad = False
+                try: 
+                    best_params, best_loss = copy.copy(list(model.parameters())[0]), val_loss
+                    best_params.requires_grad = False
+                except: 
+                    best_params, best_loss = copy.copy(list(model._parameters)), val_loss
+                    # best_params['params'][0].requires_grad = False
             if args.early_stopping: 
                 if ch.abs(val_loss - best_loss) <= args.tol:
                     no_improvement_count += 1

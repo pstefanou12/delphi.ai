@@ -31,7 +31,7 @@ class TestStats(unittest.TestCase):
     # left truncated linear regression
     def test_known_truncated_regression(self):
         D, K = 3, 1
-        SAMPLES = 100
+        SAMPLES = 10000
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
@@ -71,7 +71,7 @@ class TestStats(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'phi': phi_scale, 
                                 'alpha': alpha,
-                                'epochs': 100,
+                                'epochs': 1,
                                 'lr': 3e-1,
                                 'custom_lr_multiplier': 'adam',
                                 'num_samples': 100,
@@ -93,7 +93,7 @@ class TestStats(unittest.TestCase):
         print(f'avg known mse loss: {avg_known_mse_loss}')
         msg = f'avg known mse loss is larger than empirical mse loss. avg known mse loss is {avg_known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
         avg_bool = avg_known_mse_loss <= emp_mse_loss
-#        self.assertTrue(avg_known_mse_loss <= emp_mse_loss, msg)
+        self.assertTrue(avg_known_mse_loss <= emp_mse_loss, msg)
         self.assertTrue(known_bool or avg_bool, "both the average and best mse losses exceed the emprical estimates")        
 
         print("truncated nll on truncated estimates: {}".format(trunc_reg.final_nll(X, y / ch.sqrt(NOISE_VAR))))
@@ -147,11 +147,11 @@ class TestStats(unittest.TestCase):
                                 'alpha': alpha,
                                 'epochs': 1, 
                                 'trials': 1,
-                                'batch_size': 100,
+                                'batch_size': 10,
                                 'var_lr': 1e-2,})
         unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
         unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
-        w_ = ch.cat([(unknown_trunc_reg.coef_).flatten(), unknown_trunc_reg.intercept_]) * ch.sqrt(emp_noise_var)
+        w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_]) * ch.sqrt(emp_noise_var)
         noise_var_ = unknown_trunc_reg.variance_ * emp_noise_var
         unknown_mse_loss = mse_loss(gt_, w_.flatten())
         print(f'unknown mse loss: {unknown_mse_loss}')

@@ -348,8 +348,6 @@ def find_estimate(train_kwargs,
 
         lr = (1/train_kwargs.alpha) ** train_kwargs.c_gamma
         train_kwargs.__setattr__('lr', lr)
-        import pdb; pdb.set_trace()
-
         trunc_lds = TruncatedLinearRegression(train_kwargs, 
                                               emp_weight=coef_concat,
                                               store=store,

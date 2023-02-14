@@ -110,7 +110,8 @@ class TruncatedLinearRegression(LinearModel):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) <= X.size(1), "y is size: {}. expecting y tensor to have y.size(1) < X.size(1).".format(y.size()) 
-        assert self.args.noise_var.size(0) == y.size(1), "noise var size is: {}. y size is: {}. expecting noise_var.size(0) == y.size(1)".format(self.args.noise_var.size(0), y.size(1))
+        if self.args.noise_var is not None:
+            assert self.args.noise_var.size(0) == y.size(1), "noise var size is: {}. y size is: {}. expecting noise_var.size(0) == y.size(1)".format(self.args.noise_var.size(0), y.size(1))
 
         # add number of samples to args 
         self.args.__setattr__('T', X.size(0))
@@ -154,10 +155,10 @@ class TruncatedLinearRegression(LinearModel):
 
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
-            self.coef = self.weight[:-1]
-            self.intercept = self.weight[-1]
-            self.avg_coef = self.avg_weight[:-1]
-            self.avg_intercept = self.avg_weight[-1]
+            self.coef = self.weight[:,:-1]
+            self.intercept = self.weight[:,-1]
+            self.avg_coef = self.avg_weight[:,:-1]
+            self.avg_intercept = self.avg_weight[:,-1]
         else: 
             self.coef = self.weight[:]
             self.avg_coef = self.avg_weight[:]
@@ -170,8 +171,8 @@ class TruncatedLinearRegression(LinearModel):
         """
         assert self.coef is not None, "must fit model before using predict method"
         if self.args.fit_intercept: 
-            return X@self.coef + self.intercept
-        return X@self.coef
+            return X@self.coef.T + self.intercept
+        return X@self.coef.T
 
     def final_nll(self, 
             X: Tensor, 
@@ -183,7 +184,7 @@ class TruncatedLinearRegression(LinearModel):
             X: Tensor, 
             y: Tensor) -> Tensor:
         with ch.no_grad(): 
-            pred = X@self.avg_coef + self.avg_intercept
+            pred = X@self.avg_coef.T + self.avg_intercept
             return self.criterion(pred, y, *self.criterion_params)
 
 
@@ -199,7 +200,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.fit_intercept: 
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         with ch.no_grad():
-            return self.criterion(X@self.emp_weight, y, *self.criterion_params)
+            return self.criterion(X@self.emp_weight.T, y, *self.criterion_params)
     
     @property
     def best_coef_(self): 
@@ -269,23 +270,20 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.noise_var is None:
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
-            return X@weight * lambda_.inverse()
+            return X@weight.T * lambda_.inverse()
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
-            # import pdb; pdb.set_trace()
-            # if X.size(0) == 1: import pdb; pdb.set_trace()
             if self.args.b:
-                # import pdb; pdb.set_trace()
                 return X@self.weight.T
             return (self.weight@X.T).T
-        return X@self.weight
+        return X@self.weight.T
 
     def pre_step_hook(self, inp) -> None:
         # TODO: find a cleaner way to do this
         if self.args.noise_var is not None and not self.dependent:
-            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
+            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[None,...]
 
         if self.dependent: 
             self.weight.grad = self.weight.grad@self.Sigma.inverse()
