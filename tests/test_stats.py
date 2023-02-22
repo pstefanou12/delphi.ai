@@ -70,7 +70,6 @@ class TestStats(unittest.TestCase):
         # scale y features
         y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
         phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
-        # phi_scale = oracle.Identity()
         # train algorithm
         train_kwargs = Parameters({'phi': phi_scale, 
                                 'alpha': alpha,
@@ -282,7 +281,6 @@ class TestStats(unittest.TestCase):
 
         # membership oracle
         phi = oracle.LogitBall(R)
-        # phi = oracle.Identity()
 
         gen_data =  stats.truncated_lqr.GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
 
@@ -316,9 +314,9 @@ class TestStats(unittest.TestCase):
                                                         R, U_B, 
                                                         target_thickness=TARGET_THICKNESS)
 
-        spec_norm_B_OLS =  stats.truncated_lqr.calc_spectral_norm(B - B_OLS)
-        spec_norm_B_HAT =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT)
-        spec_norm_B_HAT_avg =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT_avg)
+        spec_norm_B_OLS =  stats.truncated_lqr.calc_spectral_norm(B - B_OLS.T)
+        spec_norm_B_HAT =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT.T)
+        spec_norm_B_HAT_avg =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT_avg.T)
 
         print(f'spectral norm B0: {spec_norm_B_OLS}')
         print(f'spectral norm B_HAT: {spec_norm_B_HAT}')

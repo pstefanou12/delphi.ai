@@ -222,7 +222,7 @@ def part_one(train_kwargs,
           else: 
             break
           while True:
-            ut = calculate_u_t_one(a_hat, b_hat, xt)
+            ut = calculate_u_t_one(a_hat, b_hat.T, xt)
             sample = gen_data(xt, u_t=ut)
             total_samples += 1
             if sample is not None:
@@ -261,7 +261,7 @@ def part_two(train_kwargs,
 
         responsive = True
         while responsive: 
-          ut = calculate_u_t_two(a_hat, b_hat, gamma*id_[index]) 
+          ut = calculate_u_t_two(a_hat, b_hat.T, gamma*id_[index]) 
           sample = gen_data(xt, u_t=ut)
           if sample is not None:
             yt, ut = sample
@@ -281,7 +281,8 @@ def part_two(train_kwargs,
           else: 
             break
           while True: 
-              ut = -(b_hat.T@LA.inv((b_hat@b_hat.T))@a_hat@xt.T).T
+              # import pdb; pdb.set_trace()
+              ut = -(b_hat@LA.inv((b_hat.T@b_hat))@a_hat@xt.T).T
               sample = gen_data(xt, u_t=ut)
 
               total_samples += 1
@@ -329,7 +330,7 @@ def find_estimate(train_kwargs,
         Xx, Ux, Yx, Nsx, Ntx, alpha_x = part_two(train_kwargs, gen_data, eps1, eps2/2, hat_A, 
                                                       hat_B, D, M, gamma = gamma_A, 
                                                       traj=int(num_traj/2))
-        coef_concat = ch.cat([hat_A, hat_B], axis=1)
+        coef_concat = ch.cat([hat_A, hat_B.T], axis=1)
 
         # import pdb; pdb.set_trace()
         XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)

@@ -274,7 +274,9 @@ class TruncatedLinearRegression(LinearModel):
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
             if self.args.b:
-                return X@self.weight.T
+                # import pdb; pdb.set_trace()
+                return X@self.weight
+                # return X@self.weight.T
             return (self.weight@X.T).T
         return X@self.weight
 
@@ -283,8 +285,11 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.noise_var is not None and not self.dependent:
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
 
-        if self.dependent: 
-            self.weight.grad = self.weight.grad@self.Sigma.inverse()
+        if self.dependent:
+            if self.args.b: 
+                self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
+            else: 
+                self.weight.grad = self.weight.grad@self.Sigma.inverse()
 
     def iteration_hook(self, i, loop_type, loss, batch) -> None:
         if self.args.noise_var is None:
