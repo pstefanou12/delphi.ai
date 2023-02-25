@@ -205,7 +205,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression coefficient weights.
         """
-        return self.coef.clone()
+        return self.coef.clone().T
 
     @property
     def best_intercept_(self): 
@@ -221,7 +221,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression coefficients, averaging over all gradient steps. 
         """
-        return self.avg_coef.clone()
+        return self.avg_coef.clone().T
 
     @property
     def avg_intercept_(self): 
@@ -243,12 +243,16 @@ class TruncatedLinearRegression(LinearModel):
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
     
-    @property
-    def ols_coef_(self): 
-        """
-        OLS empirical estimates for coefficients.
-        """
-        return self.trunc_reg.emp_weight.clone()
+    # @property
+    # def ols_coef_(self): 
+    #     """
+    #     OLS empirical estimates for coefficients.
+    #     """
+    #     return self._ols_coef_.clone().T
+
+    # @property.setter
+    # def ols_coef_(self, value): 
+    #     self._ols_coef = value
 
     @property
     def ols_intercept_(self):
@@ -273,11 +277,14 @@ class TruncatedLinearRegression(LinearModel):
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
-            if self.args.b:
+            # if self.args.b: 
                 # import pdb; pdb.set_trace()
-                return X@self.weight
-                # return X@self.weight.T
-            return (self.weight@X.T).T
+            # if self.args.b:
+            #     # import pdb; pdb.set_trace()
+            #     import pdb; pdb.set_trace()
+            #     return X@self.weight
+            return X@self.weight
+            # return (self.weight@X.T).T
         return X@self.weight
 
     def pre_step_hook(self, inp) -> None:
