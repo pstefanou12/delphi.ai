@@ -47,11 +47,7 @@ class LinearModel(delphi):
         if self._emp_weight is None: 
             coef_, _, self.rank_, self.singular_ = lstsq(X, y)
             self.ols_coef_ = Tensor(coef_)
-            # self.ols = LinearRegression(fit_intercept=False).fit(X, y)
-            # self.register_buffer('emp_noise_var', ch.var(Tensor(self.ols.predict(X)) - y, dim=0)[..., None])
             self.register_buffer('emp_noise_var', ch.var(Tensor(X@coef_) - y, dim=0)[..., None])
-            # import pdb; pdb.set_trace()
-            # self.register_buffer('emp_weight', Tensor(self.ols.coef_))
             self.register_buffer('emp_weight', Tensor(coef_))
         else: 
             self.register_buffer('emp_weight', self._emp_weight)

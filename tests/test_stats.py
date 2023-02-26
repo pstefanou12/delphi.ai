@@ -17,7 +17,7 @@ from delphi.utils.helpers import Parameters, logistic
 from delphi.utils.datasets import make_train_and_val
 from delphi.grad import SwitchGrad
 
-# CONSTANT
+# CONSTANTS
 mse_loss =  MSELoss()
 cos_sim = CosineSimilarity()
 G = Gumbel(0, 1)
@@ -237,11 +237,31 @@ class TestStats(unittest.TestCase):
 
 
     def test_truncated_lqr(self): 
+
+        class GenerateTruncatedLQRData:
+            def __init__(self, phi, A, B, noise_var = None): 
+                self.phi = phi
+                self.A = A 
+                self.B = B
+                self.noise_var = noise_var
+                if noise_var is None: 
+                    self.noise_var = ch.eye(self.A.size(0))
+
+                self.M = ch.distributions.MultivariateNormal(ch.zeros(A.size(0)), self.noise_var)
+
+            def __call__(self, x_t, u_t = None):
+                if u_t is None: u_t = ch.randn((1, self.B.size(1)))
+                y_t = (self.A@x_t.T + self.B@u_t.T).T + self.M.sample((x_t.size(0),))
+                if self.phi(y_t): 
+                    return y_t, u_t
+                else: 
+                    return None
+
         TRAIN_KWARGS = Parameters({
             'c_gamma': 2.0,
             'epochs': 10, 
             'trials': 1, 
-            'batch_size': 100,
+            'batch_size': 10,
             'constant': True,
             'fit_intercept': False,
             'num_samples': 10,
@@ -278,16 +298,12 @@ class TestStats(unittest.TestCase):
 
         # membership oracle
         phi = oracle.LogitBall(R)
-        gen_data =  stats.truncated_lqr.GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
+        gen_data = GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
 
         print(f'A: \n {A}')
-        print('A size: {}'.format(A.size()))
         print(f'B: \n {B}')
-        print('B size: {}'.format(B.size()))
 
         TARGET_THICKNESS = 2.0*U_A*U_A*max(U_A,U_B)/L_B
-        print(f'target thickness: {TARGET_THICKNESS}')
-
 
         TRAIN_KWARGS.__setattr__('phi', phi)
         A_OLS, A_HAT, A_HAT_avg, num_trajectories, num_samples =  stats.truncated_lqr.phase_one(TRAIN_KWARGS, 
@@ -313,7 +329,7 @@ class TestStats(unittest.TestCase):
         spec_norm_B_OLS =  stats.truncated_lqr.calc_spectral_norm(B - B_OLS)
         spec_norm_B_HAT =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT)
         spec_norm_B_HAT_avg =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT_avg)
-        print(f'spectral norm B0: {spec_norm_B_OLS}')
+        print(f'spectral norm B_OLS: {spec_norm_B_OLS}')
         print(f'spectral norm B_HAT: {spec_norm_B_HAT}')
         print(f'spectral norm B_HAT_avg: {spec_norm_B_HAT_avg}')
 
@@ -345,6 +361,9 @@ class TestStats(unittest.TestCase):
 
         print(f'Yao B spectral norm: {B_yao_spec_norm}')
         print(f'Yao B avg spectral norm: {B_yao_avg_spec_norm}')
+
+        self.assertTrue(A_yao_spec_norm < spec_norm_A_OLS, f"A yao spectral norm is: {A_yao_spec_norm}, and A ols spectral norm is: {spec_norm_A_OLS}")
+        self.assertTrue(B_yao_spec_norm < spec_norm_B_OLS, f"B yao spectral norm is: {B_yao_spec_norm}, and B ols spectral norm is: {spec_norm_B_OLS}")
 
     # left truncated binary classification task
     def test_truncated_logistic_regression(self):
