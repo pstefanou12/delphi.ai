@@ -48,11 +48,10 @@ class Parameters():
         if x in vars(self):
             return vars(self)[x]
 
-        k = x.lower()
-        if k not in self.params:
+        if x not in self.params:
             return None
 
-        return self.params[k]
+        return self.params[x]
 
     def __setattr__(self, x, v):
         # Fix for some back-compatibility with some pickling bugs
@@ -61,9 +60,9 @@ class Parameters():
             return
 
         if x in vars(self):
-            vars(self)[x.lower()] = v
+            vars(self)[x] = v
 
-        self.params[x.lower()] = v
+        self.params[x] = v
 
     def __delattr__ (self, key):
         del self.params[key]

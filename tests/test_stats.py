@@ -10,6 +10,7 @@ import torch.linalg as LA
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import confusion_matrix
 import random
+from typing import Callable
 
 from delphi import stats 
 from delphi import oracle
@@ -257,17 +258,59 @@ class TestStats(unittest.TestCase):
                 else: 
                     return None
 
-        TRAIN_KWARGS = Parameters({
-            'c_gamma': 2.0,
-            'epochs': 10, 
-            'trials': 1, 
-            'batch_size': 10,
-            'constant': True,
-            'fit_intercept': False,
-            'num_samples': 10,
-            'c_s': 100.0, 
-            'tol': 1e-2,
-        })
+
+        def calc_sarah_dean(train_kwargs: Parameters, 
+                            gen_data: Callable,
+                            num_traj: int,
+                            D: int, 
+                            M: int):
+            '''
+            Sarah dean LQR used for testing.
+            '''
+            number_trajectories = 1
+            num_samples = 0
+            X, Y, U = ch.Tensor([]), ch.Tensor([]), ch.Tensor([])
+
+            xt = ch.zeros((1, D)) 
+            total_samples = 0
+
+            while number_trajectories < num_traj:
+                sample = gen_data(xt)
+
+                if sample is not None: 
+                    yt, ut = sample 
+                    X, Y, U = ch.cat((X,xt)), ch.cat((Y,yt)), ch.cat((U,ut))
+
+                    xt = yt 
+                    num_samples += 1
+                else: 
+                    number_trajectories += 1
+                    xt = ch.zeros((1, A.size(0)))
+                total_samples += 1
+
+            feat_concat = ch.cat([X, U], axis=1)
+
+            alpha = X.size(0) / total_samples
+
+            train_kwargs.__setattr__('alpha', alpha)
+            train_kwargs.__setattr__('noise_var', gen_data.noise_var)
+            train_kwargs.__setattr__('b', True)
+
+            lr = (1/train_kwargs.alpha) ** train_kwargs.c_gamma
+            train_kwargs.__setattr__('lr', lr)
+
+            trunc_lds = stats.TruncatedLinearRegression(train_kwargs,
+                                                dependent=True)
+            trunc_lds.fit(feat_concat.detach(), Y.detach())
+
+
+            AB = trunc_lds.best_coef_
+            A_, B_ = AB[:,:D], AB[:,D:]
+
+            ols_ = trunc_lds.emp_weight.T
+            A_ols, B_ols = ols_[:,:D], ols_[:,D:]
+
+            return A_, B_, A_ols, B_ols 
 
         # This is for the exploration radius for first 2.
         gamma_default = 2.0
@@ -291,10 +334,29 @@ class TestStats(unittest.TestCase):
         s2 = ch.zeros((D, M))
         s2[:D, :D] = ch.diag(ch.rand(D)*2.5+0.5)
         B = u@s2@v
-        U_A = 3
-        U_B = 3
+        U_A = 3.0
+        U_B = 3.0
         L_B = 0.5
         R = 5.0
+
+        TRAIN_KWARGS = Parameters({
+            'c_gamma': 2.0,
+            'epochs': 10, 
+            'trials': 1, 
+            'batch_size': 10,
+            'constant': True,
+            'fit_intercept': False,
+            'num_samples': 10,
+            'c_s': 100.0, 
+            'tol': 1e-2,
+            'R': R, 
+            'U_A': U_A, 
+            'U_B': U_B,
+            'delta': .9, 
+            'gamma': 2.0, 
+            'repeat': 1,
+            'T_gen_samples_A': 1000,
+        })
 
         # membership oracle
         phi = oracle.LogitBall(R)
@@ -306,64 +368,30 @@ class TestStats(unittest.TestCase):
         TARGET_THICKNESS = 2.0*U_A*U_A*max(U_A,U_B)/L_B
 
         TRAIN_KWARGS.__setattr__('phi', phi)
-        A_OLS, A_HAT, A_HAT_avg, num_trajectories, num_samples =  stats.truncated_lqr.phase_one(TRAIN_KWARGS, 
-                                                                                                gen_data, 
-                                                                                                D, 
-                                                                                                M,
-                                                                                                target_thickness=TARGET_THICKNESS)
+        TRAIN_KWARGS.__setattr__('target_thickness', TARGET_THICKNESS)
 
-        spec_norm_A_OLS =  stats.truncated_lqr.calc_spectral_norm(A - A_OLS)
-        spec_norm_A_HAT =  stats.truncated_lqr.calc_spectral_norm(A - A_HAT)
-        spec_norm_A_HAT_avg =  stats.truncated_lqr.calc_spectral_norm(A - A_HAT_avg)
+        trunc_lqr = stats.truncated_lqr.TruncatedLQR(TRAIN_KWARGS, gen_data, D, M)
+        trunc_lqr.fit()
 
-        print(f'spectral norm A_OLS: {spec_norm_A_OLS}')
-        print(f'spectral norm A_HAT: {spec_norm_A_HAT}')
-        print(f'spectral norm A_HAT_avg: {spec_norm_A_HAT_avg}')
 
-        TRAIN_KWARGS.__setattr__('phi', phi)
-        B_OLS, B_HAT, B_HAT_avg, num_trajectories, num_samples =  stats.truncated_lqr.phase_two(TRAIN_KWARGS, 
-                                                                                                gen_data, 
-                                                                                                D, M,
-                                                                                                num_traj=1000, 
-                                                                                                target_thickness=TARGET_THICKNESS)
-        spec_norm_B_OLS =  stats.truncated_lqr.calc_spectral_norm(B - B_OLS)
-        spec_norm_B_HAT =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT)
-        spec_norm_B_HAT_avg =  stats.truncated_lqr.calc_spectral_norm(B - B_HAT_avg)
-        print(f'spectral norm B_OLS: {spec_norm_B_OLS}')
-        print(f'spectral norm B_HAT: {spec_norm_B_HAT}')
-        print(f'spectral norm B_HAT_avg: {spec_norm_B_HAT_avg}')
+        A_yao, B_yao = trunc_lqr.best_A_, trunc_lqr.best_B_
+        A_sarah_dean_plev, B_sarah_dean_plev, A_sarah_dean_ols, B_sarah_dean_ols = calc_sarah_dean(TRAIN_KWARGS, gen_data, 1000, D, M)
 
-        TRAIN_KWARGS.__setattr__('phi', phi)
-        eps1, eps2 = .9, .9
-        delta = .5
-        gamma_A, gamma_B = (R)/U_A, (R)/U_B
-        
-        A_yao, B_yao, A_yao_avg, B_yao_avg, _, _, _, feat_concat = stats.truncated_lqr.find_estimate(TRAIN_KWARGS, 
-                                                                                                        gen_data, 
-                                                                                                        eps1,
-                                                                                                        eps2, 
-                                                                                                        A_HAT, 
-                                                                                                        B_HAT, 
-                                                                                                        delta, 
-                                                                                                        gamma_B, 
-                                                                                                        gamma_A, 
-                                                                                                        num_traj_part_one=1000,
-                                                                                                        num_traj_part_two=1000, 
-                                                                                                        repeat=1)
-        A_yao_spec_norm = stats.truncated_lqr.calc_spectral_norm(A - A_yao)
-        B_yao_spec_norm =  stats.truncated_lqr.calc_spectral_norm(B - B_yao)
 
-        A_yao_avg_spec_norm =  stats.truncated_lqr.calc_spectral_norm(A - A_yao_avg)
-        B_yao_avg_spec_norm =  stats.truncated_lqr.calc_spectral_norm(B - B_yao_avg)
+        A_yao_spec_norm = stats.truncated_lqr.calc_spectral_norm(A_yao - A)
+        B_yao_spec_norm = stats.truncated_lqr.calc_spectral_norm(B_yao - B)
 
-        print(f'Yao A spectral norm: {A_yao_spec_norm}')
-        print(f'Yao A avg spectral norm: {A_yao_avg_spec_norm}')
+        A_sd_plevr_spec_norm = stats.truncated_lqr.calc_spectral_norm(A_sarah_dean_plev - A)
+        B_sd_plevr_spec_norm = stats.truncated_lqr.calc_spectral_norm(B_sarah_dean_plev - B)
 
-        print(f'Yao B spectral norm: {B_yao_spec_norm}')
-        print(f'Yao B avg spectral norm: {B_yao_avg_spec_norm}')
+        A_sd_ols_spec_norm = stats.truncated_lqr.calc_spectral_norm(A_sarah_dean_ols - A)
+        B_sd_ols_spec_norm = stats.truncated_lqr.calc_spectral_norm(B_sarah_dean_ols - B)
+ 
+        self.assertTrue(A_yao_spec_norm < A_sd_plevr_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean plevrakis spectral norm is: {A_sd_plevr_spec_norm}")
+        self.assertTrue(B_yao_spec_norm < B_sd_plevr_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean plevrakis spectral norm is: {B_sd_plevr_spec_norm}")
 
-        self.assertTrue(A_yao_spec_norm < spec_norm_A_OLS, f"A yao spectral norm is: {A_yao_spec_norm}, and A ols spectral norm is: {spec_norm_A_OLS}")
-        self.assertTrue(B_yao_spec_norm < spec_norm_B_OLS, f"B yao spectral norm is: {B_yao_spec_norm}, and B ols spectral norm is: {spec_norm_B_OLS}")
+        self.assertTrue(A_yao_spec_norm < A_sd_ols_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean ols spectral norm is: {A_sd_ols_spec_norm}")
+        self.assertTrue(B_yao_spec_norm < B_sd_ols_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean ols spectral norm is: {B_sd_ols_spec_norm}")
 
     # left truncated binary classification task
     def test_truncated_logistic_regression(self):

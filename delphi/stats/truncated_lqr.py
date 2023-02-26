@@ -6,6 +6,7 @@ from typing import Callable
 from .truncated_linear_regression import TruncatedLinearRegression
 from ..utils.helpers import Parameters
 from ..delphi import delphi
+from ..utils.defaults import TRUNCATED_LQR_DEFAULTS
 
 # HELPER FUNCTIONS
 def calc_spectral_norm(A):
@@ -20,39 +21,27 @@ class TruncatedLQR(delphi):
 
   def __init__(self, 
               args: Parameters,
-              gen_data: Callable): 
+              gen_data: Callable, 
+              d: int, 
+              m: int): 
 
-    super().__init__(args)
+    super().__init__(args, defaults=TRUNCATED_LQR_DEFAULTS)
+    assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
+    assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.args.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+    assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_two != float('inf') or self.args.T_phase_two != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+    assert self.args.target_thickness != float('inf') or self.args.num_traj_gen_samples_B != float('inf') or self.args.T_gen_samples_B != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+    assert self.args.target_thickness != float('inf') or self.args.num_traj_gen_samples_A != float('inf') or self.args.T_gen_samples_A != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+
     self.gen_data = gen_data
+    self.d, self.m = d, m
+    self.gamma_A, self.gamma_B = self.args.R / self.args.U_A, self.args.R / self.args.U_B
 
   def fit(self): 
-    A_OLS, A_HAT, A_HAT_avg, num_trajectories, num_samples =  self.phase_one(D, 
-                                                                            M,
-                                                                            target_thickness=TARGET_THICKNESS)
-    B_OLS, B_HAT, B_HAT_avg, num_trajectories, num_samples =  self.phase_two(D, M,
-                                                                                  num_traj=1000, 
-                                                                                  target_thickness=TARGET_THICKNESS)
-    eps1, eps2 = .9, .9
-    delta = .5
-    gamma_A, gamma_B = (R)/U_A, (R)/U_B
-        
-    A_yao, B_yao, A_yao_avg, B_yao_avg, _, _, _, feat_concat = self.find_estimate(eps1,
-                                                                                  eps2, 
-                                                                                  A_HAT, 
-                                                                                  B_HAT, 
-                                                                                  delta, 
-                                                                                  gamma_B, 
-                                                                                  gamma_A, 
-                                                                                  num_traj_part_one=1000,
-                                                                                  num_traj_part_two=1000, 
-                                                                                  repeat=1)
+    A_OLS, self.a_hat, self.a_hat_avg, num_trajectories, num_samples =  self.phase_one()
+    B_OLS, self.b_hat, self.b_hat_avg, num_trajectories, num_samples =  self.phase_two()
+    A_yao, B_yao, A_yao_avg, B_yao_avg, _, _, _, feat_concat = self.find_estimate()
 
-def phase_one(self,                
-                D: int, 
-                M: int,
-                target_thickness: float=float('inf'),
-                num_traj: int = float('inf'), 
-                T: int=float('inf')):
+  def phase_one(self):
       '''
       Cold start phase 1. Initial estimation for A.
       Args: 
@@ -60,15 +49,15 @@ def phase_one(self,
       Returns: ols estimate, initial estimation with plevrakis, and 
         number of trajectories taken
       '''
-      assert target_thickness != float('inf') or num_traj != float('inf') or T != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+      assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
       num_trajectories = 1
       total_samples = 0
-      x_t = ch.zeros((1, D))
+      x_t = ch.zeros((1, self.d))
       X, Y, U = ch.Tensor([]), ch.Tensor([]), ch.Tensor([])
-      covariate_matrix = ch.zeros([D,D])
+      covariate_matrix = ch.zeros([self.d,self.d])
 
-      while num_trajectories < num_traj and X.size(0) < T and calc_thickness(covariate_matrix) < target_thickness:
-          sample = self.gen_data(x_t, u_t=ch.zeros((1, M)))
+      while num_trajectories < self.args.num_traj_phase_one and X.size(0) < self.args.T_phase_one and calc_thickness(covariate_matrix) < self.args.target_thickness:
+          sample = self.gen_data(x_t, u_t=ch.zeros((1, self.m)))
           total_samples += 1
           if sample is not None:
               y_t, u_t = sample
@@ -76,7 +65,7 @@ def phase_one(self,
               covariate_matrix += x_t.T@x_t
               x_t = y_t
           else:
-              x_t = ch.zeros((1, D))
+              x_t = ch.zeros((1, self.d))
               num_trajectories += 1
 
           if total_samples % 100 == 0: 
@@ -99,34 +88,26 @@ def phase_one(self,
       return trunc_lds.emp_weight, trunc_lds.avg_coef_, trunc_lds.best_coef_, num_trajectories, X.size(0)
 
 
-  def phase_two(self, 
-                D: int, 
-                M: int,
-                target_thickness: float=float('inf'), 
-                num_traj: int=float('inf'), 
-                T: int=float('inf')): 
+  def phase_two(self): 
       '''
       Cold start phase 2. Initial estimation for B.
       '''
-      assert target_thickness != float('inf') or num_traj != float('inf') or T != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
-
       total_samples = 0
       index = 0
-      xt = ch.zeros((1, D))
-      id_ = ch.eye(M)
+      xt = ch.zeros([1, self.d])
+      id_ = ch.eye(self.m)
       U, Y = ch.Tensor([]), ch.Tensor([])
-      covariate_matrix = ch.zeros([M,M])
-      # gamma = R/U_B
+      covariate_matrix = ch.zeros([self.m, self.m])
       gamma = 2.5
 
-      while total_samples < num_traj and U.size(0) < T and calc_thickness(covariate_matrix) < target_thickness:
+      while total_samples < self.args.num_traj_phase_two and U.size(0) < self.args.T_phase_two and calc_thickness(covariate_matrix) < self.args.target_thickness:
           u = (gamma*id_[index])[None,...]
           sample = self.gen_data(xt, u_t=u)
         
           total_samples += 1
           if sample is not None: 
               y, u = sample
-              index = (index+1)%M
+              index = (index+1)%self.m
               U, Y = ch.cat([U, u]), ch.cat([Y, y])
               covariate_matrix += u.T@u
 
@@ -145,7 +126,9 @@ def phase_one(self,
       return trunc_lds.ols_coef_, trunc_lds.avg_coef_, trunc_lds.best_coef_, total_samples, U.size(1)
 
 
-  def find_max(self, L, eps):
+  def find_max(self, 
+                L, 
+                eps):
     # L is a list of equal-size numpy 2d arrays
     # We find one that is most eps-close to the others
     # If each of them has 2/3 prob to be eps/2 close to true value
@@ -163,16 +146,11 @@ def phase_one(self,
                 Max = counter
     return output
 
+  @staticmethod
+  def calculate_u_t_one(a, b, x): 
+    return (-b.T@LA.inv(b@b.T)@a@x.T).T
 
-  def generate_samples_B(self,
-                          eps1: float, 
-                          eps2: float, 
-                          a_hat: ch.Tensor, 
-                          b_hat: ch.Tensor,
-                          target_thickness: float, 
-                          num_traj: int,
-                          T: int, 
-                          gamma: float=None):
+  def generate_samples_B(self):
       '''
       Args: 
         self.args: algorithm's hyperparameters
@@ -184,84 +162,77 @@ def phase_one(self,
         num_traj: number of trajectories that method can use
       return X, U, Y, number of samples, and number of trajectories
       '''
-      assert target_thickness != float('inf') or num_traj != float('inf') or T != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
-
-      calculate_u_t_one = lambda a, b, x: (-b.T@LA.inv(b@b.T)@a@x.T).T
-      D, M = a_hat.size(0), b_hat.size(0)
-
       traj, total_samples = 0, 0
-      X, Y, U = ch.zeros((1, D)), ch.zeros((1, D)), ch.zeros((1, M))
+      X, Y, U = ch.zeros([1, self.d]), ch.zeros([1, self.d]), ch.zeros([1, self.m])
       index = 0
-      id_ = ch.eye(M)
-      covariate_matrix = ch.zeros([D+M,D+M])
+      id_ = ch.eye(self.m)
+      covariate_matrix = ch.zeros([self.d+self.m,self.d+self.m])
 
-      xt = ch.zeros((1, D))
-      target = (1/(eps2*eps2)-1/(eps1*eps1))*4
-      target_mat = ch.zeros([D+M,D+M])
-      np.fill_diagonal(target_mat.numpy(), [0]*D+[target]*M)
+      xt = ch.zeros((1, self.d))
+      target = (1/(self.args.eps2**2)-1/(self.args.eps1**2))*4
+      target_mat = ch.zeros([self.d+self.m,self.d+self.m])
+      np.fill_diagonal(target_mat.numpy(), [0]*self.d+[target]*self.m)
     
-      while traj < num_traj and X.size(0) < T and calc_thickness(covariate_matrix) < target_thickness:
+      while traj < self.args.num_traj_gen_samples_B and X.size(0) < self.args.T_gen_samples_B and calc_thickness(covariate_matrix) < self.args.target_thickness:
           traj += 1
-          xt = ch.zeros((1, D))
+          xt = ch.zeros((1, self.d))
           responsive = True
           while responsive:
-            ut = (gamma*id_[index]) [None,...]
+            ut = (self.args.gamma*id_[index]) [None,...]
             sample = self.gen_data(xt, u_t=ut)
             total_samples += 1
             if sample is not None:
               yt, ut = sample
               X, Y, U = ch.cat((X,xt)), ch.cat((Y,yt)), ch.cat((U,ut))
+              xu = ch.cat([xt, ut], dim=1) 
+              covariate_matrix += xu.T@xu
               xt = yt
-              index = (index+1)%M
+              index = (index+1)%self.m
             else: 
               break
             while True:
-              ut = calculate_u_t_one(a_hat, b_hat.T, xt)
+              ut = self.calculate_u_t_one(self.a_hat, self.b_hat, xt)
               sample = self.gen_data(xt, u_t=ut)
               total_samples += 1
               if sample is not None:
                 yt, ut = sample
                 X, Y, U = ch.cat((X,xt)), ch.cat((Y,yt)), ch.cat((U,ut))
+                xu = ch.cat([xt, ut], dim=1) 
+                covariate_matrix += xu.T@xu
                 xt = yt
-                if sample[0].norm() <= 2*np.sqrt(D):
+                if sample[0].norm() <= 2*np.sqrt(self.d):
                   break
               else: 
                 responsive = False
                 break
-      return X[1:], U[1:], Y[1:], X.size(0), num_traj, X.size(0) / total_samples
+      return X[1:], U[1:], Y[1:], X.size(0), X.size(0) / total_samples
 
+  @staticmethod
+  def calculate_u_t_two(a, b, gamma_e_i): 
+    return (b.T@LA.inv(b@b.T)@gamma_e_i)[None,...]
+
+  @staticmethod
+  def calculate_u_t_three(a, b, x): 
+    return (-b.T@LA.inv(b@b.T)@a@x.T).T 
 
   def generate_samples_A(self, 
-                          eps1: float, 
-                          eps2: float, 
-                          a_hat: float, 
-                          b_hat: ch.Tensor, 
-                          target_thickness: float,
-                          num_traj: int, 
-                          T: int,
                           gamma = None):
-      assert target_thickness != float('inf') or num_traj != float('inf') or T != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
-
-      calculate_u_t_two = lambda a, b, gamma_e_i: (b.T@LA.inv(b@b.T)@gamma_e_i)[None,...]
-
-      D, M = a_hat.size(0), b_hat.size(0)
-    
-      covariate_matrix = ch.zeros([D+M,D+M])
+      covariate_matrix = ch.zeros([self.d+self.m,self.d+self.m])
 
       traj, total_samples = 0, 0
-      X, Y, U = ch.zeros((1, D)), ch.zeros((1, D)), ch.zeros((1, M))
+      X, Y, U = ch.zeros([1, self.d]), ch.zeros([1, self.d]), ch.zeros([1, self.m])
       index = 0
-      id_ = ch.eye(D)
-      xt = ch.zeros((1, D))
+      id_ = ch.eye(self.d)
+      xt = ch.zeros((1, self.d))
 
       # break based off of the number of samples collected or number of trajectories
-      while traj < num_traj and X.size(0) < T and calc_thickness(covariate_matrix) < target_thickness:
-          xt = ch.zeros((1, D))
+      while traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A and calc_thickness(covariate_matrix) < self.args.target_thickness:
+          xt = ch.zeros((1, self.d))
           traj += 1
           # while the system is responsive 
           responsive = True
           while responsive: 
-            ut = calculate_u_t_two(a_hat, b_hat.T, gamma*id_[index]) 
+            ut = self.calculate_u_t_two(self.a_hat, self.b_hat, self.args.gamma*id_[index]) 
             sample = self.gen_data(xt, u_t=ut)
             if sample is not None:
               yt, ut = sample
@@ -271,44 +242,32 @@ def phase_one(self,
               if sample is not None:
                   yt, ut = sample
                   X, Y, U = ch.cat((X,xt)), ch.cat((Y, yt)), ch.cat((U, ut))
-                  xu = ch.cat((xt,ut), dim=1)
-                  xu_2 = xu.reshape(M+D,1)@xu.reshape(1,M+D)
+                  xu = ch.cat([xt, ut], dim=1) 
+                  covariate_matrix += xu.T@xu
                   xt = yt
-                  index = (index+1)%D
+                  index = (index+1)%self.d
               else: 
                 break
             else: 
               break
             while True: 
-                ut = -(b_hat@LA.inv((b_hat.T@b_hat))@a_hat@xt.T).T              
+                ut = self.calculate_u_t_three(self.a_hat, self.b_hat, xt)
                 sample = self.gen_data(xt, u_t=ut)
                 total_samples += 1
                 if sample is not None:
                   yt, ut = sample
                   X, Y, U = ch.cat((X,xt)), ch.cat((Y,yt)), ch.cat((U,ut))
+                  xu = ch.cat([xt, ut], dim=1) 
+                  covariate_matrix += xu.T@xu 
                   xt = yt
-                  if sample[0].norm() <= 2*np.sqrt(D):
+                  if sample[0].norm() <= 2*np.sqrt(self.d):
                     break
                 else:
                   responsive = False
                   break
-      return X[1:], U[1:], Y[1:], X.size(0), num_traj, X.size(0) / total_samples
+      return X[1:], U[1:], Y[1:], X.size(0),  X.size(0) / total_samples
 
-  def find_estimate(self,                     
-                    eps1: float, 
-                    eps2: float, 
-                    hat_A: ch.Tensor, 
-                    hat_B: ch.Tensor, 
-                    delta: float, 
-                    gamma_B: float, 
-                    gamma_A: float,
-                    target_thickness_B: float=float('inf'),
-                    target_thickness_A: float=float('inf'),
-                    num_traj_part_one: int=float('inf'), 
-                    num_traj_part_two: int=float('inf'),
-                    T_part_one: int=float('inf'),
-                    T_part_two: int=float('inf'), 
-                    repeat: int=None):
+  def find_estimate(self):
       '''
       eps1 is the initial precision
       eps2 is the final precision
@@ -316,52 +275,66 @@ def phase_one(self,
       delta is failing rate
       return new estimators hat_A and hat_B
       '''
-      repeat = int(-2*np.log2(delta)) if repeat is None else repeat
-      D, M = hat_A.size(0), hat_B.size(0)
+      repeat = int(-2*np.log2(self.args.delta)) if self.args.repeat is None else self.args.repeat
+
+      assert repeat >= 1, f"repeat must be greater than or equal to 1; repeat: {repeat}"
 
       A_results, B_results = ch.Tensor([]), ch.Tensor([])
       A_avg_results, B_avg_results = ch.Tensor([]), ch.Tensor([])
 
-      hat_A, hat_B = hat_A.T, hat_B.T
-    
+      hat_A, hat_B = self.a_hat.T, self.b_hat.T
+
       for _ in range(repeat):
-          Xu, Uu, Yu, Nsu, Ntu, alpha_u = self.generate_samples_B(self.args, self.gen_data, eps1, eps2/2, hat_A, 
-                                                                  hat_B, gamma = gamma_B,
-                                                                  target_thickness=target_thickness_B, 
-                                                                  num_traj=num_traj_part_one, 
-                                                                  T=T_part_one)
-          Xx, Ux, Yx, Nsx, Ntx, alpha_x = self.generate_samples_A(self.args, self.gen_data, eps1, eps2/2, hat_A, 
-                                                                  hat_B, gamma = gamma_A, 
-                                                                  target_thickness=target_thickness_A,
-                                                                  num_traj=num_traj_part_two, 
-                                                                  T=T_part_two)
+        Xu, Uu, Yu, Ntu, alpha_u = self.generate_samples_B()
+        Xx, Ux, Yx, Ntx, alpha_x = self.generate_samples_A()
 
-          coef_concat = ch.vstack([hat_A, hat_B])
-          XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)
-          feat_concat = ch.cat([XU_concat, XX_concat])
-          y_concat = ch.cat([Yu, Yx])
+        coef_concat = ch.vstack([hat_A, hat_B])
+        XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)
+        feat_concat = ch.cat([XU_concat, XX_concat])
+        y_concat = ch.cat([Yu, Yx])
 
-          self.args.__setattr__('alpha', alpha_x)
-          self.args.__setattr__('noise_var', self.gen_data.noise_var)
-          self.args.__setattr__('b', True)
-          lr = (1/self.args.alpha) ** self.args.c_gamma
-          self.args.__setattr__('lr', lr)
+        self.args.__setattr__('alpha', alpha_x)
+        self.args.__setattr__('noise_var', self.gen_data.noise_var)
+        self.args.__setattr__('b', True)
+        lr = (1/self.args.alpha) ** self.args.c_gamma
+        self.args.__setattr__('lr', lr)
 
-          trunc_lds = TruncatedLinearRegression(self.args, 
-                                                emp_weight=coef_concat,
-                                                dependent=True)
-          trunc_lds.fit(feat_concat.detach(), y_concat.detach())
+        trunc_lds = TruncatedLinearRegression(self.args, 
+                                              emp_weight=coef_concat,
+                                              dependent=True)
+        trunc_lds.fit(feat_concat.detach(), y_concat.detach())
         
-          AB = trunc_lds.best_coef_
-          A_, B_ = AB[:,:D], AB[:,D:]
+        AB = trunc_lds.best_coef_
+        A_, B_ = AB[:,:self.d], AB[:,self.d:]
 
-          AB_avg = trunc_lds.avg_coef_
-          A_avg, B_avg = AB_avg[:,:D], AB_avg[:,D:]
+        AB_avg = trunc_lds.avg_coef_
+        A_avg, B_avg = AB_avg[:,:self.d], AB_avg[:,self.d:]
 
-          A_results = ch.cat([A_results, A_[None,...]])
-          B_results = ch.cat([B_results, B_[None,...]])
+        A_results = ch.cat([A_results, A_[None,...]])
+        B_results = ch.cat([B_results, B_[None,...]])
          
-          A_avg_results = ch.cat([A_avg_results, A_avg[None,...]])
-          B_avg_results = ch.cat([B_avg_results, B_avg[None,...]])
-  
-      return self.find_max(A_results,eps2), self.find_max(B_results,eps2), A_avg, B_avg, XX_concat, y_concat, XU_concat, feat_concat
+        A_avg_results = ch.cat([A_avg_results, A_avg[None,...]])
+        B_avg_results = ch.cat([B_avg_results, B_avg[None,...]])
+
+
+      self.best_A_ = self.find_max(A_results, self.args.eps2)
+      self.best_B_ = self.find_max(B_results, self.args.eps2)
+
+      return self.find_max(A_results,self.args.eps2), self.find_max(B_results,self.args.eps2), A_avg_results, B_avg_results, XX_concat, y_concat, XU_concat, feat_concat
+
+  @property
+  def best_A_(self): 
+    return self._best_A_
+
+  @best_A_.setter
+  def best_A_(self, value): 
+    self._best_A_ = value
+
+  @property
+  def best_B_(self): 
+    return self._best_B_
+
+  @best_B_.setter
+  def best_B_(self, value): 
+    self._best_B_ = value
+

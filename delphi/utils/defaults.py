@@ -115,6 +115,25 @@ TRUNC_BOOL_PROD_DEFAULTS = {
         'step_lr_gamma': 1.0,
 }
 
+TRUNCATED_LQR_DEFAULTS =  { 
+        'target_thickness': (float, float('inf')), 
+        'num_traj_phase_one': (int, float('inf')),
+        'num_traj_phase_two': (int, float('inf')), 
+        'num_traj_gen_samples_B': (int, float('inf')), 
+        'num_traj_gen_samples_A': (int, float('inf')),
+        'T_phase_one': (int, float('inf')), 
+        'T_phase_two': (int, float('inf')), 
+        'T_gen_samples_B': (int, float('inf')),  
+        'T_gen_samples_A': (int, float('inf')),
+        'R': (float, REQ),
+        'U_A': (float, REQ), 
+        'U_B': (float, REQ), 
+        'delta': (float, REQ), 
+        'eps1': (float, .9), 
+        'eps2': (float, .9),
+        'repeat': (int, None), 
+        'gamma': (float, REQ) 
+}
 
 def check_and_fill_args(args, defaults): 
         '''
@@ -123,17 +142,18 @@ def check_and_fill_args(args, defaults):
         '''
         # assign all of the default arguments and check that all necessary arguments are provided
         for arg_name, (arg_type, arg_default) in defaults.items():
-            if has_attr(args, arg_name):
+                if has_attr(args, arg_name):
                 # check to make sure that hyperparameter inputs are the same type
-                if isinstance(arg_type, Iterable):
-                    if args.__getattr__(arg_name) in arg_type: continue 
-                    raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
-                if isinstance(args.__getattr__(arg_name), arg_type): continue
-                raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
-            if arg_default == REQ: raise ValueError(f"{arg_name} required")
-            elif arg_default is not None: 
-                # use default arugment
-                setattr(args, arg_name, arg_default)
+                        if isinstance(arg_type, Iterable):
+                                if args.__getattr__(arg_name) in arg_type: continue 
+                                raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
+                        if isinstance(args.__getattr__(arg_name), arg_type): continue
+                        raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
+                if arg_default == REQ: 
+                        raise ValueError(f"{arg_name} required")
+                elif arg_default is not None: 
+                        # use default arugment
+                        setattr(args, arg_name, arg_default)
         
         return args
 
