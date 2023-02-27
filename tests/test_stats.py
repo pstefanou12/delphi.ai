@@ -358,18 +358,15 @@ class TestStats(unittest.TestCase):
             'gamma': gamma, 
             'repeat': 1,
             'T_gen_samples_A': 1000,
+            'T_gen_samples_B': 1000,
+            'target_thickness': 2.0*U_A*U_A*max(U_A,U_B)/L_B
         })
 
         # membership oracle
         phi = oracle.LogitBall(R)
         gen_data = GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
 
-        TARGET_THICKNESS = 2.0*U_A*U_A*max(U_A,U_B)/L_B
-
-        print(f'TARGET_THICKNESS: {TARGET_THICKNESS}')
-
         TRAIN_KWARGS.__setattr__('phi', phi)
-        TRAIN_KWARGS.__setattr__('target_thickness', TARGET_THICKNESS)
 
         trunc_lqr = stats.truncated_lqr.TruncatedLQR(TRAIN_KWARGS, gen_data, D, M)
         trunc_lqr.fit()

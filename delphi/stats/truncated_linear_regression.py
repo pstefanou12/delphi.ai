@@ -318,10 +318,8 @@ class TruncatedLinearRegression(LinearModel):
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
             # if self.args.b: 
                 # import pdb; pdb.set_trace()
-            # if self.args.b:
-            #     # import pdb; pdb.set_trace()
-            #     import pdb; pdb.set_trace()
-            #     return X@self.weight
+            if self.args.b:
+                return X@self.weight
             # import pdb; pdb.set_trace()
             # return self.weight
             return (self.weight@X.T).T

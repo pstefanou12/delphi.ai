@@ -176,7 +176,6 @@ class TruncatedLQR(delphi):
           traj += 1
           xt = ch.zeros((1, self.d))
           responsive = True
-          print(f'thickness in gen samples B: {calc_thickness(covariate_matrix)}')
           while responsive:
             ut = (self.args.gamma*id_[index]) [None,...]
             sample = self.gen_data(xt, u_t=ut)
@@ -225,10 +224,9 @@ class TruncatedLQR(delphi):
 
       # break based off of the number of samples collected or number of trajectories
       while traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A and calc_thickness(covariate_matrix) < self.args.target_thickness:
-          xt = self.args.gamma * id_[index][None,...]
+          xt = ch.zeros(1, self.d)
           traj += 1
           # while the system is responsive 
-          print(f'thickness in gen samples A: {calc_thickness(covariate_matrix)}')
           responsive = True
           while responsive: 
             ut = self.calculate_u_t_two(self.a_hat, self.b_hat, self.args.gamma*id_[index]) 
@@ -242,7 +240,6 @@ class TruncatedLQR(delphi):
                   yt, ut = sample
                   X, Y, U = ch.cat((X,xt)), ch.cat((Y, yt)), ch.cat((U, ut))
                   xu = ch.cat([xt, ut], dim=1)
-                  xu_2 = xu.T@xu
                   covariate_matrix += xu.T@xu
                   xt = yt
                   index = (index+1)%self.d
@@ -260,7 +257,7 @@ class TruncatedLQR(delphi):
                   xu = ch.cat([xt, ut], dim=1) 
                   covariate_matrix += xu.T@xu 
                   xt = yt
-                  if sample[0].norm() <= 2*np.sqrt(self.d):
+                  if sample[0].norm() <= self.args.R + 3*np.sqrt(self.d):
                     break
                 else:
                   responsive = False
@@ -283,19 +280,19 @@ class TruncatedLQR(delphi):
       A_avg_results, B_avg_results = ch.Tensor([]), ch.Tensor([])
 
       hat_A, hat_B = self.a_hat.T, self.b_hat.T
+      coef_concat = ch.vstack([hat_A, hat_B])
 
       for _ in range(repeat):
         Xu, Uu, Yu, Ntu, alpha_u = self.generate_samples_B()
         Xx, Ux, Yx, Ntx, alpha_x = self.generate_samples_A()
 
-        coef_concat = ch.vstack([hat_A, hat_B])
         XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)
         feat_concat = ch.cat([XU_concat, XX_concat])
         y_concat = ch.cat([Yu, Yx])
 
         self.args.__setattr__('alpha', alpha_x)
         self.args.__setattr__('noise_var', self.gen_data.noise_var)
-        self.args.__setattr__('b', True)
+        # self.args.__setattr__('b', True)
         lr = (1/self.args.alpha) ** self.args.c_gamma
         self.args.__setattr__('lr', lr)
 
