@@ -169,14 +169,18 @@ class TestStats(unittest.TestCase):
             u, s, v = LA.svd(A)
             return s.max()
         
-        D = 10 # number of dimensions for A_{*} matrix
+        D = 5 # number of dimensions for A_{*} matrix
         T = 10000
         A = .25 * ch.randn((D, D))
+
+        print(f"A: {A}")
 
         spectral_norm = calc_spectral_norm(A)
         print(f'Spectral Norm: {spectral_norm}')
 
-        phi = oracle.LogitBall(5.0)
+        phi = oracle.LogitBall(3.0)
+
+        # phi = oracle.Identity()
         # phi = oracle.Identity()
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
@@ -184,7 +188,7 @@ class TestStats(unittest.TestCase):
         x_t = ch.zeros((1, D))
         total_samples = 0
         while X.size(0) < T: 
-            noise = M.sample([x_t.size(0)])
+            noise = M.sample()
             y_t = (A@x_t.T).T + noise
             if phi(y_t): # returns a boolean 
                 X = ch.cat([X, x_t])
@@ -207,8 +211,9 @@ class TestStats(unittest.TestCase):
             'batch_size': 10,
             'constant': True,
             'fit_intercept': False,
-            'num_samples': 10,
+            'num_samples': 100,
             'T': T,
+            'trials': 1,
             'alpha': alpha,
             'c_s': 100.0, 
             'tol': 1e-1,
@@ -223,9 +228,9 @@ class TestStats(unittest.TestCase):
                                                     rand_seed=ch.randint(low=0, high=100, size=(1, 1)).data)
         trunc_lds.fit(X, Y)
 
-        A_ = trunc_lds.best_coef_
-        A0_ = trunc_lds.emp_weight
-        A_avg = trunc_lds.avg_coef_
+        A_ = trunc_lds.best_coef_.T
+        A0_ = trunc_lds.ols_coef_.T
+        A_avg = trunc_lds.avg_coef_.T
 
         trunc_spec_norm = calc_spectral_norm(A - A_)
         emp_spec_norm = calc_spectral_norm(A - A0_)
@@ -313,8 +318,7 @@ class TestStats(unittest.TestCase):
             return A_, B_, A_ols, B_ols 
 
         # This is for the exploration radius for first 2.
-        gamma_default = 2.0
-        gamma = gamma_default
+        gamma = 2.0 
 
         # Here, m >= d must hold
         D = 2
@@ -341,19 +345,17 @@ class TestStats(unittest.TestCase):
 
         TRAIN_KWARGS = Parameters({
             'c_gamma': 2.0,
+            'fit_intercept': False,
             'epochs': 10, 
             'trials': 1, 
             'batch_size': 10,
-            'constant': True,
-            'fit_intercept': False,
             'num_samples': 10,
-            'c_s': 100.0, 
             'tol': 1e-2,
             'R': R, 
             'U_A': U_A, 
             'U_B': U_B,
             'delta': .9, 
-            'gamma': 2.0, 
+            'gamma': gamma, 
             'repeat': 1,
             'T_gen_samples_A': 1000,
         })
@@ -362,10 +364,9 @@ class TestStats(unittest.TestCase):
         phi = oracle.LogitBall(R)
         gen_data = GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
 
-        print(f'A: \n {A}')
-        print(f'B: \n {B}')
-
         TARGET_THICKNESS = 2.0*U_A*U_A*max(U_A,U_B)/L_B
+
+        print(f'TARGET_THICKNESS: {TARGET_THICKNESS}')
 
         TRAIN_KWARGS.__setattr__('phi', phi)
         TRAIN_KWARGS.__setattr__('target_thickness', TARGET_THICKNESS)
@@ -373,10 +374,8 @@ class TestStats(unittest.TestCase):
         trunc_lqr = stats.truncated_lqr.TruncatedLQR(TRAIN_KWARGS, gen_data, D, M)
         trunc_lqr.fit()
 
-
         A_yao, B_yao = trunc_lqr.best_A_, trunc_lqr.best_B_
         A_sarah_dean_plev, B_sarah_dean_plev, A_sarah_dean_ols, B_sarah_dean_ols = calc_sarah_dean(TRAIN_KWARGS, gen_data, 1000, D, M)
-
 
         A_yao_spec_norm = stats.truncated_lqr.calc_spectral_norm(A_yao - A)
         B_yao_spec_norm = stats.truncated_lqr.calc_spectral_norm(B_yao - B)
@@ -386,12 +385,11 @@ class TestStats(unittest.TestCase):
 
         A_sd_ols_spec_norm = stats.truncated_lqr.calc_spectral_norm(A_sarah_dean_ols - A)
         B_sd_ols_spec_norm = stats.truncated_lqr.calc_spectral_norm(B_sarah_dean_ols - B)
- 
-        self.assertTrue(A_yao_spec_norm < A_sd_plevr_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean plevrakis spectral norm is: {A_sd_plevr_spec_norm}")
-        self.assertTrue(B_yao_spec_norm < B_sd_plevr_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean plevrakis spectral norm is: {B_sd_plevr_spec_norm}")
-
         self.assertTrue(A_yao_spec_norm < A_sd_ols_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean ols spectral norm is: {A_sd_ols_spec_norm}")
         self.assertTrue(B_yao_spec_norm < B_sd_ols_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean ols spectral norm is: {B_sd_ols_spec_norm}")
+       
+        self.assertTrue(A_yao_spec_norm < A_sd_plevr_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean plevrakis spectral norm is: {A_sd_plevr_spec_norm}")
+        self.assertTrue(B_yao_spec_norm < B_sd_plevr_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean plevrakis spectral norm is: {B_sd_plevr_spec_norm}")
 
     # left truncated binary classification task
     def test_truncated_logistic_regression(self):

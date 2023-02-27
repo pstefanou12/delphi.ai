@@ -77,7 +77,6 @@ class TruncatedLQR(delphi):
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
       self.args.__setattr__('b', False)
 
-
       lr = (1/self.args.alpha) ** self.args.c_gamma
       self.args.__setattr__('lr', lr)
 
@@ -177,6 +176,7 @@ class TruncatedLQR(delphi):
           traj += 1
           xt = ch.zeros((1, self.d))
           responsive = True
+          print(f'thickness in gen samples B: {calc_thickness(covariate_matrix)}')
           while responsive:
             ut = (self.args.gamma*id_[index]) [None,...]
             sample = self.gen_data(xt, u_t=ut)
@@ -215,21 +215,20 @@ class TruncatedLQR(delphi):
   def calculate_u_t_three(a, b, x): 
     return (-b.T@LA.inv(b@b.T)@a@x.T).T 
 
-  def generate_samples_A(self, 
-                          gamma = None):
+  def generate_samples_A(self):
       covariate_matrix = ch.zeros([self.d+self.m,self.d+self.m])
 
       traj, total_samples = 0, 0
       X, Y, U = ch.zeros([1, self.d]), ch.zeros([1, self.d]), ch.zeros([1, self.m])
       index = 0
       id_ = ch.eye(self.d)
-      xt = ch.zeros((1, self.d))
 
       # break based off of the number of samples collected or number of trajectories
       while traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A and calc_thickness(covariate_matrix) < self.args.target_thickness:
-          xt = ch.zeros((1, self.d))
+          xt = self.args.gamma * id_[index][None,...]
           traj += 1
           # while the system is responsive 
+          print(f'thickness in gen samples A: {calc_thickness(covariate_matrix)}')
           responsive = True
           while responsive: 
             ut = self.calculate_u_t_two(self.a_hat, self.b_hat, self.args.gamma*id_[index]) 
@@ -242,7 +241,8 @@ class TruncatedLQR(delphi):
               if sample is not None:
                   yt, ut = sample
                   X, Y, U = ch.cat((X,xt)), ch.cat((Y, yt)), ch.cat((U, ut))
-                  xu = ch.cat([xt, ut], dim=1) 
+                  xu = ch.cat([xt, ut], dim=1)
+                  xu_2 = xu.T@xu
                   covariate_matrix += xu.T@xu
                   xt = yt
                   index = (index+1)%self.d
