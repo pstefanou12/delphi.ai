@@ -192,13 +192,13 @@ def Test(mu, phi, c_gamma, alpha, T):
   stacked = mu.repeat(k, 1, 1)
   noise = M.sample(stacked.size()[:-1])
   ci = stacked + noise
-  p = phi(ci).float().mean(0).flatten()
+  p = phi(ci).float().mean(0)
   """
   check whether the probability that a sample falls within the 
   truncation set is greater than the survival probability
   """
-  return p >= (2 * gamma)
-
+  result = p >= (2 * gamma)
+  return (p >= (2 * gamma))
 
 class SwitchGrad(ch.autograd.Function):
     """
@@ -227,10 +227,7 @@ class SwitchGrad(ch.autograd.Function):
         for computing gradient
         '''
         M = ch.distributions.MultivariateNormal(ch.zeros(pred[0].size(0)), noise_var) 
-
-        result = Test(pred, phi, c_gamma, alpha, T)[...,None]
-        # take inverse of result; result = [0, 1], result_inv = [1, 0]
-        result_inv = ~result
+        result = Test(pred, phi, c_gamma, alpha, T)
 
         # add random noise to each copy
         noised = stacked + M.sample(stacked.size()[:-1])
@@ -245,15 +242,11 @@ class SwitchGrad(ch.autograd.Function):
         result and result_inv are masks, so that you keep the noised 
         and the unnoised samples
         """
-        z = result.float()*z_ + result_inv.float()*z
+        z = result.float()*z_ + (~result).float()*z
 
         ctx.save_for_backward(pred, targ, z)
         loss = (-.5 * (targ - pred).norm(p=2, keepdim=True, dim=-1).pow(2) + \
                 .5 * (z - pred).norm(p=2, keepdim=True, dim=-1).pow(2))
-        loss_avg = loss.mean(0)
-
-        # if loss_avg < -20: 
-        #   import pdb; pdb.set_trace()
 
         return loss.mean(0)
 

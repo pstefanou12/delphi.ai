@@ -22,8 +22,7 @@ from delphi.grad import SwitchGrad
 mse_loss =  MSELoss()
 cos_sim = CosineSimilarity()
 G = Gumbel(0, 1)
-seed = random.randint(0, 100)
-
+seed = 69 
 
 class TestStats(unittest.TestCase): 
     """
@@ -31,12 +30,12 @@ class TestStats(unittest.TestCase):
     """
     # left truncated linear regression
     def test_known_truncated_regression(self):
-        D, K = 1, 1
+        D, K = 100, 1
         SAMPLES = 10000
         w_ = Uniform(-1, 1)
         M = Uniform(-10, 10)
         # generate ground truth
-        NOISE_VAR = ch.ones(1, 1)
+        NOISE_VAR = 20*ch.ones(1, 1)
         W = w_.sample([K, D])
         W0 = w_.sample([1, 1])
 
@@ -49,7 +48,6 @@ class TestStats(unittest.TestCase):
         noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
         # generate ground-truth data
         phi = oracle.Left_Regression(ch.zeros(1))
-        # phi = oracle.Identity()
         # truncate
         indices = phi(noised).nonzero()[:,0]
         x_trunc, y_trunc = X[indices], noised[indices]
@@ -75,13 +73,11 @@ class TestStats(unittest.TestCase):
         train_kwargs = Parameters({'phi': phi_scale, 
                                 'alpha': alpha,
                                 'epochs': 10,
-                                'lr': 3e-1,
-                                # 'custom_lr_multiplier': 'adam',
-                                'num_samples': 100,
-                                'momentum': .9,
+                                'lr': 5e-1,
+                                'num_samples': 10,
+                                # 'momentum': .9,
                                 'batch_size': 1,
                                 'trials': 1,
-                                'verbose': True,
                                 'constant': True,
                                 'noise_var': ch.ones(1, 1)}) 
         trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
@@ -98,10 +94,6 @@ class TestStats(unittest.TestCase):
         print(f'avg known mse loss: {avg_known_mse_loss}')
         msg = f'avg known mse loss is larger than empirical mse loss. avg known mse loss is {avg_known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
         self.assertTrue(avg_known_mse_loss <= emp_mse_loss, msg)
-
-        print("truncated nll on truncated estimates: {}".format(trunc_reg.final_nll(X, y / ch.sqrt(NOISE_VAR))))
-        print("truncated nll on empirical estimates: {}".format(trunc_reg.emp_nll(X, y / ch.sqrt(NOISE_VAR))))
-        print("truncated nll on average estimates: {}".format(trunc_reg.avg_nll(X, y / ch.sqrt(NOISE_VAR)))) 
     
     def test_unknown_truncated_regression(self):
         D, K = 10, 1
@@ -173,14 +165,11 @@ class TestStats(unittest.TestCase):
         T = 10000
         A = .25 * ch.randn((D, D))
 
-        print(f"A: {A}")
-
         spectral_norm = calc_spectral_norm(A)
-        print(f'Spectral Norm: {spectral_norm}')
+        print(f'A spectral norm: {spectral_norm}')
 
         phi = oracle.LogitBall(3.0)
 
-        # phi = oracle.Identity()
         # phi = oracle.Identity()
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
@@ -200,18 +189,15 @@ class TestStats(unittest.TestCase):
             total_samples += 1
 
         alpha = T / total_samples
-        print(f'alpha: {alpha}')
-
 
         train_kwargs = Parameters({
             'phi': phi, 
             'c_gamma': 2.0,
-            'epochs': 1, 
-            'trials': 3, 
+            # 'verbose': True,
+            'epochs': 3, 
+            'trials': 1, 
             'batch_size': 10,
-            'constant': True,
-            'fit_intercept': False,
-            'num_samples': 100,
+            'num_samples': 10,
             'T': T,
             'trials': 1,
             'alpha': alpha,
@@ -219,13 +205,9 @@ class TestStats(unittest.TestCase):
             'tol': 1e-1,
             'noise_var': NOISE_VAR, 
         })
-
-        lr = (1/train_kwargs.alpha) ** train_kwargs.c_gamma
-        train_kwargs.__setattr__('lr', lr)
-        print(f'learning rate: {lr}')
         trunc_lds = stats.TruncatedLinearRegression(train_kwargs, 
                                                     dependent=True, 
-                                                    rand_seed=ch.randint(low=0, high=100, size=(1, 1)).data)
+                                                    rand_seed=seed)
         trunc_lds.fit(X, Y)
 
         A_ = trunc_lds.best_coef_.T
@@ -234,13 +216,14 @@ class TestStats(unittest.TestCase):
 
         trunc_spec_norm = calc_spectral_norm(A - A_)
         emp_spec_norm = calc_spectral_norm(A - A0_)
-        avg_spec_norm = calc_spectral_norm(A - A_avg)
-        print(f"truncated spectral norm: {trunc_spec_norm}")
-        print(f"empirical spectral norm: {emp_spec_norm}")
-        print(f"average spectral norm: {avg_spec_norm}")
+        avg_trunc_spec_norm = calc_spectral_norm(A - A_avg)
 
-        self.assertTrue(trunc_spec_norm <= emp_spec_norm, f"truncated spectral norm {trunc_spec_norm}")
+        print(f'truncated spectral norm: {trunc_spec_norm}')
+        print(f'average truncated spectral norm: {avg_trunc_spec_norm}')
+        print(f'ols spectral norm: {emp_spec_norm}')
 
+        self.assertTrue(trunc_spec_norm <= emp_spec_norm, f"truncated spectral norm {trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}")
+        self.assertTrue(avg_trunc_spec_norm <= emp_spec_norm, f"average truncated spectral norm {avg_trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}")
 
     def test_truncated_lqr(self): 
 

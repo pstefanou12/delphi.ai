@@ -19,7 +19,7 @@ from ..utils.helpers import Parameters
 from .linear_model import LinearModel
 from ..trainer import train_model
 from ..utils.helpers import Bounds
-from ..utils.defaults import TRUNC_REG_DEFAULTS
+from ..utils.defaults import TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
 
 class TruncatedLinearRegression(LinearModel):
     """
@@ -59,7 +59,11 @@ class TruncatedLinearRegression(LinearModel):
             dependent (bool) : boolean indicating whether dataset is dependent and you should run SwitchGrad instead
             store (cox.store.Store) : cox store object for logging 
         """
-        super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
+        if dependent: 
+            super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_LDS_DEFAULTS, store=store)
+            self.args.__setattr__('lr', (1/self.args.alpha) ** self.args.c_gamma)
+        else:    
+            super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
         self.rand_seed = rand_seed
         if self.dependent: assert self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 

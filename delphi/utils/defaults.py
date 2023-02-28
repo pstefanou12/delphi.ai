@@ -41,6 +41,41 @@ DELPHI_DEFAULTS = {
     'device': (str, 'cpu')
 }
 
+TRUNC_REG_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (ch.Tensor, None), 
+        'fit_intercept': (bool, True), 
+        'val': (float, .2),
+        'var_lr': (float, 1e-2), 
+        'l1': (float, 0.0),
+        'weight_decay': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 50),
+        'workers': (int, 0),
+        'num_samples': (int, 50),
+        'shuffle': (bool, True)
+}
+
+TRUNC_LDS_DEFAULTS = {
+        'phi': (Callable, REQ),
+        'noise_var': (ch.Tensor, None), 
+        'fit_intercept': (bool, False), 
+        'val': (float, .2),
+        'l1': (float, 0.0),
+        'weight_decay': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 50),
+        'workers': (int, 0),
+        'num_samples': (int, 50),
+        'c_s': (float, 100.0),
+        'shuffle': (bool, False), 
+        'constant': (bool, True),
+}
+
 TRUNC_LOG_REG_DEFAULTS = {
         'phi': (Callable, REQ),
         'epochs': (int, 1),
@@ -133,25 +168,6 @@ TRUNCATED_LQR_DEFAULTS =  {
         'eps2': (float, .9),
         'repeat': (int, None), 
         'gamma': (float, REQ) 
-}
-
-# DEFAULT PARAMETERS
-TRUNC_REG_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'noise_var': (ch.Tensor, None), 
-        'fit_intercept': (bool, True), 
-        'val': (float, .2),
-        'var_lr': (float, 1e-2), 
-        'l1': (float, 0.0),
-        'weight_decay': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 50),
-        'workers': (int, 0),
-        'num_samples': (int, 50),
-        'c_s': (float, 100.0),
-        'shuffle': (bool, True)
 }
 
 def check_and_fill_args(args, defaults): 
