@@ -35,8 +35,8 @@ class LinearModel(delphi):
         self.d, self.k = None, None
         self.base_radius = 1.0
         self.dependent = dependent
-
-        self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
+        if self.dependent: 
+            self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
 
     def calc_emp_model(self, train_loader): 
         '''
