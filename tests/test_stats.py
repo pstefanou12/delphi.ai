@@ -9,14 +9,12 @@ from torch.nn import MSELoss
 import torch.linalg as LA
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import confusion_matrix
-import random
 from typing import Callable
 
 from delphi import stats 
 from delphi import oracle
-from delphi.utils.helpers import Parameters, logistic
+from delphi.utils.helpers import Parameters, logistic, calc_spectral_norm
 from delphi.utils.datasets import make_train_and_val
-from delphi.grad import SwitchGrad
 
 # CONSTANTS
 mse_loss =  MSELoss()
@@ -156,19 +154,15 @@ class TestStats(unittest.TestCase):
         self.assertTrue(unknown_var_l1 <= emp_var_l1, f'unknown var l1: {unknown_var_l1}')
 
     def test_truncated_dependent_regression(self): 
-        # spectral norm is the largest singular value --> SVD
-        def calc_spectral_norm(A):
-            u, s, v = LA.svd(A)
-            return s.max()
-        
-        D = 5 # number of dimensions for A_{*} matrix
+        D = 10 # number of dimensions for A_{*} matrix
         T = 10000
-        A = .25 * ch.randn((D, D))
 
-        spectral_norm = calc_spectral_norm(A)
-        print(f'A spectral norm: {spectral_norm}')
+        spectral_norm = float('inf')
+        while spectral_norm > 1.0: 
+            A = .25 * ch.randn((D, D))
+            spectral_norm = calc_spectral_norm(A)
 
-        phi = oracle.LogitBall(3.0)
+        phi = oracle.LogitBall(2.5)
 
         # phi = oracle.Identity()
         X, Y = ch.Tensor([]), ch.Tensor([])
@@ -189,6 +183,7 @@ class TestStats(unittest.TestCase):
             total_samples += 1
 
         alpha = T / total_samples
+        print(f'alpha: {alpha}')
 
         train_kwargs = Parameters({
             'phi': phi, 
@@ -218,6 +213,8 @@ class TestStats(unittest.TestCase):
         emp_spec_norm = calc_spectral_norm(A - A0_)
         avg_trunc_spec_norm = calc_spectral_norm(A - A_avg)
 
+        print(f'alpha: {alpha}')
+        print(f'A spectral norm: {spectral_norm}')
         print(f'truncated spectral norm: {trunc_spec_norm}')
         print(f'average truncated spectral norm: {avg_trunc_spec_norm}')
         print(f'ols spectral norm: {emp_spec_norm}')

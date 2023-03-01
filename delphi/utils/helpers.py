@@ -9,6 +9,7 @@ from torch.distributions import Uniform
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import torch.nn as nn
+import torch.linalg as LA
 import cox
 from typing import NamedTuple
 import pprint
@@ -358,5 +359,15 @@ class PSDError(Exception):
     def __init__(self, message='psd error'): 
         super(PSDError, self).__init__(message)
         self.message = message
+
+
+def calc_spectral_norm(A):
+    u, s, v = LA.svd(A)
+    return s.max()
+
+# Return the thickness of a positive semi-definite matrix
+def calc_thickness(X):
+  return LA.eig(X).eigenvalues.real.min()
+
 
 

@@ -15,7 +15,7 @@ from scipy.linalg import lstsq
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters
+from ..utils.helpers import Parameters, calc_spectral_norm
 from .linear_model import LinearModel
 from ..trainer import train_model
 from ..utils.helpers import Bounds
@@ -346,6 +346,13 @@ class TruncatedLinearRegression(LinearModel):
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()
             self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+
+        # if self.dependent: 
+        #     curr_spec_norm = calc_spectral_norm(self.weight)
+        #     if curr_spec_norm > 1: 
+        #         import pdb; pdb.set_trace()
+        #         self.weight = self.emp_weight
+        # print(f'A spectral norm in iteration hook: {calc_spectral_norm(self.weight)}')
 
     def parameters(self): 
         if self._parameters is None: 

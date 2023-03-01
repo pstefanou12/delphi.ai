@@ -4,18 +4,10 @@ import numpy as np
 from typing import Callable
 
 from .truncated_linear_regression import TruncatedLinearRegression
-from ..utils.helpers import Parameters
+from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
 from ..delphi import delphi
 from ..utils.defaults import TRUNCATED_LQR_DEFAULTS
 
-# HELPER FUNCTIONS
-def calc_spectral_norm(A):
-    u, s, v = LA.svd(A)
-    return s.max()
-
-# Return the thickness of a positive semi-definite matrix
-def calc_thickness(X):
-  return LA.eig(X).eigenvalues.real.min()
 
 class TruncatedLQR(delphi):
 
