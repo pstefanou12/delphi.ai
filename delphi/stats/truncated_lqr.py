@@ -12,10 +12,10 @@ from ..utils.defaults import TRUNCATED_LQR_DEFAULTS
 class TruncatedLQR(delphi):
 
   def __init__(self, 
-              args: Parameters,
-              gen_data: Callable, 
-              d: int, 
-              m: int): 
+                args: Parameters,
+                gen_data: Callable, 
+                d: int, 
+                m: int): 
 
     super().__init__(args, defaults=TRUNCATED_LQR_DEFAULTS)
     assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
@@ -124,7 +124,6 @@ class TruncatedLQR(delphi):
     # We find one that is most eps-close to the others
     # If each of them has 2/3 prob to be eps/2 close to true value
     # Then that one has high prob to get eps close
-    n = len(L)
     Max = -1
     output = None
     for mat in L:
@@ -139,7 +138,7 @@ class TruncatedLQR(delphi):
 
   @staticmethod
   def calculate_u_t_one(a, b, x): 
-    return (-b.T@LA.inv(b@b.T)@a@x.T).T
+    return (-b@LA.inv(b.T@b)@a.T@x.T).T
 
   def generate_samples_B(self):
       '''
@@ -200,11 +199,11 @@ class TruncatedLQR(delphi):
 
   @staticmethod
   def calculate_u_t_two(a, b, gamma_e_i): 
-    return (b.T@LA.inv(b@b.T)@gamma_e_i)[None,...]
+    return (b@LA.inv(b.T@b)@gamma_e_i)[None,...]
 
   @staticmethod
   def calculate_u_t_three(a, b, x): 
-    return (-b.T@LA.inv(b@b.T)@a@x.T).T 
+    return (-b@LA.inv(b.T@b)@a.T@x.T).T 
 
   def generate_samples_A(self):
       covariate_matrix = ch.zeros([self.d+self.m,self.d+self.m])
@@ -271,8 +270,7 @@ class TruncatedLQR(delphi):
       A_results, B_results = ch.Tensor([]), ch.Tensor([])
       A_avg_results, B_avg_results = ch.Tensor([]), ch.Tensor([])
 
-      hat_A, hat_B = self.a_hat.T, self.b_hat.T
-      coef_concat = ch.vstack([hat_A, hat_B])
+      coef_concat = ch.cat([self.a_hat, self.b_hat])
 
       for _ in range(repeat):
         Xu, Uu, Yu, Ntu, alpha_u = self.generate_samples_B()
@@ -294,10 +292,10 @@ class TruncatedLQR(delphi):
         trunc_lds.fit(feat_concat.detach(), y_concat.detach())
         
         AB = trunc_lds.best_coef_
-        A_, B_ = AB[:,:self.d], AB[:,self.d:]
+        A_, B_ = AB[:self.d], AB[self.d:]
 
         AB_avg = trunc_lds.avg_coef_
-        A_avg, B_avg = AB_avg[:,:self.d], AB_avg[:,self.d:]
+        A_avg, B_avg = AB_avg[:self.d], AB_avg[self.d:]
 
         A_results = ch.cat([A_results, A_[None,...]])
         B_results = ch.cat([B_results, B_[None,...]])

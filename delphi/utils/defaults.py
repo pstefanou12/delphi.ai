@@ -71,9 +71,11 @@ TRUNC_LDS_DEFAULTS = {
         'batch_size': (int, 50),
         'workers': (int, 0),
         'num_samples': (int, 50),
-        'c_s': (float, 100.0),
+        'c_gamma': (float, 2.0),
         'shuffle': (bool, False), 
         'constant': (bool, True),
+        'c_eta': (float, 2.0), 
+        'c_s': (float, 10.0)
 }
 
 TRUNC_LOG_REG_DEFAULTS = {

@@ -167,7 +167,6 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
         factor
         """
-#        print("Gradient in unknown truncated mse: {}".format((lambda_ *(z - targ) / pred.size(0)).sum(0).norm()))
         lambda_grad = .5 * (targ.pow(2) - z_2)
         return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
 
@@ -197,7 +196,6 @@ def Test(mu, phi, c_gamma, alpha, T):
   check whether the probability that a sample falls within the 
   truncation set is greater than the survival probability
   """
-  result = p >= (2 * gamma)
   return (p >= (2 * gamma))
 
 class SwitchGrad(ch.autograd.Function):
@@ -219,7 +217,7 @@ class SwitchGrad(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-        z = pred.clone()
+        # import pdb; pdb.set_trace()
         # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         '''
@@ -231,7 +229,6 @@ class SwitchGrad(ch.autograd.Function):
 
         # add random noise to each copy
         noised = stacked + M.sample(stacked.size()[:-1])
-        # noised = stacked + (noise_var ** .5) * M.sample(stacked.size()[:-1])
         
         # filter out copies where pred is in bounds
         filtered = phi(noised)
@@ -242,12 +239,11 @@ class SwitchGrad(ch.autograd.Function):
         result and result_inv are masks, so that you keep the noised 
         and the unnoised samples
         """
-        z = result.float()*z_ + (~result).float()*z
+        z = result.float()*z_ + (~result).float()*pred
 
         ctx.save_for_backward(pred, targ, z)
-        loss = (-.5 * (targ - pred).norm(p=2, keepdim=True, dim=-1).pow(2) + \
-                .5 * (z - pred).norm(p=2, keepdim=True, dim=-1).pow(2))
-
+        loss = -.5 * (targ - pred).norm(p=2, keepdim=True, dim=-1).pow(2) + \
+                .5 * (z - pred).norm(p=2, keepdim=True, dim=-1).pow(2)
         return loss.mean(0)
 
     @staticmethod

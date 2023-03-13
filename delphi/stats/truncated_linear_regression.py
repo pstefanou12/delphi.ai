@@ -11,15 +11,17 @@ import warnings
 import collections
 from torch.nn import Parameter
 from scipy.linalg import lstsq
+from typing import List
 
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, calc_spectral_norm
+from ..utils.helpers import Parameters, calc_spectral_norm, cov
 from .linear_model import LinearModel
 from ..trainer import train_model
 from ..utils.helpers import Bounds
 from ..utils.defaults import TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
+
 
 class TruncatedLinearRegression(LinearModel):
     """
@@ -61,7 +63,8 @@ class TruncatedLinearRegression(LinearModel):
         """
         if dependent: 
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_LDS_DEFAULTS, store=store)
-            self.args.__setattr__('lr', (1/self.args.alpha) ** self.args.c_gamma)
+            self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
+            print(f'learning rate: {self.args.lr}')
         else:    
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
         self.rand_seed = rand_seed
@@ -106,7 +109,6 @@ class TruncatedLinearRegression(LinearModel):
                 self.args.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
                 self.args.noise_var, self.args.num_samples, self.args.eps,
             ]
-            self.args.__setattr__('lr', (1/self.args.alpha) ** self.args.c_gamma)
 
         # add one feature to x when fitting intercept
         if self.args.fit_intercept:
@@ -118,8 +120,9 @@ class TruncatedLinearRegression(LinearModel):
             l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
             self.beta = l_inf * (X.size(1) ** .5)
 
+        self.train_loader, self.val_loader = make_train_and_val(self.args, X / self.beta, y)
         best_params, self.history, best_loss = train_model(self.args, self, 
-                                                        *make_train_and_val(self.args, X / self.beta, y), 
+                                                        self.train_loader, self.val_loader, 
                                                         rand_seed=self.rand_seed,
                                                         store=self.store)
 
@@ -171,7 +174,7 @@ class TruncatedLinearRegression(LinearModel):
             self.register_parameter("weight", Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self, 
-                        train_loader): 
+                        train_loader: ch.utils.data.DataLoader) -> None: 
         '''
         Calculates empirical estimates for a truncated linear model. Assigns 
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
@@ -184,7 +187,7 @@ class TruncatedLinearRegression(LinearModel):
             self.register_buffer('emp_weight', Tensor(coef_))
         else: 
             self.register_buffer('emp_weight', self._emp_weight)
-
+        
         if self.dependent:
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \
                         X.view(X.size(0), 1, X.size(1))).sum(0)
@@ -204,6 +207,11 @@ class TruncatedLinearRegression(LinearModel):
 
         self.weight.requires_grad = False
         self.emp_weight /= self.beta
+    
+    def calculate_kappa(self): 
+        temp_A = (self.emp_weight - self.weight)
+        inner_product = ch.trace((temp_A@temp_A.T)@self.Sigma.T)
+        result = ch.sqrt(inner_product)
 
     def predict(self, 
                 X: Tensor): 
@@ -216,28 +224,28 @@ class TruncatedLinearRegression(LinearModel):
         return X@self.coef
 
     def final_nll(self, 
-            X: Tensor, 
-            y: Tensor) -> Tensor:
+                X: Tensor, 
+                y: Tensor) -> Tensor:
         with ch.no_grad():
             return self.criterion(self.predict(X), y, *self.criterion_params)
 
     def avg_nll(self,
-            X: Tensor, 
-            y: Tensor) -> Tensor:
+                X: Tensor, 
+                y: Tensor) -> Tensor:
         with ch.no_grad(): 
             pred = X@self.avg_coef + self.avg_intercept
             return self.criterion(pred, y, *self.criterion_params)
 
 
     def best_nll(self,
-            X: Tensor, 
-            y: Tensor) -> Tensor:
+                X: Tensor, 
+                y: Tensor) -> Tensor:
         with ch.no_grad(): 
             return self.criterion(self.predict(X), y, *self.criterion_params)
 
     def emp_nll(self, 
-            X: Tensor, 
-            y: Tensor) -> Tensor:
+                X: Tensor, 
+                y: Tensor) -> Tensor:
         if self.args.fit_intercept: 
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         with ch.no_grad():
@@ -248,7 +256,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression coefficient weights.
         """
-        return self.coef.clone().T
+        return self.coef.clone()
 
     @property
     def best_intercept_(self): 
@@ -264,7 +272,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression coefficients, averaging over all gradient steps. 
         """
-        return self.avg_coef.clone().T
+        return self.avg_coef.clone()
 
     @property
     def avg_intercept_(self): 
@@ -311,7 +319,9 @@ class TruncatedLinearRegression(LinearModel):
         """
         return self.trunc_reg.emp_var.clone()
 
-    def __call__(self, X: ch.Tensor, y: ch.Tensor):
+    def __call__(self,
+                X: ch.Tensor,
+                y: ch.Tensor) -> ch.Tensor:
         if self.args.noise_var is None:
             weight = self._parameters[0]['params'][0]
             lambda_ = self._parameters[1]['params'][0]
@@ -320,20 +330,16 @@ class TruncatedLinearRegression(LinearModel):
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
-            # if self.args.b: 
-                # import pdb; pdb.set_trace()
             if self.args.b:
                 return X@self.weight
-            # import pdb; pdb.set_trace()
-            # return self.weight
-            return (self.weight@X.T).T
+            return (self.weight.T@X.T).T
         return X@self.weight
 
-    def pre_step_hook(self, inp) -> None:
+    def pre_step_hook(self, 
+                        inp: ch.Tensor) -> None:
         # TODO: find a cleaner way to do this
         if self.args.noise_var is not None and not self.dependent:
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
-
         if self.dependent:
             if self.args.b: 
                 self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
@@ -341,7 +347,11 @@ class TruncatedLinearRegression(LinearModel):
                 # import pdb; pdb.set_trace()
                 self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
                 
-    def iteration_hook(self, i, loop_type, loss, batch) -> None:
+    def iteration_hook(self, 
+                        i: int, 
+                        loop_type: str, 
+                        loss: ch.Tensor, 
+                        batch: ch.Tensor) -> None:
         if self.args.noise_var is None:
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()
@@ -353,8 +363,11 @@ class TruncatedLinearRegression(LinearModel):
         #         import pdb; pdb.set_trace()
         #         self.weight = self.emp_weight
         # print(f'A spectral norm in iteration hook: {calc_spectral_norm(self.weight)}')
+        # if self.dependent: 
+        #     self.calculate_kappa()
 
-    def parameters(self): 
+
+    def parameters(self) -> List: 
         if self._parameters is None: 
             raise "model parameters are not set"
         elif isinstance(self._parameters, collections.OrderedDict):
