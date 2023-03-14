@@ -69,9 +69,6 @@ class TruncatedLQR(delphi):
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
       self.args.__setattr__('b', False)
 
-      # lr = (1/self.args.alpha) ** self.args.c_gamma
-      # self.args.__setattr__('lr', lr)
-
       trunc_lds = TruncatedLinearRegression(self.args, 
                                           dependent=True)
       trunc_lds.fit(X, Y)

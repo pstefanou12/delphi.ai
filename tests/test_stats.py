@@ -155,19 +155,20 @@ class TestStats(unittest.TestCase):
 
     def test_truncated_dependent_regression(self): 
         D = 3 # number of dimensions for A_{*} matrix
-        T = 10000 # uncensored system trajectory length 
+        T = 1000 # uncensored system trajectory length 
 
-        spectral_norm = float('inf')
-        while spectral_norm > 1.0: 
-            A = .25 * ch.randn((D, D))
-            spectral_norm = calc_spectral_norm(A)
+        # spectral_norm = float('inf')
+        # while spectral_norm > 1.0: 
+        #     A = .25 * ch.randn((D, D))
+        #     spectral_norm = calc_spectral_norm(A)
 
 
         A = .25 * ch.eye(D)
         spectral_norm = calc_spectral_norm(A)
         print(f'A spectral norm: {calc_spectral_norm(A)}')
 
-        phi = oracle.LogitBall(1.5)
+        # phi = oracle.LogitBall(1.5)
+        phi = oracle.Identity()
 
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
@@ -277,9 +278,6 @@ class TestStats(unittest.TestCase):
             train_kwargs.__setattr__('noise_var', gen_data.noise_var)
             train_kwargs.__setattr__('b', True)
 
-            lr = (1/train_kwargs.alpha) ** train_kwargs.c_gamma
-            train_kwargs.__setattr__('lr', lr)
-
             trunc_lds = stats.TruncatedLinearRegression(train_kwargs,
                                                 dependent=True)
             trunc_lds.fit(feat_concat.detach(), Y.detach())
@@ -333,8 +331,8 @@ class TestStats(unittest.TestCase):
             'delta': .9, 
             'gamma': gamma, 
             'repeat': 1,
-            'T_gen_samples_A': 1000,
-            'T_gen_samples_B': 1000,
+            'T_gen_samples_A': 10000,
+            'T_gen_samples_B': 10000,
             'target_thickness': 2.0*U_A*U_A*max(U_A,U_B)/L_B
         })
 
