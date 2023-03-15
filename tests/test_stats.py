@@ -210,7 +210,6 @@ class TestStats(unittest.TestCase):
         emp_spec_norm = calc_spectral_norm(A - A0_)
         avg_trunc_spec_norm = calc_spectral_norm(A - A_avg)
 
-        import pdb; pdb.set_trace()
         print(f'alpha: {alpha}')
         print(f'A spectral norm: {spectral_norm}')
         print(f'truncated spectral norm: {trunc_spec_norm}')

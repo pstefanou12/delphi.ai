@@ -74,7 +74,7 @@ TRUNC_LDS_DEFAULTS = {
         'c_gamma': (float, 2.0),
         'shuffle': (bool, False), 
         'constant': (bool, True),
-        'c_eta': (float, 2.0), 
+        'c_eta': (float, 0.5), 
         'c_s': (float, 10.0)
 }
 
