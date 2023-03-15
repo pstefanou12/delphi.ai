@@ -155,7 +155,7 @@ class TestStats(unittest.TestCase):
 
     def test_truncated_dependent_regression(self): 
         D = 3 # number of dimensions for A_{*} matrix
-        T = 1000 # uncensored system trajectory length 
+        T = 10000 # uncensored system trajectory length 
 
         # spectral_norm = float('inf')
         # while spectral_norm > 1.0: 
@@ -163,12 +163,11 @@ class TestStats(unittest.TestCase):
         #     spectral_norm = calc_spectral_norm(A)
 
 
-        A = .25 * ch.eye(D)
+        A = .5*ch.eye(D)
         spectral_norm = calc_spectral_norm(A)
         print(f'A spectral norm: {calc_spectral_norm(A)}')
 
-        # phi = oracle.LogitBall(1.5)
-        phi = oracle.Identity()
+        phi = oracle.LogitBall(1.5)
 
         X, Y = ch.Tensor([]), ch.Tensor([])
         NOISE_VAR = ch.eye(D)
@@ -176,7 +175,7 @@ class TestStats(unittest.TestCase):
         x_t = ch.zeros((1, D))
         for i in range(T): 
             noise = M.sample()
-            y_t = (A@x_t.T).T + noise
+            y_t = x_t@A + noise
             if phi(y_t): # returns a boolean 
                 X = ch.cat([X, x_t])
                 Y = ch.cat([Y, y_t])
@@ -186,10 +185,10 @@ class TestStats(unittest.TestCase):
 
         train_kwargs = Parameters({
             'phi': phi, 
-            'c_eta': 1.0,
-            'epochs': 1, 
+            'c_eta': .5,
+            'epochs': 2, 
             'trials': 1, 
-            'batch_size': 1,
+            'batch_size': 10,
             'num_samples': 100,
             'T': X.size(0),
             'trials': 1,
@@ -197,6 +196,7 @@ class TestStats(unittest.TestCase):
             'alpha': alpha,
             'tol': 1e-1,
             'noise_var': NOISE_VAR, 
+            'c_gamma': 2.0,
         })
         trunc_lds = stats.TruncatedLinearRegression(train_kwargs, 
                                                     dependent=True, 
@@ -210,6 +210,7 @@ class TestStats(unittest.TestCase):
         emp_spec_norm = calc_spectral_norm(A - A0_)
         avg_trunc_spec_norm = calc_spectral_norm(A - A_avg)
 
+        import pdb; pdb.set_trace()
         print(f'alpha: {alpha}')
         print(f'A spectral norm: {spectral_norm}')
         print(f'truncated spectral norm: {trunc_spec_norm}')

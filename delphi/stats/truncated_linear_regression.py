@@ -64,6 +64,7 @@ class TruncatedLinearRegression(LinearModel):
         if dependent: 
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_LDS_DEFAULTS, store=store)
             self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
+            print(f'learning rate: {self.args.lr}')
         else:    
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
         self.rand_seed = rand_seed
@@ -332,6 +333,7 @@ class TruncatedLinearRegression(LinearModel):
             # if self.args.b:
             #     return X@self.weight
             # return (self.weight.T@X.T).T
+        # import pdb; pdb.set_trace()
         return X@self.weight
 
     def pre_step_hook(self, 
@@ -343,9 +345,7 @@ class TruncatedLinearRegression(LinearModel):
             if self.args.b: 
                 self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
             else: 
-                # import pdb; pdb.set_trace()
-                self.weight.grad = self.weight.grad@self.Sigma.inverse()
-        print(f'grad: {self.weight.grad}')
+                self.weight.grad = self.Sigma.inverse()@self.weight.grad
                 
     def iteration_hook(self, 
                         i: int, 
