@@ -16,7 +16,7 @@ from typing import List
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, calc_spectral_norm, cov
+from ..utils.helpers import Parameters
 from .linear_model import LinearModel
 from ..trainer import train_model
 from ..utils.helpers import Bounds
@@ -64,7 +64,6 @@ class TruncatedLinearRegression(LinearModel):
         if dependent: 
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_LDS_DEFAULTS, store=store)
             self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
-            print(f'learning rate: {self.args.lr}')
         else:    
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
         self.rand_seed = rand_seed
@@ -330,10 +329,6 @@ class TruncatedLinearRegression(LinearModel):
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
-            # if self.args.b:
-            #     return X@self.weight
-            # return (self.weight.T@X.T).T
-        # import pdb; pdb.set_trace()
         return X@self.weight
 
     def pre_step_hook(self, 
@@ -342,10 +337,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.noise_var is not None and not self.dependent:
             self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
         if self.dependent:
-            if self.args.b: 
-                self.weight.grad = (self.weight.grad.T@self.Sigma.inverse()).T
-            else: 
-                self.weight.grad = self.Sigma.inverse()@self.weight.grad
+            self.weight.grad = self.Sigma.inverse()@self.weight.grad
                 
     def iteration_hook(self, 
                         i: int, 
@@ -356,16 +348,6 @@ class TruncatedLinearRegression(LinearModel):
             # project model parameters back to domain 
             var = self._parameters[1]['params'][0].inverse()
             self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
-
-        # if self.dependent: 
-        #     curr_spec_norm = calc_spectral_norm(self.weight)
-        #     if curr_spec_norm > 1: 
-        #         import pdb; pdb.set_trace()
-        #         self.weight = self.emp_weight
-        # print(f'A spectral norm in iteration hook: {calc_spectral_norm(self.weight)}')
-        # if self.dependent: 
-        #     self.calculate_kappa()
-
 
     def parameters(self) -> List: 
         if self._parameters is None: 

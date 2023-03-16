@@ -75,7 +75,8 @@ TRUNC_LDS_DEFAULTS = {
         'shuffle': (bool, False), 
         'constant': (bool, True),
         'c_eta': (float, 0.5), 
-        'c_s': (float, 10.0)
+        'c_s': (float, 10.0), 
+        'constant': (bool, True)
 }
 
 TRUNC_LOG_REG_DEFAULTS = {
@@ -169,7 +170,8 @@ TRUNCATED_LQR_DEFAULTS =  {
         'eps1': (float, .9), 
         'eps2': (float, .9),
         'repeat': (int, None), 
-        'gamma': (float, REQ) 
+        'gamma': (float, REQ),
+        'alpha': (float, 1.0) 
 }
 
 def check_and_fill_args(args, defaults): 

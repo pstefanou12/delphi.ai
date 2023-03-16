@@ -5,11 +5,10 @@ from typing import Callable
 
 from .truncated_linear_regression import TruncatedLinearRegression
 from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
-from ..delphi import delphi
-from ..utils.defaults import TRUNCATED_LQR_DEFAULTS
+from ..utils.defaults import TRUNCATED_LQR_DEFAULTS, check_and_fill_args
 
 
-class TruncatedLQR(delphi):
+class TruncatedLQR:
 
   def __init__(self, 
                 args: Parameters,
@@ -17,7 +16,8 @@ class TruncatedLQR(delphi):
                 d: int, 
                 m: int): 
 
-    super().__init__(args, defaults=TRUNCATED_LQR_DEFAULTS)
+    # super().__init__(args, defaults=TRUNCATED_LQR_DEFAULTS)
+    self.args = check_and_fill_args(args, TRUNCATED_LQR_DEFAULTS)
     assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
     assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.args.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
     assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_two != float('inf') or self.args.T_phase_two != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
@@ -29,9 +29,9 @@ class TruncatedLQR(delphi):
     self.gamma_A, self.gamma_B = self.args.R / self.args.U_A, self.args.R / self.args.U_B
 
   def fit(self): 
-    A_OLS, self.a_hat, self.a_hat_avg, num_trajectories, num_samples =  self.phase_one()
-    B_OLS, self.b_hat, self.b_hat_avg, num_trajectories, num_samples =  self.phase_two()
-    A_yao, B_yao, A_yao_avg, B_yao_avg, _, _, _, feat_concat = self.find_estimate()
+    self.a_hat, self.a_hat_avg =  self.phase_one()
+    self.b_hat, self.b_hat_avg =  self.phase_two()
+    self.find_estimate()
 
   def phase_one(self):
       '''
@@ -42,6 +42,7 @@ class TruncatedLQR(delphi):
         number of trajectories taken
       '''
       assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+      print(f'begin cold start phase one...')
       num_trajectories = 1
       total_samples = 0
       x_t = ch.zeros((1, self.d))
@@ -60,26 +61,23 @@ class TruncatedLQR(delphi):
               x_t = ch.zeros((1, self.d))
               num_trajectories += 1
 
-          if total_samples % 100 == 0: 
-              print(f'total number of samples: {total_samples}')
+          if X.size(0) % 100 == 0: 
+              print(f'total number of samples: {X.size(0)}')
 
-      alpha = X.size(0) / total_samples
-
-      self.args.__setattr__('alpha', alpha)
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
-      self.args.__setattr__('b', False)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
                                           dependent=True)
       trunc_lds.fit(X, Y)
 
-      return trunc_lds.emp_weight, trunc_lds.avg_coef_, trunc_lds.best_coef_, num_trajectories, X.size(0)
+      return trunc_lds.avg_coef_, trunc_lds.best_coef_
 
 
   def phase_two(self): 
       '''
       Cold start phase 2. Initial estimation for B.
       '''
+      print(f'begin cold start phase two...')
       total_samples = 0
       index = 0
       xt = ch.zeros([1, self.d])
@@ -99,16 +97,15 @@ class TruncatedLQR(delphi):
               U, Y = ch.cat([U, u]), ch.cat([Y, y])
               covariate_matrix += u.T@u
 
-      alpha = U.size(0) / total_samples
+          if U.size(0) % 100 == 0: 
+              print(f'total number of samples: {U.size(0)}')
 
-      self.args.__setattr__('alpha', alpha)
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
-      self.args.__setattr__('b', True)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
                                           dependent=True)
       trunc_lds.fit(U, Y)
-      return trunc_lds.ols_coef_, trunc_lds.avg_coef_, trunc_lds.best_coef_, total_samples, U.size(1)
+      return trunc_lds.avg_coef_, trunc_lds.best_coef_
 
 
   def find_max(self, 
@@ -135,17 +132,6 @@ class TruncatedLQR(delphi):
     return (-b@LA.inv(b.T@b)@a.T@x.T).T
 
   def generate_samples_B(self):
-      '''
-      Args: 
-        self.args: algorithm's hyperparameters
-        gen_data: a callable that creates a sample from the truncated dynamical system
-        eps_1: is the initial precision
-        eps_2: is the final precision
-        a_hat: empirical A estimation
-        b_hat: empirical B estimation
-        num_traj: number of trajectories that method can use
-      return X, U, Y, number of samples, and number of trajectories
-      '''
       traj, total_samples = 0, 0
       X, Y, U = ch.zeros([1, self.d]), ch.zeros([1, self.d]), ch.zeros([1, self.m])
       index = 0
@@ -156,8 +142,12 @@ class TruncatedLQR(delphi):
       target = (1/(self.args.eps2**2)-1/(self.args.eps1**2))*4
       target_mat = ch.zeros([self.d+self.m,self.d+self.m])
       np.fill_diagonal(target_mat.numpy(), [0]*self.d+[target]*self.m)
-    
-      while traj < self.args.num_traj_gen_samples_B and X.size(0) < self.args.T_gen_samples_B and calc_thickness(covariate_matrix) < self.args.target_thickness:
+
+      '''
+      TODO: figure out a way to do better stopping criteria
+      ''' 
+      while (traj < self.args.num_traj_gen_samples_B and X.size(0) < self.args.T_gen_samples_B 
+      and calc_thickness(covariate_matrix) < self.args.target_thickness):
           traj += 1
           xt = ch.zeros((1, self.d))
           responsive = True
@@ -189,7 +179,7 @@ class TruncatedLQR(delphi):
               else: 
                 responsive = False
                 break
-      return X[1:], U[1:], Y[1:], X.size(0), X.size(0) / total_samples
+      return X[1:], U[1:], Y[1:], X.size(0)
 
   @staticmethod
   def calculate_u_t_two(a, b, gamma_e_i): 
@@ -247,16 +237,10 @@ class TruncatedLQR(delphi):
                 else:
                   responsive = False
                   break
-      return X[1:], U[1:], Y[1:], X.size(0),  X.size(0) / total_samples
+      return X[1:], U[1:], Y[1:], X.size(0)
 
-  def find_estimate(self):
-      '''
-      eps1 is the initial precision
-      eps2 is the final precision
-      hat_A is the estimation of A, same as hat_B
-      delta is failing rate
-      return new estimators hat_A and hat_B
-      '''
+  def find_estimate(self) -> None:
+      print(f'begin warm start...')
       repeat = int(-2*np.log2(self.args.delta)) if self.args.repeat is None else self.args.repeat
 
       assert repeat >= 1, f"repeat must be greater than or equal to 1; repeat: {repeat}"
@@ -267,14 +251,13 @@ class TruncatedLQR(delphi):
       coef_concat = ch.cat([self.a_hat, self.b_hat])
 
       for _ in range(repeat):
-        Xu, Uu, Yu, Ntu, alpha_u = self.generate_samples_B()
-        Xx, Ux, Yx, Ntx, alpha_x = self.generate_samples_A()
+        Xu, Uu, Yu, Ntu,  = self.generate_samples_B()
+        Xx, Ux, Yx, Ntx = self.generate_samples_A()
 
         XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)
         feat_concat = ch.cat([XU_concat, XX_concat])
         y_concat = ch.cat([Yu, Yx])
 
-        self.args.__setattr__('alpha', alpha_x)
         self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
         trunc_lds = TruncatedLinearRegression(self.args, 
@@ -297,8 +280,6 @@ class TruncatedLQR(delphi):
 
       self.best_A_ = self.find_max(A_results, self.args.eps2)
       self.best_B_ = self.find_max(B_results, self.args.eps2)
-
-      return self.find_max(A_results,self.args.eps2), self.find_max(B_results,self.args.eps2), A_avg_results, B_avg_results, XX_concat, y_concat, XU_concat, feat_concat
 
   @property
   def best_A_(self): 
