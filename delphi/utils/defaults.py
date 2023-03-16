@@ -3,7 +3,7 @@ Default parameters for running algorithms in delphi.ai.
 """
 
 import torch as ch
-from typing import Callable, Iterable
+from typing import Callable, Iterable 
 
 from .helpers import has_attr
 
@@ -154,15 +154,15 @@ TRUNC_BOOL_PROD_DEFAULTS = {
 }
 
 TRUNCATED_LQR_DEFAULTS =  { 
-        'target_thickness': (float, float('inf')), 
-        'num_traj_phase_one': (int, float('inf')),
-        'num_traj_phase_two': (int, float('inf')), 
-        'num_traj_gen_samples_B': (int, float('inf')), 
-        'num_traj_gen_samples_A': (int, float('inf')),
-        'T_phase_one': (int, float('inf')), 
-        'T_phase_two': (int, float('inf')), 
-        'T_gen_samples_B': (int, float('inf')),  
-        'T_gen_samples_A': (int, float('inf')),
+        'target_thickness': (int, 1e1000), 
+        'num_traj_phase_one': (int, 1e1000),
+        'num_traj_phase_two': (int, 1e1000), 
+        'num_traj_gen_samples_B': (int, 1e1000), 
+        'num_traj_gen_samples_A': (int, 1e1000),
+        'T_phase_one': (int, 1e1000), 
+        'T_phase_two': (int, 1e1000), 
+        'T_gen_samples_B': (int, 1e1000),  
+        'T_gen_samples_A': (int, 1e1000),
         'R': (float, REQ),
         'U_A': (float, REQ), 
         'U_B': (float, REQ), 
