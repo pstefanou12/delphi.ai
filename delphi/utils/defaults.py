@@ -11,7 +11,6 @@ from .helpers import has_attr
 # CONSTANTS
 REQ = 'required'
 
-
 TRAINER_DEFAULTS = { 
     'num_trials': (int, 3),
     'epochs': (int, 20),
@@ -154,7 +153,7 @@ TRUNC_BOOL_PROD_DEFAULTS = {
 }
 
 TRUNCATED_LQR_DEFAULTS =  { 
-        'target_thickness': (int, 1e1000), 
+        'target_thickness': (float, float('inf')), 
         'num_traj_phase_one': (int, 1e1000),
         'num_traj_phase_two': (int, 1e1000), 
         'num_traj_gen_samples_B': (int, 1e1000), 
