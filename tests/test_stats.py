@@ -218,7 +218,6 @@ class TestStats(unittest.TestCase):
         self.assertTrue(avg_trunc_spec_norm <= emp_spec_norm, f"average truncated spectral norm {avg_trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}")
 
     def test_truncated_lqr(self): 
-
         class GenerateTruncatedLQRData:
             def __init__(self, phi, A, B, noise_var = None): 
                 self.phi = phi
@@ -331,10 +330,10 @@ class TestStats(unittest.TestCase):
             'delta': .9, 
             'gamma': gamma, 
             'repeat': 1,
-            'num_traj_phase_one': 1000, 
-            'num_traj_phase_two': 1000,
-            'num_traj_gen_samples_A': 5000,
-            'num_traj_gen_samples_B': 1000,
+            'num_traj_phase_one': 1250, 
+            'num_traj_phase_two': 1250,
+            'num_traj_gen_samples_A': 1250,
+            'num_traj_gen_samples_B': 1250,
         })
 
         TRAIN_KWARGS.__setattr__('phi', phi)
@@ -631,4 +630,5 @@ class TestStats(unittest.TestCase):
         
 
 if __name__ == '__main__':
+    ch.manual_seed(69)
     unittest.main()
