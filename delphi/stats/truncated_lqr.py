@@ -41,7 +41,7 @@ class TruncatedLQR:
       Returns: ols estimate, initial estimation with plevrakis, and 
         number of trajectories taken
       '''
-      assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
+      # assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
       print(f'begin cold start phase one...')
       num_trajectories = 1
       total_samples = 0
