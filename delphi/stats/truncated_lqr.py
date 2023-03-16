@@ -29,8 +29,8 @@ class TruncatedLQR:
     self.gamma_A, self.gamma_B = self.args.R / self.args.U_A, self.args.R / self.args.U_B
 
   def fit(self): 
-    self.a_hat, self.a_hat_avg =  self.phase_one()
-    self.b_hat, self.b_hat_avg =  self.phase_two()
+    self.phase_one()
+    self.phase_two()
     self.find_estimate()
 
   def phase_one(self):
@@ -69,8 +69,8 @@ class TruncatedLQR:
       trunc_lds = TruncatedLinearRegression(self.args, 
                                           dependent=True)
       trunc_lds.fit(X, Y)
-
-      return trunc_lds.avg_coef_, trunc_lds.best_coef_
+      self.A_hat_ = trunc_lds.best_coef_
+      self.A_hat_avg_ = trunc_lds.avg_coef_
 
 
   def phase_two(self): 
@@ -105,8 +105,8 @@ class TruncatedLQR:
       trunc_lds = TruncatedLinearRegression(self.args, 
                                           dependent=True)
       trunc_lds.fit(U, Y)
-      return trunc_lds.avg_coef_, trunc_lds.best_coef_
-
+      self.B_hat_ = trunc_lds.best_coef_
+      self.B_hat_avg_ = trunc_lds.avg_coef_
 
   def find_max(self, 
                 L, 
@@ -165,7 +165,7 @@ class TruncatedLQR:
             else: 
               break
             while True:
-              ut = self.calculate_u_t_one(self.a_hat, self.b_hat, xt)
+              ut = self.calculate_u_t_one(self.A_hat_, self.B_hat_, xt)
               sample = self.gen_data(xt, u_t=ut)
               total_samples += 1
               if sample is not None:
@@ -204,7 +204,7 @@ class TruncatedLQR:
           # while the system is responsive 
           responsive = True
           while responsive: 
-            ut = self.calculate_u_t_two(self.a_hat, self.b_hat, self.args.gamma*id_[index]) 
+            ut = self.calculate_u_t_two(self.A_hat_, self.B_hat_, self.args.gamma*id_[index]) 
             sample = self.gen_data(xt, u_t=ut)
             if sample is not None:
               yt, ut = sample
@@ -223,7 +223,7 @@ class TruncatedLQR:
             else: 
               break
             while True: 
-                ut = self.calculate_u_t_three(self.a_hat, self.b_hat, xt)
+                ut = self.calculate_u_t_three(self.A_hat_, self.B_hat_, xt)
                 sample = self.gen_data(xt, u_t=ut)
                 total_samples += 1
                 if sample is not None:
@@ -248,7 +248,7 @@ class TruncatedLQR:
       A_results, B_results = ch.Tensor([]), ch.Tensor([])
       A_avg_results, B_avg_results = ch.Tensor([]), ch.Tensor([])
 
-      coef_concat = ch.cat([self.a_hat, self.b_hat])
+      coef_concat = ch.cat([self.A_hat_, self.B_hat_])
 
       for _ in range(repeat):
         Xu, Uu, Yu, Ntu,  = self.generate_samples_B()
@@ -280,6 +280,38 @@ class TruncatedLQR:
 
       self.best_A_ = self.find_max(A_results, self.args.eps2)
       self.best_B_ = self.find_max(B_results, self.args.eps2)
+
+  @property
+  def A_hat_(self): 
+    return self._A_hat_
+
+  @A_hat_.setter
+  def A_hat_(self, value): 
+    self._A_hat_ = value
+
+  @property
+  def A_avg_hat_(self): 
+    return self._A_avg_hat_
+
+  @A_avg_hat_.setter
+  def A_avg_hat_(self, value): 
+    self._A_avg_hat_ = value
+
+  @property
+  def B_hat_(self): 
+    return self._B_hat_
+
+  @B_hat_.setter
+  def B_hat_(self, value): 
+    self._B_hat_ = value
+
+  @property
+  def B_avg_hat_(self): 
+    return self._B_avg_hat_
+
+  @B_avg_hat_.setter
+  def B_avg_hat_(self, value): 
+    self._B_avg_hat_ = value
 
   @property
   def best_A_(self): 
