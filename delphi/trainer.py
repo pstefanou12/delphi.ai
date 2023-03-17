@@ -224,7 +224,7 @@ def train_model(args: Parameters,
                 with ch.no_grad():
                     val_loss, val_prec1, val_prec5, _ = model_loop_(args, model, val_loader, epoch, False)
                 if args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
-
+            
             if store is not None:
                 store['logs'].append_row({
                     'trial': trial,

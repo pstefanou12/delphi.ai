@@ -75,7 +75,8 @@ TRUNC_LDS_DEFAULTS = {
         'constant': (bool, True),
         'c_eta': (float, 0.5), 
         'c_s': (float, 10.0), 
-        'constant': (bool, True)
+        'constant': (bool, True), 
+        'suffle': (bool, True)
 }
 
 TRUNC_LOG_REG_DEFAULTS = {

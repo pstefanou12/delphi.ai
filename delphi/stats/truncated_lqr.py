@@ -2,14 +2,16 @@ import torch.linalg as LA
 import torch as ch
 import numpy as np
 from typing import Callable
+import logging
 
 from .truncated_linear_regression import TruncatedLinearRegression
 from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
 from ..utils.defaults import TRUNCATED_LQR_DEFAULTS, check_and_fill_args
 
+logger = logging.getLogger('truncated-lqr')
+
 
 class TruncatedLQR:
-
   def __init__(self, 
                 args: Parameters,
                 gen_data: Callable, 
@@ -29,11 +31,11 @@ class TruncatedLQR:
     self.gamma_A, self.gamma_B = self.args.R / self.args.U_A, self.args.R / self.args.U_B
 
   def fit(self): 
-    self.phase_one()
-    self.phase_two()
-    self.find_estimate()
+    self.run_phase_one()
+    self.run_phase_two()
+    self.run_warm_phase()
 
-  def phase_one(self):
+  def run_phase_one(self):
       '''
       Cold start phase 1. Initial estimation for A.
       Args: 
@@ -42,7 +44,7 @@ class TruncatedLQR:
         number of trajectories taken
       '''
       # assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
-      print(f'begin cold start phase one...')
+      logger.info(f'begin cold start phase one...')
       num_trajectories = 1
       total_samples = 0
       x_t = ch.zeros((1, self.d))
@@ -62,7 +64,7 @@ class TruncatedLQR:
               num_trajectories += 1
 
           if X.size(0) % 100 == 0: 
-              print(f'total number of samples: {X.size(0)}')
+              logger.info(f'total number of samples: {X.size(0)}')
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
@@ -73,11 +75,11 @@ class TruncatedLQR:
       self.A_hat_avg_ = trunc_lds.avg_coef_
 
 
-  def phase_two(self): 
+  def run_phase_two(self): 
       '''
       Cold start phase 2. Initial estimation for B.
       '''
-      print(f'begin cold start phase two...')
+      logger.info(f'begin cold start phase two...')
       total_samples = 0
       index = 0
       xt = ch.zeros([1, self.d])
@@ -98,7 +100,7 @@ class TruncatedLQR:
               covariate_matrix += u.T@u
 
           if U.size(0) % 100 == 0: 
-              print(f'total number of samples: {U.size(0)}')
+              logger.info(f'total number of samples: {U.size(0)}')
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
@@ -239,8 +241,8 @@ class TruncatedLQR:
                   break
       return X[1:], U[1:], Y[1:], X.size(0)
 
-  def find_estimate(self) -> None:
-      print(f'begin warm start...')
+  def run_warm_phase(self) -> None:
+      logger.info(f'begin warm start...')
       repeat = int(-2*np.log2(self.args.delta)) if self.args.repeat is None else self.args.repeat
 
       assert repeat >= 1, f"repeat must be greater than or equal to 1; repeat: {repeat}"
