@@ -179,7 +179,7 @@ class TruncatedLQR:
               else: 
                 responsive = False
                 break
-      return X[1:], U[1:], Y[1:], X.size(0)
+      return X[1:], U[1:], Y[1:]
 
   @staticmethod
   def calculate_u_t_two(a, b, gamma_e_i): 
@@ -237,7 +237,7 @@ class TruncatedLQR:
                 else:
                   responsive = False
                   break
-      return X[1:], U[1:], Y[1:], X.size(0)
+      return X[1:], U[1:], Y[1:]
 
   def run_warm_phase(self) -> None:
       logger.info(f'begin warm start...')
@@ -251,8 +251,8 @@ class TruncatedLQR:
       coef_concat = ch.cat([self.A_hat_, self.B_hat_])
 
       for _ in range(repeat):
-        Xu, Uu, Yu, Ntu,  = self.generate_samples_B()
-        Xx, Ux, Yx, Ntx = self.generate_samples_A()
+        Xu, Uu, Yu = self.generate_samples_B()
+        Xx, Ux, Yx = self.generate_samples_A()
 
         XU_concat, XX_concat = ch.cat([Xu, Uu], axis=1), ch.cat([Xx, Ux], axis=1)
         feat_concat = ch.cat([XU_concat, XX_concat])
