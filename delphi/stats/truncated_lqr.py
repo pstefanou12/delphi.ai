@@ -9,6 +9,7 @@ from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
 from ..utils.defaults import TRUNCATED_LQR_DEFAULTS, check_and_fill_args
 
 logger = logging.getLogger('truncated-lqr')
+logger.setLevel(logging.INFO)
 
 
 class TruncatedLQR:
@@ -63,17 +64,15 @@ class TruncatedLQR:
               x_t = ch.zeros((1, self.d))
               num_trajectories += 1
 
-          if X.size(0) % 100 == 0: 
+          if X.size(0) % 100 == 0:
               logger.info(f'total number of samples: {X.size(0)}')
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
-                                          dependent=True)
+                                            dependent=True)
       trunc_lds.fit(X, Y)
       self.A_hat_ = trunc_lds.best_coef_
-      self.A_hat_avg_ = trunc_lds.avg_coef_
-
 
   def run_phase_two(self): 
       '''
@@ -105,10 +104,9 @@ class TruncatedLQR:
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
-                                          dependent=True)
+                                            dependent=True)
       trunc_lds.fit(U, Y)
       self.B_hat_ = trunc_lds.best_coef_
-      self.B_hat_avg_ = trunc_lds.avg_coef_
 
   def find_max(self, 
                 L, 
@@ -280,8 +278,8 @@ class TruncatedLQR:
         B_avg_results = ch.cat([B_avg_results, B_avg[None,...]])
 
 
-      self.best_A_ = self.find_max(A_results, self.args.eps2)
-      self.best_B_ = self.find_max(B_results, self.args.eps2)
+      self.A_ = self.find_max(A_results, self.args.eps2)
+      self.B_ = self.find_max(B_results, self.args.eps2)
 
   @property
   def A_hat_(self): 
@@ -292,14 +290,6 @@ class TruncatedLQR:
     self._A_hat_ = value
 
   @property
-  def A_avg_hat_(self): 
-    return self._A_avg_hat_
-
-  @A_avg_hat_.setter
-  def A_avg_hat_(self, value): 
-    self._A_avg_hat_ = value
-
-  @property
   def B_hat_(self): 
     return self._B_hat_
 
@@ -308,26 +298,17 @@ class TruncatedLQR:
     self._B_hat_ = value
 
   @property
-  def B_avg_hat_(self): 
-    return self._B_avg_hat_
+  def A_(self): 
+    return self._A_
 
-  @B_avg_hat_.setter
-  def B_avg_hat_(self, value): 
-    self._B_avg_hat_ = value
-
-  @property
-  def best_A_(self): 
-    return self._best_A_
-
-  @best_A_.setter
-  def best_A_(self, value): 
-    self._best_A_ = value
+  @A_.setter
+  def A_(self, value): 
+    self._A_ = value
 
   @property
-  def best_B_(self): 
-    return self._best_B_
+  def B_(self): 
+    return self._B_
 
-  @best_B_.setter
-  def best_B_(self, value): 
-    self._best_B_ = value
-
+  @B_.setter
+  def B_(self, value): 
+    self._B_ = value

@@ -16,7 +16,7 @@ def test_truncated_lqr():
     R = 5.0
     D = 3
     M = 3
-    NUM_TRAJ = 1000 
+    NUM_TRAJ = 500 
     assert M >= D, f'M is currently: {M}, but it needs to be greater than or equal to D: {D}'
 
     NOISE_VAR = ch.eye(D)
@@ -35,7 +35,7 @@ def test_truncated_lqr():
     TRAIN_KWARGS = Parameters({
         'c_gamma': 2.0,
         'fit_intercept': False,
-        'epochs': 2, 
+        'epochs': 5, 
         'trials': 1, 
         'batch_size': 5,
         'num_samples': 10,
@@ -58,7 +58,7 @@ def test_truncated_lqr():
     trunc_lqr = TruncatedLQR(TRAIN_KWARGS, gen_data, D, M)
     trunc_lqr.fit()
 
-    A_yao, B_yao = trunc_lqr.best_A_, trunc_lqr.best_B_
+    A_yao, B_yao = trunc_lqr.A_, trunc_lqr.B_
     A_sarah_dean_plev, B_sarah_dean_plev, A_sarah_dean_ols, B_sarah_dean_ols = calc_sarah_dean(TRAIN_KWARGS, 
                                                                                                 gen_data, 
                                                                                                 NUM_TRAJ, 
