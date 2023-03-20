@@ -198,7 +198,8 @@ class TruncatedLQR:
       id_ = ch.eye(self.d)
 
       # break based off of the number of samples collected or number of trajectories
-      while traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A and calc_thickness(covariate_matrix) < self.args.target_thickness:
+      while (traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A
+      and calc_thickness(covariate_matrix) < self.args.target_thickness):
           xt = ch.zeros(1, self.d)
           traj += 1
           # while the system is responsive 
