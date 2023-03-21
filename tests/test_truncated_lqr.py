@@ -10,7 +10,7 @@ from delphi.utils.helpers import Parameters, calc_spectral_norm
 from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 def test_truncated_lqr(): 
-    gamma = 2.0 
+    gamma = .5
     U_A = 3.0
     U_B = 3.0
     R = 5.0

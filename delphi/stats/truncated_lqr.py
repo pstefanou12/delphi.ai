@@ -29,7 +29,6 @@ class TruncatedLQR:
 
     self.gen_data = gen_data
     self.d, self.m = d, m
-    self.gamma_A, self.gamma_B = self.args.R / self.args.U_A, self.args.R / self.args.U_B
 
   def fit(self): 
     self.run_phase_one()
@@ -132,6 +131,7 @@ class TruncatedLQR:
     return (-b@LA.inv(b.T@b)@a.T@x.T).T
 
   def generate_samples_B(self):
+      logger.info('begin b focused part...')
       traj, total_samples = 0, 0
       X, Y, U = ch.zeros([1, self.d]), ch.zeros([1, self.d]), ch.zeros([1, self.m])
       index = 0
@@ -179,6 +179,7 @@ class TruncatedLQR:
               else: 
                 responsive = False
                 break
+          logger.info(f'number of trajectories: {traj}; number of samples collected: {X.size(0)}')
       return X[1:], U[1:], Y[1:]
 
   @staticmethod
@@ -190,6 +191,7 @@ class TruncatedLQR:
     return (-b@LA.inv(b.T@b)@a.T@x.T).T 
 
   def generate_samples_A(self):
+      logger.info('begin a focused part...')
       covariate_matrix = ch.zeros([self.d+self.m,self.d+self.m])
 
       traj, total_samples = 0, 0
@@ -238,6 +240,7 @@ class TruncatedLQR:
                 else:
                   responsive = False
                   break
+          logger.info(f'number of trajectories: {traj}; number of samples collected: {X.size(0)}')
       return X[1:], U[1:], Y[1:]
 
   def run_warm_phase(self) -> None:
