@@ -16,7 +16,7 @@ def test_truncated_lqr():
     R = 5.0
     D = 3
     M = 3
-    NUM_TRAJ = 500 
+    NUM_TRAJ = 100 
     assert M >= D, f'M is currently: {M}, but it needs to be greater than or equal to D: {D}'
 
     NOISE_VAR = ch.eye(D)

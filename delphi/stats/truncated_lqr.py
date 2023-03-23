@@ -3,6 +3,7 @@ import torch as ch
 import numpy as np
 from typing import Callable
 import logging
+from cox.store import Store
 
 from .truncated_linear_regression import TruncatedLinearRegression
 from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
@@ -18,8 +19,16 @@ class TruncatedLQR:
                 gen_data: Callable, 
                 d: int, 
                 m: int): 
-
-    # super().__init__(args, defaults=TRUNCATED_LQR_DEFAULTS)
+    """
+    Truncated LQR algorithm. Three phase algorithm that removes bias from the case when there is 
+    truncation bias a LQR dynamical system.
+    Args: 
+      args: (Parameters)
+      gen_data: (Callable) - callable that takes () as inputs, and returns ()
+      d: (int) - dimension of matrix A 
+      m: (int) - second dimension for matrix B (m >= d)
+    """
+    
     self.args = check_and_fill_args(args, TRUNCATED_LQR_DEFAULTS)
     assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
     assert self.args.target_thickness != float('inf') or self.args.num_traj_phase_one != float('inf') or self.args.T_phase_one != float('inf'), f"all stopping conditions are {float('inf')}, need to provide at least one stopping variable: (T, num_traj, target_thickness), that isn't infinity"
@@ -35,7 +44,7 @@ class TruncatedLQR:
     self.run_phase_two()
     self.run_warm_phase()
 
-  def run_phase_one(self):
+  def run_phase_one(self, store: Store = None):
       '''
       Cold start phase 1. Initial estimation for A.
       Args: 
@@ -69,11 +78,13 @@ class TruncatedLQR:
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
-                                            dependent=True)
+                                            dependent=True, 
+                                            store=store)
       trunc_lds.fit(X, Y)
       self.A_hat_ = trunc_lds.best_coef_
 
-  def run_phase_two(self): 
+  def run_phase_two(self, 
+                    store: Store=None): 
       '''
       Cold start phase 2. Initial estimation for B.
       '''
@@ -103,7 +114,8 @@ class TruncatedLQR:
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
       trunc_lds = TruncatedLinearRegression(self.args, 
-                                            dependent=True)
+                                            dependent=True, 
+                                            store=store)
       trunc_lds.fit(U, Y)
       self.B_hat_ = trunc_lds.best_coef_
 
@@ -243,7 +255,8 @@ class TruncatedLQR:
           logger.info(f'number of trajectories: {traj}; number of samples collected: {X.size(0)}')
       return X[1:], U[1:], Y[1:]
 
-  def run_warm_phase(self) -> None:
+  def run_warm_phase(self, 
+                    store: Store=None) -> None:
       logger.info(f'begin warm start...')
       repeat = int(-2*np.log2(self.args.delta)) if self.args.repeat is None else self.args.repeat
 
@@ -266,7 +279,8 @@ class TruncatedLQR:
 
         trunc_lds = TruncatedLinearRegression(self.args, 
                                               emp_weight=coef_concat,
-                                              dependent=True)
+                                              dependent=True, 
+                                              store=store)
         trunc_lds.fit(feat_concat.detach(), y_concat.detach())
         
         AB = trunc_lds.best_coef_

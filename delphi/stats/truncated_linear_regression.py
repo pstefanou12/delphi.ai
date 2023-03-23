@@ -7,6 +7,7 @@ import torch as ch
 from torch import Tensor
 import torch.linalg as LA
 import cox
+from cox.store import Store
 import warnings
 import collections
 from torch.nn import Parameter
@@ -37,7 +38,7 @@ class TruncatedLinearRegression(LinearModel):
                 dependent: bool=False,
                 emp_weight: ch.Tensor=None,
                 rand_seed=0,
-                store: cox.store.Store=None):
+                store: Store=None):
         """
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
