@@ -39,6 +39,8 @@ class TruncatedLQR:
     self.gen_data = gen_data
     self.d, self.m = d, m
 
+    self.c = (self.args.R - 3 * (self.m ** .5)) / self.args.U_B
+
   def fit(self): 
     self.run_phase_one()
     self.run_phase_two()
@@ -97,7 +99,7 @@ class TruncatedLQR:
 
       while (total_samples < self.args.num_traj_phase_two and U.size(0) < self.args.T_phase_two 
           and calc_thickness(covariate_matrix) < self.args.target_thickness):
-          u = (self.args.gamma*id_[index])[None,...]
+          u = (self.c*id_[index])[None,...]
           sample = self.gen_data(xt, u_t=u)
         
           total_samples += 1

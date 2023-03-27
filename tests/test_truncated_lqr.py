@@ -11,10 +11,8 @@ from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 def test_truncated_lqr(): 
     ch.manual_seed(69)
-    gamma = .5
-    U_A = 3.0
-    U_B = 3.0
-    R = 5.0
+    gamma = .1
+    R = 4.0
     D = 3
     M = 3
     NUM_TRAJ = 1000
@@ -31,6 +29,9 @@ def test_truncated_lqr():
     # membership oracle
     phi = oracle.LogitBall(R)
     gen_data = GenerateTruncatedLQRData(phi, A, B.T, noise_var=NOISE_VAR)
+
+    U_A = float(calc_spectral_norm(A))
+    U_B = float(calc_spectral_norm(B))
 
     TRAIN_KWARGS = Parameters({
         'c_gamma': 2.0,
