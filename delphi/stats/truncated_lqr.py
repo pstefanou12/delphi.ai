@@ -60,7 +60,8 @@ class TruncatedLQR:
       X, Y, U = ch.Tensor([]), ch.Tensor([]), ch.Tensor([])
       covariate_matrix = ch.zeros([self.d,self.d])
 
-      while num_trajectories < self.args.num_traj_phase_one and X.size(0) < self.args.T_phase_one and calc_thickness(covariate_matrix) < self.args.target_thickness:
+      while (num_trajectories < self.args.num_traj_phase_one and X.size(0) < self.args.T_phase_one 
+          and calc_thickness(covariate_matrix) < self.args.target_thickness):
           sample = self.gen_data(x_t, u_t=ch.zeros((1, self.m)))
           total_samples += 1
           if sample is not None:
@@ -89,14 +90,13 @@ class TruncatedLQR:
       Cold start phase 2. Initial estimation for B.
       '''
       logger.info(f'begin cold start phase two...')
-      total_samples = 0
-      index = 0
-      xt = ch.zeros([1, self.d])
-      id_ = ch.eye(self.m)
+      total_samples, index = 0, 0
+      xt, id_ = ch.zeros([1, self.d]), ch.eye(self.m)
       U, Y = ch.Tensor([]), ch.Tensor([])
       covariate_matrix = ch.zeros([self.m, self.m])
 
-      while total_samples < self.args.num_traj_phase_two and U.size(0) < self.args.T_phase_two and calc_thickness(covariate_matrix) < self.args.target_thickness:
+      while (total_samples < self.args.num_traj_phase_two and U.size(0) < self.args.T_phase_two 
+          and calc_thickness(covariate_matrix) < self.args.target_thickness):
           u = (self.args.gamma*id_[index])[None,...]
           sample = self.gen_data(xt, u_t=u)
         
@@ -106,12 +106,11 @@ class TruncatedLQR:
               index = (index+1)%self.m
               U, Y = ch.cat([U, u]), ch.cat([Y, y])
               covariate_matrix += u.T@u
-
+          
           if U.size(0) % 100 == 0: 
               logger.info(f'total number of samples: {U.size(0)}')
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
-
       trunc_lds = TruncatedLinearRegression(self.args, 
                                             dependent=True, 
                                             store=store)
@@ -158,7 +157,7 @@ class TruncatedLQR:
       TODO: figure out a way to do better stopping criteria
       ''' 
       while (traj < self.args.num_traj_gen_samples_B and X.size(0) < self.args.T_gen_samples_B 
-      and calc_thickness(covariate_matrix) < self.args.target_thickness):
+          and calc_thickness(covariate_matrix) < self.args.target_thickness):
           traj += 1
           xt = ch.zeros((1, self.d))
           responsive = True
@@ -212,7 +211,7 @@ class TruncatedLQR:
 
       # break based off of the number of samples collected or number of trajectories
       while (traj < self.args.num_traj_gen_samples_A and X.size(0) < self.args.T_gen_samples_A
-      and calc_thickness(covariate_matrix) < self.args.target_thickness):
+          and calc_thickness(covariate_matrix) < self.args.target_thickness):
           xt = ch.zeros(1, self.d)
           traj += 1
           # while the system is responsive 

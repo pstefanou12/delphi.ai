@@ -11,10 +11,10 @@ from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 def test_truncated_lqr(): 
     ch.manual_seed(69)
-    gamma = .1
+    gamma = .5
     U_A = 3.0
     U_B = 3.0
-    R = 4.0
+    R = 5.0
     D = 3
     M = 3
     NUM_TRAJ = 1000
@@ -35,7 +35,7 @@ def test_truncated_lqr():
     TRAIN_KWARGS = Parameters({
         'c_gamma': 2.0,
         'fit_intercept': False,
-        'epochs': 1, 
+        'epochs': 2, 
         'trials': 1, 
         'batch_size': 10,
         'num_samples': 10,
