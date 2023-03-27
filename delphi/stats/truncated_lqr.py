@@ -78,11 +78,11 @@ class TruncatedLQR:
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
 
-      trunc_lds = TruncatedLinearRegression(self.args, 
+      self.trunc_lds_phase_one = TruncatedLinearRegression(self.args, 
                                             dependent=True, 
                                             store=store)
-      trunc_lds.fit(X, Y)
-      self.A_hat_ = trunc_lds.best_coef_
+      self.trunc_lds_phase_one.fit(X, Y)
+      self.A_hat_ = self.trunc_lds_phase_one.best_coef_
 
   def run_phase_two(self, 
                     store: Store=None): 
@@ -111,11 +111,11 @@ class TruncatedLQR:
               logger.info(f'total number of samples: {U.size(0)}')
 
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
-      trunc_lds = TruncatedLinearRegression(self.args, 
+      self.trunc_lds_phase_two = TruncatedLinearRegression(self.args, 
                                             dependent=True, 
                                             store=store)
-      trunc_lds.fit(U, Y)
-      self.B_hat_ = trunc_lds.best_coef_
+      self.trunc_lds_phase_two.fit(U, Y)
+      self.B_hat_ = self.trunc_lds_phase_two.best_coef_
 
   def find_max(self, 
                 L, 
