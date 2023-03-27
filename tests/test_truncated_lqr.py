@@ -10,17 +10,17 @@ from delphi.utils.helpers import Parameters, calc_spectral_norm
 from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 def test_truncated_lqr(): 
-    gamma = .5
+    ch.manual_seed(69)
+    gamma = .1
     U_A = 3.0
     U_B = 3.0
-    R = 5.0
+    R = 4.0
     D = 3
     M = 3
-    NUM_TRAJ = 100 
+    NUM_TRAJ = 1000
     assert M >= D, f'M is currently: {M}, but it needs to be greater than or equal to D: {D}'
 
     NOISE_VAR = ch.eye(D)
-
     assert M >= D, f'M is currently: {M}, but it needs to be larger than D: {D}'
 
     A = ch.Tensor([[1.01, .01, 0], 
@@ -35,9 +35,9 @@ def test_truncated_lqr():
     TRAIN_KWARGS = Parameters({
         'c_gamma': 2.0,
         'fit_intercept': False,
-        'epochs': 5, 
+        'epochs': 1, 
         'trials': 1, 
-        'batch_size': 5,
+        'batch_size': 10,
         'num_samples': 10,
         'tol': 1e-2,
         'R': R, 
@@ -51,11 +51,15 @@ def test_truncated_lqr():
         'num_traj_gen_samples_A': NUM_TRAJ // 4,
         'num_traj_gen_samples_B': NUM_TRAJ // 4,
         'shuffle': True,
+        'c_eta': .1,
     })
 
     TRAIN_KWARGS.__setattr__('phi', phi)
 
-    trunc_lqr = TruncatedLQR(TRAIN_KWARGS, gen_data, D, M)
+    trunc_lqr = TruncatedLQR(TRAIN_KWARGS, 
+                                gen_data, 
+                                D, 
+                                M)
     trunc_lqr.fit()
 
     A_yao, B_yao = trunc_lqr.A_, trunc_lqr.B_

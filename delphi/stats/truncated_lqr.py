@@ -95,10 +95,9 @@ class TruncatedLQR:
       id_ = ch.eye(self.m)
       U, Y = ch.Tensor([]), ch.Tensor([])
       covariate_matrix = ch.zeros([self.m, self.m])
-      gamma = 2.5
 
       while total_samples < self.args.num_traj_phase_two and U.size(0) < self.args.T_phase_two and calc_thickness(covariate_matrix) < self.args.target_thickness:
-          u = (gamma*id_[index])[None,...]
+          u = (self.args.gamma*id_[index])[None,...]
           sample = self.gen_data(xt, u_t=u)
         
           total_samples += 1
