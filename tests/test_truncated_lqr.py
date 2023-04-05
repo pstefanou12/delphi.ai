@@ -11,8 +11,8 @@ from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 def test_truncated_lqr(): 
     ch.manual_seed(69)
-    gamma = .1
-    R = 4.0
+    gamma = 2.0
+    R = 3.0
     D = 3
     M = 3
     NUM_TRAJ = 1000

@@ -276,17 +276,16 @@ class TruncatedLQR:
         y_concat = ch.cat([Yu, Yx])
 
         self.args.__setattr__('noise_var', self.gen_data.noise_var)
-
-        trunc_lds = TruncatedLinearRegression(self.args, 
+        self.trunc_lds_phase_three = TruncatedLinearRegression(self.args, 
                                               emp_weight=coef_concat,
                                               dependent=True, 
                                               store=store)
-        trunc_lds.fit(feat_concat.detach(), y_concat.detach())
+        self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
         
-        AB = trunc_lds.best_coef_
+        AB = self.trunc_lds_phase_three.best_coef_
         A_, B_ = AB[:self.d], AB[self.d:]
 
-        AB_avg = trunc_lds.avg_coef_
+        AB_avg = self.trunc_lds_phase_three.avg_coef_
         A_avg, B_avg = AB_avg[:self.d], AB_avg[self.d:]
 
         A_results = ch.cat([A_results, A_[None,...]])

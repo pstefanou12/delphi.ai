@@ -317,9 +317,8 @@ def make_train_and_val(args, X, y):
     # X_train,y_train = X[train_indices], y[train_indices]
     # X_val, y_val = X[val_indices], y[val_indices]
     
-    X_train,y_train = X[:val], y[:val]
-    X_val, y_val = X[val:], y[val:]
-
+    X_train,y_train = X[val:], y[val:]
+    X_val, y_val = X[:val], y[:val]
     # normalize input covariates
     if args.normalize:
         train_norm = Normalize().fit_transform(X_train)
