@@ -30,7 +30,8 @@ def calc_sarah_dean(train_kwargs: Parameters,
                     gen_data: Callable,
                     num_traj: int,
                     D: int, 
-                    M: int):
+                    M: int,
+                    rand_seed: int=0):
     '''
     Sarah dean LQR used for testing.
     '''
@@ -60,7 +61,8 @@ def calc_sarah_dean(train_kwargs: Parameters,
     train_kwargs.__setattr__('noise_var', gen_data.noise_var)
 
     trunc_lds = TruncatedLinearRegression(train_kwargs,
-                                                dependent=True)
+                                            dependent=True, 
+                                            rand_seed=rand_seed)
     trunc_lds.fit(feat_concat.detach(), Y.detach())
 
 

@@ -18,7 +18,8 @@ class TruncatedLQR:
                 args: Parameters,
                 gen_data: Callable, 
                 d: int, 
-                m: int): 
+                m: int, 
+                rand_seed:int=0): 
     """
     Truncated LQR algorithm. Three phase algorithm that removes bias from the case when there is 
     truncation bias a LQR dynamical system.
@@ -38,8 +39,10 @@ class TruncatedLQR:
 
     self.gen_data = gen_data
     self.d, self.m = d, m
+    self.rand_seed = rand_seed
 
     self.c = (self.args.R - 3 * (self.m ** .5)) / self.args.U_B
+    logger.info(f'c: {self.c}')
 
   def fit(self): 
     self.run_phase_one()
@@ -82,7 +85,8 @@ class TruncatedLQR:
 
       self.trunc_lds_phase_one = TruncatedLinearRegression(self.args, 
                                             dependent=True, 
-                                            store=store)
+                                            store=store, 
+                                            rand_seed=self.rand_seed)
       self.trunc_lds_phase_one.fit(X, Y)
       self.A_hat_ = self.trunc_lds_phase_one.best_coef_
 
@@ -115,7 +119,8 @@ class TruncatedLQR:
       self.args.__setattr__('noise_var', self.gen_data.noise_var)
       self.trunc_lds_phase_two = TruncatedLinearRegression(self.args, 
                                             dependent=True, 
-                                            store=store)
+                                            store=store, 
+                                            rand_seed=self.rand_seed)
       self.trunc_lds_phase_two.fit(U, Y)
       self.B_hat_ = self.trunc_lds_phase_two.best_coef_
 
@@ -279,7 +284,8 @@ class TruncatedLQR:
         self.trunc_lds_phase_three = TruncatedLinearRegression(self.args, 
                                               emp_weight=coef_concat,
                                               dependent=True, 
-                                              store=store)
+                                              store=store, 
+                                              rand_seed=self.rand_seed)
         self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
         
         AB = self.trunc_lds_phase_three.best_coef_

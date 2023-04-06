@@ -9,8 +9,9 @@ from delphi.stats.truncated_lqr import TruncatedLQR
 from delphi.utils.helpers import Parameters, calc_spectral_norm
 from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
-def test_truncated_lqr(): 
-    ch.manual_seed(69)
+def test_truncated_lqr():
+    RAND_SEED = 69
+    ch.manual_seed(RAND_SEED)
     gamma = 2.0
     R = 3.0
     D = 3
@@ -28,12 +29,13 @@ def test_truncated_lqr():
 
     # membership oracle
     phi = oracle.LogitBall(R)
-    gen_data = GenerateTruncatedLQRData(phi, A, B.T, noise_var=NOISE_VAR)
+    gen_data = GenerateTruncatedLQRData(phi, A, B, noise_var=NOISE_VAR)
 
     U_A = float(calc_spectral_norm(A))
     U_B = float(calc_spectral_norm(B))
 
     TRAIN_KWARGS = Parameters({
+        'phi': phi,
         'c_gamma': 2.0,
         'fit_intercept': False,
         'epochs': 2, 
@@ -51,16 +53,15 @@ def test_truncated_lqr():
         'num_traj_phase_two': NUM_TRAJ // 4,
         'num_traj_gen_samples_A': NUM_TRAJ // 4,
         'num_traj_gen_samples_B': NUM_TRAJ // 4,
-        'shuffle': True,
+        'shuffle': False,
         'c_eta': .1,
     })
-
-    TRAIN_KWARGS.__setattr__('phi', phi)
 
     trunc_lqr = TruncatedLQR(TRAIN_KWARGS, 
                                 gen_data, 
                                 D, 
-                                M)
+                                M, 
+                                rand_seed=RAND_SEED)
     trunc_lqr.fit()
 
     A_yao, B_yao = trunc_lqr.A_, trunc_lqr.B_
@@ -68,22 +69,23 @@ def test_truncated_lqr():
                                                                                                 gen_data, 
                                                                                                 NUM_TRAJ, 
                                                                                                 D, 
-                                                                                                M)
+                                                                                                M, 
+                                                                                                rand_seed=RAND_SEED)
 
     A_yao_spec_norm = calc_spectral_norm(A_yao - A)
-    B_yao_spec_norm = calc_spectral_norm(B_yao - B.T)
+    B_yao_spec_norm = calc_spectral_norm(B_yao - B)
 
     print(f'A yao spectral norm: {A_yao_spec_norm}')
     print(f'B yao spectral norm: {B_yao_spec_norm}')
 
     A_sd_plevr_spec_norm = calc_spectral_norm(A_sarah_dean_plev - A)
-    B_sd_plevr_spec_norm = calc_spectral_norm(B_sarah_dean_plev - B.T)
+    B_sd_plevr_spec_norm = calc_spectral_norm(B_sarah_dean_plev - B)
 
     print(f'A sd plevr spectral norm: {A_sd_plevr_spec_norm}')
     print(f'B sd plevr spectral norm: {B_sd_plevr_spec_norm}')
 
     A_sd_ols_spec_norm = calc_spectral_norm(A_sarah_dean_ols - A)
-    B_sd_ols_spec_norm = calc_spectral_norm(B_sarah_dean_ols - B.T)
+    B_sd_ols_spec_norm = calc_spectral_norm(B_sarah_dean_ols - B)
 
     print(f'A sd ols spectral norm: {A_sd_ols_spec_norm}')
     print(f'B sd ols spectral norm: {B_sd_ols_spec_norm}')
