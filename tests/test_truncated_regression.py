@@ -68,24 +68,19 @@ def test_known_truncated_regression():
                                 'num_samples': 10,
                                 'batch_size': 1,
                                 'trials': 1,
-                                'constant': True,
-                                'noise_var': ch.ones(1, 1)}) 
+                                'constant': True
+                            }) 
     trunc_reg = stats.TruncatedLinearRegression(phi_scale, 
-                                                train_kwargs)
+                                                train_kwargs, 
+                                                noise_var=ch.ones(1, 1))
     trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
+    w_ = ch.cat([(trunc_reg.coef_).flatten(), trunc_reg.intercept_]) * ch.sqrt(NOISE_VAR)
     print(f'estimated weights: {w_}')
     known_mse_loss = mse_loss(gt_, w_.flatten())
     print(f'known mse loss: {known_mse_loss}')
     msg = f'known mse loss is larger than empirical mse loss. known mse loss is {known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
     assert known_mse_loss <= emp_mse_loss, msg
         
-    avg_w_ = ch.cat([(trunc_reg.avg_coef_).flatten(), trunc_reg.avg_intercept_]) * ch.sqrt(NOISE_VAR)
-    avg_known_mse_loss = mse_loss(gt_, avg_w_.flatten())
-    print(f'avg known mse loss: {avg_known_mse_loss}')
-    msg = f'avg known mse loss is larger than empirical mse loss. avg known mse loss is {avg_known_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
-    assert avg_known_mse_loss <= emp_mse_loss, msg
-    
 def test_unknown_truncated_regression():
     D, K = 10, 1
     SAMPLES = 1000
@@ -132,11 +127,12 @@ def test_unknown_truncated_regression():
     train_kwargs = Parameters({'alpha': alpha,
                                 'trials': 1,
                                 'batch_size': 10,
-                                'var_lr': 1e-2,})
+                                'var_lr': 1e-2
+                            })
     unknown_trunc_reg = stats.TruncatedLinearRegression(phi_emp_scale,
                                                         train_kwargs)
     unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
-    w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_]) * ch.sqrt(emp_noise_var)
+    w_ = ch.cat([(unknown_trunc_reg.coef_).flatten(), unknown_trunc_reg.intercept_]) * ch.sqrt(emp_noise_var)
     noise_var_ = unknown_trunc_reg.variance_ * emp_noise_var
     unknown_mse_loss = mse_loss(gt_, w_.flatten())
     print(f'unknown mse loss: {unknown_mse_loss}')
@@ -186,26 +182,22 @@ def test_truncated_dependent_regression():
         'c_s': 10.0,
         'alpha': alpha,
         'tol': 1e-1,
-        'noise_var': NOISE_VAR, 
         'c_gamma': 2.0,
     })
     trunc_lds = stats.TruncatedLinearRegression(phi,
-                                                train_kwargs, 
+                                                train_kwargs,
+                                                noise_var=NOISE_VAR, 
                                                 dependent=True, 
                                                 rand_seed=seed)
     trunc_lds.fit(X, Y)
-    A_ = trunc_lds.best_coef_
+    A_ = trunc_lds.coef_
     A0_ = trunc_lds.ols_coef_
-    A_avg = trunc_lds.avg_coef_
     trunc_spec_norm = calc_spectral_norm(A - A_)
     emp_spec_norm = calc_spectral_norm(A - A0_)
-    avg_trunc_spec_norm = calc_spectral_norm(A - A_avg)
 
     print(f'alpha: {alpha}')
     print(f'A spectral norm: {spectral_norm}')
     print(f'truncated spectral norm: {trunc_spec_norm}')
-    print(f'average truncated spectral norm: {avg_trunc_spec_norm}')
     print(f'ols spectral norm: {emp_spec_norm}')
 
     assert trunc_spec_norm <= emp_spec_norm, f"truncated spectral norm {trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}"
-    assert avg_trunc_spec_norm <= emp_spec_norm, f"average truncated spectral norm {avg_trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}"
