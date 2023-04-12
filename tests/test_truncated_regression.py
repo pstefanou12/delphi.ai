@@ -130,11 +130,10 @@ def test_unknown_truncated_regression():
     phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
     train_kwargs = Parameters({'phi': phi_emp_scale, 
-                            'alpha': alpha,
-                            'trials': 1,
-                            'momentum': .9,
-                            'batch_size': 10,
-                            'var_lr': 1e-2,})
+                                'alpha': alpha,
+                                'trials': 1,
+                                'batch_size': 10,
+                                'var_lr': 1e-2,})
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
     unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
     w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_]) * ch.sqrt(emp_noise_var)
