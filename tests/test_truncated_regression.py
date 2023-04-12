@@ -62,16 +62,16 @@ def test_known_truncated_regression():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters({'phi': phi_scale, 
-                            'alpha': alpha,
-                            'epochs': 10,
-                            'lr': 5e-1,
-                            'num_samples': 10,
-                            'batch_size': 1,
-                            'trials': 1,
-                            'constant': True,
-                            'noise_var': ch.ones(1, 1)}) 
-    trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
+    train_kwargs = Parameters({'alpha': alpha,
+                                'epochs': 10,
+                                'lr': 5e-1,
+                                'num_samples': 10,
+                                'batch_size': 1,
+                                'trials': 1,
+                                'constant': True,
+                                'noise_var': ch.ones(1, 1)}) 
+    trunc_reg = stats.TruncatedLinearRegression(phi_scale, 
+                                                train_kwargs)
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
     print(f'estimated weights: {w_}')
@@ -129,12 +129,12 @@ def test_unknown_truncated_regression():
     y_trunc_emp_scale = y_trunc / ch.sqrt(emp_noise_var)
     phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
-    train_kwargs = Parameters({'phi': phi_emp_scale, 
-                                'alpha': alpha,
+    train_kwargs = Parameters({'alpha': alpha,
                                 'trials': 1,
                                 'batch_size': 10,
                                 'var_lr': 1e-2,})
-    unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs)
+    unknown_trunc_reg = stats.TruncatedLinearRegression(phi_emp_scale,
+                                                        train_kwargs)
     unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
     w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_]) * ch.sqrt(emp_noise_var)
     noise_var_ = unknown_trunc_reg.variance_ * emp_noise_var
@@ -176,7 +176,6 @@ def test_truncated_dependent_regression():
     print(f'alpha: {alpha}')
 
     train_kwargs = Parameters({
-        'phi': phi, 
         'c_eta': .5,
         'epochs': 5, 
         'trials': 1, 
@@ -190,7 +189,8 @@ def test_truncated_dependent_regression():
         'noise_var': NOISE_VAR, 
         'c_gamma': 2.0,
     })
-    trunc_lds = stats.TruncatedLinearRegression(train_kwargs, 
+    trunc_lds = stats.TruncatedLinearRegression(phi,
+                                                train_kwargs, 
                                                 dependent=True, 
                                                 rand_seed=seed)
     trunc_lds.fit(X, Y)

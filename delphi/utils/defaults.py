@@ -41,7 +41,6 @@ DELPHI_DEFAULTS = {
 }
 
 TRUNC_REG_DEFAULTS = {
-        'phi': (Callable, REQ),
         'noise_var': (ch.Tensor, None), 
         'fit_intercept': (bool, True), 
         'val': (float, .2),
@@ -58,7 +57,6 @@ TRUNC_REG_DEFAULTS = {
 }
 
 TRUNC_LDS_DEFAULTS = {
-        'phi': (Callable, REQ),
         'noise_var': (ch.Tensor, None), 
         'fit_intercept': (bool, False), 
         'val': (float, .2),

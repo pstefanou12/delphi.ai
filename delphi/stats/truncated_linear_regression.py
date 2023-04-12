@@ -6,13 +6,12 @@ from re import A
 import torch as ch
 from torch import Tensor
 import torch.linalg as LA
-import cox
 from cox.store import Store
 import warnings
 import collections
 from torch.nn import Parameter
 from scipy.linalg import lstsq
-from typing import List
+from typing import List, Callable
 
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
@@ -34,6 +33,7 @@ class TruncatedLinearRegression(LinearModel):
     and the survival probability. 
     """
     def __init__(self,
+                phi: Callable,
                 args: Parameters,
                 dependent: bool=False,
                 emp_weight: ch.Tensor=None,
@@ -67,6 +67,7 @@ class TruncatedLinearRegression(LinearModel):
             self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
         else:    
             super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
+        self.phi = phi
         self.rand_seed = rand_seed
         if self.dependent: assert self.args.noise_var is not None, "if linear dynamical system, noise variance must be known"
 
@@ -79,7 +80,7 @@ class TruncatedLinearRegression(LinearModel):
         else: 
             self.criterion = TruncatedMSE.apply
             self.criterion_params = [ 
-                self.args.phi, self.args.noise_var,
+                self.phi, self.args.noise_var,
                 self.args.num_samples, self.args.eps]
 
         # property instance variables 
@@ -106,7 +107,7 @@ class TruncatedLinearRegression(LinearModel):
         self.args.__setattr__('T', X.size(0))
         if self.dependent:
             self.criterion_params = [ 
-                self.args.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
+                self.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
                 self.args.noise_var, self.args.num_samples, self.args.eps,
             ]
 
@@ -167,7 +168,7 @@ class TruncatedLinearRegression(LinearModel):
                                 {"params": Parameter(lambda_), "lr": self.args.var_lr}]
 
             self.criterion_params = [ 
-                self._parameters[1]["params"], self.args.phi,
+                self._parameters[1]["params"], self.phi,
                 self.args.num_samples, self.args.eps,
             ]
         else:
