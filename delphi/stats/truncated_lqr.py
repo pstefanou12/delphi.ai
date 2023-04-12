@@ -49,7 +49,8 @@ class TruncatedLQR:
     self.run_phase_two()
     self.run_warm_phase()
 
-  def run_phase_one(self, store: Store = None):
+  def run_phase_one(self, 
+                    store: Store = None):
       '''
       Cold start phase 1. Initial estimation for A.
       Args: 
@@ -268,10 +269,8 @@ class TruncatedLQR:
       assert repeat >= 1, f"repeat must be greater than or equal to 1; repeat: {repeat}"
 
       A_results, B_results = ch.Tensor([]), ch.Tensor([])
-      A_avg_results, B_avg_results = ch.Tensor([]), ch.Tensor([])
 
       coef_concat = ch.cat([self.A_hat_, self.B_hat_])
-
       for _ in range(repeat):
         Xu, Uu, Yu = self.generate_samples_B()
         Xx, Ux, Yx = self.generate_samples_A()
@@ -282,25 +281,18 @@ class TruncatedLQR:
 
         self.args.__setattr__('noise_var', self.gen_data.noise_var)
         self.trunc_lds_phase_three = TruncatedLinearRegression(self.args, 
-                                              emp_weight=coef_concat,
-                                              dependent=True, 
-                                              store=store, 
-                                              rand_seed=self.rand_seed)
+                                                                emp_weight=coef_concat,
+                                                                dependent=True, 
+                                                                store=store, 
+                                                                rand_seed=self.rand_seed)
         self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
         
         AB = self.trunc_lds_phase_three.best_coef_
         A_, B_ = AB[:self.d], AB[self.d:]
 
-        AB_avg = self.trunc_lds_phase_three.avg_coef_
-        A_avg, B_avg = AB_avg[:self.d], AB_avg[self.d:]
-
         A_results = ch.cat([A_results, A_[None,...]])
         B_results = ch.cat([B_results, B_[None,...]])
          
-        A_avg_results = ch.cat([A_avg_results, A_avg[None,...]])
-        B_avg_results = ch.cat([B_avg_results, B_avg[None,...]])
-
-
       self.A_ = self.find_max(A_results, self.args.eps2)
       self.B_ = self.find_max(B_results, self.args.eps2)
 
