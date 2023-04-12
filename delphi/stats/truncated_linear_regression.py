@@ -206,11 +206,6 @@ class TruncatedLinearRegression(LinearModel):
         self.weight.requires_grad = False
         self.emp_weight /= self.beta
     
-    def calculate_kappa(self): 
-        temp_A = (self.emp_weight - self.weight)
-        inner_product = ch.trace((temp_A@temp_A.T)@self.Sigma.T)
-        result = ch.sqrt(inner_product)
-
     def predict(self, 
                 X: Tensor): 
         """
