@@ -311,11 +311,7 @@ def make_train_and_val(args, X, y):
     # check arguments are correct
     args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
-    # rand_indices = ch.randperm(X.size(0))
     val = int(args.val * X.size(0))
-    # train_indices, val_indices = rand_indices[val:], rand_indices[:val]
-    # X_train,y_train = X[train_indices], y[train_indices]
-    # X_val, y_val = X[val_indices], y[val_indices]
     
     X_train,y_train = X[val:], y[val:]
     X_val, y_val = X[:val], y[:val]

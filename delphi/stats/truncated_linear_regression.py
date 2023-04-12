@@ -150,7 +150,7 @@ class TruncatedLinearRegression(LinearModel):
         return self
 
     def pretrain_hook(self, 
-                    train_loader):
+                      train_loader: ch.utils.data.DataLoader):
         self.calc_emp_model(train_loader)
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
@@ -217,8 +217,8 @@ class TruncatedLinearRegression(LinearModel):
         return X@self.coef
 
     def nll(self,
-                X: Tensor, 
-                y: Tensor) -> Tensor:
+            X: Tensor, 
+            y: Tensor) -> Tensor:
         with ch.no_grad(): 
             return self.criterion(self.predict(X), y, *self.criterion_params)
 
