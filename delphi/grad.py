@@ -117,15 +117,11 @@ class TruncatedMSE(ch.autograd.Function):
         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
         out = -.5 * (z.pow(2) + z * pred)
         ctx.save_for_backward(pred, targ, z)
-        #numerator =  -.5 * targ.pow(2)
-        #print(f"numerator: {numerator}")
-        #print(f"denominator: {out}")
         return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, z = ctx.saved_tensors
-        #print("Gradient in truncated mse: {}".format(((z - targ) / pred.size(0)).sum(0).norm()))
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
@@ -217,7 +213,6 @@ class SwitchGrad(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-        # import pdb; pdb.set_trace()
         # make num_samples copies of pred, N x B x 1
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         '''
@@ -304,7 +299,6 @@ class TruncatedProbitMLE(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-#        import pdb; pdb.set_trace()
         M = MultivariateNormal(ch.zeros(1,), ch.eye(1, 1))
         stacked = pred[None,...].repeat(num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())

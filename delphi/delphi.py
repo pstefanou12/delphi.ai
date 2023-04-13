@@ -6,26 +6,19 @@ import torch as ch
 import cox
 from cox.store import Store
 import warnings
-from typing import Any
+from typing import Any, Iterable
+from torch.optim import SGD, Adam, lr_scheduler
+import numpy as np
 
-from .utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, check_and_fill_args
+from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS, check_and_fill_args
 from .utils.helpers import Parameters
 
 # CONSTANTS 
-# default parameters for delphi module (can be overridden by any class
-DEFAULTS = {
-        'val': (float, .2),
-        'lr': (float, 1e-1), 
-        'step_lr': (int, 100),
-        'step_lr_gamma': (float, .9), 
-        'custom_lr_multiplier': (str, None), 
-        'momentum': (float, 0.0), 
-        'weight_decay': (float, 0.0), 
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'batch_size': (int, 10),
-        'tol': (float, 1e-3),
-}
+BY_ALG = 'by algorithm'  # default parameter depends on algorithm
+ADAM = 'adam'
+CYCLIC = 'cyclic'
+COSINE = 'cosine'
+LINEAR = 'linear'
 
 EVAL_LOGS_SCHEMA = {
     'test_prec1':float,
@@ -97,6 +90,53 @@ class delphi(ch.nn.Module):
 
         self.criterion = ch.nn.CrossEntropyLoss()
         self.criterion_params = []
+
+    def make_optimizer_and_schedule(self,
+                                    params: Iterable, 
+                                    checkpoint: dict=None):
+        """
+        Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
+        for SGD procedure. 
+        """
+        optimizer, schedule = None, None
+        if self.args.cuda: params.to('cuda')
+        optimizer = SGD(params, lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        if self.args.custom_lr_multiplier == ADAM: 
+            optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
+        elif not self.args.constant: 
+            eps = self.args.epochs
+            if self.args.custom_lr_multiplier == CYCLIC:
+                lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
+                schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+            elif self.args.custom_lr_multiplier == COSINE:
+                schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
+            elif self.args.custom_lr_multiplier:
+                cs = self.args.custom_lr_multiplier
+                periods = eval(cs) if type(cs) is str else cs
+                if self.args.lr_interpolation == LINEAR:
+                    lr_func = lambda t: np.interp([t], *zip(*periods))[0]
+                else:
+                    def lr_func(ep):
+                        for (milestone, lr) in reversed(periods):
+                            if ep >= milestone: return lr
+                        return 1.0
+                schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+            elif self.args.step_lr:
+                schedule = lr_scheduler.StepLR(optimizer, step_size=self.args.step_lr, gamma=self.args.step_lr_gamma)
+            
+        if checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            try:
+                schedule.load_state_dict(checkpoint['schedule'])
+            # if can't load scheduler state, take epoch steps
+            except:
+                steps_to_take = checkpoint['epoch']
+                print('Could not load schedule (was probably LambdaLR).'
+                    f' Stepping {steps_to_take} times instead...')
+                for i in range(steps_to_take):
+                    schedule.step() 
+
+        return optimizer, schedule
 
     def pretrain_hook(self, train_loader) -> None:
         '''

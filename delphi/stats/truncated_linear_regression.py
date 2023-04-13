@@ -18,7 +18,7 @@ from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters
 from .linear_model import LinearModel
-from ..trainer import train_model
+from ..trainer import Trainer
 from ..utils.helpers import Bounds
 from ..utils.defaults import TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
 
@@ -124,10 +124,12 @@ class TruncatedLinearRegression(LinearModel):
             self.beta = l_inf * (X.size(1) ** .5)
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X / self.beta, y)
-        best_params, self.history, best_loss = train_model(self.args, self, 
-                                                        self.train_loader, self.val_loader, 
-                                                        rand_seed=self.rand_seed,
-                                                        store=self.store)
+        self.trainer = Trainer(self)
+        best_params, self.history, best_loss = self.trainer.train_model(self.args,
+                                                                        self.train_loader, 
+                                                                        self.val_loader, 
+                                                                        rand_seed=self.rand_seed,
+                                                                        store=self.store)
 
         # reparameterize the regression's parameters
         if self.noise_var is None: 

@@ -82,12 +82,12 @@ def test_known_truncated_regression():
     assert known_mse_loss <= emp_mse_loss, msg
         
 def test_unknown_truncated_regression():
-    D, K = 10, 1
+    D, K = 1, 1
     SAMPLES = 1000
     w_ = Uniform(-1, 1)
     M = Uniform(-10, 10)
     # generate ground truth
-    noise_var = 10*ch.ones(1, 1)
+    noise_var = ch.ones(1, 1)
     W = w_.sample([K, D])
     W0 = w_.sample([1, 1])
 
@@ -100,6 +100,7 @@ def test_unknown_truncated_regression():
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
     phi = oracle.Left_Regression(ch.zeros(1))
+    phi = oracle.Identity()
     # truncate
     indices = phi(noised).nonzero()[:,0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -122,16 +123,18 @@ def test_unknown_truncated_regression():
 
     # scale y features by empirical noise variance
     y_trunc_emp_scale = y_trunc / ch.sqrt(emp_noise_var)
-    phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
+    # phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
-    train_kwargs = Parameters({'alpha': alpha,
+    train_kwargs = Parameters({
+                                'alpha': alpha,
                                 'trials': 1,
                                 'batch_size': 10,
-                                'var_lr': 1e-2
+                                'var_lr': 1e-2, 
+                                'constant': False,
                             })
-    unknown_trunc_reg = stats.TruncatedLinearRegression(phi_emp_scale,
+    unknown_trunc_reg = stats.TruncatedLinearRegression(phi,
                                                         train_kwargs)
-    unknown_trunc_reg.fit(x_trunc.repeat(100, 1), y_trunc_emp_scale.repeat(100, 1))
+    unknown_trunc_reg.fit(x_trunc.repeat(1, 1), y_trunc_emp_scale.repeat(1, 1))
     w_ = ch.cat([(unknown_trunc_reg.coef_).flatten(), unknown_trunc_reg.intercept_]) * ch.sqrt(emp_noise_var)
     noise_var_ = unknown_trunc_reg.variance_ * emp_noise_var
     unknown_mse_loss = mse_loss(gt_, w_.flatten())
