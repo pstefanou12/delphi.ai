@@ -131,12 +131,12 @@ class TruncatedLinearRegression(LinearModel):
 
         # reparameterize the regression's parameters
         if self.noise_var is None: 
-            lambda_ = best_params[1]['params'][0]
-            v = best_params[0]['params'][0]
-            self.variance = lambda_.inverse()
-            self.weight = v * self.variance
-        else: 
-            self.weight = best_params
+            # lambda_ = best_params[1]['params'][0]
+            # v = best_params[0]['params'][0]
+            self.variance = self.lambda_.inverse()
+            self.weight *= self.variance
+        # else: 
+        #     self.weight = best_params
 
         # re-scale coefficients
         self.weight /= self.beta
