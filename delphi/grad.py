@@ -101,7 +101,13 @@ class TruncatedMSE(ch.autograd.Function):
     with known noise variance.
     """
     @staticmethod
-    def forward(ctx, pred, targ, phi, noise_var, num_samples=10, eps=1e-5):
+    def forward(ctx, 
+                pred, 
+                targ, 
+                phi, 
+                noise_var, 
+                num_samples=10, 
+                eps=1e-5):
         """
         Args: 
             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
@@ -120,7 +126,8 @@ class TruncatedMSE(ch.autograd.Function):
         return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, 
+                grad_output):
         pred, targ, z = ctx.saved_tensors
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
