@@ -58,15 +58,15 @@ def calc_sarah_dean(train_kwargs: Parameters,
 
     feat_concat = ch.cat([X, U], axis=1)
 
-    train_kwargs.__setattr__('noise_var', gen_data.noise_var)
-
-    trunc_lds = TruncatedLinearRegression(train_kwargs,
+    trunc_lds = TruncatedLinearRegression(train_kwargs.phi,
+                                            train_kwargs,
+                                            gen_data.noise_var,
                                             dependent=True, 
                                             rand_seed=rand_seed)
     trunc_lds.fit(feat_concat.detach(), Y.detach())
 
 
-    AB = trunc_lds.best_coef_
+    AB = trunc_lds.coef_
     A_, B_ = AB[:D], AB[D:]
 
     ols_ = trunc_lds.emp_weight

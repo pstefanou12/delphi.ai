@@ -82,14 +82,15 @@ class TruncatedLQR:
           if X.size(0) % 100 == 0:
               logger.info(f'total number of samples: {X.size(0)}')
 
-      self.args.__setattr__('noise_var', self.gen_data.noise_var)
-
-      self.trunc_lds_phase_one = TruncatedLinearRegression(self.args, 
+      self.trunc_lds_phase_one = TruncatedLinearRegression(
+                                            self.args.phi,
+                                            self.args,
+                                            self.gen_data.noise_var, 
                                             dependent=True, 
                                             store=store, 
                                             rand_seed=self.rand_seed)
       self.trunc_lds_phase_one.fit(X, Y)
-      self.A_hat_ = self.trunc_lds_phase_one.best_coef_
+      self.A_hat_ = self.trunc_lds_phase_one.coef_
 
   def run_phase_two(self, 
                     store: Store=None): 
@@ -117,13 +118,15 @@ class TruncatedLQR:
           if U.size(0) % 100 == 0: 
               logger.info(f'total number of samples: {U.size(0)}')
 
-      self.args.__setattr__('noise_var', self.gen_data.noise_var)
-      self.trunc_lds_phase_two = TruncatedLinearRegression(self.args, 
+      self.trunc_lds_phase_two = TruncatedLinearRegression(
+                                            self.args.phi,
+                                            self.args, 
+                                            self.gen_data.noise_var,
                                             dependent=True, 
                                             store=store, 
                                             rand_seed=self.rand_seed)
       self.trunc_lds_phase_two.fit(U, Y)
-      self.B_hat_ = self.trunc_lds_phase_two.best_coef_
+      self.B_hat_ = self.trunc_lds_phase_two.coef_
 
   def find_max(self, 
                 L, 
@@ -279,15 +282,17 @@ class TruncatedLQR:
         feat_concat = ch.cat([XU_concat, XX_concat])
         y_concat = ch.cat([Yu, Yx])
 
-        self.args.__setattr__('noise_var', self.gen_data.noise_var)
-        self.trunc_lds_phase_three = TruncatedLinearRegression(self.args, 
+        self.trunc_lds_phase_three = TruncatedLinearRegression(
+                                                                self.args.phi,
+                                                                self.args, 
+                                                                self.gen_data.noise_var,
                                                                 emp_weight=coef_concat,
                                                                 dependent=True, 
                                                                 store=store, 
                                                                 rand_seed=self.rand_seed)
         self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
         
-        AB = self.trunc_lds_phase_three.best_coef_
+        AB = self.trunc_lds_phase_three.coef_
         A_, B_ = AB[:self.d], AB[self.d:]
 
         A_results = ch.cat([A_results, A_[None,...]])

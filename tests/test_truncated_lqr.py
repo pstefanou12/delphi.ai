@@ -90,8 +90,6 @@ def test_truncated_lqr():
     print(f'A sd ols spectral norm: {A_sd_ols_spec_norm}')
     print(f'B sd ols spectral norm: {B_sd_ols_spec_norm}')
 
-    import pdb; pdb.set_trace()
-
     assert A_yao_spec_norm < A_sd_ols_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean ols spectral norm is: {A_sd_ols_spec_norm}"
     assert B_yao_spec_norm < B_sd_ols_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean ols spectral norm is: {B_sd_ols_spec_norm}"
        
