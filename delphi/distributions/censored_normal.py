@@ -37,10 +37,11 @@ class CensoredNormal(CensoredMultivariateNormal):
             try:
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
                 self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
+
                 # run PGD to predict actual estimates
                 self.trainer = Trainer(self.censored, self.args, store=self.store)
                 # run PGD for parameter estimation 
-                self.trainer.train_model((self.train_loader_, self.val_loader_))
+                self.trainer.train_model(self.train_loader_, self.val_loader_)
                 return self 
             except PSDError as psd:
                 print(psd.message) 

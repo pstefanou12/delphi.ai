@@ -8,6 +8,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import torch.linalg as LA
 import cox
 import math
+import torch.nn as nn
 
 from .. import delphi
 from .distributions import distributions
@@ -28,7 +29,7 @@ class CensoredMultivariateNormal(distributions):
             store: cox.store.Store=None):
         """
         """
-        super(CensoredMultivariateNormal).__init__()
+        # super(CensoredMultivariateNormal).__init__()
         # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
@@ -48,10 +49,12 @@ class CensoredMultivariateNormal(distributions):
         while True: 
             try: 
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
-                self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
+                temp = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
+
+                # self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
                 # run PGD to predict actual estimates
-                trainer = Trainer(self.censored, self.args, store=self.store)
-                trainer.train_model((self.train_loader_, self.val_loader_))
+                trainer = Trainer(temp, store=self.store)
+                trainer.train_model(self.args, self.train_loader_, self.val_loader_)
                 return self
             except PSDError as psd:
                 print(psd.message) 
@@ -87,10 +90,12 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.train_ds = train_ds
         self.model = None
         self.emp_loc, self.emp_covariance_matrix = None, None
+        self._criterion = CensoredMultivariateNormalNLL
+        self.criterion_params = [self.args.phi, self.args.num_samples, self.args.eps]
         # initialize empirical estimates
         self.calc_emp_model()
 
-    def pretrain_hook(self):
+    def pretrain_hook(self, train_loader):
         self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
         # parameterize projection set
         if self.args.covariance_matrix is not None:
@@ -111,26 +116,28 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.emp_covariance_matrix = self.train_ds.covariance_matrix
         self.emp_loc = self.train_ds.loc
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
+        # register parameters with PyTorch
+        self.register_parameter('loc', nn.Parameter(self.model.loc))
+        self.register_parameter('covariance_matrix', nn.Parameter(self.model.covariance_matrix))
+        # import pdb; pdb.set_trace()
 
-    def __call__(self, batch):
+    def __call__(self, batch, targ):
         """
         Training step for defined model.
         Args: 
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.args.num_samples, self.args.eps)
+        loss = CensoredMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch, targ, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def iteration_hook(self, i, is_train, loss, batch) -> None:
         """
         Iteration hook for defined model. Method is called after each 
         training update.
         Args:
             loop_type (str) : "train" or "val"; indicating type of loop
             loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
         """
         loc_diff = self.model.loc - self.v
         loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
@@ -141,7 +148,6 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         
         # check that the covariance matrix is PSD
         eig_vals = ch.view_as_real(LA.eig(self.model.covariance_matrix).eigenvalues)[:,0]
-        # print("real eig vals: ", ch.view_as_real(eig_vals))
         if (eig_vals < 0).any(): 
             raise PSDError("covariance matrix is not PSD, rerunning procedure")
 
@@ -151,3 +157,4 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
         self.model.loc.data = self.model.loc  @ self.model.covariance_matrix
+    

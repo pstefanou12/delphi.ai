@@ -100,7 +100,12 @@ class delphi(ch.nn.Module):
         """
         optimizer, schedule = None, None
         if self.args.cuda: params.to('cuda')
-        optimizer = SGD(params, lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        optimizer = SGD(
+                        list(params.values()), 
+                        lr=self.args.lr, 
+                        momentum=self.args.momentum, 
+                        weight_decay=self.args.weight_decay
+                    )
         if self.args.custom_lr_multiplier == ADAM: 
             optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
         elif not self.args.constant: 

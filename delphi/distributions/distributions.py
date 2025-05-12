@@ -1,8 +1,5 @@
-from ..delphi import delphi
-
-
-class distributions(delphi):
+class distributions:
     """
-    Parent class for statistical models.
+    Parent class for distribution models.
     """
     pass
