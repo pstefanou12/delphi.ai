@@ -6,11 +6,12 @@ from torch import Tensor
 from torch.distributions import MultivariateNormal, Uniform
 from torch.distributions.kl import kl_divergence
 from torch.distributions.multivariate_normal import _batch_mahalanobis
+from torch.linalg import cholesky, solve_triangular
 from scipy.linalg import sqrtm
 
 from delphi import distributions 
 from delphi import oracle
-from delphi.utils.helpers import Parameters, cov
+from delphi.utils.helpers import Parameters, cov, is_psd
 
 
 class UnNorm_Sphere(oracle.oracle):
@@ -18,14 +19,14 @@ class UnNorm_Sphere(oracle.oracle):
     Spherical truncation
     """
     def __init__(self, covariance_matrix, centroid, radius, loc, cov):
-        self._unbroadcasted_scale_tril = ch.linalg.cholesky(covariance_matrix)
+        self._unbroadcasted_scale_tril = cholesky(covariance_matrix)
         self.centroid = centroid
         self.radius = radius
         self.loc, self.cov = loc, cov
-        self.scale = ch.from_numpy(sqrtm(self.cov))
+        self.scale = ch.linalg.cholesky(cov)
 
     def __call__(self, x):
-        x_rescale = x @ self.scale + self.loc
+        x_rescale = x @ self.scale.T + self.loc
         diff = x_rescale - self.centroid
         dist = ch.sqrt(_batch_mahalanobis(self._unbroadcasted_scale_tril, diff))
         return (dist < self.radius).float().flatten()
@@ -51,12 +52,10 @@ class TestDistributions(unittest.TestCase):
         alpha = S.size(0) / samples.size(0)
         emp_loc = S.mean(0)
         print(f"emp loc: {emp_loc}")
-        emp_var = ch.eye(1)
-        print(f"known variance: {emp_var}")
-        emp_scale = ch.eye(1)
+        print(f"known variance: {ch.eye(1)}")
     
-        S_std_norm = (S - emp_loc) / emp_scale
-        phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
+        S_std_norm = (S - emp_loc) 
+        phi_std_norm = oracle.Left_Distribution((phi.left - emp_loc).flatten())
     
         # train algorithm
         train_kwargs = Parameters({
@@ -70,9 +69,9 @@ class TestDistributions(unittest.TestCase):
         censored = distributions.CensoredNormal(train_kwargs)
         censored.fit(S_std_norm)
         # rescale distribution
-        rescale_loc = censored.loc_ * emp_var + emp_loc
+        rescale_loc = censored.loc_ + emp_loc
         print(f"pred loc: {rescale_loc}")
-        rescale_var = censored.variance_ * emp_var
+        rescale_var = censored.variance_
         print(f"pred var: {rescale_var}")
         m = MultivariateNormal(rescale_loc, rescale_var)
         
@@ -123,8 +122,8 @@ class TestDistributions(unittest.TestCase):
         kl_censored = kl_divergence(m, M)
         self.assertTrue(kl_censored <= 1e-1)
 
-    # sphere truncated multivariate normal distribution (10 D) with known truncation
-    def test_truncated_multivariate_normal(self):
+    # sphere truncated multivariate normal distribution (10 D) with known truncation and covariance matrix
+    def test_truncated_multivariate_normal_known_covariance_matrix(self):
         M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
         samples = M.rsample([5000,])
         # generate ground-truth data
@@ -136,21 +135,91 @@ class TestDistributions(unittest.TestCase):
             indices = phi(samples).nonzero()[:,0]
             S = samples[indices]
             alpha = S.size(0) / samples.size(0)
+
+        print(f'alpha: {alpha}')
+        print(f'num total samples: {samples.size(0)}')
+        print(f'num truncated samples: {S.size(0)}')
+
+        emp_loc = S.mean(0)
+        print(f'emp loc: {emp_loc}')
+        print(f'emp covariance: {M.covariance_matrix}')
+        S_norm = (S - emp_loc)
+        phi_norm = UnNorm_Sphere(M.covariance_matrix, phi.centroid, phi.radius, emp_loc, M.covariance_matrix)
+
+        # train algorithm
+        train_kwargs = Parameters({
+                                'phi': phi_norm, 
+                                'alpha': alpha,
+                                'epochs': 10, 
+                                'covariance_matrix': M.covariance_matrix,
+                                'trials': 1,
+                        }) 
+        censored = distributions.CensoredMultivariateNormal(train_kwargs)
+        censored.fit(S_norm)
+        # rescale distribution
+        rescale_loc = censored.loc_ + emp_loc
+        print(f'pred loc: {rescale_loc}')
+        print(f'pred covariance matrix: {M.covariance_matrix}')
+        m = MultivariateNormal(rescale_loc, censored.covariance_matrix_)
+        
+        # check performance
+        kl_censored = kl_divergence(m, M)
+        self.assertTrue(kl_censored <= 2e-1)
+
+    # sphere truncated multivariate normal distribution (10 D) with known truncation
+    def test_truncated_multivariate_normal(self):
+        M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
+        samples = M.rsample([10000,])
+
+        phi, indices, alpha = generate_sphere_truncation(samples, M.covariance_matrix, .5)
+        S = samples[indices]
+        
+        print(f'alpha: {alpha}')
+        print(f'num total samples: {samples.size(0)}')
+        print(f'num truncated samples: {S.size(0)}')
         emp_loc = S.mean(0)
         emp_cov = cov(S)
-        emp_scale = ch.from_numpy(sqrtm(emp_cov))
-        S_norm = (S - emp_loc) @ emp_scale.inverse()
+        print(f'emp loc: {emp_loc}')
+        print(f'emp covariance: {emp_cov}')
+
+        if not is_psd(emp_cov): 
+            eigenvalues = ch.linalg.eigvalsh(emp_cov)
+            print(f"Min eigenvalue: {eigenvalues.min()}")
+            print(f"Max eigenvalue: {eigenvalues.max()}")
+            print(f"Condition number: {eigenvalues.max() / eigenvalues.max(0)[0]}")
+            print(f'empirical covariance is not PSD!!')
+
+        try:
+            emp_scale = ch.linalg.cholesky(emp_cov)
+        except RuntimeError:
+            print("Empirical covariance not PSD, adding regularization")
+            emp_cov = emp_cov + 1e-6 * ch.eye(10)
+            emp_scale = ch.linalg.cholesky(emp_cov)
+    
+        # Standardize: solve L @ S_norm.T = (S - emp_loc).T
+        S_norm = ch.linalg.solve_triangular(
+            emp_scale, (S - emp_loc).T, upper=False
+        ).T
+
+        # S_norm = (S - emp_loc) @ emp_scale.inverse()
         phi_norm = UnNorm_Sphere(M.covariance_matrix, phi.centroid, phi.radius, emp_loc, emp_cov)
 
         # train algorithm
-        train_kwargs = Parameters({'phi': phi_norm, 
+        train_kwargs = Parameters({
+                                'phi': phi_norm, 
                                 'alpha': alpha,
-                                'epochs': 10}) 
+                                'epochs': 10, 
+                                'trials': 1,
+                                'lr': 1e-1,
+                                'batch_size': 10
+                        }) 
         censored = distributions.CensoredMultivariateNormal(train_kwargs)
         censored.fit(S_norm)
         # rescale distribution
         rescale_loc = censored.loc_ @ emp_scale + emp_loc
-        rescale_cov = censored.covariance_matrix_ @ emp_cov
+        rescale_cov = emp_scale @ censored.covariance_matrix_ @ emp_scale.T
+        print(f'pred loc: {rescale_loc}')
+        print(f'pred covariance matrix: {rescale_cov}')
         m = MultivariateNormal(rescale_loc, rescale_cov)
         
         # check performance
@@ -216,7 +285,30 @@ class TestDistributions(unittest.TestCase):
 
 
     def test_truncated_bernoulli(self): 
-        pass        
+        pass      
+
+def generate_sphere_truncation(samples, covariance_matrix, target_alpha=0.5):
+    """Generate spherical truncation with target retention rate."""
+    # Sample centroid
+    centroid = ch.randn(10) * 0.5
+    
+    # Binary search for radius
+    low, high = 0.1, 10.0
+    for _ in range(20):
+        radius = (low + high) / 2
+        phi = oracle.Sphere(covariance_matrix, centroid, radius)
+        indices = phi(samples).nonzero()[:,0]
+        alpha = len(indices) / len(samples)
+        
+        if alpha < target_alpha:
+            low = radius
+        else:
+            high = radius
+            
+        if abs(alpha - target_alpha) < 0.05:
+            return phi, indices, alpha
+    
+    return phi, indices, alpha  
 
 
 if __name__ == '__main__':

@@ -128,6 +128,15 @@ def cov(m, rowvar=False):
     return fact * m_.matmul(mt)
 
 
+# For real symmetric matrices
+def is_psd(matrix, tol=1e-8):
+    try:
+        eig_vals = ch.linalg.eigvalsh(matrix)  # More stable for symmetric
+        return (eig_vals >= -tol).all()
+    except:
+        return False
+
+
 def censored_sample_nll(x):
     # calculates the negative log-likelihood for one sample of a censored normal
     return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)

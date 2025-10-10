@@ -15,7 +15,7 @@ from .distributions import distributions
 from ..utils.datasets import CensoredNormalDataset, make_train_and_val_distr
 from ..grad import CensoredMultivariateNormalNLL
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters
+from ..utils.helpers import PSDError, Parameters, is_psd
 from ..utils.datasets import CensoredNormalDataset
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, CENSOR_MULTI_NORM_DEFAULTS
 
@@ -51,8 +51,8 @@ class CensoredMultivariateNormal(distributions):
                 self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
 
                 # run PGD to predict actual estimates
-                trainer = Trainer(self.censored, store=self.store)
-                trainer.train_model(self.args, self.train_loader_, self.val_loader_)
+                trainer = Trainer(self.censored, self.args, store=self.store)
+                trainer.train_model(self.train_loader_, self.val_loader_)
                 return self
             except PSDError as psd:
                 print(psd.message) 
@@ -110,11 +110,10 @@ class CensoredMultivariateNormalModel(delphi.delphi):
             for name, param in self.named_parameters():
                 if name == 'covariance_matrix':
                     param.requires_grad = False
-        # self.params = [self.model.loc, self.model.covariance_matrix]
     
     def calc_emp_model(self): 
         # initialize projection set
-        if self.args.covariance_matrix: 
+        if 'covariance_matrix' in self.args: 
             self.emp_covariance_matrix = self.args.covariance_matrix
         else:   
             self.emp_covariance_matrix = self.train_ds.covariance_matrix
@@ -122,7 +121,6 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
         # register parameters with PyTorch
         self.register_parameter('loc', nn.Parameter(self.model.loc))
-        # self.register_parameter('covariance_matrix', nn.Parameter(ch.eye(1)))
         self.register_parameter('covariance_matrix', nn.Parameter(self.model.covariance_matrix))
 
     def __call__(self, batch, targ):
@@ -151,8 +149,7 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.model.covariance_matrix.data = self.T + cov_diff 
         
         # check that the covariance matrix is PSD
-        eig_vals = ch.view_as_real(LA.eig(self.model.covariance_matrix).eigenvalues)[:,0]
-        if (eig_vals < 0).any(): 
+        if not is_psd(self.model.covariance_matrix):
             raise PSDError("covariance matrix is not PSD, rerunning procedure")
 
     def post_training_hook(self): 
