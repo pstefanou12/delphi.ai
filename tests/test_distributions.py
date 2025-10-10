@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributions import MultivariateNormal, Uniform
 from torch.distributions.kl import kl_divergence
 from torch.distributions.multivariate_normal import _batch_mahalanobis
-from torch.linalg import cholesky, solve_triangular
+from torch.linalg import cholesky 
 from scipy.linalg import sqrtm
 
 from delphi import distributions 
@@ -66,18 +66,18 @@ class TestDistributions(unittest.TestCase):
                                 'covariance_matrix': ch.eye(1),
                                 'trials': 1
                         }) 
-        censored = distributions.CensoredNormal(train_kwargs)
-        censored.fit(S_std_norm)
+        truncated = distributions.TruncatedNormal(train_kwargs)
+        truncated.fit(S_std_norm)
         # rescale distribution
-        rescale_loc = censored.loc_ + emp_loc
+        rescale_loc = truncated.loc_ + emp_loc
         print(f"pred loc: {rescale_loc}")
-        rescale_var = censored.variance_
+        rescale_var = truncated.variance_
         print(f"pred var: {rescale_var}")
         m = MultivariateNormal(rescale_loc, rescale_var)
         
         # check performance
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 1e-1)
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 1e-1)
 
     # right truncated normal distribution with known truncation
     def test_truncated_normal(self):
@@ -109,18 +109,18 @@ class TestDistributions(unittest.TestCase):
                                 'trials': 1,
                                 'early_stopping': True,
                         }) 
-        censored = distributions.CensoredNormal(train_kwargs)
-        censored.fit(S_std_norm)
+        truncated = distributions.TruncatedNormal(train_kwargs)
+        truncated.fit(S_std_norm)
         # rescale distribution
-        rescale_loc = censored.loc_ * emp_scale + emp_loc
+        rescale_loc = truncated.loc_ * emp_scale + emp_loc
         print(f"pred loc: {rescale_loc}")
-        rescale_var = censored.variance_ * emp_var
+        rescale_var = truncated.variance_ * emp_var
         print(f"pred var: {rescale_var}")
         m = MultivariateNormal(rescale_loc, rescale_var)
         
         # check performance
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 1e-1)
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 1e-1)
 
     # sphere truncated multivariate normal distribution (10 D) with known truncation and covariance matrix
     def test_truncated_multivariate_normal_known_covariance_matrix(self):
@@ -154,17 +154,17 @@ class TestDistributions(unittest.TestCase):
                                 'covariance_matrix': M.covariance_matrix,
                                 'trials': 1,
                         }) 
-        censored = distributions.CensoredMultivariateNormal(train_kwargs)
-        censored.fit(S_norm)
+        truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
+        truncated.fit(S_norm)
         # rescale distribution
-        rescale_loc = censored.loc_ + emp_loc
+        rescale_loc = truncated.loc_ + emp_loc
         print(f'pred loc: {rescale_loc}')
         print(f'pred covariance matrix: {M.covariance_matrix}')
-        m = MultivariateNormal(rescale_loc, censored.covariance_matrix_)
+        m = MultivariateNormal(rescale_loc, truncated.covariance_matrix_)
         
         # check performance
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 2e-1)
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 2e-1)
 
     # sphere truncated multivariate normal distribution (10 D) with known truncation
     def test_truncated_multivariate_normal(self):
@@ -213,18 +213,18 @@ class TestDistributions(unittest.TestCase):
                                 'lr': 1e-1,
                                 'batch_size': 10
                         }) 
-        censored = distributions.CensoredMultivariateNormal(train_kwargs)
-        censored.fit(S_norm)
+        truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
+        truncated.fit(S_norm)
         # rescale distribution
-        rescale_loc = censored.loc_ @ emp_scale + emp_loc
-        rescale_cov = emp_scale @ censored.covariance_matrix_ @ emp_scale.T
+        rescale_loc = truncated.loc_ @ emp_scale + emp_loc
+        rescale_cov = emp_scale @ truncated.covariance_matrix_ @ emp_scale.T
         print(f'pred loc: {rescale_loc}')
         print(f'pred covariance matrix: {rescale_cov}')
         m = MultivariateNormal(rescale_loc, rescale_cov)
         
         # check performance
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 2e-1)
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 2e-1)
 
     # right truncated 1D normal distribution with unknown truncation
     def test_unknown_truncation_normal(self):
@@ -243,7 +243,7 @@ class TestDistributions(unittest.TestCase):
         # train algorithm
         train_kwargs = Parameters({'alpha': alpha,
                                 'epochs': 25}) 
-        truncated = distributions.TruncatedNormal(train_kwargs)
+        truncated = distributions.UnknownTruncatedNormal(train_kwargs)
         truncated.fit(S_norm)
         # rescale distribution
         rescale_loc = truncated.loc_ @ emp_scale + emp_loc
@@ -251,8 +251,8 @@ class TestDistributions(unittest.TestCase):
         m = MultivariateNormal(rescale_loc, rescale_var)
         
         # check distribution parameter estimates
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 1e-1) 
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 1e-1) 
 
     # 10D sphere truncated multivariate normal distribution with unknown truncation
     def test_unknown_truncation_multivariate_normal(self):
@@ -272,7 +272,7 @@ class TestDistributions(unittest.TestCase):
         train_kwargs = Parameters({'alpha': alpha,
                                 'epochs': 25, 
                                 'batch_size': 100}) 
-        truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
+        truncated = distributions.UnknownTruncationMultivariateNormal(train_kwargs)
         truncated.fit(S)
         # rescale distribution
         rescale_loc = truncated.loc_
@@ -280,8 +280,8 @@ class TestDistributions(unittest.TestCase):
         m = MultivariateNormal(rescale_loc, rescale_var)
         
         # check distribution parameter estimates
-        kl_censored = kl_divergence(m, M)
-        self.assertTrue(kl_censored <= 1e-1)  
+        kl_truncated = kl_divergence(m, M)
+        self.assertTrue(kl_truncated <= 1e-1)  
 
 
     def test_truncated_bernoulli(self): 

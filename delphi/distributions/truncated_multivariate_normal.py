@@ -1,134 +1,166 @@
-
 """
-Truncated multivariate normal distribution without oracle access (ie. unknown truncation set)
+Truncated multivariate normal distribution with oracle access (ie. known truncation set).
 """
 
-from re import I
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-import cox 
+import cox
+import math
+import torch.nn as nn
 
-from .censored_multivariate_normal import CensoredMultivariateNormalModel
-from ..oracle import UnknownGaussian
+from .. import delphi
 from .distributions import distributions
-from ..trainer import Trainer
-from ..grad import TruncatedMultivariateNormalNLL
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..utils.helpers import Parameters, PSDError
+from ..grad import TruncatedMultivariateNormalNLL 
+from ..trainer import Trainer
+from ..utils.helpers import PSDError, Parameters, is_psd
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedMultivariateNormal(distributions):
     """
-    Truncated multivariate normal distribution class.
+    Truncated multivariate normal distribution class with known truncation set.
     """
     def __init__(self,
-            args: Parameters, 
+            args: Parameters,
             store: cox.store.Store=None):
-        super(TruncatedMultivariateNormal).__init__()
-        # instance variables 
-        assert isinstance(args, Parameters), "args is type {}. expecting type delphi.utils.helper.Parameters.".format(type(args))
+        """
+        """
+        # instance variables
+        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
-        self.truncated = None
+        self.censored = None
         # algorithm hyperparameters
-        TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
         TRUNC_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
+        TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
         self.args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
 
     def fit(self, S: Tensor):
-        
+        """
+        """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
-        assert S.size(0) > S.size(1), "input expected to be num samples by dimensions, current input is size {}.".format(S.size()) 
-        while True:
-            try:
+        assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
+        
+        while True: 
+            try: 
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TruncatedNormalDataset)
                 self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_loader_.dataset)
-                self.trainer = Trainer(self.truncated, self.args, store=self.store) 
-        
-                # run PGD for parameter estimation 
-                self.trainer.train_model((self.train_loader_, self.val_loader_))
+
+                # run PGD to predict actual estimates
+                trainer = Trainer(self.truncated, self.args, store=self.store)
+                trainer.train_model(self.train_loader_, self.val_loader_)
                 return self
             except PSDError as psd:
                 print(psd.message) 
                 continue
             except Exception as e: 
-                    raise e
-
+                raise e
+    
     @property 
     def loc_(self): 
         """
         Returns the mean of the normal disribution.
         """
         return self.truncated.model.loc.clone()
-  
-    @property 
+    
+    @property
     def covariance_matrix_(self): 
         """
-        Returns the standard deviation for the normal distribution.
+        Returns the covariance matrix of the distribution.
         """
         return self.truncated.model.covariance_matrix.clone()
 
 
-class TruncatedMultivariateNormalModel(CensoredMultivariateNormalModel):
-    '''
-    Model for truncated normal distributions to be passed into trainer.
-    '''
-    def __init__(self, args, train_ds):
-        '''
+class TruncatedMultivariateNormalModel(delphi.delphi):
+    """
+    Model for truncated multivariate normal distributions with known truncation to be passed into trainer.
+    """
+    def __init__(self, args, train_ds): 
+        """
         Args: 
-            args (delphi.utils.Parameters) : parameter object holding hyperparameters
-        '''
-        super().__init__(args, train_ds)
-        # initialiaze pseudo oracle for gaussians with unknown truncation 
+            args (cox.utils.Parameters) : parameter object holding hyperparameters
+        """
+        super().__init__(args)
+        self.train_ds = train_ds
+        self.model = None
         self.emp_loc, self.emp_covariance_matrix = None, None
+        self._criterion = TruncatedMultivariateNormalNLL 
+        self.criterion_params = [self.args.phi, self.args.num_samples, self.args.eps]
         # initialize empirical estimates
         self.calc_emp_model()
-        self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
 
-        # exponent class
-        self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
+    def pretrain_hook(self, train_loader):
+        # parameterize projection set
+        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
+        if self.args.covariance_matrix is not None:
+            self.T = self.args.covariance_matrix.clone().inverse()
+        else:
+            self.T = self.emp_covariance_matrix.clone().inverse()
+        self.v = self.emp_loc.clone() @ self.T
 
-    def __call__(self, batch):
-        '''
-        Training step for defined model.
-        Args: 
-            batch (Iterable) : iterable of inputs
-        '''
-        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.exp_h)
-        return loss, None, None
-
+        # initialize empirical model 
+        self.model = MultivariateNormal(self.v, self.T)
+        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # if distribution with known variance, remove from computation graph
+        if self.args.covariance_matrix is not None: 
+            for name, param in self.named_parameters():
+                if name == 'covariance_matrix':
+                    param.requires_grad = False
+    
     def calc_emp_model(self): 
         # initialize projection set
-        self.emp_covariance_matrix = self.train_ds.covariance_matrix
+        if 'covariance_matrix' in self.args: 
+            self.emp_covariance_matrix = self.args.covariance_matrix
+        else:   
+            self.emp_covariance_matrix = self.train_ds.covariance_matrix
         self.emp_loc = self.train_ds.loc
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
+        # register parameters with PyTorch
+        self.register_parameter('loc', nn.Parameter(self.model.loc))
+        self.register_parameter('covariance_matrix', nn.Parameter(self.model.covariance_matrix))
 
-    def post_training_hook(self):
-        if self.model.loc.isnan().any() or self.model.covariance_matrix.isnan().any(): 
-            import pdb; pdb.set_trace()
+    def __call__(self, batch, targ):
+        """
+        Training step for defined model.
+        Args: 
+            i (int) : gradient step or epoch number
+            batch (Iterable) : iterable of inputs that 
+        """
+        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch, targ, self.args.phi, self.args.num_samples, self.args.eps)
+        return loss, None, None
+
+    def iteration_hook(self, i, is_train, loss, batch) -> None:
+        """
+        Iteration hook for defined model. Method is called after each 
+        training update.
+        Args:
+            loop_type (str) : "train" or "val"; indicating type of loop
+            loss (ch.Tensor) : loss for that iteration
+        """
+        loc_diff = self.model.loc - self.v
+        loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+        self.model.loc.data = self.v + loc_diff
+        cov_diff = self.model.covariance_matrix - self.T
+        cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
+        self.model.covariance_matrix.data = self.T + cov_diff 
+        
+        # check that the covariance matrix is PSD
+        if not is_psd(self.model.covariance_matrix):
+            raise PSDError("covariance matrix is not PSD, rerunning procedure")
+
+    def post_training_hook(self): 
+        self.args.r *= self.args.rate
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
-        self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
-        self.model.loc.data = (self.model.loc[None,...]  @ self.model.covariance_matrix).flatten()
-        # set estimated distribution in membership oracle
-        self.args.phi.dist = self.model
 
+        for name, param in self.named_parameters(): 
+            if name == 'loc': 
+                v = param
+            else: 
+                T = param
 
-# HELPER FUNCTIONS
-class Exp_h:
-    def __init__(self, emp_loc, emp_cov):
-        self.emp_loc = emp_loc
-        self.emp_cov = emp_cov
-        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(2.0 * Tensor([ch.acos(ch.zeros(1)).item() * 2]).unsqueeze(0))
-
-    def __call__(self, u, B, x):
-        """
-        returns: evaluates exponential function
-        """
-        cov_term = ch.bmm(x.unsqueeze(1)@B, x.unsqueeze(2)).squeeze(1) / 2.0
-        # trace_term = ch.trace((B - self.emp_cov) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
-        trace_term = ch.trace((B - ch.eye(u.size(0))) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
-        loc_term = (x - self.emp_loc)@u.unsqueeze(1)
-        return ch.exp((cov_term - trace_term - loc_term + self.pi_const).double())
+        self.model.covariance_matrix.data = T.inverse()
+        self.model.loc.data = v @ self.model.covariance_matrix
+    

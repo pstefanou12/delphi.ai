@@ -13,9 +13,9 @@ from .utils.helpers import logistic, censored_sample_nll
 softmax = Softmax(dim=1)
 
 
-class CensoredMultivariateNormalNLL(ch.autograd.Function):
+class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
-    Computes the truncated negative population log likelihood for censored multivariate normal distribution. 
+    Computes the truncated negative population log likelihood for truncated multivariate normal distribution with known truncation. 
     Function calculates the truncated negative log likelihood in the forward method and then calculates the 
     gradients with respect mu and cov in the backward method. When sampling from the conditional distribution, 
     we sample batch_size * num_samples samples, we then filter out the samples that remain in the truncation set, 
@@ -64,7 +64,7 @@ class CensoredMultivariateNormalNLL(ch.autograd.Function):
         return grad[:,z.size(1) ** 2:] / z.size(0), (grad[:,:z.size(1) ** 2] / z.size(0)).view(-1, z.size(1), z.size(1)), None, None, None, None, None
 
 
-class TruncatedMultivariateNormalNLL(ch.autograd.Function):
+class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
     Calculates the population log-likelihood for the current batch in the forward step, and 

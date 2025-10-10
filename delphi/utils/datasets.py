@@ -347,7 +347,7 @@ def make_train_and_val_distr(args, S, ds):
     return train_loader, val_loader
 
 
-class CensoredNormalDataset(ch.utils.data.Dataset):
+class TruncatedNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
@@ -371,7 +371,7 @@ class CensoredNormalDataset(ch.utils.data.Dataset):
         return self._covariance_matrix.clone()
 
 
-class TruncatedNormalDataset(ch.utils.data.Dataset):
+class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
     def __init__(self, S):
         self.S = S
         # samples 

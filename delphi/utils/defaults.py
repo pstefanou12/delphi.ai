@@ -108,7 +108,7 @@ TRUNC_PROB_REG_DEFAULTS = {
 }
 
 
-CENSOR_MULTI_NORM_DEFAULTS = {
+TRUNC_MULTI_NORM_DEFAULTS = {
         'phi': (Callable, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
@@ -123,7 +123,7 @@ CENSOR_MULTI_NORM_DEFAULTS = {
 }
 
 
-TRUNC_MULTI_NORM_DEFAULTS = {
+UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -150,7 +150,7 @@ TRUNC_BOOL_PROD_DEFAULTS = {
         'step_lr_gamma': 1.0,
 }
 
-TRUNCATED_LQR_DEFAULTS =  { 
+TRUNC_LQR_DEFAULTS =  { 
         'target_thickness': (float, float('inf')), 
         'num_traj_phase_one': (int, int(1e100)),
         'num_traj_phase_two': (int, int(1e100)), 
