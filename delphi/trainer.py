@@ -57,7 +57,7 @@ class Trainer:
 
             loss = None
             if self.args.distribution: 
-                loss = self.model._criterion.apply(*self.model.params, inp, targ, *self.model.criterion_params)
+                loss = self.model._criterion.apply(*self.model.parameters(), inp, targ, *self.model.criterion_params)
             else:  
                 pred = self.model(inp, targ)
                 loss = self.model.criterion(pred, targ, *self.model.criterion_params)
@@ -81,7 +81,11 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
+                # for i in self.model.parameters(): 
+                #     print(i.grad)
+                # print(f"optimizer params: {optimizer.param_groups}")
                 optimizer.step()
+                # print(f"param value post step: ", optimizer.param_groups)
                 if schedule is not None: schedule.step()
 
             if self.args.verbose:
@@ -93,10 +97,14 @@ class Trainer:
                 try: 
                     history_ = ch.cat([history_, self.model.weight.data[None,...]])
                 except: 
-                    history_ = ch.cat([history_, ch.cat([self.model.params[0], self.model.params[1].flatten()])[None,...]])
+                    curr_params = ch.Tensor([])
 
+                    for param in self.model.parameters(): 
+                        curr_params = ch.cat([curr_params, param.flatten()])
+                    
+                    history_ = ch.cat([history_, curr_params[None,...]])
+                    
         self.model.epoch_hook(epoch, is_train, loss)
-
         return loss_.avg, prec1_.avg, prec5_.avg, history_
 
 
@@ -175,6 +183,7 @@ class Trainer:
                 best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop_(val_loader, epoch, False)[0]
         
             for epoch in range(1, self.args.epochs + 1):
+                print(f'epoch: {epoch}')
                 train_loss, train_prec1, train_prec5, history_ = self.model_loop_(train_loader, epoch, True, optimizer, schedule)
                 history = ch.cat([history, history_])
 
@@ -219,5 +228,4 @@ class Trainer:
         
         if self.args.early_stopping and self.args.verbose and no_improvement_count < self.args.n_iter_no_change: 
             print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
-
         return best_params, history, copy.copy(self.model.parameters)

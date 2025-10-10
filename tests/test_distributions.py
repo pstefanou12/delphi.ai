@@ -37,33 +37,86 @@ class TestDistributions(unittest.TestCase):
     """
     Test suite for the distribution module.
     """
-    # right truncated normal distribution with known truncation
-    def test_censored_normal(self):
+    # right truncated normal distribution with known truncation and known variance
+    def test_truncated_normal_known_variance(self):
         M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
         samples = M.rsample([1000,])
+        print(f'num total samples: {samples.size(0)}')
         # generate ground-truth data
         phi = oracle.Left_Distribution(Tensor([0.0]))
         # truncate
         indices = phi(samples).nonzero()[:,0]
         S = samples[indices]
+        print(f'num truncated samples: {S.size(0)}')
         alpha = S.size(0) / samples.size(0)
         emp_loc = S.mean(0)
-        emp_var = S.var(0)[...,None]
-        emp_scale = ch.sqrt(emp_var)
+        print(f"emp loc: {emp_loc}")
+        emp_var = ch.eye(1)
+        print(f"known variance: {emp_var}")
+        emp_scale = ch.eye(1)
     
-        S_norm = (S - emp_loc) / emp_scale
-        phi_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
+        S_std_norm = (S - emp_loc) / emp_scale
+        phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
     
         # train algorithm
-        train_kwargs = Parameters({'phi': phi_norm, 
+        train_kwargs = Parameters({
+                                'phi': phi_std_norm, 
                                 'alpha': alpha,
-                                'epochs': 10, 
-                                'batch_size': 50}) 
+                                'epochs': 3, 
+                                'batch_size': 10, 
+                                'covariance_matrix': ch.eye(1),
+                                'trials': 1
+                        }) 
         censored = distributions.CensoredNormal(train_kwargs)
-        censored.fit(S_norm)
+        censored.fit(S_std_norm)
+        # rescale distribution
+        rescale_loc = censored.loc_ * emp_var + emp_loc
+        print(f"pred loc: {rescale_loc}")
+        rescale_var = censored.variance_ * emp_var
+        print(f"pred var: {rescale_var}")
+        m = MultivariateNormal(rescale_loc, rescale_var)
+        
+        # check performance
+        kl_censored = kl_divergence(m, M)
+        self.assertTrue(kl_censored <= 1e-1)
+
+    # right truncated normal distribution with known truncation
+    def test_truncated_normal(self):
+        M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
+        samples = M.rsample([10000,])
+        print(f'num total samples: {samples.size(0)}')
+        # generate ground-truth data
+        phi = oracle.Left_Distribution(Tensor([0.0]))
+        # truncate
+        indices = phi(samples).nonzero()[:,0]
+        S = samples[indices]
+        print(f'num truncated samples: {S.size(0)}')
+        alpha = S.size(0) / samples.size(0)
+        emp_loc = S.mean(0)
+        print(f"emp loc: {emp_loc}")
+        emp_var = S.var(0)[...,None]
+        print(f"emp var: {emp_var}")
+        emp_scale = ch.sqrt(emp_var) 
+
+        S_std_norm = (S - emp_loc) / emp_scale
+        phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
+    
+        # train algorithm
+        train_kwargs = Parameters({
+                                'phi': phi_std_norm, 
+                                'alpha': alpha,
+                                'epochs': 1, 
+                                'batch_size': 10, 
+                                'trials': 1,
+                                'early_stopping': True,
+                        }) 
+        censored = distributions.CensoredNormal(train_kwargs)
+        censored.fit(S_std_norm)
         # rescale distribution
         rescale_loc = censored.loc_ * emp_scale + emp_loc
+        print(f"pred loc: {rescale_loc}")
         rescale_var = censored.variance_ * emp_var
+        print(f"pred var: {rescale_var}")
         m = MultivariateNormal(rescale_loc, rescale_var)
         
         # check performance
@@ -71,7 +124,7 @@ class TestDistributions(unittest.TestCase):
         self.assertTrue(kl_censored <= 1e-1)
 
     # sphere truncated multivariate normal distribution (10 D) with known truncation
-    def test_censored_multivariate_normal(self):
+    def test_truncated_multivariate_normal(self):
         M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
         samples = M.rsample([5000,])
         # generate ground-truth data
@@ -105,7 +158,7 @@ class TestDistributions(unittest.TestCase):
         self.assertTrue(kl_censored <= 2e-1)
 
     # right truncated 1D normal distribution with unknown truncation
-    def test_truncated_normal(self):
+    def test_unknown_truncation_normal(self):
         M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
         samples = M.rsample([1000,])
         # generate ground-truth data
@@ -133,7 +186,7 @@ class TestDistributions(unittest.TestCase):
         self.assertTrue(kl_censored <= 1e-1) 
 
     # 10D sphere truncated multivariate normal distribution with unknown truncation
-    def test_truncated_multivariate_normal(self):
+    def test_unknown_truncation_multivariate_normal(self):
         M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
         samples = M.rsample([5000,])
         alpha = 0.0

@@ -12,8 +12,8 @@ from .helpers import has_attr
 REQ = 'required'
 
 TRAINER_DEFAULTS = { 
-    'num_trials': (int, 3),
-    'epochs': (int, 20),
+    'num_trials': (int, 1),
+    'epochs': (int, 1),
     'trials': (int, 3),
     'tol': (float, 1e-3),
     'early_stopping': (bool, False), 

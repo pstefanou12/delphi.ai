@@ -100,8 +100,10 @@ class delphi(ch.nn.Module):
         """
         optimizer, schedule = None, None
         if self.args.cuda: params.to('cuda')
+        # import pdb; pdb.set_trace()
         optimizer = SGD(
-                        list(params.values()), 
+                        # self.parameters.values(),
+                        self.parameters(), 
                         lr=self.args.lr, 
                         momentum=self.args.momentum, 
                         weight_decay=self.args.weight_decay
@@ -223,6 +225,6 @@ class delphi(ch.nn.Module):
         '''
         self._model = model
     
-    @property
-    def parameters(self):
-        return self._parameters
+    # @property
+    # def parameters(self):
+    #     return self._parameters

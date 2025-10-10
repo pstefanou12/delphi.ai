@@ -29,7 +29,6 @@ class CensoredMultivariateNormal(distributions):
             store: cox.store.Store=None):
         """
         """
-        # super(CensoredMultivariateNormal).__init__()
         # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
@@ -49,11 +48,10 @@ class CensoredMultivariateNormal(distributions):
         while True: 
             try: 
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, CensoredNormalDataset)
-                temp = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
+                self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
 
-                # self.censored = CensoredMultivariateNormalModel(self.args, self.train_loader_.dataset)
                 # run PGD to predict actual estimates
-                trainer = Trainer(temp, store=self.store)
+                trainer = Trainer(self.censored, store=self.store)
                 trainer.train_model(self.args, self.train_loader_, self.val_loader_)
                 return self
             except PSDError as psd:
@@ -96,8 +94,8 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.calc_emp_model()
 
     def pretrain_hook(self, train_loader):
-        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
         # parameterize projection set
+        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
         if self.args.covariance_matrix is not None:
             self.T = self.args.covariance_matrix.clone().inverse()
         else:
@@ -108,18 +106,24 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.model = MultivariateNormal(self.v, self.T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         # if distribution with known variance, remove from computation graph
-        if self.args.covariance_matrix is not None: self.model.covariance_matrix.requires_grad = False
-        self.params = [self.model.loc, self.model.covariance_matrix]
+        if self.args.covariance_matrix is not None: 
+            for name, param in self.named_parameters():
+                if name == 'covariance_matrix':
+                    param.requires_grad = False
+        # self.params = [self.model.loc, self.model.covariance_matrix]
     
     def calc_emp_model(self): 
         # initialize projection set
-        self.emp_covariance_matrix = self.train_ds.covariance_matrix
+        if self.args.covariance_matrix: 
+            self.emp_covariance_matrix = self.args.covariance_matrix
+        else:   
+            self.emp_covariance_matrix = self.train_ds.covariance_matrix
         self.emp_loc = self.train_ds.loc
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
         # register parameters with PyTorch
         self.register_parameter('loc', nn.Parameter(self.model.loc))
+        # self.register_parameter('covariance_matrix', nn.Parameter(ch.eye(1)))
         self.register_parameter('covariance_matrix', nn.Parameter(self.model.covariance_matrix))
-        # import pdb; pdb.set_trace()
 
     def __call__(self, batch, targ):
         """
@@ -155,6 +159,13 @@ class CensoredMultivariateNormalModel(delphi.delphi):
         self.args.r *= self.args.rate
         # reparamterize distribution
         self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
-        self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
-        self.model.loc.data = self.model.loc  @ self.model.covariance_matrix
+
+        for name, param in self.named_parameters(): 
+            if name == 'loc': 
+                v = param
+            else: 
+                T = param
+
+        self.model.covariance_matrix.data = T.inverse()
+        self.model.loc.data = v @ self.model.covariance_matrix
     
