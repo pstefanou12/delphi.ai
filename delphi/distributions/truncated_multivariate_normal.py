@@ -100,9 +100,12 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             self.T = self.emp_covariance_matrix.clone().inverse()
         self.v = self.emp_loc.clone() @ self.T
 
-        # initialize empirical model 
+        # Initialize empirical model 
         self.model = MultivariateNormal(self.v, self.T)
         self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
+        # Register parameters with Pytorch
+        self.register_parameter('loc', nn.Parameter(self.v))
+        self.register_parameter('covariance_matrix', nn.Parameter(self.T)) 
         # if distribution with known variance, remove from computation graph
         if self.args.covariance_matrix is not None: 
             for name, param in self.named_parameters():
@@ -117,9 +120,6 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             self.emp_covariance_matrix = self.train_ds.covariance_matrix
         self.emp_loc = self.train_ds.loc
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
-        # register parameters with PyTorch
-        self.register_parameter('loc', nn.Parameter(self.model.loc))
-        self.register_parameter('covariance_matrix', nn.Parameter(self.model.covariance_matrix))
 
     def __call__(self, batch, targ):
         """
@@ -131,24 +131,51 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch, targ, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
-    def iteration_hook(self, i, is_train, loss, batch) -> None:
-        """
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : "train" or "val"; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-        """
-        loc_diff = self.model.loc - self.v
-        loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
-        self.model.loc.data = self.v + loc_diff
-        cov_diff = self.model.covariance_matrix - self.T
-        cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
-        self.model.covariance_matrix.data = self.T + cov_diff 
+    # def iteration_hook(self, i, is_train, loss, batch) -> None:
+    #     """
+    #     Iteration hook for defined model. Method is called after each 
+    #     training update.
+    #     Args:
+    #         loop_type (str) : "train" or "val"; indicating type of loop
+    #         loss (ch.Tensor) : loss for that iteration
+    #     """
+    #     loc_diff = self.model.loc - self.v
+    #     loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+    #     self.model.loc.data = self.v + loc_diff
+    #     cov_diff = self.model.covariance_matrix - self.T
+    #     cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
+    #     self.model.covariance_matrix.data = self.T + cov_diff 
         
-        # check that the covariance matrix is PSD
-        if not is_psd(self.model.covariance_matrix):
-            raise PSDError("covariance matrix is not PSD, rerunning procedure")
+    #     # check that the covariance matrix is PSD
+    #     if not is_psd(self.model.covariance_matrix):
+    #         raise PSDError("covariance matrix is not PSD, rerunning procedure")
+        
+    def iteration_hook(self, i, is_train, loss, batch) -> None:
+        # Project location to ball around v
+        loc_diff = self.optimizer.param_groups[0]['params'][0] - self.v
+        loc_norm = ch.norm(loc_diff)
+        if loc_norm > self.radius:
+            self.optimizer.param_groups[0]['params'][0] = self.v + (loc_diff / loc_norm) * self.radius
+            
+        # Project covariance to PSD cone with bounded deviation from T
+        cov = self.optimizer.param_groups[0]['params'][1] 
+    
+        # Ensure PSD via eigenvalue clipping
+        L, Q = ch.linalg.eigh(cov)
+        L_clipped = ch.clamp(L, min=1e-6)  # Ensure positive eigenvalues
+        cov_psd = Q @ ch.diag_embed(L_clipped) @ Q.T
+    
+        # Project to Frobenius ball around T if needed
+        cov_diff = cov_psd - self.T
+        frob_norm = ch.linalg.norm(cov_diff, ord='fro')
+        if frob_norm > self.radius:
+            cov_projected = self.T + (cov_diff / frob_norm) * self.radius
+            # Re-ensure PSD after projection
+            L, Q = ch.linalg.eigh(cov_projected)
+            L_clipped = ch.clamp(L, min=1e-6)
+            self.optimizer.param_groups[0]['params'][1] = Q @ ch.diag_embed(L_clipped) @ Q.T
+        else:
+            self.optimizer.param_groups[0]['params'][1] = cov_psd
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate

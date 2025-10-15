@@ -71,9 +71,12 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     then calculates its gradient in the backwards step.
     """
     @staticmethod
-    def forward(ctx, u, B, x, pdf, loc_grad, cov_grad, phi, exp_h):
+    # def forward(ctx, u, B, x, pdf, loc_grad, cov_grad, phi, exp_h):
+    def forward(ctx, params, data, phi, exp_h, dims, known_cov=False):
         """
         Args: 
+            params (torch.Tensor): size (dims + dims ** 2,) - current reparameterized mean and covariance matrix estimates concatenated together
+            data: (torch.Tensor): size() - precomupted gradient values for both the mean and covariance matrix
             u (torch.Tensor): size (dims,) - current reparameterized mean estimate
             B (torch.Tensor): size (dims, dims) - current reparameterized covariance matrix estimate
             x (torch.Tensor): size (batch_size, dims) - batch of dataset samples 
@@ -82,17 +85,27 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
             cov_grad (torch.Tensor): (batch_size, dims * dims) - precomputed gradient for covariance matrix for batch 
             phi (oracle.UnknownGaussian): oracle object for learning truncation set 
             exp_h (Exp_h): helper class object for calculating exponential in the gradient
+            dims (int): the dimension number 
+            known_cov (bool): whether the covariance matrix is known; if so, provide 0 as gradient for covariance matrix
         """
+        u = params[:dims]
+        B = params[dims:].resize(dims, dims)
+        x = data[:,0][...,None]
+        pdf = data[:,1][...,None]
+        loc_grad = data[:,2][...,None]
+        cov_grad = data[:,3][...,None]
         exp = exp_h(u, B, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi
-        ctx.save_for_backward(loss, loc_grad, cov_grad)
-        return loss / x.size(0)
+        ctx.save_for_backward(loss, loc_grad, cov_grad, ch.Tensor([known_cov]), ch.Tensor([dims]))
+        return loss.mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        loss, loc_grad, cov_grad = ctx.saved_tensors
-        return (loc_grad * loss) / loc_grad.size(0), ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([loc_grad.size(1), loc_grad.size(1)]))) / loc_grad.size(0), None, None, None, None, None, None
+        loss, loc_grad, cov_grad, known_cov, dims = ctx.saved_tensors
+        term_one = (loc_grad * loss).mean(0)
+        term_two = ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([loc_grad.size(1), loc_grad.size(1)]))).mean(0) if not known_cov else ch.zeros((int(dims),)) 
+        return ch.cat([term_one.flatten(), term_two.flatten()]), None, None, None, None, None
 
 
 class TruncatedMSE(ch.autograd.Function):

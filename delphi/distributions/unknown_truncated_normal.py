@@ -38,17 +38,18 @@ class UnknownTruncationNormal(UnknownTruncationMultivariateNormal):
                 self.trainer = Trainer(self.unknown_truncated, self.args, store=self.store)
         
                 # run PGD for parameter estimation 
-                self.trainer.train_model((self.train_loader_, self.val_loader_))
+                # self.trainer.train_model(self.train_loader_, self.val_loader_)
+                best_params, history, params = self.trainer.train_model(self.train_loader_, self.val_loader_)
+                print(f"best params: {best_params}")
+                print(f"history: {history}")
+                print(f"params: {params}")
                 return self
             except PSDError as psd:
                 print(psd.message) 
                 continue
             except Exception as e: 
                     raise e
-     #    # rescale/standardize
-    #    self.truncated.model.covariance_matrix.data = self.truncated.model.covariance_matrix @ self.emp_covariance_matrix
-    #    self.truncated.model.loc.data = (self.truncated.model.loc[None,...] @ Tensor(sqrtm(self.emp_covariance_matrix.numpy()))).flatten() + self.emp_loc
-    #
+    
     @property 
     def variance_(self): 
         """

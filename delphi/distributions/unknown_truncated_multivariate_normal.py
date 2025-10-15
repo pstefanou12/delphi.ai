@@ -10,10 +10,10 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import cox 
 
 from .truncated_multivariate_normal import TruncatedMultivariateNormalModel
-from ..oracle import UnknownGaussian
+from ..oracle import UnknownGaussian, Right_Distribution, Identity
 from .distributions import distributions
 from ..trainer import Trainer
-from ..grad import TruncatedMultivariateNormalNLL
+from ..grad import UnknownTruncationMultivariateNormalNLL 
 from ..utils.datasets import UnknownTruncationNormalDataset, make_train_and_val_distr
 from ..utils.helpers import Parameters, PSDError
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
@@ -47,7 +47,10 @@ class UnknownTruncationMultivariateNormal(distributions):
                 self.trainer = Trainer(self.unknown_truncated, self.args, store=self.store) 
         
                 # run PGD for parameter estimation 
-                self.trainer.train_model((self.train_loader_, self.val_loader_))
+                best_params, history, params = self.trainer.train_model((self.train_loader_, self.val_loader_))
+                print(f"best params: {best_params}")
+                print(f"history: {history}")
+                print(f"params: {params}")
                 return self
             except PSDError as psd:
                 print(psd.message) 
@@ -60,14 +63,14 @@ class UnknownTruncationMultivariateNormal(distributions):
         """
         Returns the mean of the normal disribution.
         """
-        return self.truncated.model.loc.clone()
+        return self.unknown_truncated.model.loc.clone()
   
     @property 
     def covariance_matrix_(self): 
         """
         Returns the standard deviation for the normal distribution.
         """
-        return self.truncated.model.covariance_matrix.clone()
+        return self.unknown_truncated.model.covariance_matrix.clone()
 
 
 class UnknownTruncationMultivariateNormalModel(TruncatedMultivariateNormalModel):
@@ -82,37 +85,30 @@ class UnknownTruncationMultivariateNormalModel(TruncatedMultivariateNormalModel)
         super().__init__(args, train_ds)
         # initialiaze pseudo oracle for gaussians with unknown truncation 
         self.emp_loc, self.emp_covariance_matrix = None, None
+        self._criterion = UnknownTruncationMultivariateNormalNLL.apply
         # initialize empirical estimates
         self.calc_emp_model()
         self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
 
         # exponent class
         self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
+        self.criterion_params = [self.args.phi, self.exp_h, self.emp_loc.size(0)]
+        if 'covariance_matrix' in self.args:
+            self.criterion_params.append(True)
 
-    def __call__(self, batch):
+    def __call__(self, inp, targ):
         '''
         Training step for defined model.
         Args: 
             batch (Iterable) : iterable of inputs
         '''
-        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, *batch, self.args.phi, self.exp_h)
-        return loss, None, None
-
-    def calc_emp_model(self): 
-        # initialize projection set
-        self.emp_covariance_matrix = self.train_ds.covariance_matrix
-        self.emp_loc = self.train_ds.loc
-        self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
-
-    def post_training_hook(self):
-        if self.model.loc.isnan().any() or self.model.covariance_matrix.isnan().any(): 
-            import pdb; pdb.set_trace()
-        # reparamterize distribution
-        self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
-        self.model.covariance_matrix.data = self.model.covariance_matrix.inverse()
-        self.model.loc.data = (self.model.loc[None,...]  @ self.model.covariance_matrix).flatten()
-        # set estimated distribution in membership oracle
-        self.args.phi.dist = self.model
+        curr_cov, curr_loc = None, None
+        for name, param in self.named_parameters(): 
+            if name == 'loc': 
+                curr_loc = param
+            else: 
+                curr_cov = param
+        return ch.cat([curr_loc.flatten(), curr_cov.flatten()])
 
 
 # HELPER FUNCTIONS
@@ -120,14 +116,12 @@ class Exp_h:
     def __init__(self, emp_loc, emp_cov):
         self.emp_loc = emp_loc
         self.emp_cov = emp_cov
-        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(2.0 * Tensor([ch.acos(ch.zeros(1)).item() * 2]).unsqueeze(0))
+        self.pi_const = (self.emp_loc.size(0) / 2.0) * ch.log(ch.Tensor([2.0 * ch.pi])).unsqueeze(0)
 
     def __call__(self, u, B, x):
-        """
-        returns: evaluates exponential function
-        """
+        """returns: evaluates exponential function"""
+        # import pdb; pdb.set_trace()
         cov_term = ch.bmm(x.unsqueeze(1)@B, x.unsqueeze(2)).squeeze(1) / 2.0
-        # trace_term = ch.trace((B - self.emp_cov) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
         trace_term = ch.trace((B - ch.eye(u.size(0))) * (self.emp_cov + self.emp_loc[...,None]@self.emp_loc[None,...])).unsqueeze(0) / 2.0
         loc_term = (x - self.emp_loc)@u.unsqueeze(1)
         return ch.exp((cov_term - trace_term - loc_term + self.pi_const).double())

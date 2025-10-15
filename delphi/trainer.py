@@ -23,6 +23,7 @@ class Trainer:
                 args: Parameters, 
                 store=None): 
         self.model = model
+        print(f'before calling check_and_fill_args within the trainer')
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store        
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
@@ -30,10 +31,7 @@ class Trainer:
     def model_loop_(self,
                     loader: ch.utils.data.DataLoader,
                     epoch: int, 
-                    is_train: bool, 
-                    optimizer: ch.optim=None, 
-                    schedule: ch.optim.lr_scheduler=None):
-
+                    is_train: bool):
         """
         *Internal method* (refer to the train_model and eval_model functions for
         how to train and evaluate models).
@@ -52,15 +50,17 @@ class Trainer:
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False, 
                         bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose else enumerate(loader) 
         for i, batch in iterator:
-            if is_train: optimizer.zero_grad()
+            if is_train: self.model.optimizer.zero_grad()
             inp, targ = batch
 
             loss = None
             if self.args.distribution: 
                 loss = self.model._criterion.apply(*self.model.parameters(), inp, targ, *self.model.criterion_params)
-            else:  
+            else: 
                 pred = self.model(inp, targ)
-                loss = self.model.criterion(pred, targ, *self.model.criterion_params)
+                loss = self.model._criterion(pred, targ, *self.model.criterion_params)
+                if not is_train:
+                    print(f'loss: {loss}')
 
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 
@@ -81,12 +81,8 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
-                # for i in self.model.parameters(): 
-                #     print(i.grad)
-                # print(f"optimizer params: {optimizer.param_groups}")
-                optimizer.step()
-                # print(f"param value post step: ", optimizer.param_groups)
-                if schedule is not None: schedule.step()
+                self.model.optimizer.step()
+                if self.model.schedule is not None: self.model.schedule.step()
 
             if self.args.verbose:
                 desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
@@ -176,7 +172,7 @@ class Trainer:
             no_improvement_count = 0
         
             self.model.pretrain_hook(train_loader)
-            optimizer, schedule = self.model.make_optimizer_and_schedule(self.model.parameters) 
+            self.model.make_optimizer_and_schedule(self.model.parameters()) 
    
             if checkpoint:
                 epoch = checkpoint['epoch']
@@ -184,7 +180,7 @@ class Trainer:
         
             for epoch in range(1, self.args.epochs + 1):
                 print(f'epoch: {epoch}')
-                train_loss, train_prec1, train_prec5, history_ = self.model_loop_(train_loader, epoch, True, optimizer, schedule)
+                train_loss, train_prec1, train_prec5, history_ = self.model_loop_(train_loader, epoch, True)
                 history = ch.cat([history, history_])
 
                 if val_loader is not None:

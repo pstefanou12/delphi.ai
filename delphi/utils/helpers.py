@@ -215,7 +215,7 @@ def setup_store_with_metadata(args, store):
 def has_attr(obj, k):
     """Checks both that obj.k exists and is not equal to None"""
     try:
-        return (getattr(obj, k) is not None)
+        return k in obj
     except KeyError as e:
         return False
     except AttributeError as e:

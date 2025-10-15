@@ -379,11 +379,13 @@ class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
         self._covariance_matrix = cov(self.S)
         # compute gradients
         M = MultivariateNormal(self._loc, self._covariance_matrix)
-        self.pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))).log_prob(self.S))[...,None]
-       # self.pdf = ch.exp(M.log_prob(self.S))[...,None]
+        # self.pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))).log_prob(self.S))[...,None]
+        self.pdf = ch.exp(M.log_prob(self.S))[...,None]
 
         self.loc_grad =  self._loc - self.S
         self.cov_grad = .5 * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc[...,None] @ self._loc[None,...]).flatten(1)
+
+        self.data = ch.cat([self.S, self.pdf, self.loc_grad, self.cov_grad], dim=1)
         
     def __len__(self): 
         return self.S.size(0)
@@ -392,7 +394,8 @@ class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
         """
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
-        return self.S[idx], self.pdf[idx], self.loc_grad[idx], self.cov_grad[idx]
+        return ch.empty([]), self.data[idx] 
+        # return self.S[idx], self.pdf[idx], self.loc_grad[idx], self.cov_grad[idx]
 
     @property
     def loc(self): 

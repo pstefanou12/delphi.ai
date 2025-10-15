@@ -10,7 +10,7 @@ from typing import Any, Iterable
 from torch.optim import SGD, Adam, lr_scheduler
 import numpy as np
 
-from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS, check_and_fill_args
+from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS 
 from .utils.helpers import Parameters
 
 # CONSTANTS 
@@ -90,6 +90,8 @@ class delphi(ch.nn.Module):
 
         self.criterion = ch.nn.CrossEntropyLoss()
         self.criterion_params = []
+        self.optimizer = None 
+        self.schedule = None
 
     def make_optimizer_and_schedule(self,
                                     params: Iterable, 
@@ -98,25 +100,23 @@ class delphi(ch.nn.Module):
         Create optimizer (ch.nn.optim) and scheduler (ch.nn.optim.lr_scheduler module)
         for SGD procedure. 
         """
-        optimizer, schedule = None, None
         if self.args.cuda: params.to('cuda')
-        # import pdb; pdb.set_trace()
-        optimizer = SGD(
-                        # self.parameters.values(),
-                        self.parameters(), 
+        self.optimizer = SGD(
+                        params,
+                        # self.parameters(), 
                         lr=self.args.lr, 
                         momentum=self.args.momentum, 
                         weight_decay=self.args.weight_decay
                     )
         if self.args.custom_lr_multiplier == ADAM: 
-            optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
+            self.optimizer = Adam(params, lr=self.args.lr, weight_decay=self.args.weight_decay)
         elif not self.args.constant: 
             eps = self.args.epochs
             if self.args.custom_lr_multiplier == CYCLIC:
                 lr_func = lambda t: np.interp([t], [0, eps*4//15, eps], [0, 1, 0])[0]
-                schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
             elif self.args.custom_lr_multiplier == COSINE:
-                schedule = lr_scheduler.CosineAnnealingLR(optimizer, eps)
+                self.schedule = lr_scheduler.CosineAnnealingLR(self.optimizer, eps)
             elif self.args.custom_lr_multiplier:
                 cs = self.args.custom_lr_multiplier
                 periods = eval(cs) if type(cs) is str else cs
@@ -127,23 +127,21 @@ class delphi(ch.nn.Module):
                         for (milestone, lr) in reversed(periods):
                             if ep >= milestone: return lr
                         return 1.0
-                schedule = lr_scheduler.LambdaLR(optimizer, lr_func)
+                self.schedule = lr_scheduler.LambdaLR(self.optimizer, lr_func)
             elif self.args.step_lr:
-                schedule = lr_scheduler.StepLR(optimizer, step_size=self.args.step_lr, gamma=self.args.step_lr_gamma)
+                self.schedule = lr_scheduler.StepLR(self.optimizer, step_size=self.args.step_lr, gamma=self.args.step_lr_gamma)
             
         if checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
             try:
-                schedule.load_state_dict(checkpoint['schedule'])
+                self.schedule.load_state_dict(checkpoint['schedule'])
             # if can't load scheduler state, take epoch steps
             except:
                 steps_to_take = checkpoint['epoch']
                 print('Could not load schedule (was probably LambdaLR).'
                     f' Stepping {steps_to_take} times instead...')
                 for i in range(steps_to_take):
-                    schedule.step() 
-
-        return optimizer, schedule
+                    self.schedule.step() 
 
     def pretrain_hook(self, train_loader) -> None:
         '''

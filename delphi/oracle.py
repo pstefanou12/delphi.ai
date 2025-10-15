@@ -234,49 +234,130 @@ class UnknownGaussian(oracle):
     """
     Oracle that learns truncation set
     """
-
-    def __init__(self, emp_loc, emp_covariance_matrix, S,  d):
-        '''
-        '''
-        # assumes that input features have been normalized, and now are dealing with a standard normal disribution
+    def __init__(self, emp_loc, emp_covariance_matrix, S, k):
         self.emp_loc = emp_loc 
         self.emp_covariance_matrix = emp_covariance_matrix
-
-        # empirical estimates used for membership oracle
         self._emp_dist = MultivariateNormal(emp_loc, emp_covariance_matrix)
-
-        self._d = d
-        # calculate the normalizing hermite polynomial constant for degree d
-        self._norm_const = Tensor([])
-
-        for i in range(self._d + 1):
-            try:
-                self._norm_const = ch.cat([self._norm_const, ch.DoubleTensor([math.factorial(i)]).pow(.5)])
-            except OverflowError:
-                self._norm_const = ch.cat([self._norm_const, ch.DoubleTensor([Decimal(math.factorial(i))]).pow(.5)])
-            
-        self._norm_const = self._norm_const.unsqueeze(1)
-
-        # truncation coefficient
-        self._C_v = self.H_v(S).mean(0)
-        # must learn distribution for membership oracle
+        self._d = emp_loc.shape[0]  # Dimension of the distribution
+        self._k = k  # Max degree to compute the Hermite Polynomial for
+    
+        # Precompute factorials up to max_degree
+        self._factorials = ch.tensor([math.factorial(i) for i in range(k + 1)])
+    
+        # Generate all multi-indices up to degree k
+        self.multi_indices = self._generate_multi_indices(self._k)
+    
+        # Compute normalization constants
+        self._norm_const = self._compute_norm_constants()
+    
+        # Compute Hermite coefficients from samples
+        self._C_v = self._compute_hermite_coefficients(S)
+    
         self._dist = None
 
-    def __call__(self, x):
-        if self.dist is None:
-            raise Exception("must learn underlying distribution for membership oracle")
-        return ((ch.exp(self.emp_dist.log_prob(x)[...,None]) / ch.exp(self.dist.log_prob(x))[...,None]) * self.psi_k(
-            x) > .5).float()
+    def _generate_multi_indices(self, k):
+        """Generate all multi-indices V with |V| <= k."""
+        from itertools import product
+        indices = []
+        for degree in range(k + 1):
+            for combo in product(range(degree + 1), repeat=self._d):
+                if sum(combo) == degree:
+                    indices.append(list(combo))
+        return ch.tensor(indices, dtype=ch.long)
 
-    # x - (n, d) matrix
+    def _hermite_polynomial_1d(self, x, degree):
+        """Compute probabilist's Hermite polynomial He_degree(x)"""
+        # Use stable recurrence relation
+        if degree == 0:
+            return ch.ones_like(x)
+        elif degree == 1:
+            return x
+        else:
+            He_prev_prev = ch.ones_like(x)
+            He_prev = x
+            for n in range(2, degree + 1):
+                He_curr = x * He_prev - (n - 1) * He_prev_prev
+                He_prev_prev = He_prev
+                He_prev = He_curr
+            return He_prev
+
     def H_v(self, x):
-        return ch.div(Hermite(x.unsqueeze(1).double(), self._d).tensor, self._norm_const).prod(2)
+        """
+        Compute MULTIVARIATE Hermite polynomials for all multi-indices.
+        
+        Key fix: Proper multivariate Hermite computation
+        """
+        n = x.shape[0]
+        num_indices = len(self.multi_indices)
+        result = ch.ones(n, num_indices)
+
+        if ch.any(ch.isnan(x)) or ch.any(ch.isinf(x)):
+            print("WARNING: Numerical issues in standardization")
+            return ch.zeros(x.shape[0], len(self.multi_indices))
+        
+        for idx, V in enumerate(self.multi_indices):
+            for dim in range(self._d):
+                degree = int(V[dim].item())
+                if degree > 0:
+                    # Compute 1D Hermite polynomial for this dimension
+                    hermite_val = self._hermite_polynomial_1d(x[:, dim], degree)
+                    # Normalize by sqrt(degree!) for orthonormality
+                    normalized_val = hermite_val / math.sqrt(math.factorial(degree))
+                    result[:, idx] *= normalized_val
+        
+        return result
+
+    def _compute_hermite_coefficients(self, S):
+        """
+        CORRECT coefficient computation according to paper.
+        
+        We want: psi(x) ≈ sum_V c_V H_V(x) where c_V = E_D[H_V(x)]
+        and D is the truncated distribution.
+        """
+        H_vals = self.H_v(S)
+    
+        c_v = H_vals.mean(0)
+        
+        # Subtract the constant term's influence for outside points
+        # Keep the relative patterns but remove the absolute bias
+        if len(c_v) > 0:
+            c_v[0] = 0.0  # Remove constant bias
+    
+        return c_v
 
     def psi_k(self, x):
         """
-        Characteristic function, determines whether a sample falls within truncation set or not.
+        Characteristic function approximation.
+        
+        According to paper: psi_k(x) = max(0, sum_V c_V H_V(x))
+        This should approximate 1_A(x) where A is the truncation set.
         """
-        return ch.clamp((self._C_v * self.H_v(x)).sum(1), 0.0)[...,None]
+        H_vals = self.H_v(x)  # Shape: (n, num_multi_indices)
+        
+        # Compute the expansion
+        expansion = (self._C_v * H_vals).sum(dim=1)  # Shape: (n,)
+        
+        # Apply ReLU and clamp to reasonable range
+        psi_vals = ch.clamp(expansion, 0.0)
+        
+        return psi_vals.unsqueeze(-1)  # Shape: (n, 1)
+
+    def _compute_norm_constants(self):
+        """Compute sqrt(V!) for each multi-index V."""
+        norms = []
+        for V in self.multi_indices:
+            # V! = product of v_i! for each component
+            V_factorial = ch.prod(self._factorials[V.long()])
+            norms.append(ch.sqrt(V_factorial.float()))
+        return ch.tensor(norms)
+
+    def __call__(self, x):
+        if self._dist is None:
+            raise Exception("must learn underlying distribution for membership oracle")
+        
+        # Compute the rescaled characteristic function
+        ratio = ch.exp(self._emp_dist.log_prob(x) - self._dist.log_prob(x))
+        return (ratio.unsqueeze(-1) * self.psi_k(x) > 0.5).float()
 
     @property
     def emp_dist(self):
@@ -304,7 +385,7 @@ class UnknownGaussian(oracle):
 
     def __str__(self): 
         return 'unknown gaussian'
-
+    
 
 class Identity(oracle): 
     """

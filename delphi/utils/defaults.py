@@ -110,6 +110,7 @@ TRUNC_PROB_REG_DEFAULTS = {
 
 TRUNC_MULTI_NORM_DEFAULTS = {
         'phi': (Callable, REQ),
+        'alpha': (float, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -124,6 +125,7 @@ TRUNC_MULTI_NORM_DEFAULTS = {
 
 
 UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
+        'alpha': (float, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -133,7 +135,7 @@ UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10),
         'covariance_matrix': (ch.Tensor, None), 
-        'd': (int, 100),
+        'd': (int, 10),
 }
 
 
@@ -182,14 +184,18 @@ def check_and_fill_args(args, defaults):
                 # check to make sure that hyperparameter inputs are the same type
                         if isinstance(arg_type, Iterable):
                                 if args.__getattr__(arg_name) in arg_type: continue 
-                                raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
+                                raise ValueError(f'arg: {arg_name} is not correct type: {arg_type}. fix hyperparameters and run again.')
                         if isinstance(args.__getattr__(arg_name), arg_type): continue
-                        raise ValueError('arg: {} is not correct type: {}. fix hyperparameters and run again.'.format(arg_name, arg_type))
+                        raise ValueError(f'arg: {arg_name} is not correct type: {arg_type}. fix hyperparameters and run again.')
                 if arg_default == REQ: 
                         raise ValueError(f"{arg_name} required")
                 elif arg_default is not None: 
                         # use default arugment
                         setattr(args, arg_name, arg_default)
+        # for arg_name in args:
+        #         if arg_name == 'alpha': import pdb; pdb.set_trace()
+        #         if not has_attr(defaults, arg_name): 
+        #                 raise ValueError(f'arg: {arg_name} is not recognized')
         
         return args
 
