@@ -134,9 +134,21 @@ class TruncatedMSE(ch.autograd.Function):
         noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
         filtered = phi(noised)
         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        out = -.5 * (z.pow(2) + z * pred)
+        integrand = ch.exp(-0.5 * (noised - pred).pow(2))
+    
+        masked_integrand = integrand * filtered 
+    
+        # Monte Carlo estimate of the integral
+        integral_estimate = masked_integrand.mean(dim=0)
+    
+        # log(integral)
+        eps = 1e-10
+        log_integral = ch.log(integral_estimate + eps)
+        quadratic_loss = -0.5 * (targ - pred).pow(2)
+
         ctx.save_for_backward(pred, targ, z)
-        return (-.5 * targ.pow(2) + targ * pred - out).mean(0)
+        return (quadratic_loss + log_integral).mean()
+
 
     @staticmethod
     def backward(ctx, 

@@ -326,7 +326,7 @@ def make_train_and_val(args, X, y):
     val_ds = TensorDataset(X_val, y_val)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, num_workers=args.workers, shuffle=args.shuffle)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.workers, shuffle=args.shuffle)
+    val_loader = DataLoader(val_ds, batch_size=X_val.size(0), num_workers=args.workers, shuffle=args.shuffle)
 
     return train_loader, val_loader
 

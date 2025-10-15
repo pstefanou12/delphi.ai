@@ -117,38 +117,42 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
-        # normalize features so that the maximum l_2 norm is 1
-        self.beta = ch.ones(1, 1)
-        if X.norm(dim=1, p=2).max() > 1 and not self.dependent:  
-            l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
-            self.beta = l_inf * (X.size(1) ** .5)
+        if self.args.fit_intercept: 
+            k = X.size(1) - 1
+        else: 
+            k = X.size(1)
 
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X / self.beta, y)
-        self.trainer = Trainer(self)
-        best_params, self.history, best_loss = self.trainer.train_model(self.args,
-                                                                        self.train_loader, 
+        # normalize features so that the maximum l_inf norm is 1
+        # Normalization factor: B * √k
+        # Compute B = maximum L∞ norm across all samples
+        B = X.norm(dim=1, p=float('inf')).max()  # L∞ norm for each sample, then max
+        self.beta = B * (k ** .5)
+    
+        # Normalize all features except intercept column
+        if self.args.fit_intercept:
+            X_normalized = X[:, :-1] / self.beta
+            X = ch.cat([X_normalized, X[:, -1:]], dim=1)  # Keep intercept as 1
+        else:
+            X = X / self.beta
+
+        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
+        self.trainer = Trainer(self, self.args)
+        best_params, self.history, best_loss = self.trainer.train_model(self.train_loader, 
                                                                         self.val_loader, 
                                                                         rand_seed=self.rand_seed,
                                                                         store=self.store)
 
         # reparameterize the regression's parameters
         if self.noise_var is None: 
-            # lambda_ = best_params[1]['params'][0]
-            # v = best_params[0]['params'][0]
             self.variance = self.lambda_.inverse()
             self.weight *= self.variance
-        # else: 
-        #     self.weight = best_params
-
-        # re-scale coefficients
-        self.weight /= self.beta
-
+        
         # assign results from procedure to instance variables
         if self.args.fit_intercept: 
-            self.coef = self.weight[:-1]
+            self.coef = self.weight[:-1] / self.beta
             self.intercept = self.weight[-1]
         else: 
-            self.coef = self.weight[:]
+            self.coef = self.weight[:] / self.beta
         return self
 
     def pretrain_hook(self, 
@@ -315,10 +319,10 @@ class TruncatedLinearRegression(LinearModel):
             var = self._parameters[1]['params'][0].inverse()
             self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
 
-    def parameters(self) -> List: 
-        if self._parameters is None: 
-            raise "model parameters are not set"
-        elif isinstance(self._parameters, collections.OrderedDict):
-            return self._parameters.values()
-        return self._parameters
+    # def parameters(self) -> List: 
+    #     if self._parameters is None: 
+    #         raise "model parameters are not set"
+    #     elif isinstance(self._parameters, collections.OrderedDict):
+    #         return self._parameters.values()
+    #     return self._parameters
 

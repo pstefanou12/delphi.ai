@@ -102,8 +102,8 @@ class delphi(ch.nn.Module):
         """
         if self.args.cuda: params.to('cuda')
         self.optimizer = SGD(
-                        params,
-                        # self.parameters(), 
+                        # params,
+                        self.parameters(), 
                         lr=self.args.lr, 
                         momentum=self.args.momentum, 
                         weight_decay=self.args.weight_decay

@@ -131,25 +131,6 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch, targ, self.args.phi, self.args.num_samples, self.args.eps)
         return loss, None, None
 
-    # def iteration_hook(self, i, is_train, loss, batch) -> None:
-    #     """
-    #     Iteration hook for defined model. Method is called after each 
-    #     training update.
-    #     Args:
-    #         loop_type (str) : "train" or "val"; indicating type of loop
-    #         loss (ch.Tensor) : loss for that iteration
-    #     """
-    #     loc_diff = self.model.loc - self.v
-    #     loc_diff = loc_diff[...,None].renorm(p=2, dim=0, maxnorm=self.radius).flatten()
-    #     self.model.loc.data = self.v + loc_diff
-    #     cov_diff = self.model.covariance_matrix - self.T
-    #     cov_diff = cov_diff.renorm(p=2, dim=0, maxnorm=self.radius)
-    #     self.model.covariance_matrix.data = self.T + cov_diff 
-        
-    #     # check that the covariance matrix is PSD
-    #     if not is_psd(self.model.covariance_matrix):
-    #         raise PSDError("covariance matrix is not PSD, rerunning procedure")
-        
     def iteration_hook(self, i, is_train, loss, batch) -> None:
         # Project location to ball around v
         loc_diff = self.optimizer.param_groups[0]['params'][0] - self.v

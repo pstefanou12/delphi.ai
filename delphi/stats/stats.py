@@ -1,7 +1,4 @@
-from ..delphi import delphi
-
-
-class stats(delphi):
+class stats:
     """
     Parent class for statistical models.
     """

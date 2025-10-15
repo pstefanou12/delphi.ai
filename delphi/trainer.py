@@ -23,7 +23,6 @@ class Trainer:
                 args: Parameters, 
                 store=None): 
         self.model = model
-        print(f'before calling check_and_fill_args within the trainer')
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store        
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
@@ -55,12 +54,12 @@ class Trainer:
 
             loss = None
             if self.args.distribution: 
-                loss = self.model._criterion.apply(*self.model.parameters(), inp, targ, *self.model.criterion_params)
+                loss = self.model.criterion.apply(*self.model.parameters(), inp, targ, *self.model.criterion_params)
             else: 
                 pred = self.model(inp, targ)
-                loss = self.model._criterion(pred, targ, *self.model.criterion_params)
+                loss = self.model.criterion(pred, targ, *self.model.criterion_params)
                 if not is_train:
-                    print(f'loss: {loss}')
+                    print(f'loss: {loss.item()}')
 
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 
@@ -179,7 +178,6 @@ class Trainer:
                 best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop_(val_loader, epoch, False)[0]
         
             for epoch in range(1, self.args.epochs + 1):
-                print(f'epoch: {epoch}')
                 train_loss, train_prec1, train_prec5, history_ = self.model_loop_(train_loader, epoch, True)
                 history = ch.cat([history, history_])
 
