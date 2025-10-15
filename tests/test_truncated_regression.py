@@ -167,7 +167,6 @@ def test_unknown_variance_truncated_regression_one_dimension():
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
     phi = oracle.Left_Regression(ch.zeros(1))
-    phi = oracle.Identity()
     # truncate
     indices = phi(noised).nonzero()[:,0]
     x_trunc, y_trunc = X[indices], noised[indices]

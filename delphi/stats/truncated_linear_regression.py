@@ -122,7 +122,8 @@ class TruncatedLinearRegression(LinearModel):
         else: 
             k = X.size(1)
 
-        # normalize features so that the maximum l_inf norm is 1
+        self.params = None
+
         # Normalization factor: B * √k
         # Compute B = maximum L∞ norm across all samples
         B = X.norm(dim=1, p=float('inf')).max()  # L∞ norm for each sample, then max
@@ -167,11 +168,11 @@ class TruncatedLinearRegression(LinearModel):
         
         if self.noise_var is None:
             lambda_ = self.emp_noise_var.clone().inverse()
-            self._parameters = [{"params": [Parameter(self.emp_weight.clone() * lambda_)]},
+            self.params = [{"params": [Parameter(self.emp_weight.clone() * lambda_)]},
                                 {"params": Parameter(lambda_), "lr": self.args.var_lr}]
 
             self.criterion_params = [ 
-                self._parameters[1]["params"], self.phi,
+                self.params[1]["params"], self.phi,
                 self.args.num_samples, self.args.eps,
             ]
         else:
@@ -205,8 +206,8 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         if self.noise_var is None:
-            self.weight = self._parameters[0]['params'][0].data
-            self.lambda_ = self._parameters[1]['params'][0].data
+            self.weight = self.params[0]['params'][0].data
+            self.lambda_ = self.params[1]['params'][0].data
             self.lambda_.requires_grad = False
 
         self.weight.requires_grad = False
@@ -292,8 +293,8 @@ class TruncatedLinearRegression(LinearModel):
                 X: ch.Tensor,
                 y: ch.Tensor) -> ch.Tensor:
         if self.noise_var is None:
-            weight = self._parameters[0]['params'][0]
-            lambda_ = self._parameters[1]['params'][0]
+            weight = self.params[0]['params'][0]
+            lambda_ = self.params[1]['params'][0]
             return X@weight * lambda_.inverse()
 
         if self.dependent:
@@ -316,13 +317,11 @@ class TruncatedLinearRegression(LinearModel):
                         batch: ch.Tensor) -> None:
         if self.noise_var is None:
             # project model parameters back to domain 
-            var = self._parameters[1]['params'][0].inverse()
-            self._parameters[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+            var = self.params[1]['params'][0].inverse()
+            self.params[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
 
-    # def parameters(self) -> List: 
-    #     if self._parameters is None: 
-    #         raise "model parameters are not set"
-    #     elif isinstance(self._parameters, collections.OrderedDict):
-    #         return self._parameters.values()
-    #     return self._parameters
-
+    def parameters(self): 
+        if self.params is not None: 
+            return self.params
+        else: 
+            return super().parameters(recurse=True)

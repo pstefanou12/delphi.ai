@@ -94,11 +94,6 @@ class Trainer:
                 except: 
                     curr_params = ch.Tensor([])
 
-                    for param in self.model.parameters(): 
-                        curr_params = ch.cat([curr_params, param.flatten()])
-                    
-                    history_ = ch.cat([history_, curr_params[None,...]])
-                    
         self.model.epoch_hook(epoch, is_train, loss)
         return loss_.avg, prec1_.avg, prec5_.avg, history_
 
