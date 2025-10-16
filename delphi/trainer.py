@@ -47,7 +47,7 @@ class Trainer:
         loop_msg = 'Train' if is_train else 'Val'
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False, 
-                        bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose else enumerate(loader) 
+                        bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if self.args.verbose and not self.args.stats else enumerate(loader) 
         for i, batch in iterator:
             if is_train: self.model.optimizer.zero_grad()
             inp, targ = batch
@@ -58,9 +58,7 @@ class Trainer:
             else: 
                 pred = self.model(inp, targ)
                 loss = self.model.criterion(pred, targ, *self.model.criterion_params)
-                if not is_train:
-                    print(f'loss: {loss.item()}')
-
+            
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 
             but instead (nX1).
@@ -83,7 +81,7 @@ class Trainer:
                 self.model.optimizer.step()
                 if self.model.schedule is not None: self.model.schedule.step()
 
-            if self.args.verbose:
+            if self.args.verbose and not self.args.stats:
                 desc = self.model.description(epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                 iterator.set_description(desc)
  

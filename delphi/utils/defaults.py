@@ -52,7 +52,8 @@ TRUNC_REG_DEFAULTS = {
         'batch_size': (int, 50),
         'workers': (int, 0),
         'num_samples': (int, 50),
-        'shuffle': (bool, True)
+        'shuffle': (bool, True),
+        'stats': (bool, True)
 }
 
 TRUNC_LDS_DEFAULTS = {

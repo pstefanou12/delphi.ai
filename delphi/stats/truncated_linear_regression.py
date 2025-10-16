@@ -142,18 +142,6 @@ class TruncatedLinearRegression(LinearModel):
                                                                         self.val_loader, 
                                                                         rand_seed=self.rand_seed,
                                                                         store=self.store)
-
-        # reparameterize the regression's parameters
-        if self.noise_var is None: 
-            self.variance = self.lambda_.inverse()
-            self.weight *= self.variance
-        
-        # assign results from procedure to instance variables
-        if self.args.fit_intercept: 
-            self.coef = self.weight[:-1] / self.beta
-            self.intercept = self.weight[-1]
-        else: 
-            self.coef = self.weight[:] / self.beta
         return self
 
     def pretrain_hook(self, 
@@ -209,9 +197,20 @@ class TruncatedLinearRegression(LinearModel):
             self.weight = self.params[0]['params'][0].data
             self.lambda_ = self.params[1]['params'][0].data
             self.lambda_.requires_grad = False
+            
+            self.variance = 1.0/self.lambda_
+            self.weight *= self.variance
 
         self.weight.requires_grad = False
-        self.emp_weight /= self.beta
+
+        # assign results from procedure to instance variables
+        if self.args.fit_intercept: 
+            self.coef = self.weight[:-1] / self.beta
+            self.intercept = self.weight[-1]
+            self.emp_weight /= self.beta
+        else: 
+            self.coef = self.weight[:] / self.beta
+            self.emp_weight /= self.beta
     
     def predict(self, 
                 X: Tensor): 
@@ -295,7 +294,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.noise_var is None:
             weight = self.params[0]['params'][0]
             lambda_ = self.params[1]['params'][0]
-            return X@weight * lambda_.inverse()
+            return X@weight * 1.0/lambda_
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
@@ -317,8 +316,8 @@ class TruncatedLinearRegression(LinearModel):
                         batch: ch.Tensor) -> None:
         if self.noise_var is None:
             # project model parameters back to domain 
-            var = self.params[1]['params'][0].inverse()
-            self.params[1]['params'][0].data = ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper).inverse()
+            var = 1.0/self.params[1]['params'][0]
+            self.params[1]['params'][0].data = 1.0/ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper)
 
     def parameters(self): 
         if self.params is not None: 

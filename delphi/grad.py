@@ -157,46 +157,122 @@ class TruncatedMSE(ch.autograd.Function):
         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
 
 
-class TruncatedUnknownVarianceMSE(ch.autograd.Function):
-    """
-    Computes the gradient of negative population log likelihood for truncated linear regression
-    with unknown noise variance.
-    """
-    @staticmethod
-    def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
-        """
-        Args: 
-            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
-            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
-            lambda_ (float): current reparameterized variance estimate for noise distribution
-            phi (oracle.oracle): dependent variable membership oracle
-            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
-            eps (float): denominator error constant to avoid divide by zero errors
-        """
-        sigma = ch.sqrt(lambda_.inverse())
-        stacked = pred[..., None].repeat(1, num_samples, 1)
+# class TruncatedUnknownVarianceMSE(ch.autograd.Function):
+#     """
+#     Computes the gradient of negative population log likelihood for truncated linear regression
+#     with unknown noise variance.
+#     """
+#     @staticmethod
+#     def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-5):
+#         """
+#         Args: 
+#             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+#             targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+#             lambda_ (float): current reparameterized variance estimate for noise distribution
+#             phi (oracle.oracle): dependent variable membership oracle
+#             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+#             eps (float): denominator error constant to avoid divide by zero errors
+#         """
+#         sigma = 1 / ch.sqrt(lambda_)
+#         stacked = pred[..., None].repeat(1, num_samples, 1)
 
+#         noised = stacked + sigma * ch.randn(stacked.size())
+#         filtered = phi(noised)
+#         out = noised * filtered
+#         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
+#         z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+#         nll = 0.5 * lambda_ * targ.pow(2)  - lambda_ * targ * pred
+#         const = -0.5 * lambda_ * z_2 + z * pred * lambda_
+
+#         # Correct NLL: -(1/2)log(λ) + (λ/2)(y - pred)²
+#         nll = -0.5 * ch.log(lambda_) + 0.5 * lambda_ * (targ - pred).pow(2)
+    
+#         # Expectation correction term
+#         const = -0.5 * lambda_ * z_2 + lambda_ * z * pred - 0.5 * lambda_ * pred.pow(2)
+
+#         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
+#         return (nll + const).mean(0)
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
+#         """
+#         multiply the v gradient by lambda, because autograd computes 
+#         v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
+#         factor
+#         """
+#         lambda_grad = .5 * (targ.pow(2) - z_2)
+#         lambda_grad = grad_output * (0.5 / lambda_ - 0.5 * (targ - pred).pow(2) + 0.5 * (pred.pow(2) - z_2)) / pred.size(0)
+#         return lambda_ * (z - targ) / pred.size(0), None, lambda_grad / pred.size(0), None, None, None
+
+class TruncatedUnknownVarianceMSE(ch.autograd.Function):
+    """Corrected: L = λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]"""
+    @staticmethod
+    def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-5):
+        sigma = 1 / ch.sqrt(lambda_)
+        stacked = pred[..., None].repeat(1, num_samples, 1)
         noised = stacked + sigma * ch.randn(stacked.size())
         filtered = phi(noised)
         out = noised * filtered
         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
         z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
-        nll = -0.5 * lambda_ * targ.pow(2)  + lambda_ * targ * pred
-        const = -0.5 * lambda_ * z_2 + z * pred * lambda_
-
+        
+        # Correct formulation: λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]
+        loss = 0.5 * lambda_ * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z)
+        
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        return (nll - const).mean(0)
+        return loss.mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
-        """
-        multiply the v gradient by lambda, because autograd computes 
-        v_grad*x*variance, thus need v_grad*(1/variance) to cancel variance
-        factor
-        """
-        lambda_grad = .5 * (targ.pow(2) - z_2)
-        return lambda_ * (z - targ) / pred.size(0), targ / pred.size(0), lambda_grad / pred.size(0), None, None, None
+        
+        # ∂L/∂μ = λ/2 * [-2y + 2E[z]]= λ(E[z] - y)
+        pred_grad = grad_output * lambda_ * (z - targ) / pred.size(0)
+        
+        # ∂L/∂λ = 1/2 * [y² - 2yμ - E[z²] + 2μE[z]]
+        lambda_grad = grad_output * 0.5 * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z) / pred.size(0)
+        
+        return pred_grad, None, lambda_grad, None, None, None
+
+# class TruncatedUnknownVarianceMSE(ch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, pred, targ, lambda_, phi, num_samples=10, eps=1e-5):
+#         sigma = 1 / ch.sqrt(lambda_)
+#         stacked = pred[..., None].repeat(1, num_samples, 1)
+
+#         noised = stacked + sigma * ch.randn(stacked.size())
+#         filtered = phi(noised)
+#         out = noised * filtered
+#         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
+#         z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+        
+#         # KEEP ORIGINAL FORMULATION FOR NOW
+#         nll = -0.5 * lambda_ * targ.pow(2) + lambda_ * targ * pred
+#         const = -0.5 * lambda_ * z_2 + z * pred * lambda_
+
+#         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
+#         return (nll - const).mean(0)
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
+#         batch_size = pred.size(0)
+        
+#         # CORRECT LAMBDA GRADIENT (from mathematical derivation)
+#         lambda_grad = 0.5 * (z_2 - targ.pow(2)) + targ * pred - pred * z
+        
+#         # Debug print to see what's happening
+#         # print(f"Lambda grad components:")
+#         # print(f"  0.5*(z_2 - targ²): {0.5 * (z_2 - targ.pow(2)).mean().item():.4f}")
+#         # print(f"  targ*pred: {(targ * pred).mean().item():.4f}") 
+#         # print(f"  -pred*z: {(-pred * z).mean().item():.4f}")
+#         # print(f"  Total lambda_grad: {lambda_grad.mean().item():.4f}")
+        
+#         grad_pred = lambda_ * (z - targ) / batch_size
+#         grad_lambda = lambda_grad.mean() / batch_size  # Take mean over batch
+
+#         return grad_pred, None, ch.Tensor([grad_lambda])[...,None], None, None, None
 
 def Test(mu, phi, c_gamma, alpha, T): 
   """
