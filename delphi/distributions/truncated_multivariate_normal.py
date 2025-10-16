@@ -86,10 +86,13 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         self.train_ds = train_ds
         self.model = None
         self.emp_loc, self.emp_covariance_matrix = None, None
-        self._criterion = TruncatedMultivariateNormalNLL 
-        self.criterion_params = [self.args.phi, self.args.num_samples, self.args.eps]
+        del self.criterion
+        del self.criterion_params
+        self.criterion = TruncatedMultivariateNormalNLL.apply
         # initialize empirical estimates
         self.calc_emp_model()
+
+        self.criterion_params = [self.args.phi, self.emp_loc.size(0), self.args.num_samples, self.args.eps]
 
     def pretrain_hook(self, train_loader):
         # parameterize projection set
@@ -128,8 +131,13 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        loss = TruncatedMultivariateNormalNLL.apply(self.model.loc, self.model.covariance_matrix, batch, targ, self.args.phi, self.args.num_samples, self.args.eps)
-        return loss, None, None
+        loc, cov = None, None
+        for name, param in self.named_parameters():
+            if name == 'loc': 
+                loc = param
+            else: 
+                cov = param
+        return ch.cat([loc, cov.flatten()])
 
     def iteration_hook(self, i, is_train, loss, batch) -> None:
         # Project location to ball around v

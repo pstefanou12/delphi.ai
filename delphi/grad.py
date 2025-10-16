@@ -23,7 +23,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, v, T, S, S_grad, phi, num_samples=10, eps=1e-5):
+    def forward(ctx, params, data, phi, dims, num_samples=10, eps=1e-5):
         """
         Args: 
             v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
@@ -34,6 +34,9 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
             num_samples (int): number of samples to sample for each sample in batch
         """
         # reparameterize distribution
+        v = params[:dims]
+        T = params[dims:].resize(dims, dims) 
+        S, S_grad = data[:,dims].resize(data.size(0), dims), data[:,dims:]
         sigma = T.inverse()
         mu = (sigma@v).flatten()
         # reparameterize distribution
@@ -61,7 +64,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         S_grad, z = ctx.saved_tensors
         # calculate gradient
         grad = -S_grad + censored_sample_nll(z)
-        return grad[:,z.size(1) ** 2:] / z.size(0), (grad[:,:z.size(1) ** 2] / z.size(0)).view(-1, z.size(1), z.size(1)), None, None, None, None, None
+        return grad / z.size(0), None, None, None, None, None
 
 
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):

@@ -52,12 +52,9 @@ class Trainer:
             if is_train: self.model.optimizer.zero_grad()
             inp, targ = batch
 
-            loss = None
-            if self.args.distribution: 
-                loss = self.model.criterion.apply(*self.model.parameters(), inp, targ, *self.model.criterion_params)
-            else: 
-                pred = self.model(inp, targ)
-                loss = self.model.criterion(pred, targ, *self.model.criterion_params)
+            # forward pass
+            pred = self.model(inp, targ)
+            loss = self.model.criterion(pred, targ, *self.model.criterion_params)
             
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 

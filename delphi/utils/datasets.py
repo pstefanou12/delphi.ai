@@ -355,12 +355,13 @@ class TruncatedNormalDataset(ch.utils.data.Dataset):
         self.S = S 
         # apply gradient
         self.S_grad = censored_sample_nll(S)
+        self.data = ch.cat([self.S, self.S_grad], dim=1)
 
     def __len__(self): 
         return self.S.size(0)
     
     def __getitem__(self, idx):
-        return [self.S[idx], self.S_grad[idx],]
+        return [ch.empty([]), self.data[idx],]
 
     @property
     def loc(self):
@@ -395,7 +396,6 @@ class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
         return ch.empty([]), self.data[idx] 
-        # return self.S[idx], self.pdf[idx], self.loc_grad[idx], self.cov_grad[idx]
 
     @property
     def loc(self): 
