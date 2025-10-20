@@ -23,7 +23,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, num_samples=10, eps=1e-5):
+    def forward(ctx, params, data, phi, dims, num_samples=10, known_cov=False, eps=1e-5):
         """
         Args: 
             v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
@@ -34,8 +34,8 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
             num_samples (int): number of samples to sample for each sample in batch
         """
         # reparameterize distribution
-        v = params[:dims]
-        T = params[dims:].resize(dims, dims) 
+        v = params[dims**2:]
+        T = params[:dims**2].resize(dims, dims) 
         S, S_grad = data[:,dims].resize(data.size(0), dims), data[:,dims:]
         sigma = T.inverse()
         mu = (sigma@v).flatten()
@@ -56,14 +56,17 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
         # normalizing constant for nll
         norm_const = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
-        ctx.save_for_backward(S_grad, z)
+        ctx.save_for_backward(S_grad, z, ch.Tensor([dims]), ch.Tensor([known_cov]))
         return (nll + norm_const).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        S_grad, z = ctx.saved_tensors
+        S_grad, z, dims, known_cov = ctx.saved_tensors
         # calculate gradient
         grad = -S_grad + censored_sample_nll(z)
+        # import pdb; pdb.set_trace()
+        if known_cov: grad[:,:int(dims)**2] = ch.zeros(ch.Size([grad.size(0), int(dims)**2]))
+        # print(f'grad: {grad}')
         return grad / z.size(0), None, None, None, None, None
 
 

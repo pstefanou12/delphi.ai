@@ -1,6 +1,5 @@
 # distribution tests 
 
-import unittest
 import torch as ch
 from torch import Tensor
 from torch.distributions import MultivariateNormal, Uniform
@@ -55,17 +54,19 @@ def test_truncated_normal_known_variance():
     
     # train algorithm
     train_kwargs = Parameters({
-                            'phi': phi_std_norm, 
+                            # 'phi': phi_std_norm, 
+                            'phi': phi,
                             'alpha': alpha,
                             'epochs': 3, 
                             'batch_size': 10, 
                             'covariance_matrix': ch.eye(1),
-                            'trials': 1
+                            'trials': 1, 
+                            'verbose': True,
                     }) 
     truncated = distributions.TruncatedNormal(train_kwargs)
-    truncated.fit(S_std_norm)
+    truncated.fit(S)
     # rescale distribution
-    rescale_loc = truncated.loc_ + emp_loc
+    rescale_loc = truncated.loc_ 
     print(f"pred loc: {rescale_loc}")
     rescale_var = truncated.variance_
     print(f"pred var: {rescale_var}")

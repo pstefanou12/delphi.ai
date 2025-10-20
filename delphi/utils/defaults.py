@@ -121,7 +121,8 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10),
         'covariance_matrix': (ch.Tensor, None),
-        'distribution': (bool, True)
+        'distribution': (bool, True), 
+        'stats': (bool, True)
 }
 
 

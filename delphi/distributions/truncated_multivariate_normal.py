@@ -31,7 +31,8 @@ class TruncatedMultivariateNormal(distributions):
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
         self.store = store 
-        self.censored = None
+        self.truncated = None
+        self.dims = None
         # algorithm hyperparameters
         TRUNC_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
         TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
@@ -105,16 +106,10 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
 
         # Initialize empirical model 
         self.model = MultivariateNormal(self.v, self.T)
-        self.model.loc.requires_grad, self.model.covariance_matrix.requires_grad = True, True
         # Register parameters with Pytorch
-        self.register_parameter('loc', nn.Parameter(self.v))
-        self.register_parameter('covariance_matrix', nn.Parameter(self.T)) 
-        # if distribution with known variance, remove from computation graph
-        if self.args.covariance_matrix is not None: 
-            for name, param in self.named_parameters():
-                if name == 'covariance_matrix':
-                    param.requires_grad = False
-    
+        theta = ch.cat([self.T.flatten(), self.v])
+        self.register_parameter('theta', nn.Parameter(theta))
+            
     def calc_emp_model(self): 
         # initialize projection set
         if 'covariance_matrix' in self.args: 
@@ -124,6 +119,8 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         self.emp_loc = self.train_ds.loc
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
 
+        self.dims = self.emp_loc.size(0)
+
     def __call__(self, batch, targ):
         """
         Training step for defined model.
@@ -131,24 +128,21 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        loc, cov = None, None
-        for name, param in self.named_parameters():
-            if name == 'loc': 
-                loc = param
-            else: 
-                cov = param
-        return ch.cat([loc, cov.flatten()])
+        return self.theta
 
     def iteration_hook(self, i, is_train, loss, batch) -> None:
+        # pass
         # Project location to ball around v
-        loc_diff = self.optimizer.param_groups[0]['params'][0] - self.v
+        theta = self.theta
+        v = theta[self.dims**2:]
+        T = theta[:self.dims**2].resize(self.dims, self.dims)
+        loc_diff = v - self.v
         loc_norm = ch.norm(loc_diff)
         if loc_norm > self.radius:
-            self.optimizer.param_groups[0]['params'][0] = self.v + (loc_diff / loc_norm) * self.radius
+            v = self.v + (loc_diff / loc_norm) * self.radius
             
         # Project covariance to PSD cone with bounded deviation from T
-        cov = self.optimizer.param_groups[0]['params'][1] 
-    
+        cov = T.inverse()
         # Ensure PSD via eigenvalue clipping
         L, Q = ch.linalg.eigh(cov)
         L_clipped = ch.clamp(L, min=1e-6)  # Ensure positive eigenvalues
@@ -162,21 +156,27 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             # Re-ensure PSD after projection
             L, Q = ch.linalg.eigh(cov_projected)
             L_clipped = ch.clamp(L, min=1e-6)
-            self.optimizer.param_groups[0]['params'][1] = Q @ ch.diag_embed(L_clipped) @ Q.T
+            T = (Q @ ch.diag_embed(L_clipped) @ Q.T).inverse()
         else:
-            self.optimizer.param_groups[0]['params'][1] = cov_psd
+            T = cov_psd.inverse()
+
+        theta = ch.cat([T.flatten(), v])
+        self.theta.data = theta
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # reparamterize distribution
-        self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
+        # self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
+        theta = self.theta
 
-        for name, param in self.named_parameters(): 
-            if name == 'loc': 
-                v = param
-            else: 
-                T = param
+        import pdb; pdb.set_trace() 
+
+        T = theta[:self.dims**2].resize(self.dims, self.dims)
+        v = theta[self.dims**2:]
+
 
         self.model.covariance_matrix.data = T.inverse()
         self.model.loc.data = v @ self.model.covariance_matrix
+
+        self.theta.requires_grad = False
     
