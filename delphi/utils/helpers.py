@@ -91,7 +91,6 @@ class Parameters():
         self.params = x
 
 
-
 def cov(m, rowvar=False):
     '''
     Estimate a covariance matrix given data.
