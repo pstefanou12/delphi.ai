@@ -53,20 +53,24 @@ def test_truncated_normal_known_variance():
     phi_std_norm = oracle.Left_Distribution((phi.left - emp_loc).flatten())
     
     # train algorithm
-    train_kwargs = Parameters({
-                            # 'phi': phi_std_norm, 
-                            'phi': phi,
-                            'alpha': alpha,
-                            'epochs': 3, 
-                            'batch_size': 10, 
-                            'covariance_matrix': ch.eye(1),
-                            'trials': 1, 
-                            'verbose': True,
+    args = Parameters({
+                        'epochs': 3, 
+                        'batch_size': 10, 
+                        'trials': 1, 
+                        'verbose': True,
+                        'lr': 1e-1,
+                        'max_update_norm': 10.0,
+                        'damping': 1e-5,
                     }) 
-    truncated = distributions.TruncatedNormal(train_kwargs)
-    truncated.fit(S)
+    truncated = distributions.TruncatedNormal(args,
+                                            #   phi,
+                                              phi_std_norm, 
+                                              alpha, 
+                                              1,
+                                              variance=ch.eye(1))
+    truncated.fit(S_std_norm)
     # rescale distribution
-    rescale_loc = truncated.loc_ 
+    rescale_loc = truncated.loc_ + emp_loc
     print(f"pred loc: {rescale_loc}")
     rescale_var = truncated.variance_
     print(f"pred var: {rescale_var}")
@@ -76,6 +80,171 @@ def test_truncated_normal_known_variance():
     kl_truncated = kl_divergence(m, M)
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
+
+def test_hessian_computation():
+    import torch
+    from delphi.distributions.truncated_multivariate_normal import TruncatedMultivariateNormalHessian
+    """Test if Hessian matches the paper's Fisher information"""
+    torch.manual_seed(42)
+    
+    dims = 1
+    phi = oracle.Left_Distribution(torch.tensor([0.0]))
+    
+    def fixed_censored_sample_nll(z):
+        if z.dim() == 1:
+            z = z.unsqueeze(-1)
+        batch_size, d = z.shape
+        zzT = -0.5 * torch.bmm(z.unsqueeze(2), z.unsqueeze(1))
+        zzT_flat = zzT.reshape(batch_size, -1)
+        z_flat = z.reshape(batch_size, -1)
+        return torch.cat([zzT_flat, z_flat], dim=1)
+    
+    hessian_calc = TruncatedMultivariateNormalHessian(phi, dims, fixed_censored_sample_nll, num_samples=1000)
+    
+    # Test parameters
+    test_params = torch.tensor([1.0, 0.5])  # T, ν
+    hessian_calc.set_params(test_params)
+    
+    hessian = hessian_calc()
+    
+    print("Hessian analysis:")
+    print(f"Hessian shape: {hessian.shape}")
+    print(f"Hessian: {hessian}")
+    
+    # For dims=1, the score vector is [(-½z²), z]
+    # So the Fisher information = Cov[[(-½z²), z]]
+    
+    # Check if it's reasonable
+    eigenvalues = torch.linalg.eigvals(hessian).real
+    print(f"Eigenvalues: {eigenvalues}")
+    
+    # Should be positive definite
+    assert torch.all(eigenvalues > 0), "Hessian not positive definite!"
+
+def test_debug_hessian_quality():
+    import torch
+    """Check if your Hessian is actually helping"""
+    torch.manual_seed(42)
+    
+    # Your setup
+    M = MultivariateNormal(torch.zeros(1), torch.eye(1))
+    samples = M.rsample([1000])
+    phi = oracle.Left_Distribution(torch.tensor([0.0]))
+    indices = phi(samples).nonzero()[:,0]
+    S = samples[indices]
+    alpha = S.size(0) / samples.size(0)
+    
+    args = Parameters({'epochs': 0, 'batch_size': 10, 'verbose': True, 'trials': 1})
+    truncated = distributions.TruncatedNormal(args, phi, alpha, 1)
+    truncated.fit(S) 
+    print("=== HESSIAN QUALITY ANALYSIS ===")
+    
+    # Get one batch
+    batch = S[:10]
+    
+    # Compute loss and gradients
+    import pdb; pdb.set_trace() 
+    params = list(truncated.parameters())[0]
+    params.requires_grad = True
+    loss = truncated.criterion(params, truncated.train_loader_.dataset.data[:10], *truncated.criterion_params)
+    loss.backward()
+    
+    # Get gradients
+    grads = torch.cat([p.grad.flatten() for p in truncated.parameters()])
+    print(f"Gradient norm: {torch.norm(grads).item():.6f}")
+    print(f"Gradients: {grads}")
+    
+    # Get Hessian
+    custom_hessian_fn = truncated.optimizer.param_groups[0].get('custom_hessian_fn')
+    if custom_hessian_fn:
+        hessian = custom_hessian_fn()
+        print(f"Hessian: {hessian}")
+        
+        # Check Newton direction quality
+        try:
+            # Newton direction: -H⁻¹g
+            newton_direction = -torch.linalg.solve(hessian, grads)
+            print(f"Newton direction: {newton_direction}")
+            
+            # Gradient direction: -g  
+            grad_direction = -grads
+            print(f"Gradient direction: {grad_direction}")
+            
+            # Check if Newton direction points downhill
+            directional_derivative = grads @ newton_direction
+            print(f"Directional derivative: {directional_derivative.item():.6f}")
+            
+            if directional_derivative < 0:
+                print("✓ Newton direction is downhill")
+            else:
+                print("❌ Newton direction is UPHILL - Hessian is wrong!")
+                
+        except Exception as e:
+            print(f"❌ Could not compute Newton direction: {e}")
+
+def test_check_hessian_quality():
+    import torch
+    """Verify Hessian is actually helpful"""
+    torch.manual_seed(42)
+
+    M = MultivariateNormal(torch.zeros(1), torch.eye(1))
+    samples = M.rsample([1000])
+    phi = oracle.Left_Distribution(torch.tensor([0.0]))
+    indices = phi(samples).nonzero()[:,0]
+    S = samples[indices]
+    alpha = S.size(0) / samples.size(0)
+    
+    args = Parameters({'epochs': 0, 'batch_size': 10, 'verbose': True, 'trials': 1})
+    
+    # Your setup
+    truncated = distributions.TruncatedNormal(args, phi, alpha, 1, variance=None)
+    truncated.fit(S)
+    
+    print("=== HESSIAN QUALITY CHECK ===")
+    
+    # Test at multiple parameter points
+    test_points = [
+        torch.tensor([1.0, 0.0]),  # T=1, ν=0
+        torch.tensor([1.0, 0.5]),  # T=1, ν=0.5  
+        torch.tensor([2.0, 0.0]),  # T=2, ν=0
+    ]
+    
+    for point in test_points:
+        print(f"\nTesting at T={point[0]}, ν={point[1]}:")
+        
+        # Set parameters
+        with torch.no_grad():
+            params = list(truncated.parameters())[0]
+            params[0].data.fill_(point[0])
+            params[1].data.fill_(point[1])
+        
+        params.requires_grad = True 
+        # Compute Hessian
+        batch = S[:10]
+        loss = truncated.criterion(params, truncated.train_loader_.dataset.data[:10], *truncated.criterion_params)
+        loss.backward()
+        
+        hessian_fn = truncated.optimizer.param_groups[0]['custom_hessian_fn']
+        hessian = hessian_fn()
+        
+        grads = torch.cat([p.grad.flatten() for p in truncated.parameters()])
+        
+        print(f"  Gradients: {grads}")
+        print(f"  Hessian: {hessian}")
+        
+        # Check if Hessian points downhill
+        try:
+            newton_dir = -torch.linalg.solve(hessian + 1e-3*torch.eye(2), grads)
+            directional_deriv = grads @ newton_dir
+            print(f"  Newton direction: {newton_dir}")
+            print(f"  Directional derivative: {directional_deriv:.6f}")
+            
+            if directional_deriv < -1e-8:
+                print("  ✓ Good: Newton direction is downhill")
+            else:
+                print("  ❌ Bad: Newton direction is not downhill!")
+        except Exception as e:
+            print(f"  ❌ Failed: {e}")
 
 # right truncated normal distribution with known truncation
 def test_truncated_normal():
@@ -99,15 +268,18 @@ def test_truncated_normal():
     phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
     
     # train algorithm
-    train_kwargs = Parameters({
-                            'phi': phi_std_norm, 
-                            'alpha': alpha,
-                            'epochs': 1, 
-                            'batch_size': 10, 
-                            'trials': 1,
-                            'early_stopping': True,
+    args = Parameters({
+                        'epochs': 1, 
+                        'batch_size': 10, 
+                        'trials': 1, 
+                        'verbose': True,
+                        'lr': 1e-2,
+                        'max_update_norm': 10.0
                     }) 
-    truncated = distributions.TruncatedNormal(train_kwargs)
+    truncated = distributions.TruncatedNormal(args,
+                                              phi_std_norm, 
+                                              alpha, 
+                                              1)
     truncated.fit(S_std_norm)
     # rescale distribution
     rescale_loc = truncated.loc_ * emp_scale + emp_loc

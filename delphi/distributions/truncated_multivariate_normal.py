@@ -8,13 +8,13 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import cox
 import math
 import torch.nn as nn
+from typing import Callable, Optional
 
-from .. import delphi
 from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL 
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters, is_psd
+from ..utils.helpers import PSDError, Parameters, is_psd, CensoredSampleNll, cov
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_MULTI_NORM_DEFAULTS
 
 
@@ -23,83 +23,79 @@ class TruncatedMultivariateNormal(distributions):
     Truncated multivariate normal distribution class with known truncation set.
     """
     def __init__(self,
-            args: Parameters,
-            store: cox.store.Store=None):
+                args: Parameters,
+                phi: Callable, 
+                alpha: float,
+                dims: int,
+                covariance_matrix: Optional[ch.Tensor] = None):
         """
         """
         # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
-        self.store = store 
-        self.truncated = None
-        self.dims = None
-        # algorithm hyperparameters
-        TRUNC_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+        super().__init__(args)
+ 
+        self.phi = phi
+        self.alpha = alpha
+        self.dims = dims
+        self.covariance_matrix = covariance_matrix
+        self.censored_sample_nll = CensoredSampleNll(self.covariance_matrix is not None)
+        
+        self.hessian = TruncatedMultivariateNormalHessian(self.phi, self.dims, self.censored_sample_nll)
+        self.args.__setattr__('custom_hessian_fn', self.hessian)
+        del self.criterion
+        self.criterion = TruncatedMultivariateNormalNLL.apply
+
+        self.emp_loc, self.emp_covariance_matrix = None, None
+        self.S = None
+
+        if self.args.verbose:
+            print(f'args: {self.args}')
 
     def fit(self, S: Tensor):
         """
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
-        
-        while True: 
-            try: 
-                self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TruncatedNormalDataset)
-                self.truncated = TruncatedMultivariateNormalModel(self.args, self.train_loader_.dataset)
 
-                # run PGD to predict actual estimates
-                trainer = Trainer(self.truncated, self.args, store=self.store)
-                trainer.train_model(self.train_loader_, self.val_loader_)
-                return self
-            except PSDError as psd:
-                print(psd.message) 
-                continue
-            except Exception as e: 
-                raise e
-    
-    @property 
-    def loc_(self): 
-        """
-        Returns the mean of the normal disribution.
-        """
-        return self.truncated.model.loc.clone()
-    
-    @property
-    def covariance_matrix_(self): 
-        """
-        Returns the covariance matrix of the distribution.
-        """
-        return self.truncated.model.covariance_matrix.clone()
+        self.S = S
+        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.hessian, self.args.num_samples, self.args.eps]
 
+        try: 
+            self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
+                                                                            self.S, 
+                                                                            TruncatedNormalDataset,
+                                                                            {'censored_sample_nll': self.censored_sample_nll})
 
-class TruncatedMultivariateNormalModel(delphi.delphi):
-    """
-    Model for truncated multivariate normal distributions with known truncation to be passed into trainer.
-    """
-    def __init__(self, args, train_ds): 
-        """
-        Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
-        super().__init__(args)
-        self.train_ds = train_ds
-        self.model = None
-        self.emp_loc, self.emp_covariance_matrix = None, None
-        del self.criterion
-        del self.criterion_params
-        self.criterion = TruncatedMultivariateNormalNLL.apply
-        # initialize empirical estimates
-        self.calc_emp_model()
+            # run PGD to predict actual estimates
+            trainer = Trainer(
+                self,
+                self.args
+            )
+            trainer.train_model(self.train_loader_, self.val_loader_)
+            return self
+        except PSDError as psd:
+            raise PSDError(psd, "covariance matrix became not positive semi-definite. try decreasing the the projection set radius and try again.")
+        except Exception as e: 
+            raise e
+            
+    def _calc_emp_model(self): 
+        # initialize projection set
+        if self.covariance_matrix is not None: 
+            self.emp_covariance_matrix = self.covariance_matrix
+        else:   
+            self.emp_covariance_matrix = self.train_loader_.dataset.covariance_matrix
+        self.emp_loc = self.train_loader_.dataset.loc
+        self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
 
-        self.criterion_params = [self.args.phi, self.emp_loc.size(0), self.args.num_samples, self.args.eps]
-
+        self.dims = self.emp_loc.size(0)
+            
     def pretrain_hook(self, train_loader):
+        self._calc_emp_model()
         # parameterize projection set
-        self.radius = self.args.r * (math.log(1.0 / self.args.alpha) / (self.args.alpha ** 2)) + 12
-        if self.args.covariance_matrix is not None:
-            self.T = self.args.covariance_matrix.clone().inverse()
+        self.radius = self.args.r * (math.log(1.0 / self.alpha) / (self.alpha ** 2)) + 12
+        if self.covariance_matrix is not None:
+            self.T = self.covariance_matrix.clone().inverse()
         else:
             self.T = self.emp_covariance_matrix.clone().inverse()
         self.v = self.emp_loc.clone() @ self.T
@@ -110,17 +106,6 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         theta = ch.cat([self.T.flatten(), self.v])
         self.register_parameter('theta', nn.Parameter(theta))
             
-    def calc_emp_model(self): 
-        # initialize projection set
-        if 'covariance_matrix' in self.args: 
-            self.emp_covariance_matrix = self.args.covariance_matrix
-        else:   
-            self.emp_covariance_matrix = self.train_ds.covariance_matrix
-        self.emp_loc = self.train_ds.loc
-        self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
-
-        self.dims = self.emp_loc.size(0)
-
     def __call__(self, batch, targ):
         """
         Training step for defined model.
@@ -129,6 +114,9 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
             batch (Iterable) : iterable of inputs that 
         """
         return self.theta
+    
+    def pre_step_hook(self, inp):
+        self.hessian.set_params(self.optimizer.param_groups[0]['params'][0])     
 
     def iteration_hook(self, i, is_train, loss, batch) -> None:
         # pass
@@ -169,14 +157,75 @@ class TruncatedMultivariateNormalModel(delphi.delphi):
         # self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
         theta = self.theta
 
-        import pdb; pdb.set_trace() 
-
         T = theta[:self.dims**2].resize(self.dims, self.dims)
         v = theta[self.dims**2:]
-
 
         self.model.covariance_matrix.data = T.inverse()
         self.model.loc.data = v @ self.model.covariance_matrix
 
         self.theta.requires_grad = False
+    
+    @property 
+    def loc_(self): 
+        """
+        Returns the mean of the normal disribution.
+        """
+        return self.model.loc.clone()
+    
+    @property
+    def covariance_matrix_(self): 
+        """
+        Returns the covariance matrix of the distribution.
+        """
+        return self.model.covariance_matrix.clone()
+
+
+class TruncatedMultivariateNormalHessian: 
+        def __init__(self, phi, dims, censored_sample_nll, num_samples=1000): 
+            self.phi = phi 
+            self.dims = dims 
+            self.censored_sample_nll = censored_sample_nll
+            self.num_samples = num_samples
+            self.params = None
+            self.z = None
+
+        def set_params(self, params): 
+            self.params = params
+
+        def save_samples(self, z): 
+            self.z = z 
+
+        def __call__(self):
+            """
+            Compute Hessian (Fisher information) for current parameter estimates
+            Based on: H(ν, T) = Cov[∇log p(z|θ)] where z ∼ truncated N(T⁻¹ν, T⁻¹)
+            """
+            # Extract parameters
+            v = self.params[self.dims**2:]
+            T = self.params[:self.dims**2].reshape(self.dims, self.dims)
+            sigma = T.inverse()
+            mu = sigma @ v
+        
+            # Sample from truncated distribution
+            M = MultivariateNormal(mu, sigma)
+            s = M.sample([self.num_samples])
+        
+            # Apply truncation
+            filtered = self.phi(s).nonzero(as_tuple=True)
+            if self.dims ==  1: 
+                z = s[filtered][...,None]
+            else:
+                z = s[filtered]
+            scores = self.censored_sample_nll(z)
+
+            # Hessian = Covariance of scores
+            if len(scores) > 1:
+                hessian = cov(scores)
+            else:
+                hessian = ch.outer(scores[0], scores[0])
+        
+            return hessian
+        
+        def __str__(self): 
+            return "TruncatedMultivariateNormalHessian"
     

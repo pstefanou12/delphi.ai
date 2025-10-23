@@ -768,3 +768,163 @@ def test_convergence_plots():
         
     print("✓ Convergence analysis completed!")
     print("  Check 'newton_convergence_test.png' for visualization\n")
+
+
+def test_debug_custom_hessian():
+    import torch
+    """Debug version of the failing test"""
+    print("=== DEBUG: Custom Hessian Test ===")
+    
+    class SimpleModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.w = nn.Parameter(torch.tensor([2.0, 3.0]))
+            
+        def forward(self):
+            return 0.5 * (2*self.w[0]**2 + 3*self.w[1]**2)
+    
+    def custom_hessian_fn():
+        print("✓ Custom Hessian function called!")
+        hessian = torch.diag(torch.tensor([2.0, 3.0]))
+        print(f"Custom Hessian: {hessian}")
+        return hessian
+    
+    model = SimpleModel()
+    
+    # Add debugging to the optimizer
+    original_step = NewtonOptimizer.step
+    
+    def debug_step(self, closure, *hessian_args, **hessian_kwargs):
+        print("=== OPTIMIZER STEP DEBUG ===")
+        
+        for group in self.param_groups:
+            print(f"Group keys: {group.keys()}")
+            custom_hessian_fn = group.get('custom_hessian_fn')
+            print(f"Custom Hessian function present: {custom_hessian_fn is not None}")
+            
+            params = [p for p in group['params'] if p.grad is not None]
+            print(f"Number of parameters with gradients: {len(params)}")
+            
+            if params:
+                grads_flat = torch.cat([p.grad.flatten() for p in params])
+                print(f"Gradients shape: {grads_flat.shape}")
+                print(f"Gradients: {grads_flat}")
+                
+                if custom_hessian_fn is not None:
+                    print("Calling custom Hessian function...")
+                    hessian = custom_hessian_fn(*hessian_args, **hessian_kwargs)
+                    print(f"Hessian shape: {hessian.shape}")
+                    print(f"Hessian: {hessian}")
+                    
+                    # Check if shapes match
+                    if hessian.shape[0] != grads_flat.shape[0]:
+                        print(f"❌ SHAPE MISMATCH: Hessian {hessian.shape} vs gradients {grads_flat.shape}")
+                    
+                    # Compute expected update
+                    expected_update = torch.linalg.solve(hessian, -grads_flat)
+                    print(f"Expected update: {expected_update}")
+        
+        return original_step(self, closure, *hessian_args, **hessian_kwargs)
+    
+    NewtonOptimizer.step = debug_step
+    
+    optimizer = NewtonOptimizer(
+        model.parameters(), 
+        custom_hessian_fn=custom_hessian_fn,
+        damping=1e-6,
+        max_update_norm=10.0
+    )
+    
+    print(f"Initial w: {model.w.data}")
+    print(f"Initial loss: {model().item()}")
+    
+    def closure():
+        optimizer.zero_grad()
+        loss = model()
+        loss.backward(create_graph=True)
+        print(f"Gradients after backward: w.grad = {model.w.grad}")
+        return loss
+    
+    loss_after = optimizer.step(closure)
+    print(f"Final w: {model.w.data}")
+    print(f"Final loss: {loss_after.item()}")
+    
+    # Restore original method
+    NewtonOptimizer.step = original_step
+
+def test_rigorous_newton_vs_sgd_comparison():
+    import torch
+    """Rigorous comparison on a problem where Newton should excel"""
+    torch.manual_seed(42)
+    
+    print("=== RIGOROUS NEWTON vs SGD COMPARISON ===")
+    
+    # Simple 2D quadratic where we know Newton should converge in 1 step
+    class QuadraticModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.w = nn.Parameter(torch.tensor([3.0, 2.0]))  # Start away from optimum
+            
+        def forward(self):
+            # f(w) = 0.5 * w^T H w, where H = [[4, 1], [1, 3]]
+            H = torch.tensor([[4.0, 1.0], [1.0, 3.0]])
+            return 0.5 * (self.w @ H @ self.w)
+    
+    # Analytical Hessian
+    def exact_hessian():
+        return torch.tensor([[4.0, 1.0], [1.0, 3.0]])
+    
+    # Test Newton
+    model_newton = QuadraticModel()
+    initial_w_newton = model_newton.w.data.clone()
+    
+    optimizer_newton = NewtonOptimizer(
+        model_newton.parameters(),
+        custom_hessian_fn=exact_hessian,
+        damping=1e-6,
+        max_update_norm=10.0,
+        lr=1.0
+    )
+    
+    def newton_closure():
+        optimizer_newton.zero_grad()
+        loss = model_newton()
+        loss.backward(create_graph=True)
+        return loss
+    
+    newton_loss_before = model_newton().item()
+    optimizer_newton.step(newton_closure)
+    newton_loss_after = model_newton().item()
+    newton_update = model_newton.w.data - initial_w_newton
+    
+    # Test SGD
+    model_sgd = QuadraticModel()
+    initial_w_sgd = model_sgd.w.data.clone()
+    
+    optimizer_sgd = torch.optim.SGD(model_sgd.parameters(), lr=0.01)
+    
+    def sgd_closure():
+        optimizer_sgd.zero_grad()
+        loss = model_sgd()
+        loss.backward()
+        return loss
+    
+    sgd_loss_before = model_sgd().item()
+    sgd_closure()  # Compute gradients
+    optimizer_sgd.step()
+    sgd_loss_after = model_sgd().item()
+    sgd_update = model_sgd.w.data - initial_w_sgd
+    
+    print("RESULTS:")
+    print(f"Newton - Loss: {newton_loss_before:.6f} -> {newton_loss_after:.6f}")
+    print(f"Newton - Update: {newton_update}")
+    print(f"SGD    - Loss: {sgd_loss_before:.6f} -> {sgd_loss_after:.6f}") 
+    print(f"SGD    - Update: {sgd_update}")
+    
+    # Newton should reach near-zero loss in one step for quadratic
+    if newton_loss_after < 1e-6:
+        print("✓ Newton works perfectly on quadratic!")
+    else:
+        print(f"❌ Newton failed on simple quadratic! Final loss: {newton_loss_after}")
+    
+    return newton_loss_after < sgd_loss_after

@@ -2,16 +2,12 @@
 """
 Truncated multivariate normal distribution without oracle access (ie. unknown truncation set)
 """
-
-from re import I
 import torch as ch
 from torch import Tensor
-from torch.distributions.multivariate_normal import MultivariateNormal
-import cox 
+from typing import Callable
 
-from .truncated_multivariate_normal import TruncatedMultivariateNormalModel
-from ..oracle import UnknownGaussian, Right_Distribution, Identity
-from .distributions import distributions
+from .truncated_multivariate_normal import TruncatedMultivariateNormal 
+from ..oracle import UnknownGaussian
 from ..trainer import Trainer
 from ..grad import UnknownTruncationMultivariateNormalNLL 
 from ..utils.datasets import UnknownTruncationNormalDataset, make_train_and_val_distr
@@ -19,22 +15,34 @@ from ..utils.helpers import Parameters, PSDError
 from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
 
 
-class UnknownTruncationMultivariateNormal(distributions):
+class UnknownTruncationMultivariateNormal(TruncatedMultivariateNormal):
     """
     Truncated multivariate normal distribution class.
     """
     def __init__(self,
-            args: Parameters, 
-            store: cox.store.Store=None):
+                phi: Callable, 
+                alpha: float,
+                args: Parameters):
         # instance variables 
         assert isinstance(args, Parameters), "args is type {}. expecting type delphi.utils.helper.Parameters.".format(type(args))
-        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
-        self.store = store 
         self.unknown_truncated = None
         # algorithm hyperparameters
         UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS.update(DELPHI_DEFAULTS)
         UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS.update(TRAINER_DEFAULTS)
         self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
+
+        # initialiaze pseudo oracle for gaussians with unknown truncation 
+        self.emp_loc, self.emp_covariance_matrix = None, None
+        self._criterion = UnknownTruncationMultivariateNormalNLL.apply
+        # initialize empirical estimates
+        self.calc_emp_model()
+        self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
+
+        # exponent class
+        self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
+        self.criterion_params = [self.args.phi, self.exp_h, self.emp_loc.size(0)]
+        if 'covariance_matrix' in self.args:
+            self.criterion_params.append(True)
 
     def fit(self, S: Tensor):
         
@@ -43,8 +51,8 @@ class UnknownTruncationMultivariateNormal(distributions):
         while True:
             try:
                 self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, UnknownTruncationNormalDataset)
-                self.unknown_truncated = UnknownTruncationMultivariateNormalModel(self.args, self.train_loader_.dataset)
-                self.trainer = Trainer(self.unknown_truncated, self.args, store=self.store) 
+                # self.unknown_truncated = UnknownTruncationMultivariateNormalModel(self.args, self.train_loader_.dataset)
+                self.trainer = Trainer(self, self.args) 
         
                 # run PGD for parameter estimation 
                 best_params, history, params = self.trainer.train_model((self.train_loader_, self.val_loader_))
@@ -57,6 +65,20 @@ class UnknownTruncationMultivariateNormal(distributions):
                 continue
             except Exception as e: 
                     raise e
+            
+    def __call__(self, inp, targ):
+        '''
+        Training step for defined model.
+        Args: 
+            batch (Iterable) : iterable of inputs
+        '''
+        curr_cov, curr_loc = None, None
+        for name, param in self.named_parameters(): 
+            if name == 'loc': 
+                curr_loc = param
+            else: 
+                curr_cov = param
+        return ch.cat([curr_loc.flatten(), curr_cov.flatten()])
 
     @property 
     def loc_(self): 
@@ -73,42 +95,42 @@ class UnknownTruncationMultivariateNormal(distributions):
         return self.unknown_truncated.model.covariance_matrix.clone()
 
 
-class UnknownTruncationMultivariateNormalModel(TruncatedMultivariateNormalModel):
-    '''
-    Model for truncated normal distributions to be passed into trainer.
-    '''
-    def __init__(self, args, train_ds):
-        '''
-        Args: 
-            args (delphi.utils.Parameters) : parameter object holding hyperparameters
-        '''
-        super().__init__(args, train_ds)
-        # initialiaze pseudo oracle for gaussians with unknown truncation 
-        self.emp_loc, self.emp_covariance_matrix = None, None
-        self._criterion = UnknownTruncationMultivariateNormalNLL.apply
-        # initialize empirical estimates
-        self.calc_emp_model()
-        self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
+# class UnknownTruncationMultivariateNormalModel(TruncatedMultivariateNormalModel):
+#     '''
+#     Model for truncated normal distributions to be passed into trainer.
+#     '''
+#     def __init__(self, args, train_ds):
+#         '''
+#         Args: 
+#             args (delphi.utils.Parameters) : parameter object holding hyperparameters
+#         '''
+#         super().__init__(args, train_ds)
+#         # initialiaze pseudo oracle for gaussians with unknown truncation 
+#         self.emp_loc, self.emp_covariance_matrix = None, None
+#         self._criterion = UnknownTruncationMultivariateNormalNLL.apply
+#         # initialize empirical estimates
+#         self.calc_emp_model()
+#         self.args.__setattr__('phi', UnknownGaussian(self.emp_loc, self.emp_covariance_matrix, self.train_ds.S, self.args.d))
 
-        # exponent class
-        self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
-        self.criterion_params = [self.args.phi, self.exp_h, self.emp_loc.size(0)]
-        if 'covariance_matrix' in self.args:
-            self.criterion_params.append(True)
+#         # exponent class
+#         self.exp_h = Exp_h(self.emp_loc, self.emp_covariance_matrix)
+#         self.criterion_params = [self.args.phi, self.exp_h, self.emp_loc.size(0)]
+#         if 'covariance_matrix' in self.args:
+#             self.criterion_params.append(True)
 
-    def __call__(self, inp, targ):
-        '''
-        Training step for defined model.
-        Args: 
-            batch (Iterable) : iterable of inputs
-        '''
-        curr_cov, curr_loc = None, None
-        for name, param in self.named_parameters(): 
-            if name == 'loc': 
-                curr_loc = param
-            else: 
-                curr_cov = param
-        return ch.cat([curr_loc.flatten(), curr_cov.flatten()])
+#     def __call__(self, inp, targ):
+#         '''
+#         Training step for defined model.
+#         Args: 
+#             batch (Iterable) : iterable of inputs
+#         '''
+#         curr_cov, curr_loc = None, None
+#         for name, param in self.named_parameters(): 
+#             if name == 'loc': 
+#                 curr_loc = param
+#             else: 
+#                 curr_cov = param
+#         return ch.cat([curr_loc.flatten(), curr_cov.flatten()])
 
 
 # HELPER FUNCTIONS

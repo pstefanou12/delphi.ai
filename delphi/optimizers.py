@@ -3,16 +3,15 @@ Newton Optimizer for newton raphson SGD optimization.
 """
 
 import torch
-import torch.nn as nn
 from torch.optim import Optimizer
-from typing import Callable, Optional, List, Tuple
+from typing import Callable, Optional, List, Union
 
 
 class NewtonOptimizer(Optimizer):
-    def __init__(self, params, custom_hessian_fn: Optional[Callable] = None,
+    def __init__(self, params, lr: Union[float, torch.Tensor]=1e-3, custom_hessian_fn: Optional[Callable] = None,
                  damping: float = 1e-3, hessian_approx: str = 'diagonal',
                  max_update_norm: float = 1.0):
-        defaults = dict(damping=damping, hessian_approx=hessian_approx,
+        defaults = dict(lr=lr, damping=damping, hessian_approx=hessian_approx,
                        custom_hessian_fn=custom_hessian_fn, max_update_norm=max_update_norm)
         super().__init__(params, defaults)
 
@@ -46,6 +45,8 @@ class NewtonOptimizer(Optimizer):
             # Newton update with safeguards
             with torch.no_grad():
                 update = self._compute_newton_update(grads_flat, hessian, damping)
+                lr = group.get('lr', self.defaults['lr'])
+                update = lr * update  # Scale Newton step by learning rate
                 
                 # Clip update to prevent explosion
                 update_norm = torch.norm(update)
@@ -55,10 +56,6 @@ class NewtonOptimizer(Optimizer):
                 
                 self._apply_update(update, params)
             
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
-        
         return loss
 
     def _compute_hessian_auto(self, params: List[torch.Tensor], grads_flat: torch.Tensor, 
@@ -135,7 +132,6 @@ class NewtonOptimizer(Optimizer):
                              damping: float) -> torch.Tensor:
         """Compute Newton update: Δθ = -H⁻¹g"""
         hessian_reg = hessian + damping * torch.eye(hessian.shape[0], device=hessian.device)
-        
         try:
             return torch.linalg.solve(hessian_reg, -grads_flat)
         except torch.linalg.LinAlgError:

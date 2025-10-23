@@ -3,13 +3,64 @@ Default parameters for running algorithms in delphi.ai.
 """
 
 import torch as ch
-from typing import Callable, Iterable 
+from typing import Callable, Iterable, Optional, Union, get_origin, get_args
 
 from .helpers import has_attr
+from ..grad import TruncatedMultivariateNormalNLL
 
 
 # CONSTANTS
 REQ = 'required'
+
+# Enhanced defaults with all optimizer parameters
+OPTIMIZER_DEFAULTS = {
+    # Basic parameters
+    'optimizer': (['sgd', 'adam', 'newton'], 'sgd'),
+    'lr': (float, 1e-1, {'min': 0}),
+    'weight_decay': (float, 0.0, {'min': 0}),
+    
+    # SGD specific
+    'momentum': (float, 0.0, {'min': 0}),
+    'dampening': (float, 0.0, {'min': 0}),
+    'nesterov': (bool, False),
+    'maximize': (bool, False),
+    'foreach': (Optional[bool], None),
+    'differentiable': (bool, False),
+    'fused': (Optional[bool], None),
+    
+    # Adam specific
+    'beta1': (float, 0.9, {'min': 0, 'max': 1}),
+    'beta2': (float, 0.999, {'min': 0, 'max': 1}),
+    'eps': (float, 1e-8, {'min': 0}),
+    'amsgrad': (bool, False),
+    'capturable': (bool, False),
+    
+    # Newton specific
+    'damping': (float, 1e-3, {'min': 0}),
+    'hessian_approx': (['auto', 'full', 'diagonal'], 'auto'),
+    'max_update_norm': (float, 1.0, {'min': 0}),
+    
+    # Scheduler parameters
+    'scheduler': (Optional[['cyclic', 'cosine', 'step', 'multi_step', 'exponential', 'reduce_on_plateau']], None),
+    'step_lr': (int, 100, {'min': 1}),
+    'step_lr_gamma': (float, 0.9, {'min': 0, 'max': 1}),
+    'min_lr': (float, 0.0, {'min': 0}),
+    'milestones': (list, [30, 60, 90]),
+    'gamma': (float, 0.1, {'min': 0, 'max': 1}),
+    
+    # Plateau scheduler
+    'plateau_mode': (['min', 'max'], 'min'),
+    'plateau_factor': (float, 0.1, {'min': 0, 'max': 1}),
+    'plateau_patience': (int, 10, {'min': 1}),
+    'plateau_threshold': (float, 1e-4, {'min': 0}),
+    'plateau_threshold_mode': (['rel', 'abs'], 'rel'),
+    'plateau_cooldown': (int, 0, {'min': 0}),
+    'plateau_eps': (float, 1e-8, {'min': 0}),
+    
+    # Backward compatibility
+    'custom_lr_multiplier': (Optional[str], None),
+    'constant': (bool, False),
+}
 
 TRAINER_DEFAULTS = { 
     'num_trials': (int, 1),
@@ -24,22 +75,20 @@ TRAINER_DEFAULTS = {
 }
 
 DATASET_DEFAULTS = {
-        'workers': (int, 1), 
-        'batch_size': (int, 100), 
-        'val': (float, .2), 
-        'normalize': (bool, False),
+    'workers': (int, 1), 
+    'batch_size': (int, 100), 
+    'val': (float, .2), 
+    'normalize': (bool, False),
+    'shuffle': (bool, True),
+    'pin_memory': (bool, True),
+    'drop_last': (bool, False),
 }
 
-DELPHI_DEFAULTS = { 
-    'lr': (float, 1e-1), 
-    'step_lr': (int, 100),
-    'step_lr_gamma': (float, .9), 
-    'custom_lr_multiplier': (str, None), 
-    'momentum': (float, 0.0), 
-    'weight_decay': (float, 0.0), 
+DELPHI_DEFAULTS = {**OPTIMIZER_DEFAULTS, **{
     'device': (str, 'cpu')
-}
+}}
 
+# Default configuraitons for specific algorithms
 TRUNC_REG_DEFAULTS = {
         'fit_intercept': (bool, True), 
         'val': (float, .2),
@@ -77,7 +126,6 @@ TRUNC_LDS_DEFAULTS = {
 }
 
 TRUNC_LOG_REG_DEFAULTS = {
-        'phi': (Callable, REQ),
         'epochs': (int, 1),
         'fit_intercept': (bool, True), 
         'trials': (int, 3),
@@ -94,7 +142,6 @@ TRUNC_LOG_REG_DEFAULTS = {
 
 
 TRUNC_PROB_REG_DEFAULTS = {
-        'phi': (Callable, REQ), 
         'fit_intercept': (bool, True), 
         'trials': (int, 3),
         'val': (float, .2),
@@ -110,8 +157,6 @@ TRUNC_PROB_REG_DEFAULTS = {
 
 
 TRUNC_MULTI_NORM_DEFAULTS = {
-        'phi': (Callable, REQ),
-        'alpha': (float, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -122,12 +167,13 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'num_samples': (int, 10),
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
-        'stats': (bool, True)
+        'stats': (bool, True),
+        'optimizer': (str, 'newton'),
+        'hessian_approx': (str, 'full')
 }
 
 
 UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
-        'alpha': (float, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -142,7 +188,6 @@ UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
 
 
 TRUNC_BOOL_PROD_DEFAULTS = {
-        'phi': (Callable, REQ),
         'val': (float, .2),
         'eps': (float, 1e-5),
         'r': (float, 1.0), 
@@ -175,29 +220,92 @@ TRUNC_LQR_DEFAULTS =  {
         'alpha': (float, 1.0) 
 }
 
-def check_and_fill_args(args, defaults): 
-        '''
-        Checks args (algorithm hyperparameters) and makes sure that all required parameters are 
-        given.
-        '''
-        # assign all of the default arguments and check that all necessary arguments are provided
-        for arg_name, (arg_type, arg_default) in defaults.items():
-                if has_attr(args, arg_name):
-                # check to make sure that hyperparameter inputs are the same type
-                        if isinstance(arg_type, Iterable):
-                                if args.__getattr__(arg_name) in arg_type: continue 
-                                raise ValueError(f'arg: {arg_name} is not correct type: {arg_type}. fix hyperparameters and run again.')
-                        if isinstance(args.__getattr__(arg_name), arg_type): continue
-                        raise ValueError(f'arg: {arg_name} is not correct type: {arg_type}. fix hyperparameters and run again.')
-                if arg_default == REQ: 
-                        raise ValueError(f"{arg_name} required")
-                elif arg_default is not None: 
-                        # use default arugment
-                        setattr(args, arg_name, arg_default)
-        # for arg_name in args:
-        #         if arg_name == 'alpha': import pdb; pdb.set_trace()
-        #         if not has_attr(defaults, arg_name): 
-        #                 raise ValueError(f'arg: {arg_name} is not recognized')
+
+def check_and_fill_args(args, defaults):
+    """
+    Enhanced argument validation with rich type checking and constraints.
+    """
+    def is_valid_value(value, type_spec):
+        """Check if value matches type specification"""
+        # Handle choice lists (like ['sgd', 'adam', 'newton'])
+        if isinstance(type_spec, (list, tuple)) and not isinstance(type_spec, type):
+            return value in type_spec
+
+        origin = get_origin(type_spec)
+        if origin is Union or (hasattr(type_spec, '__origin__') and get_origin(type_spec) is Union):
+                # Check all type arguments in the Union (Optional[T] is Union[T, None])
+                args = get_args(type_spec)
+                return any(is_valid_value(value, arg) for arg in args)
         
-        return args
+        # Handle type classes
+        if isinstance(type_spec, type):
+            # Special handling for numeric types
+            if type_spec in (int, float) and isinstance(value, (int, float)):
+                return True
+            return isinstance(value, type_spec)
+        
+        return False
+    
+    def validate_constraints(value, constraints):
+        """Validate value against constraints"""
+        if not constraints:
+            return True
+            
+        if 'min' in constraints and value < constraints['min']:
+            return False
+        if 'max' in constraints and value > constraints['max']:
+            return False
+        if 'choices' in constraints and value not in constraints['choices']:
+            return False
+            
+        return True
+    
+    for arg_name, spec in defaults.items():
+        # Parse specification (support both 2-tuple and 3-tuple formats)
+        if len(spec) == 2:
+            type_spec, default = spec
+            constraints = {}
+        else:
+            type_spec, default, constraints = spec
+
+        # Check if argument exists using standard has_attr
+        if not has_attr(args, arg_name):
+            if default is not None:
+                setattr(args, arg_name, default)
+            continue
+        
+        # Get current value using standard getattr
+        value = getattr(args, arg_name)
+        
+        # Skip validation for None values (unless required)
+        if value is None and default is not None:
+            continue
+        
+        # Type validation
+        if not is_valid_value(value, type_spec):
+            if isinstance(type_spec, (list, tuple)):
+                expected = f"one of {type_spec}"
+            else:
+                expected = f"type {type_spec}"
+            raise ValueError(
+                f"Argument '{arg_name}' has invalid type. "
+                f"Got {type(value).__name__} with value {value}, "
+                f"expected {expected}"
+            )
+        
+        # Constraint validation (only for non-None values)
+        if value is not None and not validate_constraints(value, constraints):
+            constraints_desc = []
+            if 'min' in constraints:
+                constraints_desc.append(f">= {constraints['min']}")
+            if 'max' in constraints:
+                constraints_desc.append(f"<= {constraints['max']}")
+            if 'choices' in constraints:
+                constraints_desc.append(f"in {constraints['choices']}")
+                
+            raise ValueError(
+                f"Argument '{arg_name}' failed constraints. "
+                f"Value {value} must be {', '.join(constraints_desc)}"
+            )
+    return args
 

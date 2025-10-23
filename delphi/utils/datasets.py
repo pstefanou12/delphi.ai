@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import datasets
 
-from .helpers import censored_sample_nll, cov
+from .helpers import CensoredSampleNll, cov
 from .defaults import DATASET_DEFAULTS, check_and_fill_args
 from . import data_augmentation as da
 from .. import cifar_models
@@ -331,7 +331,7 @@ def make_train_and_val(args, X, y):
     return train_loader, val_loader
 
 
-def make_train_and_val_distr(args, S, ds): 
+def make_train_and_val_distr(args, S, ds, kwargs): 
     # check arguments are correct
     args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
@@ -339,8 +339,8 @@ def make_train_and_val_distr(args, S, ds):
     val = int(args.val * S.size(0))
     train_indices, val_indices = rand_indices[val:], rand_indices[:val]
     X_train, X_val = S[train_indices], S[val_indices]
-    train_ds = ds(X_train)
-    val_ds = ds(X_val)
+    train_ds = ds(X_train, **kwargs)
+    val_ds = ds(X_val, **kwargs)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size)
     val_loader = DataLoader(val_ds, batch_size=len(val_ds))
 
@@ -348,7 +348,7 @@ def make_train_and_val_distr(args, S, ds):
 
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S):
+    def __init__(self, S, censored_sample_nll=CensoredSampleNll()):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
         self._covariance_matrix = cov(S)

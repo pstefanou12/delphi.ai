@@ -8,7 +8,7 @@ from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
-from .utils.helpers import logistic, censored_sample_nll
+from .utils.helpers import logistic, cov
 
 softmax = Softmax(dim=1)
 
@@ -23,7 +23,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, num_samples=10, known_cov=False, eps=1e-5):
+    def forward(ctx, params, data, phi, dims, censored_sample_nll, hessian=None, num_samples=10,  eps=1e-5):
         """
         Args: 
             v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
@@ -52,23 +52,22 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         elts = s[filtered][:S.size(0)]
         if elts.dim() == 1: elts = elts[...,None]
         z[:elts.size(0)] = elts
+        hessian.save_samples(z)
         # standard negative log likelihood
         nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
         # normalizing constant for nll
         norm_const = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
-        ctx.save_for_backward(S_grad, z, ch.Tensor([dims]), ch.Tensor([known_cov]))
+        ctx.censored_sample_nll = censored_sample_nll
+        ctx.save_for_backward(S_grad, z)
         return (nll + norm_const).mean(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        S_grad, z, dims, known_cov = ctx.saved_tensors
+        S_grad, z = ctx.saved_tensors
         # calculate gradient
-        grad = -S_grad + censored_sample_nll(z)
-        # import pdb; pdb.set_trace()
-        if known_cov: grad[:,:int(dims)**2] = ch.zeros(ch.Size([grad.size(0), int(dims)**2]))
-        # print(f'grad: {grad}')
-        return grad / z.size(0), None, None, None, None, None
-
+        grad = -S_grad + ctx.censored_sample_nll(z)
+        return grad / z.size(0), None, None, None, None, None, None, None
+    
 
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """

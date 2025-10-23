@@ -21,11 +21,14 @@ class Trainer:
     def __init__(self, 
                 model: delphi,
                 args: Parameters, 
-                store=None): 
+                store=None,
+                hessian_args=[], 
+                hessian_kwargs={}): 
         self.model = model
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store        
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
+        self.hessian_args, self.hessian_kwargs = hessian_args, hessian_kwargs
 
     def model_loop_(self,
                     loader: ch.utils.data.DataLoader,
@@ -75,7 +78,7 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
-                self.model.optimizer.step()
+                self.model.optimizer.step(*self.hessian_args, **self.hessian_kwargs)
                 if self.model.schedule is not None: self.model.schedule.step()
 
             if self.args.verbose and not self.args.stats:
@@ -213,3 +216,4 @@ class Trainer:
         if self.args.early_stopping and self.args.verbose and no_improvement_count < self.args.n_iter_no_change: 
             print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
         return best_params, history, copy.copy(self.model.parameters)
+
