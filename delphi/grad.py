@@ -144,8 +144,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         rand_indices = ch.randperm(filtered.size(0))
         rand_filtered = filtered[rand_indices][:S_grad.size(0)]
         # calculate gradient
-        grad = -S_grad + ctx.censored_sample_nll(rand_filtered)
-        return grad / filtered.size(0), None, None, None, None, None, None, None, None
+        return  (-S_grad + ctx.censored_sample_nll(rand_filtered)) / S_grad.size(0), None, None, None, None, None, None, None, None
     
 
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
