@@ -12,7 +12,6 @@ from .utils.helpers import logistic, cov
 
 softmax = Softmax(dim=1)
 
-
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the truncated negative population log likelihood for truncated multivariate normal distribution with known truncation. 
@@ -23,50 +22,130 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, censored_sample_nll, hessian=None, num_samples=10,  eps=1e-5):
+    def forward(ctx, params, data, phi, dims, censored_sample_nll, samples=None, hessian=None, num_samples=1000, eps=1e-12):
         """
-        Args: 
-            v (torch.Tensor): reparameterize mean estimate (cov^(-1) * mu)
-            T (torch.Tensor): square reparameterized (cov^(-1)) covariance matrix with dim d
-            S (torch.Tensor): batch_size * dims, sample batch 
-            S_grad (torch.Tenosr): batch_size * (dims + dim * dims) gradient for batch
-            phi (delphi.oracle): oracle for censored distribution
-            num_samples (int): number of samples to sample for each sample in batch
+        Corrected forward for truncated Gaussian negative log-likelihood.
+
+        Args:
+            params (torch.Tensor): vector containing flattened T (dims^2) then v (dims)
+            data (torch.Tensor): batch_size x (dims + gradsize) where first dims are x
+            phi (callable): oracle function that takes samples shape (..., dims) and returns boolean mask of same leading shape
+            dims (int): dimensionality d
+            censored_sample_nll: saved for ctx (kept for compatibility)
+            hessian: optional object with save_samples method
+            num_samples (int): number of MC samples per observation (increase for better estimates)
+            eps (float): small value to avoid log(0)
+        Returns:
+            scalar tensor: mean negative log-likelihood over batch
         """
-        # reparameterize distribution
-        v = params[dims**2:]
-        T = params[:dims**2].resize(dims, dims) 
-        S, S_grad = data[:,dims].resize(data.size(0), dims), data[:,dims:]
-        sigma = T.inverse()
-        mu = (sigma@v).flatten()
-        # reparameterize distribution
-        M = MultivariateNormal(mu, sigma)
-        # sample num_samples * batch size samples from distribution
-        s = M.sample([num_samples * S.size(0)])
-        filtered = phi(s).nonzero(as_tuple=True)
-        """
-        TODO: see if there is a better way to do this
-        """
-        # z is a tensor of size batch size zeros, then fill with up to batch size num samples
-        z = ch.zeros(S.size())
-        elts = s[filtered][:S.size(0)]
-        if elts.dim() == 1: elts = elts[...,None]
-        z[:elts.size(0)] = elts
-        hessian.save_samples(z)
-        # standard negative log likelihood
-        nll = .5 * ch.bmm((S@T).view(S.size(0), 1, S.size(1)), S.view(S.size(0), S.size(1), 1)).squeeze(-1) - S@v[None,...].T
-        # normalizing constant for nll
-        norm_const = -.5 * ch.bmm((z@T).view(z.size(0), 1, z.size(1)), z.view(z.size(0), z.size(1), 1)).squeeze(-1) + z@v[None,...].T
+        # unpack params
+        T_flat = params[:dims * dims]
+        v = params[dims * dims : dims * dims + dims]           # nu (v)
+        T = T_flat.view(dims, dims)                            # T = Sigma^{-1}
+        # unpack data
+        S = data[:, :dims]                                     # observations x (batch, dims)
+        S_grad = data[:, dims:] if data.size(1) > dims else None
+
+        # reconstruct Sigma and mu
+        sigma = T.inverse()                                    # Sigma
+        mu = (sigma @ v).view(dims)                            # mu = Sigma @ v
+
+        # # distribution
+        if samples is None: 
+            M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
+
+        # batch_size = S.size(0)
+
+            # sample: shape (num_samples, batch, dims)
+            # draw samples per-observation so phi can depend on each sample individually if needed
+            samples = M.sample((num_samples))  # -> (num_samples, batch, dims)
+
+        # # apply oracle phi; assume phi accepts (..., dims) and returns boolean mask of shape (num_samples, batch)
+        # # if phi expects flattened inputs, adjust accordingly
+        # mask = phi(s)  # boolean tensor: True where sample lies in truncation set
+        # # ensure mask shape is (num_samples, batch_size)
+        # # compute estimated probability per batch (P_hat for each observation)
+        # p_hat = mask.float().mean(dim=0)  # shape: (batch_size,)
+
+        # sample base standard normal z ~ N(0, I)
+        # z = ch.randn(num_samples, batch_size, dims, device=T.device, dtype=T.dtype)
+
+        # transform samples to the target distribution: s = mu + L @ z
+        # where L is the Cholesky factor of Sigma
+        L = ch.linalg.cholesky(sigma)
+        s = mu + samples @ L.T  # shape (num_samples, batch, dims)
+
+        # apply truncation function
+        mask = phi(s)  # boolean mask of shape (num_samples, batch)
+
+        # estimate probability of being in truncation region
+        p_hat = mask.float().mean(dim=0).clamp_min(eps)
+
+        # if you want to save the actual sampled z that are inside S for Hessian/backward:
+        if hessian is not None:
+            # collect the selected samples as a flat tensor [num_selected, dims]
+            selected = s[mask]  # shape (num_selected, dims)
+            # If hessian.save_samples expects per-batch structure you can change this
+            hessian.save_samples(selected)
+
+        # compute the standard (unnormalized) negative log likelihood first two terms:
+        # nll_i = 0.5 * x^T T x - x^T v
+        # vectorized:
+        xT_T = (S @ T)                # (batch, dims)
+        quad = 0.5 * (xT_T * S).sum(dim=1)   # (batch,)
+        linear = (S @ v)                     # (batch,)
+        nll = quad - linear                  # (batch,)
+
+        # Now compute log integral (log I) correctly using derivation:
+        # log I = 0.5 * mu^T T mu + 0.5 * d * log(2*pi) + 0.5 * log|Sigma| + log P(Z in S)
+        # where P(Z in S) is probability under N(mu, Sigma) that Z in truncation region.
+        # note: mu^T T mu = mu^T v   (since v = T mu)
+        muT_T_mu = (mu @ v) * 0.5                  # scalar
+        const_term = 0.5 * dims * math.log(2 * math.pi)
+        # logdet(Sigma) = - logdet(T)
+        # compute logdet(T) robustly
+        # If T is symmetric positive definite, ch.logdet(T) is fine.
+        logdet_T = ch.logdet(T)                    # scalar tensor
+        logdet_sigma = -logdet_T                   # scalar tensor
+
+        # p_hat may be zero for some observations -> use eps
+        # p_hat shape is (batch,)
+        # log_p_hat = ch.log(p_hat + eps)            # avoid -inf
+        log_p_hat = ch.log(p_hat + eps)
+        logdet_sigma = 2 * ch.log(ch.diagonal(L)).sum()
+
+
+        # assemble log integral per batch
+        # muT_T_mu is a scalar; convert to tensor same device
+        muT_T_mu_t = muT_T_mu.to(logdet_sigma.device)
+
+        log_I = muT_T_mu_t + const_term + 0.5 * logdet_sigma + log_p_hat  # (batch,)
+
+        # final per-sample negative log-likelihood:
+        # ell = 0.5 x^T T x - x^T v + log I
+        ell = nll + log_I  # (batch,)
+
+        # save for backward if needed
         ctx.censored_sample_nll = censored_sample_nll
-        ctx.save_for_backward(S_grad, z)
-        return (nll + norm_const).mean(0)
+        # save tensors that will be needed in backward (S_grad maybe None)
+        if S_grad is not None:
+            ctx.save_for_backward(S_grad, s, mask)
+        else:
+            ctx.save_for_backward(s, mask.float())
+
+        # return mean across batch
+        return ell.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
-        S_grad, z = ctx.saved_tensors
+        S_grad, z, mask = ctx.saved_tensors
+
+        filtered = z[mask.nonzero(as_tuple=True)][...,None]
+        rand_indices = ch.randperm(filtered.size(0))
+        rand_filtered = filtered[rand_indices][:S_grad.size(0)]
         # calculate gradient
-        grad = -S_grad + ctx.censored_sample_nll(z)
-        return grad / z.size(0), None, None, None, None, None, None, None
+        grad = -S_grad + ctx.censored_sample_nll(rand_filtered)
+        return grad / filtered.size(0), None, None, None, None, None, None, None, None
     
 
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):

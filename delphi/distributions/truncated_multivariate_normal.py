@@ -5,7 +5,6 @@ Truncated multivariate normal distribution with oracle access (ie. known truncat
 import torch as ch
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal
-import cox
 import math
 import torch.nn as nn
 from typing import Callable, Optional
@@ -14,8 +13,8 @@ from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL 
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters, is_psd, CensoredSampleNll, cov
-from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_MULTI_NORM_DEFAULTS
+from ..utils.helpers import PSDError, Parameters, CensoredSampleNll, cov
+from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedMultivariateNormal(distributions):
@@ -59,7 +58,9 @@ class TruncatedMultivariateNormal(distributions):
         assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
 
         self.S = S
-        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.hessian, self.args.num_samples, self.args.eps]
+        M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
+        self.samples = M.sample([10000])
+        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.samples, self.hessian, self.args.num_samples, self.args.eps]
 
         try: 
             self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
