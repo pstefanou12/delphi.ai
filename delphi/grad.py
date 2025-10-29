@@ -22,7 +22,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, censored_sample_nll, num_samples=1000, eps=1e-12):
+    def forward(ctx, params, data, phi, dims, trunc_multi_norm_score, num_samples=1000, eps=1e-12):
         """
         Corrected forward for truncated Gaussian negative log-likelihood.
 
@@ -92,7 +92,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         ell = nll + log_I  # (batch,)
 
         # save for backward if needed
-        ctx.censored_sample_nll = censored_sample_nll
+        ctx.trunc_multi_norm_score = trunc_multi_norm_score 
         # save tensors that will be needed in backward (S_grad maybe None)
         ctx.save_for_backward(S_grad, s)
         return ell.mean()
@@ -100,7 +100,18 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, s = ctx.saved_tensors
-        return  (-S_grad + ctx.censored_sample_nll(s)) / S_grad.size(0), None, None, None, None, None, None, None
+        return  (-S_grad + ctx.trunc_multi_norm_score(s)) / S_grad.size(0), None, None, None, None, None, None, None
+
+
+class TruncatedMultivariateNormalScore: 
+    def __init__(self, known_cov=False): 
+        self.known_cov = known_cov
+
+    def __call__(self, x):
+        if self.known_cov: 
+            return ch.cat([ch.zeros(x.size(0), x.size(1)**2), x], 1)
+        # calculates the negative log-likelihood for one sample of a censored normal
+        return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
     
 
 def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000): 

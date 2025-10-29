@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import datasets
 
-from .helpers import CensoredSampleNll, cov
+from .helpers import cov
+from ..grad import TruncatedMultivariateNormalScore
 from .defaults import DATASET_DEFAULTS, check_and_fill_args
 from . import data_augmentation as da
 from .. import cifar_models
@@ -348,13 +349,13 @@ def make_train_and_val_distr(args, S, ds, kwargs):
 
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S, censored_sample_nll=CensoredSampleNll()):
+    def __init__(self, S, trunc_multi_norm_score=TruncatedMultivariateNormalScore()):
         # empirical mean and variance
         self._loc = ch.mean(S, dim=0)
         self._covariance_matrix = cov(S)
         self.S = S 
         # apply gradient
-        self.S_grad = censored_sample_nll(S)
+        self.S_grad = trunc_multi_norm_score(S)
         self.data = ch.cat([self.S, self.S_grad], dim=1)
 
     def __len__(self): 

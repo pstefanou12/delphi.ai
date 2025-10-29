@@ -21,14 +21,11 @@ class Trainer:
     def __init__(self, 
                 model: delphi,
                 args: Parameters, 
-                store=None,
-                hessian_args=[], 
-                hessian_kwargs={}): 
+                store=None): 
         self.model = model
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store        
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
-        self.hessian_args, self.hessian_kwargs = hessian_args, hessian_kwargs
 
     def model_loop_(self,
                     loader: ch.utils.data.DataLoader,
@@ -78,7 +75,7 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
-                self.model.optimizer.step(*self.hessian_args, **self.hessian_kwargs)
+                self.model.optimizer.step()
                 if self.model.schedule is not None: self.model.schedule.step()
 
             if self.args.verbose and not self.args.stats:

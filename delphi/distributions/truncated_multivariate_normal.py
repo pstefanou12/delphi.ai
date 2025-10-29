@@ -11,9 +11,9 @@ from typing import Callable, Optional
 
 from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..grad import TruncatedMultivariateNormalNLL 
+from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters, CensoredSampleNll
+from ..utils.helpers import PSDError, Parameters 
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
@@ -38,7 +38,7 @@ class TruncatedMultivariateNormal(distributions):
         self.alpha = alpha
         self.dims = dims
         self.covariance_matrix = covariance_matrix
-        self.censored_sample_nll = CensoredSampleNll(self.covariance_matrix is not None)
+        self.trunc_multi_norm_score = TruncatedMultivariateNormalScore(self.covariance_matrix is not None)
         
         del self.criterion
         self.criterion = TruncatedMultivariateNormalNLL.apply
@@ -58,13 +58,13 @@ class TruncatedMultivariateNormal(distributions):
         self.S = S
         M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
         self.samples = M.sample([10000])
-        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.args.num_samples, self.args.eps]
+        self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, self.args.num_samples, self.args.eps]
 
         try: 
             self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
                                                                             self.S, 
                                                                             TruncatedNormalDataset,
-                                                                            {'censored_sample_nll': self.censored_sample_nll})
+                                                                            {'trunc_multi_norm_score': self.trunc_multi_norm_score})
 
             # run PGD to predict actual estimates
             trainer = Trainer(
@@ -174,3 +174,10 @@ class TruncatedMultivariateNormal(distributions):
         Returns the covariance matrix of the distribution.
         """
         return self.model.covariance_matrix.clone()
+    
+    def calculate_score(self, S): 
+        return self.trunc_multi_norm_score(S)
+    
+    def calculate_loss(self, S): 
+        data = ch.cat([S, self.calculate_score(S)], dim=1)
+        return self.criterion(self.theta, data, *self.criterion_params)

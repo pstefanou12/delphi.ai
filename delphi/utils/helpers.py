@@ -136,17 +136,6 @@ def is_psd(matrix, tol=1e-8):
         return False
 
 
-class CensoredSampleNll: 
-    def __init__(self, known_cov=False): 
-        self.known_cov = known_cov
-
-    def __call__(self, x):
-        if self.known_cov: 
-            return ch.cat([ch.zeros(x.size(0), x.size(1)**2), x], 1)
-        # calculates the negative log-likelihood for one sample of a censored normal
-        return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
-
-
 def type_of_script():
     """
     Check the program's running environment.
