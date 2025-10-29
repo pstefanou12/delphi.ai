@@ -22,7 +22,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, censored_sample_nll, samples=None, hessian=None, num_samples=1000, eps=1e-12):
+    def forward(ctx, params, data, phi, dims, censored_sample_nll, num_samples=1000, eps=1e-12):
         """
         Corrected forward for truncated Gaussian negative log-likelihood.
 
@@ -49,45 +49,11 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         # reconstruct Sigma and mu
         sigma = T.inverse()                                    # Sigma
         mu = (sigma @ v).view(dims)                            # mu = Sigma @ v
-
-        # # distribution
-        if samples is None: 
-            M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
-
-        # batch_size = S.size(0)
-
-            # sample: shape (num_samples, batch, dims)
-            # draw samples per-observation so phi can depend on each sample individually if needed
-            samples = M.sample((num_samples))  # -> (num_samples, batch, dims)
-
-        # # apply oracle phi; assume phi accepts (..., dims) and returns boolean mask of shape (num_samples, batch)
-        # # if phi expects flattened inputs, adjust accordingly
-        # mask = phi(s)  # boolean tensor: True where sample lies in truncation set
-        # # ensure mask shape is (num_samples, batch_size)
-        # # compute estimated probability per batch (P_hat for each observation)
-        # p_hat = mask.float().mean(dim=0)  # shape: (batch_size,)
-
-        # sample base standard normal z ~ N(0, I)
-        # z = ch.randn(num_samples, batch_size, dims, device=T.device, dtype=T.dtype)
-
-        # transform samples to the target distribution: s = mu + L @ z
-        # where L is the Cholesky factor of Sigma
         L = ch.linalg.cholesky(sigma)
-        s = mu + samples @ L.T  # shape (num_samples, batch, dims)
 
-        # apply truncation function
-        mask = phi(s)  # boolean mask of shape (num_samples, batch)
-
+        s, p_hat = rejection_sampling(mu, sigma, phi, dims, S.size(0))
         # estimate probability of being in truncation region
-        p_hat = mask.float().mean(dim=0).clamp_min(eps)
-
-        # if you want to save the actual sampled z that are inside S for Hessian/backward:
-        if hessian is not None:
-            # collect the selected samples as a flat tensor [num_selected, dims]
-            selected = s[mask]  # shape (num_selected, dims)
-            # If hessian.save_samples expects per-batch structure you can change this
-            hessian.save_samples(selected)
-
+        # p_hat = mask.float().mean(dim=0).clamp_min(eps)
         # compute the standard (unnormalized) negative log likelihood first two terms:
         # nll_i = 0.5 * x^T T x - x^T v
         # vectorized:
@@ -128,24 +94,36 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         # save for backward if needed
         ctx.censored_sample_nll = censored_sample_nll
         # save tensors that will be needed in backward (S_grad maybe None)
-        if S_grad is not None:
-            ctx.save_for_backward(S_grad, s, mask)
-        else:
-            ctx.save_for_backward(s, mask.float())
-
-        # return mean across batch
+        ctx.save_for_backward(S_grad, s)
         return ell.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
-        S_grad, z, mask = ctx.saved_tensors
-
-        filtered = z[mask.nonzero(as_tuple=True)][...,None]
-        rand_indices = ch.randperm(filtered.size(0))
-        rand_filtered = filtered[rand_indices][:S_grad.size(0)]
-        # calculate gradient
-        return  (-S_grad + ctx.censored_sample_nll(rand_filtered)) / S_grad.size(0), None, None, None, None, None, None, None, None
+        S_grad, s = ctx.saved_tensors
+        return  (-S_grad + ctx.censored_sample_nll(s)) / S_grad.size(0), None, None, None, None, None, None, None
     
+
+def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000): 
+    M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
+    L = ch.linalg.cholesky(sigma)
+
+    accepted_samples = ch.Tensor([])
+    num_sampled = 0
+
+    while accepted_samples.size(0) < batch_size:
+        # draw samples per-observation so phi can depend on each sample individually if needed
+        samples = M.sample((num_samples,))  # -> (num_samples, dims) 
+        s = mu + samples @ L.T 
+        mask = phi(s) 
+        accepted_samples = ch.cat([accepted_samples, s[(s * mask).nonzero()[:,0]]])
+        num_sampled += num_samples
+
+    p_hat = ch.Tensor([accepted_samples.size(0) / num_sampled])
+    if p_hat < .01:
+        print(f'acceptance rate: {p_hat.item()}')
+
+    return accepted_samples[:batch_size], p_hat
+
 
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """

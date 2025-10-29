@@ -8,11 +8,11 @@ from typing import Callable, Optional, List, Union
 
 
 class NewtonOptimizer(Optimizer):
-    def __init__(self, params, lr: Union[float, torch.Tensor]=1e-3, custom_hessian_fn: Optional[Callable] = None,
+    def __init__(self, params, custom_hessian_fn: Optional[Callable] = None,
                  damping: float = 1e-3, hessian_approx: str = 'diagonal',
                  max_update_norm: float = 1.0):
-        defaults = dict(lr=lr, damping=damping, hessian_approx=hessian_approx,
-                       custom_hessian_fn=custom_hessian_fn, max_update_norm=max_update_norm)
+        defaults = dict(damping=damping, hessian_approx=hessian_approx,
+                       custom_hessian_fn=custom_hessian_fn, max_update_norm=max_update_norm, lr=1.0)
         super().__init__(params, defaults)
 
     def step(self, closure: Optional[Callable] = None, *hessian_args, **hessian_kwargs):
@@ -45,8 +45,6 @@ class NewtonOptimizer(Optimizer):
             # Newton update with safeguards
             with torch.no_grad():
                 update = self._compute_newton_update(grads_flat, hessian, damping)
-                lr = group.get('lr', self.defaults['lr'])
-                update = lr * update  # Scale Newton step by learning rate
                 
                 # Clip update to prevent explosion
                 update_norm = torch.norm(update)
@@ -131,6 +129,7 @@ class NewtonOptimizer(Optimizer):
     def _compute_newton_update(self, grads_flat: torch.Tensor, hessian: torch.Tensor, 
                              damping: float) -> torch.Tensor:
         """Compute Newton update: Δθ = -H⁻¹g"""
+        import pdb; pdb.set_trace()
         hessian_reg = hessian + damping * torch.eye(hessian.shape[0], device=hessian.device)
         try:
             return torch.linalg.solve(hessian_reg, -grads_flat)

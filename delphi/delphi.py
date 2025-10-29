@@ -182,7 +182,6 @@ class delphi(ch.nn.Module):
     def _create_newton(self, params):
         """Create Newton optimizer (your custom optimizer)"""
         config = {
-            'lr': getattr(self.args, 'lr', 1e-3),
             'damping': getattr(self.args, 'damping', 1e-3),
             'hessian_approx': getattr(self.args, 'hessian_approx', 'auto'),
             'max_update_norm': getattr(self.args, 'max_update_norm', 1.0),

@@ -13,7 +13,7 @@ from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL 
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters, CensoredSampleNll, cov
+from ..utils.helpers import PSDError, Parameters, CensoredSampleNll
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
@@ -40,8 +40,6 @@ class TruncatedMultivariateNormal(distributions):
         self.covariance_matrix = covariance_matrix
         self.censored_sample_nll = CensoredSampleNll(self.covariance_matrix is not None)
         
-        self.hessian = TruncatedMultivariateNormalHessian(self.phi, self.dims, self.censored_sample_nll)
-        self.args.__setattr__('custom_hessian_fn', self.hessian)
         del self.criterion
         self.criterion = TruncatedMultivariateNormalNLL.apply
 
@@ -60,7 +58,7 @@ class TruncatedMultivariateNormal(distributions):
         self.S = S
         M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
         self.samples = M.sample([10000])
-        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.samples, self.hessian, self.args.num_samples, self.args.eps]
+        self.criterion_params = [self.phi, self.dims, self.censored_sample_nll, self.args.num_samples, self.args.eps]
 
         try: 
             self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
@@ -116,9 +114,6 @@ class TruncatedMultivariateNormal(distributions):
         """
         return self.theta
     
-    def pre_step_hook(self, inp):
-        self.hessian.set_params(self.optimizer.param_groups[0]['params'][0])     
-
     def iteration_hook(self, i, is_train, loss, batch) -> None:
         # pass
         # Project location to ball around v
@@ -179,54 +174,3 @@ class TruncatedMultivariateNormal(distributions):
         Returns the covariance matrix of the distribution.
         """
         return self.model.covariance_matrix.clone()
-
-
-class TruncatedMultivariateNormalHessian: 
-        def __init__(self, phi, dims, censored_sample_nll, num_samples=1000): 
-            self.phi = phi 
-            self.dims = dims 
-            self.censored_sample_nll = censored_sample_nll
-            self.num_samples = num_samples
-            self.params = None
-            self.z = None
-
-        def set_params(self, params): 
-            self.params = params
-
-        def save_samples(self, z): 
-            self.z = z 
-
-        def __call__(self):
-            """
-            Compute Hessian (Fisher information) for current parameter estimates
-            Based on: H(ν, T) = Cov[∇log p(z|θ)] where z ∼ truncated N(T⁻¹ν, T⁻¹)
-            """
-            # Extract parameters
-            v = self.params[self.dims**2:]
-            T = self.params[:self.dims**2].reshape(self.dims, self.dims)
-            sigma = T.inverse()
-            mu = sigma @ v
-        
-            # Sample from truncated distribution
-            M = MultivariateNormal(mu, sigma)
-            s = M.sample([self.num_samples])
-        
-            # Apply truncation
-            filtered = self.phi(s).nonzero(as_tuple=True)
-            if self.dims ==  1: 
-                z = s[filtered][...,None]
-            else:
-                z = s[filtered]
-            scores = self.censored_sample_nll(z)
-
-            # Hessian = Covariance of scores
-            if len(scores) > 1:
-                hessian = cov(scores)
-            else:
-                hessian = ch.outer(scores[0], scores[0])
-        
-            return hessian
-        
-        def __str__(self): 
-            return "TruncatedMultivariateNormalHessian"
-    

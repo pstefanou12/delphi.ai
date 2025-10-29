@@ -168,8 +168,7 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
         'stats': (bool, True),
-        'optimizer': (str, 'newton'),
-        'hessian_approx': (str, 'full')
+        'optimizer': (str, 'sgd'),
 }
 
 
