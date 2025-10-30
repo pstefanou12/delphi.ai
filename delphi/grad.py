@@ -126,7 +126,7 @@ def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000):
         samples = M.sample((num_samples,))  # -> (num_samples, dims) 
         s = mu + samples @ L.T 
         mask = phi(s) 
-        accepted_samples = ch.cat([accepted_samples, s[(s * mask).nonzero()[:,0]]])
+        accepted_samples = ch.cat([accepted_samples, s[mask.nonzero()[:,0]]])
         num_sampled += num_samples
 
     p_hat = ch.Tensor([accepted_samples.size(0) / num_sampled])
