@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore
+from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore, PreSampled
 from ..trainer import Trainer
 from ..utils.helpers import PSDError, Parameters 
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
@@ -26,7 +26,8 @@ class TruncatedMultivariateNormal(distributions):
                 phi: Callable, 
                 alpha: float,
                 dims: int,
-                covariance_matrix: Optional[ch.Tensor] = None):
+                covariance_matrix: Optional[ch.Tensor] = None,
+                sampler: Callable = None):
         """
         """
         # instance variables
@@ -38,6 +39,7 @@ class TruncatedMultivariateNormal(distributions):
         self.alpha = alpha
         self.dims = dims
         self.covariance_matrix = covariance_matrix
+        self.sampler = PreSampled(self.dims, self.args.num_samples) if sampler is None else sampler
         self.trunc_multi_norm_score = TruncatedMultivariateNormalScore(self.covariance_matrix is not None)
         
         del self.criterion
@@ -45,6 +47,9 @@ class TruncatedMultivariateNormal(distributions):
 
         self.emp_loc, self.emp_covariance_matrix = None, None
         self.S = None
+
+        self.best_covariance_matrix, self.best_loc, self.best_loss = None, None, None
+        self.final_covariance_matrix, self.final_loc, self.final_loss = None, None, None
 
         if self.args.verbose:
             print(f'args: {self.args}')
@@ -54,11 +59,12 @@ class TruncatedMultivariateNormal(distributions):
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
-
+        assert self.args.batch_size <= self.args.num_samples, "batch size must be smaller than or equal to the number of samples being sampled"
+        
         self.S = S
         M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
         self.samples = M.sample([10000])
-        self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, self.args.num_samples, self.args.eps]
+        self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, None, self.args.num_samples, self.args.eps]
 
         try: 
             self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
@@ -67,11 +73,11 @@ class TruncatedMultivariateNormal(distributions):
                                                                             {'trunc_multi_norm_score': self.trunc_multi_norm_score})
 
             # run PGD to predict actual estimates
-            trainer = Trainer(
+            self.trainer = Trainer(
                 self,
                 self.args
             )
-            trainer.train_model(self.train_loader_, self.val_loader_)
+            self.trainer.train_model(self.train_loader_, self.val_loader_)
             return self
         except PSDError as psd:
             raise PSDError(psd, "covariance matrix became not positive semi-definite. try decreasing the the projection set radius and try again.")
@@ -150,31 +156,46 @@ class TruncatedMultivariateNormal(distributions):
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # reparamterize distribution
-        # self.model.covariance_matrix.requires_grad, self.model.loc.requires_grad = False, False
-        theta = self.theta
+        self.best_covariance_matrix, self.best_loc, self.best_theta_loss = *self._reparameterize(self.trainer.best_params), self.trainer.best_loss
+        self.final_covariance_matrix, self.final_loc, self.final_theta_loss = *self._reparameterize(self.trainer.final_params), self.trainer.final_loss
 
+    def _reparameterize(self, theta): 
         T = theta[:self.dims**2].resize(self.dims, self.dims)
-        v = theta[self.dims**2:]
+        v = theta[self.dims**2:] 
 
-        self.model.covariance_matrix.data = T.inverse()
-        self.model.loc.data = v @ self.model.covariance_matrix
+        covariance_matrix = T.inverse()
+        loc = v @ self.model.covariance_matrix
 
-        self.theta.requires_grad = False
+        return covariance_matrix, loc
     
     @property 
-    def loc_(self): 
+    def best_loc_(self): 
         """
-        Returns the mean of the normal disribution.
+        Returns the best mean vector estimate for the multivariate normal distribution based off of the loss function.
         """
-        return self.model.loc.clone()
+        return self.best_loc
     
     @property
-    def covariance_matrix_(self): 
+    def best_covariance_matrix_(self): 
         """
-        Returns the covariance matrix of the distribution.
+        Returns the best covariance matrix estimate for the multivariate normal distribution based off of the loss function.
         """
-        return self.model.covariance_matrix.clone()
+        return self.best_covariance_matrix 
     
+    @property
+    def final_loc_(self): 
+        """
+        Returns the final mean vector estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.final_loc
+
+    @property
+    def final_covariance_matrix_(self): 
+        """
+        Returns the final covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.final_covariance_matrix
+
     def calculate_score(self, S): 
         return self.trunc_multi_norm_score(S)
     

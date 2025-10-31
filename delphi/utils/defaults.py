@@ -164,7 +164,7 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'batch_size': (int, 10),
         'tol': (float, 1e-1),
         'workers': (int, 0),
-        'num_samples': (int, 10),
+        'num_samples': (int, 10000),
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
         'stats': (bool, True),

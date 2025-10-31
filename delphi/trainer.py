@@ -26,6 +26,10 @@ class Trainer:
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store        
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
+        self.loss_history, self.param_history = ch.Tensor([]), ch.Tensor([])
+        self._best_loss, self._best_params = float('inf'), None
+        self.no_improvement_count = 0
+        self._final_loss, self._final_params = None, None
 
     def model_loop_(self,
                     loader: ch.utils.data.DataLoader,
@@ -43,7 +47,6 @@ class Trainer:
         Returns:
             The average top1 accuracy and the average loss across the epoch.
         """
-        history_ = ch.Tensor([])
         loop_msg = 'Train' if is_train else 'Val'
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False, 
@@ -84,13 +87,12 @@ class Trainer:
  
             self.model.iteration_hook(i, is_train, loss, batch)
             if is_train: 
-                try: 
-                    history_ = ch.cat([history_, self.model.weight.data[None,...]])
-                except: 
-                    curr_params = ch.Tensor([])
+                params = list(self.model.parameters())[0].data[None,...]
+                self.param_history = ch.cat([self.param_history, params])
+                self.loss_history = ch.cat([self.loss_history, loss])
 
         self.model.epoch_hook(epoch, is_train, loss)
-        return loss_.avg, prec1_.avg, prec5_.avg, history_
+        return loss_.avg, prec1_.avg, prec5_.avg
 
 
     def eval_model(self, 
@@ -150,16 +152,13 @@ class Trainer:
                 'val_prec5': float})
             setup_store_with_metadata(self.args, store)
 
+        val_loss = None
         # stores model estimates after each gradient step
-        history = ch.Tensor([])
-        best_loss, best_params = float('inf'), None
         for trial in range(self.args.trials):
             ch.manual_seed(rand_seed)
             if self.args.verbose: print(f'trial: {trial + 1}')
 
             t_start = time()
-            no_improvement_count = 0
-        
             self.model.pretrain_hook(train_loader)
             self.model.make_optimizer_and_schedule(self.model.parameters()) 
    
@@ -168,12 +167,11 @@ class Trainer:
                 best_prec1 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop_(val_loader, epoch, False)[0]
         
             for epoch in range(1, self.args.epochs + 1):
-                train_loss, train_prec1, train_prec5, history_ = self.model_loop_(train_loader, epoch, True)
-                history = ch.cat([history, history_])
+                train_loss, train_prec1, train_prec5 = self.model_loop_(train_loader, epoch, True)
 
                 if val_loader is not None:
                     with ch.no_grad():
-                        val_loss, val_prec1, val_prec5, _ = self.model_loop_(val_loader, epoch, False)
+                        val_loss, val_prec1, val_prec5 = self.model_loop_(val_loader, epoch, False)
                     if self.args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
             
                 if store is not None:
@@ -192,25 +190,39 @@ class Trainer:
                 no improvement in loss for args.n_iter_no_change epochs, 
                 then procedure has converged.
                 """
-                if best_params is None or val_loss < best_loss: 
-                    try: 
-                        best_params, best_loss = copy.copy(list(self.model.parameters())[0]), val_loss
-                        best_params.requires_grad = False
-                    except: 
-                        best_params, best_loss = copy.copy(list(self.model._parameters)), val_loss
+                if self._best_params is None or val_loss < self._best_loss: 
+                    self._best_params, self._best_loss = list(self.model.parameters())[0].data.detach(), val_loss
                 if self.args.early_stopping: 
-                    if ch.abs(val_loss - best_loss) <= self.args.tol:
-                        no_improvement_count += 1
+                    if ch.abs(val_loss - self._best_loss) <= self.args.tol:
+                        self.no_improvement_count += 1
                     else: 
-                        no_improvement_count = 0
-                    if no_improvement_count >= self.args.n_iter_no_change:
+                        self.no_improvement_count = 0
+                    if self.no_improvement_count >= self.args.n_iter_no_change:
                         if self.args.verbose: 
                             print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
                         break
 
-            self.model.post_training_hook()
-        
-        if self.args.early_stopping and self.args.verbose and no_improvement_count < self.args.n_iter_no_change: 
-            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
-        return best_params, history, copy.copy(self.model.parameters)
+            if val_loss is not None: 
+                self._final_loss, self._final_params = val_loss, list(self.model.parameters())[0].data.detach()
 
+            self.model.post_training_hook()
+                
+        if self.args.early_stopping and self.args.verbose and self.no_improvement_count < self.args.n_iter_no_change: 
+            print('Procedure did not converge after %d epochs and %.2f seconds' % (epoch, time() - t_start))
+
+
+    @property
+    def best_params(self): 
+        return self._best_params
+    
+    @property
+    def best_loss(self): 
+        return self._best_loss
+    
+    @property
+    def final_params(self): 
+        return self._final_params
+
+    @property
+    def final_loss(self): 
+        return self._final_loss

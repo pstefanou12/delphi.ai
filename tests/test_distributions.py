@@ -36,7 +36,7 @@ class UnNorm_Sphere(oracle.oracle):
 # right truncated normal distribution with known truncation and known variance
 def test_truncated_normal_known_variance():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([1000,])
+    samples = M.rsample([500,])
     print(f'num total samples: {samples.size(0)}')
     # generate ground-truth data
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -59,7 +59,9 @@ def test_truncated_normal_known_variance():
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-1,
-                        'num_samples': 100,
+                        'num_samples': 10000,
+                        'early_stopping': True, 
+                        'tol': 5e-2
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
@@ -67,10 +69,11 @@ def test_truncated_normal_known_variance():
                                               1,
                                               variance=ch.eye(1))
     truncated.fit(S_std_norm)
+    
     # rescale distribution
-    rescale_loc = truncated.loc_ + emp_loc
+    rescale_loc = truncated.best_loc_ + emp_loc
     print(f"pred loc: {rescale_loc}")
-    rescale_var = truncated.variance_
+    rescale_var = truncated.best_variance_
     print(f"pred var: {rescale_var}")
     m = MultivariateNormal(rescale_loc, rescale_var)
         
@@ -82,7 +85,7 @@ def test_truncated_normal_known_variance():
 # right truncated normal distribution with known truncation
 def test_truncated_normal():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([1000,])
+    samples = M.rsample([10000,])
     print(f'num total samples: {samples.size(0)}')
     # generate ground-truth data
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -103,10 +106,14 @@ def test_truncated_normal():
     # train algorithm
     args = Parameters({
                         'epochs': 10, 
-                        'batch_size': 10, 
+                        'batch_size': 100, 
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-1,
+                        'num_samples': 10000,
+                        'momentum':.5,
+                        'early_stopping': True,
+                        'tol': 1e-3,
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
@@ -114,9 +121,10 @@ def test_truncated_normal():
                                               1)
     truncated.fit(S_std_norm)
     # rescale distribution
-    rescale_loc = truncated.loc_ * emp_scale + emp_loc
+    import pdb; pdb.set_trace()
+    rescale_loc = truncated.best_loc_ * emp_scale + emp_loc
     print(f"pred loc: {rescale_loc}")
-    rescale_var = truncated.variance_ * emp_var
+    rescale_var = truncated.best_variance_ * emp_var
     print(f"pred var: {rescale_var}")
     m = MultivariateNormal(rescale_loc, rescale_var)
         
@@ -126,15 +134,15 @@ def test_truncated_normal():
     assert kl_truncated <= 1e-1, msg
 
 # sphere truncated multivariate normal distribution (10 D) with known truncation and covariance matrix
-def test_truncated_multivariate_normal_known_covariance_matrix():
-    M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
+def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
+    dims = 2
+    M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
     samples = M.rsample([5000,])
+
+    phi = lambda x: x[:, 0] > 0
     # generate ground-truth data
     alpha = 0
     while alpha < .3: 
-        W = Uniform(-.5, .5)
-        centroid = W.sample([10,])
-        phi = oracle.Sphere(M.covariance_matrix, centroid, 3.0)
         indices = phi(samples).nonzero()[:,0]
         S = samples[indices]
         alpha = S.size(0) / samples.size(0)
@@ -144,84 +152,118 @@ def test_truncated_multivariate_normal_known_covariance_matrix():
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0)
-    print(f'emp loc: {emp_loc}')
-    print(f'emp covariance: {M.covariance_matrix}')
-    S_norm = (S - emp_loc)
-    phi_norm = UnNorm_Sphere(M.covariance_matrix, phi.centroid, phi.radius, emp_loc, M.covariance_matrix)
 
     # train algorithm
-    train_kwargs = Parameters({
-                            'phi': phi_norm, 
-                            'alpha': alpha,
-                            'epochs': 10, 
-                            'covariance_matrix': M.covariance_matrix,
-                            'trials': 1,
+    args = Parameters({
+                        'epochs': 10, 
+                        'trials': 1,
+                        'batch_size': 50,
+                        'num_samples': 10000, 
+                        'verbose': True, 
+                        'lr': 1e-1,
                     }) 
-    truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
-    truncated.fit(S_norm)
+    truncated = distributions.TruncatedMultivariateNormal(args, 
+                                                          phi, 
+                                                          alpha, 
+                                                          dims,
+                                                          covariance_matrix=M.covariance_matrix)
+    truncated.fit(S)
     # rescale distribution
-    rescale_loc = truncated.loc_ + emp_loc
+    rescale_loc = truncated.loc_
     print(f'pred loc: {rescale_loc}')
     print(f'pred covariance matrix: {M.covariance_matrix}')
     m = MultivariateNormal(rescale_loc, truncated.covariance_matrix_)
         
     # check performance
     kl_truncated = kl_divergence(m, M)
+    kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    print(f'kl emp: {kl_emp}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+# sphere truncated multivariate normal distribution (10 D) with known truncation and covariance matrix
+def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
+    dims = 10
+    M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
+    samples = M.rsample([5000,])
+
+    phi = lambda x: x[:, 0] > 0
+    # generate ground-truth data
+    alpha = 0
+    while alpha < .3: 
+        indices = phi(samples).nonzero()[:,0]
+        S = samples[indices]
+        alpha = S.size(0) / samples.size(0)
+
+    print(f'alpha: {alpha}')
+    print(f'num total samples: {samples.size(0)}')
+    print(f'num truncated samples: {S.size(0)}')
+
+    emp_loc = S.mean(0)
+
+    # train algorithm
+    args = Parameters({
+                        'epochs': 10, 
+                        'trials': 1,
+                        'batch_size': 50,
+                        'num_samples': 10000, 
+                        'verbose': True, 
+                        'lr': 1e-1,
+                    }) 
+    truncated = distributions.TruncatedMultivariateNormal(args, 
+                                                          phi, 
+                                                          alpha, 
+                                                          dims,
+                                                          covariance_matrix=M.covariance_matrix)
+    truncated.fit(S)
+    # rescale distribution
+    rescale_loc = truncated.loc_
+    print(f'pred loc: {rescale_loc}')
+    print(f'pred covariance matrix: {M.covariance_matrix}')
+    m = MultivariateNormal(rescale_loc, truncated.covariance_matrix_)
+        
+    # check performance
+    kl_truncated = kl_divergence(m, M)
+    kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    print(f'kl emp: {kl_emp}')
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
 
 # sphere truncated multivariate normal distribution (10 D) with known truncation
-def test_truncated_multivariate_normal():
-    M = MultivariateNormal(ch.zeros(10), ch.eye(10)) 
+def test_truncated_10_dim_multivariate_normal():
+    dims = 10
+    M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
     samples = M.rsample([10000,])
 
-    phi, indices, alpha = generate_sphere_truncation(samples, M.covariance_matrix, .5)
-    S = samples[indices]
-        
+    phi = lambda x: x[:, 0] > 0
+    # generate ground-truth data
+    alpha = 0
+    while alpha < .3: 
+        indices = phi(samples).nonzero()[:,0]
+        S = samples[indices]
+        alpha = S.size(0) / samples.size(0)
+
     print(f'alpha: {alpha}')
     print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
-    emp_loc = S.mean(0)
-    emp_cov = cov(S)
-    print(f'emp loc: {emp_loc}')
-    print(f'emp covariance: {emp_cov}')
-
-    if not is_psd(emp_cov): 
-        eigenvalues = ch.linalg.eigvalsh(emp_cov)
-        print(f"min eigenvalue: {eigenvalues.min()}")
-        print(f"max eigenvalue: {eigenvalues.max()}")
-        print(f"condition number: {eigenvalues.max() / eigenvalues.max(0)[0]}")
-        print(f'empirical covariance is not PSD!!')
-
-    try:
-        emp_scale = ch.linalg.cholesky(emp_cov)
-    except RuntimeError:
-        print("Empirical covariance not PSD, adding regularization")
-        emp_cov = emp_cov + 1e-6 * ch.eye(10)
-        emp_scale = ch.linalg.cholesky(emp_cov)
-    
-    # Standardize: solve L @ S_norm.T = (S - emp_loc).T
-    S_norm = ch.linalg.solve_triangular(
-        emp_scale, (S - emp_loc).T, upper=False
-    ).T
-
-    # S_norm = (S - emp_loc) @ emp_scale.inverse()
-    phi_norm = UnNorm_Sphere(M.covariance_matrix, phi.centroid, phi.radius, emp_loc, emp_cov)
 
     # train algorithm
-    train_kwargs = Parameters({
-                            'phi': phi_norm, 
-                            'alpha': alpha,
-                            'epochs': 10, 
-                            'trials': 1,
-                            'lr': 1e-1,
-                            'batch_size': 10
+    args = Parameters({
+                        'epochs': 10, 
+                        'trials': 1,
+                        'batch_size': 50,
+                        'num_samples': 10000, 
+                        'verbose': True, 
+                        'lr': 1e-1,
                     }) 
-    truncated = distributions.TruncatedMultivariateNormal(train_kwargs)
-    truncated.fit(S_norm)
+    truncated = distributions.TruncatedMultivariateNormal(args, 
+                                                          phi, 
+                                                          alpha, 
+                                                          dims) 
+    truncated.fit(S)
     # rescale distribution
-    rescale_loc = truncated.loc_ @ emp_scale + emp_loc
-    rescale_cov = emp_scale @ truncated.covariance_matrix_ @ emp_scale.T
+    rescale_loc = truncated.loc_ 
+    rescale_cov = truncated.covariance_matrix_
     print(f'pred loc: {rescale_loc}')
     print(f'pred covariance matrix: {rescale_cov}')
     m = MultivariateNormal(rescale_loc, rescale_cov)

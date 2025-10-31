@@ -27,8 +27,8 @@ class TruncatedNormal(TruncatedMultivariateNormal):
         super().__init__(args, phi, alpha, dims, covariance_matrix=variance)
 
     @property 
-    def variance_(self): 
+    def best_variance_(self): 
         """
         Returns the variance for the normal distribution.
         """
-        return self.model.covariance_matrix.clone()
+        return self.best_covariance_matrix_ 

@@ -22,85 +22,62 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, trunc_multi_norm_score, num_samples=1000, eps=1e-12):
-        """
-        Corrected forward for truncated Gaussian negative log-likelihood.
-
-        Args:
-            params (torch.Tensor): vector containing flattened T (dims^2) then v (dims)
-            data (torch.Tensor): batch_size x (dims + gradsize) where first dims are x
-            phi (callable): oracle function that takes samples shape (..., dims) and returns boolean mask of same leading shape
-            dims (int): dimensionality d
-            censored_sample_nll: saved for ctx (kept for compatibility)
-            hessian: optional object with save_samples method
-            num_samples (int): number of MC samples per observation (increase for better estimates)
-            eps (float): small value to avoid log(0)
-        Returns:
-            scalar tensor: mean negative log-likelihood over batch
-        """
-        # unpack params
-        T_flat = params[:dims * dims]
-        v = params[dims * dims : dims * dims + dims]           # nu (v)
-        T = T_flat.view(dims, dims)                            # T = Sigma^{-1}
-        # unpack data
-        S = data[:, :dims]                                     # observations x (batch, dims)
-        S_grad = data[:, dims:] if data.size(1) > dims else None
-
+    def forward(ctx, params, data, phi, dims, trunc_multi_norm_score, sampler=None,
+                 num_samples=100000, eps=1e-12):
+        T_flat = params[:dims*dims]
+        v = params[dims*dims : dims*dims + dims].view(dims, 1)    # (d,1)
+        T = T_flat.view(dims, dims) 
         # reconstruct Sigma and mu
-        sigma = T.inverse()                                    # Sigma
-        mu = (sigma @ v).view(dims)                            # mu = Sigma @ v
+        sigma = ch.inverse(T)
+        mu = (sigma @ v).view(dims)   # (d,)
+        
+        S = data[:, :dims]
+        S_grad = data[:, dims:]
+
+        sigma = T.inverse()
         L = ch.linalg.cholesky(sigma)
 
-        s, p_hat = rejection_sampling(mu, sigma, phi, dims, S.size(0))
-        # estimate probability of being in truncation region
-        # p_hat = mask.float().mean(dim=0).clamp_min(eps)
-        # compute the standard (unnormalized) negative log likelihood first two terms:
-        # nll_i = 0.5 * x^T T x - x^T v
-        # vectorized:
-        xT_T = (S @ T)                # (batch, dims)
-        quad = 0.5 * (xT_T * S).sum(dim=1)   # (batch,)
-        linear = (S @ v)                     # (batch,)
-        nll = quad - linear                  # (batch,)
+        # base Gaussian part
+        quad = 0.5 * (S @ T * S).sum(dim=1)
+        linear = (S @ v)
+        base = quad - linear  # (batch,)
 
-        # Now compute log integral (log I) correctly using derivation:
-        # log I = 0.5 * mu^T T mu + 0.5 * d * log(2*pi) + 0.5 * log|Sigma| + log P(Z in S)
-        # where P(Z in S) is probability under N(mu, Sigma) that Z in truncation region.
-        # note: mu^T T mu = mu^T v   (since v = T mu)
-        muT_T_mu = (mu @ v) * 0.5                  # scalar
+        # normalization stuff
+        muT_T_mu = 0.5 * (mu @ v)
         const_term = 0.5 * dims * math.log(2 * math.pi)
-        # logdet(Sigma) = - logdet(T)
-        # compute logdet(T) robustly
-        # If T is symmetric positive definite, ch.logdet(T) is fine.
-        logdet_T = ch.logdet(T)                    # scalar tensor
-        logdet_sigma = -logdet_T                   # scalar tensor
-
-        # p_hat may be zero for some observations -> use eps
-        # p_hat shape is (batch,)
-        # log_p_hat = ch.log(p_hat + eps)            # avoid -inf
-        log_p_hat = ch.log(p_hat + eps)
         logdet_sigma = 2 * ch.log(ch.diagonal(L)).sum()
+    
+        if not sampler:             
+            sampler = Sampler()   
 
+        z = ch.Tensor([])
+        num_sampled = 0
 
-        # assemble log integral per batch
-        # muT_T_mu is a scalar; convert to tensor same device
-        muT_T_mu_t = muT_T_mu.to(logdet_sigma.device)
+        while z.size(0) < num_samples:
+            # draw samples per-observation so phi can depend on each sample individually if needed
+            s = sampler.sample(mu, sigma, num_samples)
+            mask = phi(s)
+            z = ch.cat([z, s[mask.nonzero()[:,0]]])
+            num_sampled += num_samples
 
-        log_I = muT_T_mu_t + const_term + 0.5 * logdet_sigma + log_p_hat  # (batch,)
+        p_hat = ch.Tensor([z.size(0) / num_sampled])
+        if p_hat < .01:
+            print(f'acceptance rate: {p_hat.item()}')
+                        
+        log_p_hat = ch.log(p_hat + 1e-12)
 
-        # final per-sample negative log-likelihood:
-        # ell = 0.5 x^T T x - x^T v + log I
-        ell = nll + log_I  # (batch,)
+        log_I = muT_T_mu + const_term + 0.5 * logdet_sigma + log_p_hat
 
-        # save for backward if needed
-        ctx.trunc_multi_norm_score = trunc_multi_norm_score 
-        # save tensors that will be needed in backward (S_grad maybe None)
-        ctx.save_for_backward(S_grad, s)
-        return ell.mean()
+        # final NLL — IMPORTANT PART
+        nll = base + log_I
+        ctx.save_for_backward(S_grad, z)
+        ctx.trunc_multi_norm_score = trunc_multi_norm_score
+        return nll.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, s = ctx.saved_tensors
-        return  (-S_grad + ctx.trunc_multi_norm_score(s)) / S_grad.size(0), None, None, None, None, None, None, None
+        return  (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)])) / S_grad.size(0), None, None, None, None, None, None, None
 
 
 class TruncatedMultivariateNormalScore: 
@@ -112,7 +89,28 @@ class TruncatedMultivariateNormalScore:
             return ch.cat([ch.zeros(x.size(0), x.size(1)**2), x], 1)
         # calculates the negative log-likelihood for one sample of a censored normal
         return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+
+class PreSampled: 
+    def __init__(self, dims: int, num_samples: int=1000000): 
+        self.dims = dims 
+        self.num_samples = num_samples 
+        self.samples = ch.randn(self.num_samples, self.dims)
+        
+    def sample(self, mu: ch.Tensor, sigma: ch.Tensor, num_samples: int):
+        if num_samples > self.num_samples: 
+            raise Exception(f"num samples: ({num_samples}) greater than number of samples presampled: ({self.num_samples})")
+        rand_perm = ch.randint(self.num_samples, ch.Size([self.num_samples]))
+        L = ch.linalg.cholesky(sigma)
+        s = mu + self.samples @ L.T 
+        return s[rand_perm][:num_samples]
+
     
+class Sampler: 
+    def sample(self, mu: ch.Tensor, sigma: ch.Tensor, num_samples: int): 
+        samples = ch.randn(num_samples, mu.size(0))
+        L = ch.linalg.cholesky(sigma)
+        s = mu + samples @ L.T 
+        return s 
 
 def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000): 
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
