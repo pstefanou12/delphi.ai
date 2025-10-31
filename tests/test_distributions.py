@@ -121,7 +121,6 @@ def test_truncated_normal():
                                               1)
     truncated.fit(S_std_norm)
     # rescale distribution
-    import pdb; pdb.set_trace()
     rescale_loc = truncated.best_loc_ * emp_scale + emp_loc
     print(f"pred loc: {rescale_loc}")
     rescale_var = truncated.best_variance_ * emp_var

@@ -57,7 +57,7 @@ class Trainer:
 
             # forward pass
             pred = self.model(inp, targ)
-            loss = self.model.criterion(pred, targ, *self.model.criterion_params)
+            loss = self.model.criterion(*pred, targ, *self.model.criterion_params)
             
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 
@@ -87,7 +87,7 @@ class Trainer:
  
             self.model.iteration_hook(i, is_train, loss, batch)
             if is_train: 
-                params = list(self.model.parameters())[0].data[None,...]
+                params = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...]
                 self.param_history = ch.cat([self.param_history, params])
                 self.loss_history = ch.cat([self.loss_history, loss])
 
@@ -191,7 +191,7 @@ class Trainer:
                 then procedure has converged.
                 """
                 if self._best_params is None or val_loss < self._best_loss: 
-                    self._best_params, self._best_loss = list(self.model.parameters())[0].data.detach(), val_loss
+                    self._best_params, self._best_loss = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach(), val_loss
                 if self.args.early_stopping: 
                     if ch.abs(val_loss - self._best_loss) <= self.args.tol:
                         self.no_improvement_count += 1
@@ -203,7 +203,7 @@ class Trainer:
                         break
 
             if val_loss is not None: 
-                self._final_loss, self._final_params = val_loss, list(self.model.parameters())[0].data.detach()
+                self._final_loss, self._final_params = val_loss, ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach()
 
             self.model.post_training_hook()
                 

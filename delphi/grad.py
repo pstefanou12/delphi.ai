@@ -22,11 +22,11 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, params, data, phi, dims, trunc_multi_norm_score, sampler=None,
+    def forward(ctx, T, v, data, phi, dims, trunc_multi_norm_score, sampler=None,
                  num_samples=100000, eps=1e-12):
-        T_flat = params[:dims*dims]
-        v = params[dims*dims : dims*dims + dims].view(dims, 1)    # (d,1)
-        T = T_flat.view(dims, dims) 
+        # T_flat = params[:dims*dims]
+        # v = params[dims*dims : dims*dims + dims].view(dims, 1)    # (d,1)
+        # T = T_flat.view(dims, dims) 
         # reconstruct Sigma and mu
         sigma = ch.inverse(T)
         mu = (sigma @ v).view(dims)   # (d,)
@@ -72,12 +72,19 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         nll = base + log_I
         ctx.save_for_backward(S_grad, z)
         ctx.trunc_multi_norm_score = trunc_multi_norm_score
+        ctx.dims = dims
         return nll.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, s = ctx.saved_tensors
-        return  (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)])) / S_grad.size(0), None, None, None, None, None, None, None
+        grad = (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)]))
+
+        cov_grad = grad[:,:ctx.dims**2].view(grad.size(0), ctx.dims, ctx.dims)
+        loc_grad = grad[:,ctx.dims**2:]
+
+        return  cov_grad / S_grad.size(0), loc_grad / S_grad.size(0), None, None, None, None, None, None, None
+        # return  (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)])) / S_grad.size(0), None, None, None, None, None, None, None
 
 
 class TruncatedMultivariateNormalScore: 
@@ -90,7 +97,7 @@ class TruncatedMultivariateNormalScore:
         # calculates the negative log-likelihood for one sample of a censored normal
         return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
-class PreSampled: 
+class PreSampler: 
     def __init__(self, dims: int, num_samples: int=1000000): 
         self.dims = dims 
         self.num_samples = num_samples 
