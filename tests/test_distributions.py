@@ -85,7 +85,7 @@ def test_truncated_normal_known_variance():
 # right truncated normal distribution with known truncation
 def test_truncated_normal():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([10000,])
+    samples = M.rsample([5000,])
     print(f'num total samples: {samples.size(0)}')
     # generate ground-truth data
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -106,20 +106,21 @@ def test_truncated_normal():
     # train algorithm
     args = Parameters({
                         'epochs': 10, 
-                        'batch_size': 100, 
+                        'batch_size': 10, 
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-1,
                         'num_samples': 10000,
-                        'momentum':.5,
                         'early_stopping': True,
                         'tol': 1e-3,
+                        'var_lr': 1e-1,
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
                                               alpha, 
                                               1)
     truncated.fit(S_std_norm)
+
     # rescale distribution
     rescale_loc = truncated.best_loc_ * emp_scale + emp_loc
     print(f"pred loc: {rescale_loc}")

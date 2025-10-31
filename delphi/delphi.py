@@ -151,8 +151,8 @@ class delphi(ch.nn.Module):
     
         if self.args.verbose:
             print(f"Creating SGD optimizer: {config}")
-    
-        return SGD(params, **config)
+        
+        return  SGD(params, **config)
 
     def _create_adam(self, params):
         """Create Adam optimizer with all PyTorch parameters"""
@@ -416,6 +416,5 @@ class delphi(ch.nn.Module):
         '''
         self._model = model
     
-    # @property
-    # def parameters(self):
-    #     return self._parameters
+    def parameters_(self):
+        return self.parameters()

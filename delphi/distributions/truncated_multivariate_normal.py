@@ -105,6 +105,9 @@ class TruncatedMultivariateNormal(distributions):
             T = self.emp_covariance_matrix.clone().inverse()
         v = self.emp_loc.clone() @ T
 
+        self.emp_v = v
+        self.emp_T = T
+
         # Initialize empirical model 
         # self.model = MultivariateNormal(self.v, self.T)
         # Register parameters with Pytorch
@@ -124,37 +127,34 @@ class TruncatedMultivariateNormal(distributions):
         return self.T, self.v
     
     def iteration_hook(self, i, is_train, loss, batch) -> None:
-        pass
         # Project location to ball around v
-        # theta = self.theta
-        # v = theta[self.dims**2:]
-        # T = theta[:self.dims**2].resize(self.dims, self.dims)
-        # loc_diff = v - self.v
-        # loc_norm = ch.norm(loc_diff)
-        # if loc_norm > self.radius:
-        #     v = self.v + (loc_diff / loc_norm) * self.radius
+        T, v = self.T, self.v
+        loc_diff = self.emp_v - v
+        loc_norm = ch.norm(loc_diff)
+        if loc_norm > self.radius:
+            v = self.v + (loc_diff / loc_norm) * self.radius
             
-        # # Project covariance to PSD cone with bounded deviation from T
-        # cov = T.inverse()
-        # # Ensure PSD via eigenvalue clipping
-        # L, Q = ch.linalg.eigh(cov)
-        # L_clipped = ch.clamp(L, min=1e-6)  # Ensure positive eigenvalues
-        # cov_psd = Q @ ch.diag_embed(L_clipped) @ Q.T
+        # Project covariance to PSD cone with bounded deviation from T
+        cov = T.inverse()
+        # Ensure PSD via eigenvalue clipping
+        L, Q = ch.linalg.eigh(cov)
+        L_clipped = ch.clamp(L, min=1e-6)  # Ensure positive eigenvalues
+        cov_psd = Q @ ch.diag_embed(L_clipped) @ Q.T
     
-        # # Project to Frobenius ball around T if needed
-        # cov_diff = cov_psd - self.T
-        # frob_norm = ch.linalg.norm(cov_diff, ord='fro')
-        # if frob_norm > self.radius:
-        #     cov_projected = self.T + (cov_diff / frob_norm) * self.radius
-        #     # Re-ensure PSD after projection
-        #     L, Q = ch.linalg.eigh(cov_projected)
-        #     L_clipped = ch.clamp(L, min=1e-6)
-        #     T = (Q @ ch.diag_embed(L_clipped) @ Q.T).inverse()
-        # else:
-        #     T = cov_psd.inverse()
+        # Project to Frobenius ball around T if needed
+        cov_diff = cov_psd - self.emp_T
+        frob_norm = ch.linalg.norm(cov_diff, ord='fro')
+        if frob_norm > self.radius:
+            cov_projected = self.T + (cov_diff / frob_norm) * self.radius
+            # Re-ensure PSD after projection
+            L, Q = ch.linalg.eigh(cov_projected)
+            L_clipped = ch.clamp(L, min=1e-6)
+            T = (Q @ ch.diag_embed(L_clipped) @ Q.T).inverse()
+        else:
+            T = cov_psd.inverse()
 
-        # theta = ch.cat([T.flatten(), v])
-        # self.theta.data = theta
+        self.v.data = v 
+        self.T.data = T 
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
@@ -162,6 +162,16 @@ class TruncatedMultivariateNormal(distributions):
 
         self.best_covariance_matrix, self.best_loc, self.best_theta_loss = *self._reparameterize(self.trainer.best_params), self.trainer.best_loss
         self.final_covariance_matrix, self.final_loc, self.final_theta_loss = *self._reparameterize(self.trainer.final_params), self.trainer.final_loss
+
+
+    def parameters_(self):
+        if self.args.var_lr is not None: 
+            return [
+                {'params': self.T, 'lr': self.args.var_lr},   
+                {'params': self.v, 'lr': self.args.lr},
+            ]
+        
+        return self.parameters()
 
     def _reparameterize(self, theta): 
         T = theta[:,:self.dims**2].resize(self.dims, self.dims)

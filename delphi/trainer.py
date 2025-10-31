@@ -160,7 +160,7 @@ class Trainer:
 
             t_start = time()
             self.model.pretrain_hook(train_loader)
-            self.model.make_optimizer_and_schedule(self.model.parameters()) 
+            self.model.make_optimizer_and_schedule(self.model.parameters_()) 
    
             if checkpoint:
                 epoch = checkpoint['epoch']
