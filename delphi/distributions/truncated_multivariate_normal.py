@@ -13,7 +13,7 @@ from .distributions import distributions
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore, PreSampler
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters 
+from ..utils.helpers import PSDError, Parameters, is_psd
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
@@ -109,14 +109,9 @@ class TruncatedMultivariateNormal(distributions):
         self.emp_T = T
 
         # Initialize empirical model 
-        # self.model = MultivariateNormal(self.v, self.T)
-        # Register parameters with Pytorch
-        # theta = ch.cat([self.T.flatten(), self.v])
-
         self.register_parameter('T', nn.Parameter(T))
         self.register_parameter('v', nn.Parameter(v))
-        # self.register_parameter('theta', nn.Parameter(theta))
-            
+
     def __call__(self, batch, targ):
         """
         Training step for defined model.
@@ -126,35 +121,68 @@ class TruncatedMultivariateNormal(distributions):
         """
         return self.T, self.v
     
-    def iteration_hook(self, i, is_train, loss, batch) -> None:
-        # Project location to ball around v
-        T, v = self.T, self.v
-        loc_diff = self.emp_v - v
-        loc_norm = ch.norm(loc_diff)
-        if loc_norm > self.radius:
-            v = self.v + (loc_diff / loc_norm) * self.radius
-            
-        # Project covariance to PSD cone with bounded deviation from T
-        cov = T.inverse()
-        # Ensure PSD via eigenvalue clipping
-        L, Q = ch.linalg.eigh(cov)
-        L_clipped = ch.clamp(L, min=1e-6)  # Ensure positive eigenvalues
-        cov_psd = Q @ ch.diag_embed(L_clipped) @ Q.T
-    
-        # Project to Frobenius ball around T if needed
-        cov_diff = cov_psd - self.emp_T
-        frob_norm = ch.linalg.norm(cov_diff, ord='fro')
-        if frob_norm > self.radius:
-            cov_projected = self.T + (cov_diff / frob_norm) * self.radius
-            # Re-ensure PSD after projection
-            L, Q = ch.linalg.eigh(cov_projected)
-            L_clipped = ch.clamp(L, min=1e-6)
-            T = (Q @ ch.diag_embed(L_clipped) @ Q.T).inverse()
-        else:
-            T = cov_psd.inverse()
+    def project_to_psd(self, M, eps=1e-6):
+        """Projects a symmetric matrix M onto the Positive Semi-Definite (PSD) cone."""
+        L, Q = ch.linalg.eigh(M)
+        L_clipped = ch.clamp(L, min=eps)
+        return Q @ ch.diag_embed(L_clipped) @ Q.T
 
-        self.v.data = v 
-        self.T.data = T 
+    def iteration_hook(self, i, is_train, loss, batch) -> None:
+        with ch.no_grad():
+            # Clone current parameters
+            T_prev = self.T.clone()
+            v_prev = self.v.clone()
+
+            T = T_prev.clone()
+            v = v_prev.clone()
+
+            # --- 1) Project mean into L2 ball ---
+            loc_diff = self.emp_v - v
+            dist = ch.norm(loc_diff)
+
+            if dist > self.radius:
+                v = self.emp_v - loc_diff / dist * self.radius
+
+            # --- 2) Frobenius ball projection for T ---
+            cov_diff = T - self.emp_T
+            frob_norm = ch.linalg.norm(cov_diff, ord='fro')
+
+            if frob_norm > self.radius:
+                T = self.emp_T + cov_diff * (self.radius / frob_norm)
+
+            # Symmetrize after projection (important!)
+            T = 0.5 * (T + T.T)
+
+            # --- 3) Final PSD projection ---
+            T = self.project_to_psd(T, eps=1e-8)
+
+            # Symmetrize again after PSD projection
+            T = 0.5 * (T + T.T)
+
+            # --- 4) Damping / stabilization ---
+            # Prevent projection oscillation and shrink toward feasible region
+            damping = 0.05
+            T = (1 - damping) * T + damping * self.emp_T
+            v = (1 - damping) * v + damping * self.emp_v
+
+            # --- 5) Condition check before assigning ---
+            cond = ch.linalg.cond(T)
+            if cond > 1e12:
+                print(f"[iter {i}] Warning: ill-conditioned T (cond={cond:.2e}) → re-PSD")
+                T = self.project_to_psd(T, eps=1e-6)
+
+            # --- 6) Assign safely ---
+            self.T.copy_(T)
+            self.v.copy_(v)
+
+            # Debug: ensure PSD (no inverse!)
+            if ch.any(ch.linalg.eigvalsh(T) < -1e-10):
+                print("PSD violation — applying repair")
+                self.T.copy_(self.project_to_psd(T, eps=1e-6))
+                    
+        if not is_psd(self.T.inverse()):
+            raise PSDError("Covariance matrix is no longer positive-definite. Try reducing covariance_matrix_lr.")
+
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
@@ -165,9 +193,9 @@ class TruncatedMultivariateNormal(distributions):
 
 
     def parameters_(self):
-        if self.args.var_lr is not None: 
+        if self.args.covariance_matrix_lr is not None: 
             return [
-                {'params': self.T, 'lr': self.args.var_lr},   
+                {'params': self.T, 'lr': self.args.covariance_matrix_lr},   
                 {'params': self.v, 'lr': self.args.lr},
             ]
         

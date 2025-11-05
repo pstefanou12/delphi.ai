@@ -169,6 +169,7 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'distribution': (bool, True), 
         'stats': (bool, True),
         'optimizer': (str, 'sgd'),
+        'covariance_matrix_lr': (float, 1e-2)
 }
 
 
