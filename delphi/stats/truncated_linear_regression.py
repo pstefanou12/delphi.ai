@@ -20,7 +20,7 @@ from ..utils.helpers import Parameters
 from .linear_model import LinearModel
 from ..trainer import Trainer
 from ..utils.helpers import Bounds
-from ..utils.defaults import TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
 
 
 class TruncatedLinearRegression(LinearModel):
@@ -35,11 +35,11 @@ class TruncatedLinearRegression(LinearModel):
     def __init__(self,
                 phi: Callable,
                 args: Parameters,
+                fit_intercept: bool=True,
                 noise_var:ch.Tensor=None,
                 dependent: bool=False,
                 emp_weight: ch.Tensor=None,
-                rand_seed=0,
-                store: Store=None):
+                rand_seed=0):
         """
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -64,11 +64,14 @@ class TruncatedLinearRegression(LinearModel):
             store (cox.store.Store) : cox store object for logging 
         """
         if dependent: 
-            super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_LDS_DEFAULTS, store=store)
+            args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
+            super().__init__(args, dependent, emp_weight=emp_weight)
             self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
         else:    
-            super().__init__(args, dependent, emp_weight=emp_weight, defaults=TRUNC_REG_DEFAULTS, store=store)
+            args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
+            super().__init__(args, dependent, emp_weight=emp_weight)
         self.phi = phi
+        self.fit_intercept = fit_intercept
         self.noise_var = noise_var
         self.rand_seed = rand_seed
         if self.dependent: assert self.noise_var is not None, "if linear dynamical system, noise variance must be known"
@@ -114,10 +117,10 @@ class TruncatedLinearRegression(LinearModel):
             ]
 
         # add one feature to x when fitting intercept
-        if self.args.fit_intercept:
+        if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
-        if self.args.fit_intercept: 
+        if self.fit_intercept: 
             k = X.size(1) - 1
         else: 
             k = X.size(1)
@@ -130,7 +133,7 @@ class TruncatedLinearRegression(LinearModel):
         self.beta = B * (k ** .5)
     
         # Normalize all features except intercept column
-        if self.args.fit_intercept:
+        if self.fit_intercept:
             X_normalized = X[:, :-1] / self.beta
             X = ch.cat([X_normalized, X[:, -1:]], dim=1)  # Keep intercept as 1
         else:
@@ -138,10 +141,9 @@ class TruncatedLinearRegression(LinearModel):
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
         self.trainer = Trainer(self, self.args)
-        best_params, self.history, best_loss = self.trainer.train_model(self.train_loader, 
-                                                                        self.val_loader, 
-                                                                        rand_seed=self.rand_seed,
-                                                                        store=self.store)
+        self.trainer.train_model(self.train_loader, 
+                                    self.val_loader, 
+                                    rand_seed=self.rand_seed)
         return self
 
     def pretrain_hook(self, 
@@ -180,7 +182,7 @@ class TruncatedLinearRegression(LinearModel):
             self.register_buffer('emp_weight', Tensor(coef_))
         else: 
             self.register_buffer('emp_weight', self._emp_weight)
-        
+
         if self.dependent:
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \
                         X.view(X.size(0), 1, X.size(1))).sum(0)
@@ -191,6 +193,8 @@ class TruncatedLinearRegression(LinearModel):
             self.register_buffer('Sigma', self.Sigma_0.clone())
 
     def post_training_hook(self): 
+        best_params = self.trainer.best_params
+        final_params = self.trainer.final_params
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         if self.noise_var is None:
@@ -204,12 +208,15 @@ class TruncatedLinearRegression(LinearModel):
         self.weight.requires_grad = False
 
         # assign results from procedure to instance variables
-        if self.args.fit_intercept: 
-            self.coef = self.weight[:-1] / self.beta
-            self.intercept = self.weight[-1]
+        if self.fit_intercept: 
+            self.best_coef = best_params[:,:-1] / self.beta
+            self.best_intercept = best_params[:,-1]
+            self.final_coef = final_params[:,:-1] / self.beta
+            self.final_intercept = final_params[:,-1]
             self.emp_weight /= self.beta
         else: 
-            self.coef = self.weight[:] / self.beta
+            self.best_coef = best_params[:] / self.beta
+            self.final_coef = final_params[:] / self.beta
             self.emp_weight /= self.beta
     
     def predict(self, 
@@ -218,7 +225,7 @@ class TruncatedLinearRegression(LinearModel):
         Make predictions with regression estimates.
         """
         assert self.coef is not None, "must fit model before using predict method"
-        if self.args.fit_intercept: 
+        if self.fit_intercept: 
             return X@self.coef + self.intercept
         return X@self.coef
 
@@ -231,16 +238,37 @@ class TruncatedLinearRegression(LinearModel):
     def emp_nll(self, 
                 X: Tensor, 
                 y: Tensor) -> Tensor:
-        if self.args.fit_intercept: 
+        if self.fit_intercept: 
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
         with ch.no_grad():
             return self.criterion(X@self.emp_weight, y, *self.criterion_params)
+
+    @property
+    def best_coef_(self): 
+        return self.best_coef
+
+    @property
+    def best_intercept_(self): 
+        if self.fit_intercept is not None:
+            return self.best_intercept
+        warnings.warn("intercept not fit, check inputs.") 
     
+    @property
+    def final_coef_(self): 
+        return self.final_coef
+    
+    @property
+    def final_intercept_(self): 
+        if self.fit_intercept is not None:
+            return self.final_intercept
+        warnings.warn("intercept not fit, check inputs.") 
+
     @property
     def coef_(self): 
         """
         Regression coefficient weights.
         """
+
         return self.coef.clone()
 
     @property
@@ -299,6 +327,7 @@ class TruncatedLinearRegression(LinearModel):
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
                                 X.view(X.size(0), 1, X.size(1))).mean(0)
+
         return X@self.weight
 
     def pre_step_hook(self, 

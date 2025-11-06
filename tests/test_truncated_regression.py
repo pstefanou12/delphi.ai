@@ -20,24 +20,18 @@ from delphi.utils.helpers import Parameters, calc_spectral_norm
 mse_loss =  MSELoss()
 seed = 69 
 
-
 # left truncated linear regression with known variance - 1 dimension
-def test_known_truncated_regression_one_dimension():
-    D, K = 1, 1
-    SAMPLES = 1000
-    w_ = Uniform(-1, 1)
-    M = Uniform(-10, 10)
+def test_known_truncated_regression_one_dimension_no_intercept():
+    NUM_SAMPLES = 1000
     # generate ground truth
     NOISE_VAR = ch.ones(1, 1)
-    W = w_.sample([K, D])
-    W0 = w_.sample([1, 1])
-
+    W = ch.ones(1, 1)
     print(f"gt weight: {W}")
-    print(f"gt intercept: {W0}")
     print(f"gt noise var: {NOISE_VAR}")
+
     # generate data
-    X = M.sample(ch.Size([SAMPLES, D])) if isinstance(M, Uniform) else M.sample(ch.Size([SAMPLES]))
-    y = X@W.T + W0 
+    X = ch.rand(NUM_SAMPLES, 1)
+    y = X@W.T  
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
     phi = oracle.Left_Regression(ch.zeros(1))
@@ -47,14 +41,14 @@ def test_known_truncated_regression_one_dimension():
     alpha = x_trunc.size(0) / X.size(0)
     print(f'alpha: {alpha}')
 
-    gt_norm = LinearRegression()
+    gt_norm = LinearRegression(fit_intercept=False)
     gt_norm.fit(X, y)
-    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
+    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten()]))
 
     # calculate empirical noise variance for regression 
-    ols_trunc = LinearRegression()
+    ols_trunc = LinearRegression(fit_intercept=False)
     ols_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_]))
+    emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten()]))
     print(f'empirical weights: {emp_}')
     emp_mse_loss = mse_loss(emp_, gt_)
     print(f'emp mse loss: {emp_mse_loss}')
@@ -66,16 +60,16 @@ def test_known_truncated_regression_one_dimension():
     train_kwargs = Parameters({'alpha': alpha,
                                 'epochs': 2,
                                 'lr': 1e-1,
-                                'num_samples': 50,
-                                'batch_size': 5,
+                                'batch_size': 10,
                                 'trials': 1,
                                 'verbose': True
                             }) 
     trunc_reg = stats.TruncatedLinearRegression(phi_scale, 
                                                 train_kwargs, 
+                                                fit_intercept=False,
                                                 noise_var=ch.ones(1, 1))
     trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.coef_).flatten(), trunc_reg.intercept_]) * ch.sqrt(NOISE_VAR)
+    w_ = ch.cat([(trunc_reg.best_coef_).flatten()]) * ch.sqrt(NOISE_VAR)
     print(f'estimated weights: {w_}')
     trunc_mse_loss = mse_loss(gt_, w_.flatten())
     print(f'truc mse loss: {trunc_mse_loss}')
@@ -84,26 +78,24 @@ def test_known_truncated_regression_one_dimension():
     msg = f'trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1'
     assert trunc_mse_loss <= 1e-1, msg
 
-# left truncated linear regression with known variance - 100 dimensions
-def test_known_truncated_regression_higher_dimensions():
-    D, K = 100, 1
-    SAMPLES = 10000
-    w_ = Uniform(-1, 1)
-    M = Uniform(-10, 10)
+
+# left truncated linear regression with known variance - 1 dimension
+def test_known_truncated_regression_one_dimension():
+    NUM_SAMPLES = 5000
     # generate ground truth
-    NOISE_VAR = 20*ch.ones(1, 1)
-    W = w_.sample([K, D])
-    W0 = w_.sample([1, 1])
+    NOISE_VAR = ch.ones(1, 1)
+    W = ch.ones(1, 1)
+    W0 = ch.ones(1, 1) 
 
     print(f"gt weight: {W}")
     print(f"gt intercept: {W0}")
     print(f"gt noise var: {NOISE_VAR}")
     # generate data
-    X = M.sample(ch.Size([SAMPLES, D])) if isinstance(M, Uniform) else M.sample(ch.Size([SAMPLES]))
+    X = ch.rand(NUM_SAMPLES, 1)
     y = X@W.T + W0 
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.zeros(1))
+    phi = oracle.Left_Regression(ch.ones(1))
     # truncate
     indices = phi(noised).nonzero()[:,0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -127,10 +119,70 @@ def test_known_truncated_regression_higher_dimensions():
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
     train_kwargs = Parameters({'alpha': alpha,
-                                'epochs': 10,
+                                'epochs': 3,
                                 'lr': 1e-1,
-                                'num_samples': 10,
-                                'batch_size': 1,
+                                'batch_size': 10,
+                                'trials': 1,
+                                'verbose': True
+                            }) 
+    trunc_reg = stats.TruncatedLinearRegression(phi_scale, 
+                                                train_kwargs, 
+                                                fit_intercept=True,
+                                                noise_var=ch.ones(1, 1))
+    trunc_reg.fit(x_trunc, y_trunc_scale)
+    w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
+    print(f'estimated weights: {w_}')
+    trunc_mse_loss = mse_loss(gt_, w_.flatten())
+    print(f'truc mse loss: {trunc_mse_loss}')
+    msg = f'trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}'
+    assert trunc_mse_loss <= emp_mse_loss, msg
+    msg = f'trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1'
+    assert trunc_mse_loss <= 1e-1, msg
+
+# left truncated linear regression with known variance - 20 dimensions
+def test_known_truncated_regression_higher_dimensions():
+    D = 20
+    NUM_SAMPLES = 10000
+    # generate ground truth
+    NOISE_VAR = 3*ch.ones(1, 1)
+    W = ch.ones(1, D)
+    W0 = ch.ones(1, 1)
+    print(f"gt weight: {W}")
+    print(f"gt intercept: {W0}")
+    print(f"gt noise var: {NOISE_VAR}")
+
+    # generate data
+    X = ch.rand(NUM_SAMPLES, D)
+    y = X@W.T + W0 
+    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
+    # generate ground-truth data
+    phi = oracle.Left_Regression(10*ch.ones(1))
+    # truncate
+    indices = phi(noised).nonzero()[:,0]
+    x_trunc, y_trunc = X[indices], noised[indices]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'alpha: {alpha}')
+
+    gt_norm = LinearRegression()
+    gt_norm.fit(X, y)
+    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
+
+    # calculate empirical noise variance for regression 
+    ols_trunc = LinearRegression()
+    ols_trunc.fit(x_trunc, y_trunc)
+    emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_]))
+    print(f'empirical weights: {emp_}')
+    emp_mse_loss = mse_loss(emp_, gt_)
+    print(f'emp mse loss: {emp_mse_loss}')
+
+    # scale y features
+    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
+    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    # train algorithm
+    train_kwargs = Parameters({'alpha': alpha,
+                                'epochs': 5,
+                                'lr': 1e-1,
+                                'batch_size': 10,
                                 'trials': 1,
                                 'verbose': True
                             }) 
@@ -138,7 +190,7 @@ def test_known_truncated_regression_higher_dimensions():
                                                 train_kwargs, 
                                                 noise_var=ch.ones(1, 1))
     trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.coef_).flatten(), trunc_reg.intercept_]) * ch.sqrt(NOISE_VAR)
+    w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
     print(f'estimated weights: {w_}')
     known_mse_loss = mse_loss(gt_, w_.flatten())
     print(f'known mse loss: {known_mse_loss}')

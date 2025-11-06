@@ -21,15 +21,13 @@ class LinearModel(delphi):
     def __init__(self, 
                 args: Parameters,
                 dependent: bool,
-                emp_weight=None,
-                defaults: dict={},
-                store: cox.store.Store=None): 
+                emp_weight=None): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
             k (int): number of output logits
         '''
-        super().__init__(args, defaults=defaults, store=store)
+        super().__init__(args)
         self._emp_weight = emp_weight
         self.register_buffer('emp_weight', self._emp_weight)
         self.d, self.k = None, None

@@ -16,6 +16,8 @@ from .utils import constants as consts
 from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
+def ensure_tuple(x):
+    return x if isinstance(x, (tuple, list)) else (x,)
 
 class Trainer:
     def __init__(self, 
@@ -57,7 +59,7 @@ class Trainer:
 
             # forward pass
             pred = self.model(inp, targ)
-            loss = self.model.criterion(*pred, targ, *self.model.criterion_params)
+            loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
             
             """
             NOTE: Depending on batch size, the loss may not be shape (1x1), 

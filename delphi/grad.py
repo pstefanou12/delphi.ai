@@ -24,9 +24,6 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     @staticmethod
     def forward(ctx, T, v, data, phi, dims, trunc_multi_norm_score, sampler=None,
                  num_samples=100000, eps=1e-12):
-        # T_flat = params[:dims*dims]
-        # v = params[dims*dims : dims*dims + dims].view(dims, 1)    # (d,1)
-        # T = T_flat.view(dims, dims) 
         # reconstruct Sigma and mu
         sigma = ch.inverse(T)
         mu = (sigma @ v).view(dims)   # (d,)
@@ -68,7 +65,7 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
 
         log_I = muT_T_mu + const_term + 0.5 * logdet_sigma + log_p_hat
 
-        # final NLL — IMPORTANT PART
+        # final NLL 
         nll = base + log_I
         ctx.save_for_backward(S_grad, z)
         ctx.trunc_multi_norm_score = trunc_multi_norm_score
@@ -84,7 +81,6 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         loc_grad = grad[:,ctx.dims**2:]
 
         return  cov_grad / S_grad.size(0), loc_grad / S_grad.size(0), None, None, None, None, None, None, None
-        # return  (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)])) / S_grad.size(0), None, None, None, None, None, None, None
 
 
 class TruncatedMultivariateNormalScore: 
@@ -185,53 +181,104 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
         return ch.cat([term_one.flatten(), term_two.flatten()]), None, None, None, None, None
 
 
+# class TruncatedMSE(ch.autograd.Function):
+#     """
+#     Computes the gradient of the negative population log likelihood for truncated regression
+#     with known noise variance.
+#     """
+#     @staticmethod
+#     def forward(ctx, 
+#                 pred, 
+#                 targ, 
+#                 phi, 
+#                 noise_var, 
+#                 num_samples=10, 
+#                 eps=1e-5):
+#         """
+#         Args: 
+#             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+#             targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+#             phi (oracle.oracle): dependent variable membership oracle
+#             noise_var (float): noise distribution variance parameter
+#             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+#             eps (float): denominator error constant to avoid divide by zero errors
+#         """
+#         stacked = pred[None, ...].repeat(num_samples, 1, 1)
+#         noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
+#         filtered = phi(noised)
+#         z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
+#         integrand = ch.exp(-0.5 * (noised - pred).pow(2))
+    
+#         masked_integrand = integrand * filtered 
+    
+#         # Monte Carlo estimate of the integral
+#         integral_estimate = masked_integrand.mean(dim=0)
+    
+#         # log(integral)
+#         eps = 1e-10
+#         log_integral = ch.log(integral_estimate + eps)
+#         quadratic_loss = -0.5 * (targ - pred).pow(2)
+
+#         ctx.save_for_backward(pred, targ, z)
+#         return (quadratic_loss + log_integral).mean()
+
+
+#     @staticmethod
+#     def backward(ctx, 
+#                 grad_output):
+#         pred, targ, z = ctx.saved_tensors
+#         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
+    
+
 class TruncatedMSE(ch.autograd.Function):
-    """
-    Computes the gradient of the negative population log likelihood for truncated regression
-    with known noise variance.
-    """
     @staticmethod
-    def forward(ctx, 
-                pred, 
-                targ, 
-                phi, 
-                noise_var, 
-                num_samples=10, 
-                eps=1e-5):
-        """
-        Args: 
-            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
-            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
-            phi (oracle.oracle): dependent variable membership oracle
-            noise_var (float): noise distribution variance parameter
-            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
-            eps (float): denominator error constant to avoid divide by zero errors
-        """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        noised = stacked + math.sqrt(noise_var) * ch.randn(stacked.size())        
-        filtered = phi(noised)
-        z = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-        integrand = ch.exp(-0.5 * (noised - pred).pow(2))
-    
-        masked_integrand = integrand * filtered 
-    
-        # Monte Carlo estimate of the integral
-        integral_estimate = masked_integrand.mean(dim=0)
-    
-        # log(integral)
-        eps = 1e-10
-        log_integral = ch.log(integral_estimate + eps)
+    def forward(ctx, pred, targ, phi, noise_var, num_samples=10000, eps=1e-5):
+        N = pred.shape[0]
+
+        # Sample latent points
+        stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
+        noise = (noise_var ** 0.5) * ch.randn_like(stacked)
+        noised = stacked + noise
+
+        # Apply truncation
+        mask = phi(noised).float()
+
+        # Conditional mean E[Y | Y ∈ S]
+        z_num = (mask * noised).sum(dim=1)
+        z_den = mask.sum(dim=1) + eps
+        z = z_num / z_den  # (N, 1)
+
+        # Probability mass P(Y in S)
+        P_hat = mask.mean(dim=1)  # (N, 1)
+
+        # Save for backward
+        ctx.save_for_backward(pred, targ, noised, mask, P_hat, z, noise_var)
+
+        # Compute log-likelihood
         quadratic_loss = -0.5 * (targ - pred).pow(2)
+        log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
+        loss = (quadratic_loss - log_integral).mean()
 
-        ctx.save_for_backward(pred, targ, z)
-        return (quadratic_loss + log_integral).mean()
-
+        return -loss
 
     @staticmethod
-    def backward(ctx, 
-                grad_output):
-        pred, targ, z = ctx.saved_tensors
-        return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
+    def backward(ctx, grad_output):
+        pred, targ, noised, mask, P_hat, z, noise_var = ctx.saved_tensors
+        eps = 1e-8
+
+        # Mean-centered samples
+        centered = noised 
+
+        # Monte Carlo estimate of E[(z - pred) phi(z)]
+        correction_term = (mask * centered).mean(dim=1) / (P_hat + eps)
+
+        # Gradient wrt pred
+        grad_pred = (targ - correction_term) / noise_var
+
+        # Multiply by grad_output (from upstream)
+        grad_pred = grad_pred * grad_output
+
+        return - grad_pred / pred.size(0), None, None, None, None, None
 
 
 # class TruncatedUnknownVarianceMSE(ch.autograd.Function):

@@ -90,7 +90,6 @@ DELPHI_DEFAULTS = {**OPTIMIZER_DEFAULTS, **{
 
 # Default configuraitons for specific algorithms
 TRUNC_REG_DEFAULTS = {
-        'fit_intercept': (bool, True), 
         'val': (float, .2),
         'var_lr': (float, 1e-2), 
         'l1': (float, 0.0),
@@ -100,7 +99,7 @@ TRUNC_REG_DEFAULTS = {
         'rate': (float, 1.5), 
         'batch_size': (int, 50),
         'workers': (int, 0),
-        'num_samples': (int, 50),
+        'num_samples': (int, 10000),
         'shuffle': (bool, True),
         'stats': (bool, True)
 }
