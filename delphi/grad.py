@@ -257,9 +257,9 @@ class TruncatedMSE(ch.autograd.Function):
         # Compute log-likelihood
         quadratic_loss = -0.5 * (targ - pred).pow(2)
         log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
-        loss = (quadratic_loss - log_integral).mean()
+        # loss = (quadratic_loss - log_integral).mean()
 
-        return -loss
+        return log_integral - quadratic_loss
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -329,6 +329,37 @@ class TruncatedMSE(ch.autograd.Function):
 #         lambda_grad = grad_output * (0.5 / lambda_ - 0.5 * (targ - pred).pow(2) + 0.5 * (pred.pow(2) - z_2)) / pred.size(0)
 #         return lambda_ * (z - targ) / pred.size(0), None, lambda_grad / pred.size(0), None, None, None
 
+# class TruncatedUnknownVarianceMSE(ch.autograd.Function):
+#     """Corrected: L = λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]"""
+#     @staticmethod
+#     def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-5):
+#         sigma = 1 / ch.sqrt(lambda_)
+#         stacked = pred[..., None].repeat(1, num_samples, 1)
+#         noised = stacked + sigma * ch.randn(stacked.size())
+#         filtered = phi(noised)
+#         out = noised * filtered
+#         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
+#         z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+        
+#         # Correct formulation: λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]
+#         loss = 0.5 * lambda_ * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z)
+        
+#         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
+#         return loss.mean(0)
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
+        
+#         # ∂L/∂μ = λ/2 * [-2y + 2E[z]]= λ(E[z] - y)
+#         pred_grad = grad_output * lambda_ * (z - targ) / pred.size(0)
+        
+#         # ∂L/∂λ = 1/2 * [y² - 2yμ - E[z²] + 2μE[z]]
+#         lambda_grad = grad_output * 0.5 * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z) / pred.size(0)
+        
+#         return pred_grad, None, lambda_grad, None, None, None
+    
+
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     """Corrected: L = λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]"""
     @staticmethod
@@ -340,24 +371,44 @@ class TruncatedUnknownVarianceMSE(ch.autograd.Function):
         out = noised * filtered
         z = out.sum(dim=1) / (filtered.sum(dim=1) + eps)
         z_2 = out.pow(2).sum(dim=1) / (filtered.sum(dim=1) + eps)
+                
+        P_hat = filtered.float().mean(dim=1)
         
-        # Correct formulation: λ/2 * [y² - 2yμ - E[z²] + 2μE[z]]
-        loss = 0.5 * lambda_ * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z)
+        m = pred # Assume pred is m = w^T x
+        mu = lambda_ * m
+        sigma_sq = 1.0 / lambda_
+
+        # 1. Term A (Quadratic term)
+        quadratic_term = 0.5 * (lambda_ * targ.pow(2) - 2 * targ * mu)
         
+        # 2. Term B (Log-Integral I(mu, lambda))
+        
+        # Part 1: (1/2) * m^2 * lambda
+        m_sq_lambda_term = 0.5 * m.pow(2) * lambda_ 
+        
+        # Part 2: log[ sqrt(2*pi*sigma^2) * P(Z in S) ]
+        log_normalization = ch.log(ch.sqrt(2 * math.pi * sigma_sq) * P_hat + eps)
+        
+        log_integral = m_sq_lambda_term + log_normalization
+        
+        # Final Loss: L = Term A + log_integral (Term B)
+        loss = quadratic_term + log_integral
+        
+        # The return value for a log-likelihood minimization is usually the mean of the loss:
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        return loss.mean(0)
+        return loss
 
     @staticmethod
     def backward(ctx, grad_output):
         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
         
         # ∂L/∂μ = λ/2 * [-2y + 2E[z]]= λ(E[z] - y)
-        pred_grad = grad_output * lambda_ * (z - targ) / pred.size(0)
+        pred_grad = lambda_ * (z - targ) / pred.size(0)
         
         # ∂L/∂λ = 1/2 * [y² - 2yμ - E[z²] + 2μE[z]]
-        lambda_grad = grad_output * 0.5 * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z) / pred.size(0)
+        lambda_grad =  0.5 * (targ.pow(2) - 2*targ*pred - z_2 + 2*pred*z) / pred.size(0)
         
-        return pred_grad, None, lambda_grad, None, None, None
+        return -pred_grad, None, -lambda_grad, None, None, None
 
 # class TruncatedUnknownVarianceMSE(ch.autograd.Function):
 #     @staticmethod

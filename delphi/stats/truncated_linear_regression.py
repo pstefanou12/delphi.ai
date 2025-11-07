@@ -1,17 +1,12 @@
 """
 Truncated Linear Regression.
 """
-
-from re import A
 import torch as ch
 from torch import Tensor
-import torch.linalg as LA
-from cox.store import Store
 import warnings
-import collections
-from torch.nn import Parameter
+import torch.nn as nn
 from scipy.linalg import lstsq
-from typing import List, Callable
+from typing import Callable
 
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
@@ -33,13 +28,14 @@ class TruncatedLinearRegression(LinearModel):
     and the survival probability. 
     """
     def __init__(self,
-                phi: Callable,
-                args: Parameters,
-                fit_intercept: bool=True,
-                noise_var:ch.Tensor=None,
-                dependent: bool=False,
-                emp_weight: ch.Tensor=None,
-                rand_seed=0):
+                 args: Parameters, 
+                 phi: Callable,
+                 alpha: float,
+                 fit_intercept: bool=True,
+                 noise_var:ch.Tensor=None,
+                 dependent: bool=False,
+                 emp_weight: ch.Tensor=None,
+                 rand_seed=0):
         """
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
@@ -66,11 +62,12 @@ class TruncatedLinearRegression(LinearModel):
         if dependent: 
             args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
             super().__init__(args, dependent, emp_weight=emp_weight)
-            self.args.__setattr__('lr', (2/self.args.alpha) ** self.args.c_eta)
+            self.args.__setattr__('lr', (2/self.alpha) ** self.args.c_eta)
         else:    
             args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
             super().__init__(args, dependent, emp_weight=emp_weight)
         self.phi = phi
+        self.alpha = alpha
         self.fit_intercept = fit_intercept
         self.noise_var = noise_var
         self.rand_seed = rand_seed
@@ -112,7 +109,7 @@ class TruncatedLinearRegression(LinearModel):
         self.args.__setattr__('T', X.size(0))
         if self.dependent:
             self.criterion_params = [ 
-                self.phi, self.args.c_gamma, self.args.alpha, self.args.T, 
+                self.phi, self.args.c_gamma, self.alpha, self.args.T, 
                 self.noise_var, self.args.num_samples, self.args.eps,
             ]
 
@@ -124,8 +121,6 @@ class TruncatedLinearRegression(LinearModel):
             k = X.size(1) - 1
         else: 
             k = X.size(1)
-
-        self.params = None
 
         # Normalization factor: B * √k
         # Compute B = maximum L∞ norm across all samples
@@ -154,19 +149,20 @@ class TruncatedLinearRegression(LinearModel):
         # empirical estimates for projection set
         # generate noise variance radius bounds if unknown 
         if self.noise_var is None:
-            self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.args.alpha]).pow(2))) 
+            self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.alpha]).pow(2))) 
         
         if self.noise_var is None:
             lambda_ = self.emp_noise_var.clone().inverse()
-            self.params = [{"params": [Parameter(self.emp_weight.clone() * lambda_)]},
-                                {"params": Parameter(lambda_), "lr": self.args.var_lr}]
+            v = self.emp_weight * lambda_
+            self.register_parameter("v", nn.Parameter(v))
+            self.register_parameter("lambda_", nn.Parameter(lambda_))
 
             self.criterion_params = [ 
-                self.params[1]["params"], self.phi,
+                self.lambda_, self.phi,
                 self.args.num_samples, self.args.eps,
             ]
         else:
-            self.register_parameter("weight", Parameter(self.emp_weight.clone()))
+            self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self, 
                         train_loader: ch.utils.data.DataLoader) -> None: 
@@ -198,26 +194,44 @@ class TruncatedLinearRegression(LinearModel):
         if self.args.r is not None: self.args.r *= self.args.rate
         # remove model from computation graph
         if self.noise_var is None:
-            self.weight = self.params[0]['params'][0].data
-            self.lambda_ = self.params[1]['params'][0].data
-            self.lambda_.requires_grad = False
+            v = self.v.data
+            lambda_ = self.lambda_.data
             
-            self.variance = 1.0/self.lambda_
-            self.weight *= self.variance
+            self.final_variance = 1.0/lambda_
+            self.final_weight = v*self.final_variance
 
-        self.weight.requires_grad = False
-
+            if self.fit_intercept: 
+                # import pdb; pdb.set_trace()
+                best_lambda_ = best_params[:,-1]
+                self.best_variance = 1/best_lambda_
+                self.best_coef = (best_params[:,:-2] * self.best_variance) / self.beta
+                self.best_intercept = best_params[:,-2] * self.best_variance 
+                final_lambda_ = final_params[:,-1]
+                self.final_variance = 1/final_lambda_
+                self.final_coef = (final_params[:,:-2] * self.final_variance) / self.beta
+                self.final_intercept = final_params[:,-2] * self.final_variance 
+                self.emp_weight /= self.beta
+            else: 
+                best_lambda_ = best_params[:,-1]
+                self.best_variance = 1/best_lambda_
+                self.best_coef = (best_params[:,:-2] * self.best_variance) / self.beta
+                final_lambda_ = final_params[:,-1]
+                self.final_variance = 1/final_lambda_
+                self.final_coef = (final_params[:,:-2] * self.final_variance) / self.beta
+                self.emp_weight /= self.beta
+        
         # assign results from procedure to instance variables
-        if self.fit_intercept: 
-            self.best_coef = best_params[:,:-1] / self.beta
-            self.best_intercept = best_params[:,-1]
-            self.final_coef = final_params[:,:-1] / self.beta
-            self.final_intercept = final_params[:,-1]
-            self.emp_weight /= self.beta
         else: 
-            self.best_coef = best_params[:] / self.beta
-            self.final_coef = final_params[:] / self.beta
-            self.emp_weight /= self.beta
+            if self.fit_intercept: 
+                self.best_coef = best_params[:,:-1] / self.beta
+                self.best_intercept = best_params[:,-1]
+                self.final_coef = final_params[:,:-1] / self.beta
+                self.final_intercept = final_params[:,-1]
+                self.emp_weight /= self.beta
+            else: 
+                self.best_coef = best_params[:] / self.beta
+                self.final_coef = final_params[:] / self.beta
+                self.emp_weight /= self.beta
     
     def predict(self, 
                 X: Tensor): 
@@ -249,7 +263,8 @@ class TruncatedLinearRegression(LinearModel):
 
     @property
     def best_intercept_(self): 
-        if self.fit_intercept is not None:
+        import pdb; pdb.set_trace()
+        if self.fit_intercept:
             return self.best_intercept
         warnings.warn("intercept not fit, check inputs.") 
     
@@ -259,7 +274,7 @@ class TruncatedLinearRegression(LinearModel):
     
     @property
     def final_intercept_(self): 
-        if self.fit_intercept is not None:
+        if self.fit_intercept:
             return self.final_intercept
         warnings.warn("intercept not fit, check inputs.") 
 
@@ -276,18 +291,29 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression intercept.
         """
-        if self.intercept is not None:
+        if self.intercept:
             return self.intercept.clone()
         warnings.warn("intercept not fit, check args input.") 
     
     @property
-    def variance_(self): 
+    def best_variance_(self): 
         """
         Noise variance prediction for linear regression with
         unknown noise variance algorithm.
         """
         if self.noise_var is None: 
-            return self.variance
+            return self.best_variance
+        else: 
+            warnings.warn("no variance prediction because regression with known variance was run")
+
+    @property
+    def final_variance_(self): 
+        """
+        Noise variance prediction for linear regression with
+        unknown noise variance algorithm.
+        """
+        if self.noise_var is None: 
+            return self.final_variance
         else: 
             warnings.warn("no variance prediction because regression with known variance was run")
     
@@ -320,9 +346,7 @@ class TruncatedLinearRegression(LinearModel):
                 X: ch.Tensor,
                 y: ch.Tensor) -> ch.Tensor:
         if self.noise_var is None:
-            weight = self.params[0]['params'][0]
-            lambda_ = self.params[1]['params'][0]
-            return X@weight * 1.0/lambda_
+            return X@self.v * 1.0/self.lambda_
 
         if self.dependent:
             self.Sigma += ch.bmm(X.view(X.size(0), X.size(1), 1),  
@@ -345,11 +369,12 @@ class TruncatedLinearRegression(LinearModel):
                         batch: ch.Tensor) -> None:
         if self.noise_var is None:
             # project model parameters back to domain 
-            var = 1.0/self.params[1]['params'][0]
-            self.params[1]['params'][0].data = 1.0/ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper)
+            var = 1.0/self.lambda_
+            self.lambda_.data = 1.0/ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper)
 
-    def parameters(self): 
-        if self.params is not None: 
-            return self.params
+    def parameters_(self): 
+        if self.noise_var is None: 
+            return [{"params": self.v, 'lr': self.args.lr},
+            {"params": self.lambda_, "lr": self.args.var_lr}]
         else: 
             return super().parameters(recurse=True)
