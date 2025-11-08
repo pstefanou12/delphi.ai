@@ -31,7 +31,7 @@ class LinearModel(delphi):
         self._emp_weight = emp_weight
         self.register_buffer('emp_weight', self._emp_weight)
         self.d, self.k = None, None
-        self.base_radius = 1.0
+        self.base_radius = 2.0
         self.dependent = dependent
         if self.dependent: 
             self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)

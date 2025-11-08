@@ -149,13 +149,16 @@ class TruncatedLinearRegression(LinearModel):
         # empirical estimates for projection set
         # generate noise variance radius bounds if unknown 
         if self.noise_var is None:
-            self.var_bounds = Bounds(float(self.emp_noise_var.flatten() / self.args.r), float(self.emp_noise_var.flatten() / Tensor([self.alpha]).pow(2))) 
+            self.var_bounds = Bounds(1e-1*ch.ones(1,1), self.emp_noise_var + self.radius) 
         
-        if self.noise_var is None:
             lambda_ = self.emp_noise_var.clone().inverse()
+            # lambda_ = ch.ones(1, 1)
             v = self.emp_weight * lambda_
+            # v = ch.ones(1, 1) * lambda_
             self.register_parameter("v", nn.Parameter(v))
             self.register_parameter("lambda_", nn.Parameter(lambda_))
+            # self.v.requires_grad = False
+            # self.lambda_.requires_grad = False
 
             self.criterion_params = [ 
                 self.lambda_, self.phi,
@@ -201,7 +204,6 @@ class TruncatedLinearRegression(LinearModel):
             self.final_weight = v*self.final_variance
 
             if self.fit_intercept: 
-                # import pdb; pdb.set_trace()
                 best_lambda_ = best_params[:,-1]
                 self.best_variance = 1/best_lambda_
                 self.best_coef = (best_params[:,:-2] * self.best_variance) / self.beta
@@ -214,10 +216,10 @@ class TruncatedLinearRegression(LinearModel):
             else: 
                 best_lambda_ = best_params[:,-1]
                 self.best_variance = 1/best_lambda_
-                self.best_coef = (best_params[:,:-2] * self.best_variance) / self.beta
+                self.best_coef = (best_params[:,:-1] * self.best_variance) / self.beta
                 final_lambda_ = final_params[:,-1]
                 self.final_variance = 1/final_lambda_
-                self.final_coef = (final_params[:,:-2] * self.final_variance) / self.beta
+                self.final_coef = (final_params[:,:-1] * self.final_variance) / self.beta
                 self.emp_weight /= self.beta
         
         # assign results from procedure to instance variables
@@ -263,7 +265,6 @@ class TruncatedLinearRegression(LinearModel):
 
     @property
     def best_intercept_(self): 
-        import pdb; pdb.set_trace()
         if self.fit_intercept:
             return self.best_intercept
         warnings.warn("intercept not fit, check inputs.") 
@@ -346,6 +347,7 @@ class TruncatedLinearRegression(LinearModel):
                 X: ch.Tensor,
                 y: ch.Tensor) -> ch.Tensor:
         if self.noise_var is None:
+            # return X@self.emp_weight
             return X@self.v * 1.0/self.lambda_
 
         if self.dependent:
@@ -375,6 +377,6 @@ class TruncatedLinearRegression(LinearModel):
     def parameters_(self): 
         if self.noise_var is None: 
             return [{"params": self.v, 'lr': self.args.lr},
-            {"params": self.lambda_, "lr": self.args.var_lr}]
+                    {"params": self.lambda_, "lr": self.args.var_lr}]
         else: 
             return super().parameters(recurse=True)

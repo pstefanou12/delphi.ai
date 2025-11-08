@@ -80,7 +80,6 @@ class Trainer:
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
-                # import pdb; pdb.set_trace()
                 self.model.optimizer.step()
                 if self.model.schedule is not None: self.model.schedule.step()
 
