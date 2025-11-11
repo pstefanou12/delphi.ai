@@ -230,6 +230,7 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
 #         return (z - targ) / pred.size(0), targ / pred.size(0), None, None, None, None
     
 
+samples  = ch.randn(10000, 1)
 class TruncatedMSE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ, phi, noise_var, num_samples=10000, eps=1e-5):
@@ -237,7 +238,9 @@ class TruncatedMSE(ch.autograd.Function):
 
         # Sample latent points
         stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
-        noise = (noise_var ** 0.5) * ch.randn_like(stacked)
+        noise = (noise_var ** 0.5) * samples.repeat(pred.size(0), 1, 1) 
+
+        # noise = (noise_var ** 0.5) * ch.randn_like(stacked)
         noised = stacked + noise
 
         # Apply truncation
@@ -259,7 +262,7 @@ class TruncatedMSE(ch.autograd.Function):
         log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
         # loss = (quadratic_loss - log_integral).mean()
 
-        return log_integral - quadratic_loss
+        return (log_integral - quadratic_loss) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):

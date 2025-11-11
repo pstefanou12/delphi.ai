@@ -72,6 +72,9 @@ TRAINER_DEFAULTS = {
     'verbose': (bool, False),
     'disable_no_grad': (bool, False), 
     'epoch_step': (bool, False),
+    'train_mode': (['epoch', 'step'], 'epoch'),
+    'gradient_steps': (int, 1000, {'min': 1}), 
+    'val_interval': (int, 50, {'min': 1})
 }
 
 DATASET_DEFAULTS = {
@@ -101,7 +104,9 @@ TRUNC_REG_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10000),
         'shuffle': (bool, True),
-        'stats': (bool, True)
+        'train_mode': (['epoch', 'step'], 'step'),
+        'gradient_steps': (int, 1500),
+        'val_interval': (int, 50)
 }
 
 TRUNC_LDS_DEFAULTS = {
@@ -166,7 +171,6 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'num_samples': (int, 10000),
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
-        'stats': (bool, True),
         'optimizer': (str, 'sgd'),
         'covariance_matrix_lr': (float, 1e-2)
 }

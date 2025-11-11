@@ -11,7 +11,6 @@ from typing import Callable
 from .linear_model import LinearModel
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters
 from .linear_model import LinearModel
 from ..trainer import Trainer
 from ..utils.helpers import Bounds
@@ -28,11 +27,11 @@ class TruncatedLinearRegression(LinearModel):
     and the survival probability. 
     """
     def __init__(self,
-                 args: Parameters, 
+                 args: dict, 
                  phi: Callable,
                  alpha: float,
                  fit_intercept: bool=True,
-                 noise_var:ch.Tensor=None,
+                 noise_var: ch.Tensor=None,
                  dependent: bool=False,
                  emp_weight: ch.Tensor=None,
                  rand_seed=0):
@@ -137,8 +136,8 @@ class TruncatedLinearRegression(LinearModel):
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
         self.trainer = Trainer(self, self.args)
         self.trainer.train_model(self.train_loader, 
-                                    self.val_loader, 
-                                    rand_seed=self.rand_seed)
+                                 self.val_loader, 
+                                 rand_seed=self.rand_seed)
         return self
 
     def pretrain_hook(self, 
@@ -168,7 +167,7 @@ class TruncatedLinearRegression(LinearModel):
             self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self, 
-                        train_loader: ch.utils.data.DataLoader) -> None: 
+                       train_loader: ch.utils.data.DataLoader) -> None: 
         '''
         Calculates empirical estimates for a truncated linear model. Assigns 
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
@@ -245,7 +244,7 @@ class TruncatedLinearRegression(LinearModel):
             return X@self.coef + self.intercept
         return X@self.coef
 
-    def nll(self,
+    def loss(self,
             X: Tensor, 
             y: Tensor) -> Tensor:
         with ch.no_grad(): 
@@ -285,15 +284,15 @@ class TruncatedLinearRegression(LinearModel):
         Regression coefficient weights.
         """
 
-        return self.coef.clone()
+        return self.best_coef.clone()
 
     @property
     def intercept_(self): 
         """
         Regression intercept.
         """
-        if self.intercept:
-            return self.intercept.clone()
+        if self.best_intercept:
+            return self.best_intercept.clone()
         warnings.warn("intercept not fit, check args input.") 
     
     @property
@@ -347,7 +346,6 @@ class TruncatedLinearRegression(LinearModel):
                 X: ch.Tensor,
                 y: ch.Tensor) -> ch.Tensor:
         if self.noise_var is None:
-            # return X@self.emp_weight
             return X@self.v * 1.0/self.lambda_
 
         if self.dependent:
@@ -358,9 +356,6 @@ class TruncatedLinearRegression(LinearModel):
 
     def pre_step_hook(self, 
                         inp: ch.Tensor) -> None:
-        # TODO: find a cleaner way to do this
-        if self.noise_var is not None and not self.dependent:
-            self.weight.grad += (self.args.l1 * ch.sign(inp)).mean(0)[...,None]
         if self.dependent:
             self.weight.grad = self.Sigma.inverse()@self.weight.grad
                 
