@@ -56,14 +56,14 @@ def test_truncated_normal_known_variance():
     
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
                         'batch_size': 10, 
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-1,
                         'num_samples': 10000,
                         'early_stopping': True, 
-                        'tol': 5e-2
+                        'tol': 5e-2,
+                        'gradient_steps': 1500,
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 

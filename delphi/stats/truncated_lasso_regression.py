@@ -15,6 +15,7 @@ from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
 from ..grad import TruncatedMSE 
 from ..utils.defaults import check_and_fill_args, TRUNC_LASSO_DEFAULTS
+from ..utils.helpers import Parameters
 
 
 class TruncatedLassoRegression(LinearModel):
@@ -27,7 +28,7 @@ class TruncatedLassoRegression(LinearModel):
     and the survival probability. 
     """
     def __init__(self,
-                args: dict, 
+                args: Parameters, 
                 phi: Callable, 
                 alpha: float,
                 l1: float=1.0, 
@@ -69,12 +70,12 @@ class TruncatedLassoRegression(LinearModel):
         self.rand_seed = rand_seed
 
         del self.criterion 
-        def self.criterion_params
+        # def self.criterion_params
     
         self.criterion = TruncatedMSE.apply
         self.criterion_params = [
             self.phi, self.noise_var, 
-            self.arg.num_samples, self.args.eps
+            self.args.num_samples, self.args.eps
         ]
 
     def fit(self, 
@@ -92,7 +93,7 @@ class TruncatedLassoRegression(LinearModel):
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
         # add one feature to x when fitting intercept
-        if self.args.fit_intercept:
+        if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         if self.fit_intercept: 
@@ -132,7 +133,10 @@ class TruncatedLassoRegression(LinearModel):
         X, y = train_loader.dataset.tensors
         emp_lasso = LassoCV(fit_intercept=self.fit_intercept, alphas=[self.l1]) 
         emp_lasso.fit(X, y)
-        lasso_coef_ = ch.from_numpy(np.concatenate([emp_lasso.coef_flatten(), emp_lasso.intercept_]))
+        if self.args.fit_intercept:
+            lasso_coef_ = ch.from_numpy(np.concatenate([emp_lasso.coef_.flatten(), emp_lasso.intercept_]))
+        else: 
+            lasso_coef_ = ch.from_numpy(emp_lasso.coef_).float()[...,None]
         self.register_buffer('emp_weight', lasso_coef_)
 
     def __call__(self, 
@@ -142,8 +146,10 @@ class TruncatedLassoRegression(LinearModel):
 
     def pre_step_hook(self, 
                       inp: ch.Tensor) -> None:
-        if self.noise_var is not None and not self.dependent:
-            # only regulaize the weight coefficients and not intercept
+        # only regulaize the weight coefficients and not intercept
+        if self.fit_intercept:
+            self.weight.grad[:-1] += (self.l1 * ch.sign(inp[:,:-1])).mean(0)[...,None]
+        else: 
             self.weight.grad += (self.l1 * ch.sign(inp)).mean(0)[...,None]
 
     def post_training_hook(self): 

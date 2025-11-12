@@ -13,7 +13,7 @@ from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from .linear_model import LinearModel
 from ..trainer import Trainer
-from ..utils.helpers import Bounds
+from ..utils.helpers import Bounds, Parameters
 from ..utils.defaults import check_and_fill_args, TRUNC_REG_DEFAULTS, TRUNC_LDS_DEFAULTS
 
 
@@ -27,7 +27,7 @@ class TruncatedLinearRegression(LinearModel):
     and the survival probability. 
     """
     def __init__(self,
-                 args: dict, 
+                 args: Parameters, 
                  phi: Callable,
                  alpha: float,
                  fit_intercept: bool=True,

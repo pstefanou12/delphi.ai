@@ -16,5 +16,4 @@ dill
 tensorboardX
 tables
 matplotlib
-# orthnet
 config

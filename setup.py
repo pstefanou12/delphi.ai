@@ -40,9 +40,9 @@ setuptools.setup(
     setup_requires=['tqdm', 'grpcio', 'psutil', 'gitpython','py3nvml', 'cox',
                     'scikit-learn', 'seaborn', 'torch', 'torchvision', 'pandas',
                     'numpy', 'scipy', 'GPUtil', 'dill', 'tensorboardX', 'tables',
-                    'matplotlib', 'orthnet'],
+                    'matplotlib'],
     install_requires=['tqdm', 'grpcio', 'psutil', 'gitpython','py3nvml', 'cox',
                     'scikit-learn', 'seaborn', 'torch', 'torchvision', 'pandas',
                     'numpy', 'scipy', 'GPUtil', 'dill', 'tensorboardX', 'tables',
-                    'matplotlib', 'orthnet'],
+                    'matplotlib'],
 )

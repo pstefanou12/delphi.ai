@@ -95,6 +95,21 @@ DELPHI_DEFAULTS = {**OPTIMIZER_DEFAULTS, **{
 TRUNC_REG_DEFAULTS = {
         'val': (float, .2),
         'var_lr': (float, 1e-2), 
+        'weight_decay': (float, 0.0), 
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 50),
+        'workers': (int, 0),
+        'num_samples': (int, 10000),
+        'shuffle': (bool, True),
+        'train_mode': (['epoch', 'step'], 'step'),
+        'gradient_steps': (int, 1500),
+        'val_interval': (int, 50)
+}
+
+TRUNC_LASSO_DEFAULTS = {
+        'val': (float, .2),
         'l1': (float, 0.0),
         'weight_decay': (float, 0.0), 
         'eps': (float, 1e-5),
@@ -172,7 +187,8 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
         'optimizer': (str, 'sgd'),
-        'covariance_matrix_lr': (float, 1e-2)
+        'covariance_matrix_lr': (float, 1e-2),
+        'train_mode': (['epoch', 'step'], 'step'),
 }
 
 

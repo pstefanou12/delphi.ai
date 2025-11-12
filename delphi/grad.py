@@ -260,7 +260,6 @@ class TruncatedMSE(ch.autograd.Function):
         # Compute log-likelihood
         quadratic_loss = -0.5 * (targ - pred).pow(2)
         log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
-        # loss = (quadratic_loss - log_integral).mean()
 
         return (log_integral - quadratic_loss) / pred.size(0)
 
