@@ -135,8 +135,7 @@ def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000):
         print(f'acceptance rate: {p_hat.item()}')
 
     return accepted_samples[:batch_size], p_hat
-
-
+    
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """
     Computes the negative population log likelihood for truncated multivariate normal distribution with unknown truncation.
@@ -144,8 +143,7 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     then calculates its gradient in the backwards step.
     """
     @staticmethod
-    # def forward(ctx, u, B, x, pdf, loc_grad, cov_grad, phi, exp_h):
-    def forward(ctx, params, data, phi, exp_h, dims, known_cov=False):
+    def forward(ctx, v, T, data, phi, exp_h, dims):
         """
         Args: 
             params (torch.Tensor): size (dims + dims ** 2,) - current reparameterized mean and covariance matrix estimates concatenated together
@@ -161,24 +159,25 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
             dims (int): the dimension number 
             known_cov (bool): whether the covariance matrix is known; if so, provide 0 as gradient for covariance matrix
         """
-        u = params[:dims]
-        B = params[dims:].resize(dims, dims)
-        x = data[:,0][...,None]
-        pdf = data[:,1][...,None]
-        loc_grad = data[:,2][...,None]
-        cov_grad = data[:,3][...,None]
-        exp = exp_h(u, B, x)
+        x = data[:,:dims].view(data.size(0), dims)
+        pdf = data[:,dims][...,None]
+        loc_grad = data[:,dims+1:dims+dims+1].view(data.size(0), dims)
+        cov_grad = data[:,dims+dims+1:].view(data.size(0), dims, dims)
+        exp = exp_h(v, T, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi
-        ctx.save_for_backward(loss, loc_grad, cov_grad, ch.Tensor([known_cov]), ch.Tensor([dims]))
-        return loss.mean(0)
+        if loss.mean(0) == ch.nan: import pdb; pdb.set_trace()
+
+        ctx.save_for_backward(loss, loc_grad, cov_grad)
+        ctx.dims = dims
+        return loss / data.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        loss, loc_grad, cov_grad, known_cov, dims = ctx.saved_tensors
-        term_one = (loc_grad * loss).mean(0)
-        term_two = ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([loc_grad.size(1), loc_grad.size(1)]))).mean(0) if not known_cov else ch.zeros((int(dims),)) 
-        return ch.cat([term_one.flatten(), term_two.flatten()]), None, None, None, None, None
+        loss, loc_grad, cov_grad = ctx.saved_tensors
+        term_one = (loc_grad * loss)
+        term_two = ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([ctx.dims, ctx.dims]))) 
+        return term_one / loc_grad.size(0), term_two / cov_grad.size(0), None, None, None, None, None
 
 
 # class TruncatedMSE(ch.autograd.Function):

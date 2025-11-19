@@ -65,14 +65,11 @@ class TruncatedMultivariateNormal(distributions):
         M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
         self.samples = M.sample([10000])
         self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, self.sampler, self.args.num_samples, self.args.eps]
-
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
+                                                                self.S, 
+                                                                TruncatedNormalDataset,
+                                                                {'trunc_multi_norm_score': self.trunc_multi_norm_score})
         try: 
-            self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
-                                                                            self.S, 
-                                                                            TruncatedNormalDataset,
-                                                                            {'trunc_multi_norm_score': self.trunc_multi_norm_score})
-
-            # run PGD to predict actual estimates
             self.trainer = Trainer(
                 self,
                 self.args
@@ -110,6 +107,7 @@ class TruncatedMultivariateNormal(distributions):
 
         # Initialize empirical model 
         self.register_parameter('T', nn.Parameter(T))
+        if self.covariance_matrix: self.T.requires_grad = False # remove from the computation graph
         self.register_parameter('v', nn.Parameter(v))
 
     def __call__(self, batch, targ):
@@ -128,6 +126,7 @@ class TruncatedMultivariateNormal(distributions):
         return Q @ ch.diag_embed(L_clipped) @ Q.T
 
     def iteration_hook(self, i, is_train, loss, batch) -> None:
+        if len(self.trainer.param_history) > 1 and ch.abs(self.trainer.param_history[-1, 1] - self.v) > .1: import pdb; pdb.set_trace()
         with ch.no_grad():
             # Clone current parameters
             T_prev = self.T.clone()

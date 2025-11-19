@@ -332,7 +332,7 @@ def make_train_and_val(args, X, y):
     return train_loader, val_loader
 
 
-def make_train_and_val_distr(args, S, ds, kwargs): 
+def make_train_and_val_distr(args, S, ds, kwargs={}): 
     # check arguments are correct
     args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
@@ -396,7 +396,7 @@ class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
         """
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
         """
-        return ch.empty([]), self.data[idx] 
+        return [ch.empty([]), self.data[idx]]
 
     @property
     def loc(self): 

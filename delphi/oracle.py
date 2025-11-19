@@ -230,32 +230,24 @@ three_d_union_check = lambda x: x[0] > 0 and x[2] > 0 or x.pow(2).sum() < 1.0
 
 
 class UnknownGaussian(oracle):
-    """
-    Oracle that learns truncation set
-    """
     def __init__(self, emp_loc, emp_covariance_matrix, S, k):
-        self.emp_loc = emp_loc 
+        self.emp_loc = emp_loc  # shape (d,) or (,) for univariate
         self.emp_covariance_matrix = emp_covariance_matrix
         self._emp_dist = MultivariateNormal(emp_loc, emp_covariance_matrix)
-        self._d = emp_loc.shape[0]  # Dimension of the distribution
-        self._k = k  # Max degree to compute the Hermite Polynomial for
-    
-        # Precompute factorials up to max_degree
-        self._factorials = ch.tensor([math.factorial(i) for i in range(k + 1)])
-    
-        # Generate all multi-indices up to degree k
+        self._d = int(emp_loc.shape[0])
+        self._k = k
+        self._factorials = ch.tensor([math.factorial(i) for i in range(k + 1)], dtype=ch.float32)
+
         self.multi_indices = self._generate_multi_indices(self._k)
-    
-        # Compute normalization constants
+
         self._norm_const = self._compute_norm_constants()
-    
-        # Compute Hermite coefficients from samples
+
         self._C_v = self._compute_hermite_coefficients(S)
-    
+
         self._dist = None
 
     def _generate_multi_indices(self, k):
-        """Generate all multi-indices V with |V| <= k."""
+        # For d=1 this returns [[0],[1],...,[k]]
         from itertools import product
         indices = []
         for degree in range(k + 1):
@@ -264,82 +256,91 @@ class UnknownGaussian(oracle):
                     indices.append(list(combo))
         return ch.tensor(indices, dtype=ch.long)
 
-    def _hermite_polynomial_1d(self, x, degree):
-        """Compute probabilist's Hermite polynomial He_degree(x)"""
-        # Use stable recurrence relation
+    def _hermite_polynomial_1d(self, z, degree):
+        """Probabilist's Hermite He_n(z) computed via stable recurrence."""
         if degree == 0:
-            return ch.ones_like(x)
+            return ch.ones_like(z)
         elif degree == 1:
-            return x
+            return z
         else:
-            He_prev_prev = ch.ones_like(x)
-            He_prev = x
+            He_prev_prev = ch.ones_like(z)
+            He_prev = z
             for n in range(2, degree + 1):
-                He_curr = x * He_prev - (n - 1) * He_prev_prev
-                He_prev_prev = He_prev
-                He_prev = He_curr
+                He_curr = z * He_prev - (n - 1) * He_prev_prev
+                He_prev_prev, He_prev = He_prev, He_curr
             return He_prev
 
     def H_v(self, x):
         """
-        Compute MULTIVARIATE Hermite polynomials for all multi-indices.
-        
-        Key fix: Proper multivariate Hermite computation
+        Evaluate multivariate Hermite polynomials *at standardized inputs*.
+        For univariate: z = (x - emp_loc) / sqrt(emp_var).
+        Returns tensor shape (n, num_indices).
         """
         n = x.shape[0]
         num_indices = len(self.multi_indices)
-        result = ch.ones(n, num_indices)
+        result = ch.ones(n, num_indices, dtype=x.dtype, device=x.device)
 
-        if ch.any(ch.isnan(x)) or ch.any(ch.isinf(x)):
-            print("WARNING: Numerical issues in standardization")
-            return ch.zeros(x.shape[0], len(self.multi_indices))
-        
+        # Standardize: for each dim use emp_loc and emp_covariance_matrix diag
+        # For univariate:
+        if self._d == 1:
+            var = self.emp_covariance_matrix.reshape(-1)[0] if self.emp_covariance_matrix.numel() == 1 else self.emp_covariance_matrix[0,0]
+            std = ch.sqrt(var)
+            z = (x[:, 0] - self.emp_loc[0]) / (std + 1e-12)   # (n,)
+            for idx, V in enumerate(self.multi_indices):
+                deg = int(V[0].item())
+                He = self._hermite_polynomial_1d(z, deg)      # (n,)
+                # Normalize by sqrt(deg!) so basis is orthonormal under N(0,1)
+                if deg > 0:
+                    He = He / ch.sqrt(self._factorials[deg])
+                result[:, idx] = He
+            return result
+
+        # fallback for multivariate (not used here)
         for idx, V in enumerate(self.multi_indices):
+            prod = ch.ones(n, dtype=x.dtype, device=x.device)
             for dim in range(self._d):
                 degree = int(V[dim].item())
                 if degree > 0:
-                    # Compute 1D Hermite polynomial for this dimension
-                    hermite_val = self._hermite_polynomial_1d(x[:, dim], degree)
-                    # Normalize by sqrt(degree!) for orthonormality
-                    normalized_val = hermite_val / math.sqrt(math.factorial(degree))
-                    result[:, idx] *= normalized_val
-        
+                    # standardize dimension
+                    var = self.emp_covariance_matrix[dim, dim]
+                    std = ch.sqrt(var)
+                    z = (x[:, dim] - self.emp_loc[dim]) / (std + 1e-12)
+                    He = self._hermite_polynomial_1d(z, degree) / ch.sqrt(self._factorials[degree])
+                    prod = prod * He
+            result[:, idx] = prod
         return result
 
     def _compute_hermite_coefficients(self, S):
         """
-        CORRECT coefficient computation according to paper.
-        
-        We want: psi(x) ≈ sum_V c_V H_V(x) where c_V = E_D[H_V(x)]
-        and D is the truncated distribution.
+        Compute c_v = E_D[H_V(z)] where H_V evaluated at standardized samples from S.
+        S should be samples *from the truncated set* (i.e., only samples x in S).
         """
-        H_vals = self.H_v(S)
+        H_vals = self.H_v(S)   # shape (n, num_indices)
+        return H_vals.mean(dim=0)
     
-        c_v = H_vals.mean(0)
-        
-        # Subtract the constant term's influence for outside points
-        # Keep the relative patterns but remove the absolute bias
-        if len(c_v) > 0:
-            c_v[0] = 0.0  # Remove constant bias
-    
-        return c_v
+    def fit_ridge_coefficients(self, H_all, y, lambda_reg=1e-3, dtype=ch.float32, device='cpu'):
+        # Solve (H^T H + lambda I) c = H^T y
+        HtH = H_all.t() @ H_all   # (m, m)
+        m = HtH.size(0)
+        A = HtH + lambda_reg * ch.eye(m, dtype=dtype, device=device)
+        rhs = H_all.t() @ y
+        c = ch.linalg.solve(A, rhs)   # (m,)
+        return c
 
-    def psi_k(self, x):
+    def psi_k(self, x, clamp_range=(0,1), use_sigmoid=True, alpha=10.0):
         """
-        Characteristic function approximation.
-        
-        According to paper: psi_k(x) = max(0, sum_V c_V H_V(x))
-        This should approximate 1_A(x) where A is the truncation set.
+        Evaluate psi approximation on x (tensor shape (n,d)).
+        Returns (n, 1) tensor with values ~[0,1].
         """
-        H_vals = self.H_v(x)  # Shape: (n, num_multi_indices)
-        
-        # Compute the expansion
-        expansion = (self._C_v * H_vals).sum(dim=1)  # Shape: (n,)
-        
-        # Apply ReLU and clamp to reasonable range
-        psi_vals = ch.clamp(expansion, 0.0)
-        
-        return psi_vals.unsqueeze(-1)  # Shape: (n, 1)
+        H_vals = self.H_v(x)                      # (n, num_indices)
+        expansion = (self._C_v * H_vals).sum(dim=1)   # (n,)
+        if use_sigmoid:
+            psi_vals = ch.sigmoid(alpha * expansion)
+        else:
+            # ReLU then clamp to [0,1]
+            psi_vals = ch.clamp(expansion, min=clamp_range[0], max=clamp_range[1])
+    
+        return psi_vals.unsqueeze(-1)   # (n,1)
 
     def _compute_norm_constants(self):
         """Compute sqrt(V!) for each multi-index V."""

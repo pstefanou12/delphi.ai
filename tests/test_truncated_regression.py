@@ -451,7 +451,6 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     # train algorithm
     train_kwargs = Parameters({
                                 'trials': 1,
-                                'epochs': 10,
                                 'batch_size': 10,
                                 'var_lr': 1e-2, 
                                 'verbose': True,
