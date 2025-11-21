@@ -20,9 +20,11 @@ from ..utils.defaults import check_and_fill_args, TRUNC_LOG_REG_DEFAULTS
 
 
 # CONSTANTS 
-G = Gumbel(0, 1)
 softmax = Softmax(dim=0)
 sig = Sigmoid()
+OVR = "ovr"
+MULTI = "multinomial"
+CLASSIFICATION_PROCEDURES = [OVR, MULTI]
 
 
 class TruncatedLogisticRegression(LinearModel):
@@ -48,12 +50,16 @@ class TruncatedLogisticRegression(LinearModel):
         self.phi = phi 
         self.alpha = alpha
         self.fit_intercept = fit_intercept
+        assert multi_class in CLASSIFICATION_PROCEDURES, f"{multi_class} not in {CLASSIFICATION_PROCEDURES}"
         self.multi_class = multi_class
         self.rand_seed = rand_seed        
 
         del self.criterion
         del self.criterion_params
-        self.criterion = TruncatedBCE.apply
+        if self.multi_class == OVR:
+            self.criterion = TruncatedBCE.apply
+        else: 
+            self.criterion = TruncatedCE.apply
         self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
 
     def fit(self, X: Tensor, y: Tensor):
@@ -68,15 +74,15 @@ class TruncatedLogisticRegression(LinearModel):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert X.size(0) == y.size(0), 'number of samples in X and y is unequal. X has {} samples, and y has {} samples'.format(X.size(0), y.size(0))
-        if self.multi_class == 'ovr':
-            assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
+        assert y.dim() == 2 and y.size(1), f"y is size: {y.size()}. expecting y tensor with size num_samples by 1." 
+
+        unique_classes = len(ch.unique(y))
+        assert unique_classes > 1, "y contains only 1 unique class. 2+ uniques classes are required for classification procedures"
+        if self.multi_class == OVR:
             k = 1
-        elif self.multi_class == 'multinomial': 
-            assert y.dim() == 1, "y is size: {}. expecting y tensor with size num_samples.".format(y.size()) 
-            k = len(ch.unique(y))
-        else: 
-            raise Exception(f"multi class is: {self.multi_class}. ovr and multi are only valid inputs.")
-        
+        elif self.multi_class == MULTI: 
+            k = unique_classes
+
         # add one feature to x when fitting intercept
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
@@ -106,10 +112,9 @@ class TruncatedLogisticRegression(LinearModel):
         """
         X, y = train_loader.dataset.tensors
         if self.emp_weight is None:
-            # empirical estimates for logistic regression
             log_reg = LogisticRegression(penalty=None, fit_intercept=False, multi_class=self.multi_class)
             log_reg.fit(X, y.flatten())
-            self.emp_weight = ch.nn.Parameter(Tensor(log_reg.coef_).T)
+            self.emp_weight = ch.nn.Parameter(ch.from_numpy(log_reg.coef_).float())
         else: 
             self.emp_weight = ch.nn.Parameter(self.emp_weight)
         self.register_parameter("weight", self.emp_weight)
@@ -121,7 +126,7 @@ class TruncatedLogisticRegression(LinearModel):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
-        return X@self.weight
+        return X@self.weight.T
 
     def iteration_hook(self, i, loop_type, loss, batch):
         '''
@@ -137,8 +142,8 @@ class TruncatedLogisticRegression(LinearModel):
     
     def post_training_hook(self): 
         self.args.r *= self.args.rate
-        best_params = self.trainer.best_params
-        final_params = self.trainer.final_params
+        best_params = self.trainer.best_params.reshape(self.emp_weight.size())
+        final_params = self.trainer.final_params.reshape(self.emp_weight.size())
         if self.fit_intercept:
             self.best_coef = best_params[:,:-1]
             self.best_intercept = best_params[:,-1]
@@ -150,19 +155,27 @@ class TruncatedLogisticRegression(LinearModel):
             self.best_coef = best_params
             self.final_coef = final_params
 
-    def predict(self, X: Tensor): 
+    def predict_proba(self, X: Tensor): 
         """
-        Make class predictions with regression estimates.
+        Probability predictions for input features.
         """
         if self.fit_intercept:
-            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)@self.weight
+            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)@self.weight.T
         else: 
-            logits = X@self.weight
-        if self.multi_class == 'multinomial':
-            noised = logits + G.sample(logits.size())
-            return noised.mean(0).argmax(-1)
-        return sig(logits) > .5
-    
+            logits = X@self.weight.T
+        if self.multi_class == MULTI:
+            return  softmax(logits)
+        return sig(logits)
+
+    def predict(self, X: Tensor): 
+        """
+        Class predictions for input features.
+        """
+        prob_predictions = self.predict_proba(X)
+        if prob_predictions.size(-1) > 1: 
+            return prob_predictions.argmax(-1)
+        return prob_predictions > .5
+
     @property
     def best_coef_(self): 
         return self.best_coef

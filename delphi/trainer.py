@@ -25,12 +25,18 @@ class Trainer:
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store
 
-        self.epoch, self.grad_steps = 0, None
-        self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
-        self.loss_history, self.param_history = ch.Tensor([]), ch.Tensor([])
+        self.epoch, self.iterations = 0, None
+        # store procedure history within lists because of torch.cat performance overhead
+        self.train_losses = []
+        self.val_losses = []
+        self.train_param_history = []
+        self.val_param_history = []
+        self.grad_norms = []
+        
+        self.t_start = None
         self._best_loss, self._best_params = float('inf'), None
-        self.no_improvement_count = 0
         self._final_loss, self._final_params = None, None
+        self.stop_reason = None
 
     def model_loop_(self, 
                     loader: DataLoader, 
@@ -46,7 +52,6 @@ class Trainer:
             # forward pass
             pred = self.model(inp, targ)
             loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
-            
             if len(loss.shape) > 0: loss = loss.sum(0)
 
             loss_.update(loss.item()) # Use item() to store scalar value
@@ -55,20 +60,37 @@ class Trainer:
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
 
-            if is_train:
-                self.train_costs = ch.cat([self.train_costs, loss.detach().cpu().unsqueeze(0)])
+            flat_params = ch.cat([param.flatten() for param in list(self.model.parameters_())]).detach().clone()
+            if is_train: 
+                self.train_param_history.append(flat_params)
+                self.train_losses.append(loss)
             else: 
-                self.val_costs = ch.cat([self.val_costs, loss.detach().cpu().unsqueeze(0)]) 
-                
-                # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
-                # if not, you'll need to define what these mean for your model and loss.
+                self.val_param_history.append(flat_params)
+                self.val_losses.append(loss)
+
+            # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
+            # if not, you'll need to define what these mean for your model and loss.
 
             if is_train:
                 loss.backward()
                 self.model.pre_step_hook(inp)
+
+                flat_grads = ch.cat([param.grad.flatten() for param in list(self.model.parameters_()) if param.grad is not None]).detach().clone() 
+                grad_norm = flat_grads.norm()
+                self.grad_norms.append(grad_norm.item())
+
+            # stopping criteria
+            stop, reason = self.should_stop()
+            self.stop_reason = reason
+            if stop:
+                if self.args.verbose:
+                    print("Stopped due to: %s at iteration %d. \n Total time: %.2f seconds" % (self.stop_reason, self.epoch, time() - self.t_start))
+                break
+
+            if is_train: 
                 self.model.optimizer.step()
                 if self.model.schedule is not None: self.model.schedule.step()
-                self.grad_steps += 1
+                self.iterations += 1
 
             if self.args.verbose:
                 if self.args.tqdm:
@@ -76,87 +98,32 @@ class Trainer:
                     iterator.set_description(desc)
             
             self.model.iteration_hook(i, is_train, loss, batch)
-
-            if (self.grad_steps + i + 1) == self.args.grad_steps: 
-                break
             
         self.model.epoch_hook(self.epoch, is_train, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
-
-    def train_by_steps_(self, 
-                        train_loader: DataLoader, 
-                        val_loader: DataLoader):
-            # Setup infinite data sampler for training batches
-            sampler = RandomSampler(train_loader.dataset, replacement=False)
-            batch_size = train_loader.batch_size
-            train_iterator = iter(ch.utils.data.DataLoader(train_loader.dataset,
-                                                            batch_size=batch_size, 
-                                                            sampler=sampler))
-        
-            loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
-        
-            for i in range(1, self.args.gradient_steps+1):
-                self.model.optimizer.zero_grad()
-            
-                try:
-                    batch = next(train_iterator)
-                except StopIteration:
-                    # If your DataLoader somehow stops, re-initialize the iterator
-                    train_iterator = iter(ch.utils.data.DataLoader(train_loader.dataset,
-                                                                    batch_size=batch_size, 
-                                                                    sampler=sampler))
-                    batch = next(train_iterator)
-            
-                inp, targ = batch
-
-                pred = self.model(inp, targ)
-                loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
-                if len(loss.shape) > 0: loss = loss.sum()
-
-                loss_.update(loss.item()) 
-            
-                reg_term = self.model.regularize(batch)
-                if self.args.cuda:
-                    reg_term = reg_term.cuda()
-                loss = loss + reg_term
-                
-                self.train_costs = ch.cat([self.train_costs, loss.detach().cpu().unsqueeze(0)])
-
-                loss.backward()
-                self.model.pre_step_hook(inp)
-                self.model.optimizer.step()
-                if self.model.schedule is not None: self.model.schedule.step()
-
-                self.model.iteration_hook(i, True, loss, batch)
-                params = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...]
-                self.param_history = ch.cat([self.param_history, params.detach().cpu()])
-                self.loss_history = ch.cat([self.loss_history, loss.detach().cpu()])
-
-                if val_loader is not None and (i % self.args.val_interval == 0 or i == self.args.gradient_steps - 1):
-                    with ch.no_grad():
-                        val_loss, val_prec1, val_prec5 = self.model_loop_(val_loader, is_train=False) 
-                        self._final_params, self._final_loss = params.detach(), val_loss,
-                    
-                        if self.args.verbose: 
-                            print(f'Step {i} - Loss: {val_loss}')
-
-                        # Early Stopping and Best Parameter Logic (Keep your existing logic)
-                        if self._best_params is None or val_loss < self._best_loss: 
-                            self._best_params, self._best_loss = params.detach(), val_loss
-                            self.no_improvement_count = 0
-                        elif self.args.early_stopping: 
-                            if abs(val_loss - self._best_loss) <= self.args.tol:
-                                self.no_improvement_count += 1
-                            else: 
-                                self.no_improvement_count = 0
-                        
-                            if self.no_improvement_count >= self.args.n_iter_no_change:
-                                if self.args.verbose: 
-                                    print("Convergence after %d steps" % i)
-                                return loss_.avg, prec1_.avg, prec5_.avg
-
-            return loss_.avg, prec1_.avg, prec5_.avg
     
+    def should_stop(self): 
+        # Criterion 1: max iterations
+        if self.args.gradient_steps is not None and self.iterations >= self.args.gradient_steps:
+            return True, "max_gradient_steps"
+
+        # Criterion 2: gradient norm small (scipy-like)
+        if self.args.grad_tol is not None and len(self.grad_norms) > 1 and (self.grad_norms[-1]) < self.args.grad_tol:
+            return True, "grad_tol"
+
+        # Criterion 3: loss change small
+        if self.args.loss_tol is not None and len(self.train_losses) > 1:
+            if abs(self.train_losses[-1] - self.train_losses[-2]) < self.args.loss_tol:
+                return True, "loss_tol"
+
+        # Criterion 4: early stopping on val loss
+        if len(self.val_losses) > self.args.patience:
+            recent = self.val_losses[-self.args.patience:]
+            if recent[-1] > min(recent[:-1]):
+                return True, "early_stop"
+
+        return False, None
+
     def train_model(self,
                     train_loader: DataLoader, 
                     val_loader: DataLoader, 
@@ -188,13 +155,12 @@ class Trainer:
 
         # stores model estimates after each gradient step
         for trial in range(self.args.trials):
-            val_loss = None
-            self.grad_steps = 0
+            self.iterations = 0
 
             ch.manual_seed(rand_seed)
             if self.args.verbose: print(f'trial: {trial + 1}')
 
-            t_start = time()
+            self.t_start = time()
             self.model.pretrain_hook(train_loader)
             self.model.make_optimizer_and_schedule(self.model.parameters_()) 
    
@@ -210,6 +176,11 @@ class Trainer:
                 if val_loader is not None:
                     with ch.no_grad():
                         val_loss, val_prec1, val_prec5 = self.model_loop_(val_loader, False)
+
+                        if val_loss < self.best_loss: 
+                            self._best_loss = val_loss
+                            self._best_params = self.val_param_history[-1]
+
                     if self.args.verbose: 
                         print(f'Epoch {epoch} - Loss: {val_loss}')
             
@@ -224,32 +195,18 @@ class Trainer:
                         'val_prec1': val_prec1, 
                         'val_prec5': val_prec5})
 
-                """
-                NOTE: Check for training procedure convergence. If 
-                no improvement in loss for args.n_iter_no_change epochs, 
-                then procedure has converged.
-                """
-                if self._best_params is None or val_loss < self._best_loss: 
-                    self._best_params, self._best_loss = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach(), val_loss
-                if self.args.early_stopping: 
-                    if abs(val_loss - self._best_loss) <= self.args.tol:
-                        self.no_improvement_count += 1
-                    else: 
-                        self.no_improvement_count = 0
-                    if self.no_improvement_count >= self.args.n_iter_no_change:
-                        if self.args.verbose: 
-                            print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
-                        break
-                    
-                if val_loss is not None: 
-                    self._final_loss, self._final_params = val_loss, ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach()
-            # elif self.args.train_mode == "step": 
-            #     self.train_by_steps_(train_loader, val_loader)
+                self._final_loss = val_loss
+                self._final_params = self.val_param_history[-1] 
 
             self.model.post_training_hook()
+        # convert training loss/param history to tensors
+        self.train_losses = ch.tensor(self.train_losses)
+        self.val_losses   = ch.tensor(self.val_losses)
+        self.train_param_history = ch.stack(self.train_param_history)
+        self.val_param_history = ch.stack(self.val_param_history)
                 
-        if self.args.early_stopping and self.args.verbose and self.no_improvement_count < self.args.n_iter_no_change: 
-            print('Procedure did not converge after %d epochs and %.2f seconds' % (self.epoch, time() - t_start))
+        if self.stop_reason == 'max_gradient_steps': 
+            print('Procedure did not converge after %d epochs and %.2f seconds' % (self.epoch, time() - self.t_start))
     
     def eval_model(self, 
                     loader: DataLoader, 

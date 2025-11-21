@@ -11,6 +11,7 @@ import math
 from .utils.helpers import logistic, cov
 
 softmax = Softmax(dim=1)
+gumbel = Gumbel(0, 1)
 
 class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
@@ -820,7 +821,7 @@ class GumbelCE(ch.autograd.Function):
 
 class TruncatedCE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ, phi, num_samples=1000, eps=1e-5):
+    def forward(ctx, pred, targ, phi, num_samples=5000, eps=1e-5):
         """
         Args: 
             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
@@ -828,51 +829,24 @@ class TruncatedCE(ch.autograd.Function):
             phi (oracle.oracle): dependent variable membership oracle
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
-        """
-        ctx.save_for_backward(pred, targ)
-        ctx.phi = phi
-        ctx.num_samples = num_samples
-        ctx.eps = eps
-        ce_loss = ch.nn.CrossEntropyLoss()
-        return ce_loss(pred, targ)
-        '''
-        # initialize gumbel distribution
-        gumbel = Gumbel(0, 1)
-        # make num_samples copies of pred logits
+        """     
+        # import pdb; pdb.set_trace()   
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        # add gumbel noise to logits
         rand_noise = gumbel.sample(stacked.size())
-        noised = stacked + rand_noise 
-        # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = phi(noised)
-        noised_labs = noised.argmax(-1)
-        # mask takes care of invalid logits and truncation set
-        mask = noised_labs.eq(targ)[..., None] * filtered
+        noised = stacked + rand_noise
+        noised_labs = noised.argmax(-1, keepdim=True)
+        filtered = phi(noised).float()
+        mask = (noised_labs).eq(targ)
+        ctx.save_for_backward(mask, filtered, rand_noise, pred)
+        ctx.eps = eps
+        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + eps)
+        return -ch.log(prob_est) / pred.size(0)
         
-        nll = (gumbel.log_prob(rand_noise) * mask).sum(dim=-1)[...,None].sum(dim=0) / (mask.sum(dim=0) + eps)
-        const = (gumbel.log_prob(rand_noise) * filtered).sum(dim=-1)[..., None].sum(dim=0) / (filtered.sum(dim=0) + eps) 
-        return -(nll - const) / pred.size(0)
-        '''
     @staticmethod
     def backward(ctx, grad_output):  
-        #if isinstance(ctx.phi, oracle.Left_Distribution):
-        #    import pdb; pdb.set_trace()
-        pred, targ = ctx.saved_tensors
-        # initialize gumbel distribution
-        gumbel = Gumbel(0, 1)
-        # make num_samples copies of pred logits
-        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
-        # add gumbel noise to logits
-        rand_noise = gumbel.sample(stacked.size())
-        noised = stacked + rand_noise 
-        # truncate - if one of the noisy logits does not fall within the truncation set, remove it
-        filtered = ctx.phi(noised)
-        # noised_labs = softmax(stacked).argmax(-1)
-        noised_labs = noised.argmax(-1)
-        # mask takes care of invalid logits and truncation set
-        mask = noised_labs.eq(targ)[..., None] * filtered
+        mask, filtered, rand_noise, pred = ctx.saved_tensors
         inner_exp = (1 - ch.exp(-rand_noise))
-        nll = ((inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps))
+        nll = ((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps))
         const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
         return (-nll + const) / pred.size(0), None, None, None, None
 
