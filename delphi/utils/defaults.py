@@ -125,7 +125,6 @@ TRUNC_LASSO_DEFAULTS = {
 }
 
 TRUNC_LDS_DEFAULTS = {
-        'fit_intercept': (bool, False), 
         'val': (float, .2),
         'l1': (float, 0.0),
         'weight_decay': (float, 0.0), 
@@ -146,7 +145,6 @@ TRUNC_LDS_DEFAULTS = {
 
 TRUNC_LOG_REG_DEFAULTS = {
         'epochs': (int, 1),
-        'fit_intercept': (bool, True), 
         'trials': (int, 3),
         'val': (float, .2),
         'l1': (float, 0.0), 
@@ -155,13 +153,11 @@ TRUNC_LOG_REG_DEFAULTS = {
         'rate': (float, 1.5), 
         'batch_size': (int, 10),
         'workers': (int, 0),
-        'num_samples': (int, 10),
-        'multi_class': ({'multinomial', 'ovr'}, 'ovr'),
+        'num_samples': (int, 1000),
 }
 
 
 TRUNC_PROB_REG_DEFAULTS = {
-        'fit_intercept': (bool, True), 
         'trials': (int, 3),
         'val': (float, .2),
         'l1': (float, 0.0), 
@@ -171,7 +167,7 @@ TRUNC_PROB_REG_DEFAULTS = {
         'batch_size': (int, 10),
         'tol': (float, 1e-3),
         'workers': (int, 0),
-        'num_samples': (int, 10),
+        'num_samples': (int, 1000),
 }
 
 

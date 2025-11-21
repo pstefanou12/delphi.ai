@@ -11,38 +11,37 @@ from torch.nn import CosineSimilarity
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
+from statsmodels.discrete.discrete_model import Probit
 
 from delphi.utils.helpers import Parameters, logistic
 from delphi import oracle
 from delphi.utils.datasets import make_train_and_val
 from delphi.stats.truncated_logistic_regression import TruncatedLogisticRegression
+from delphi.stats.truncated_probit_regression import TruncatedProbitRegression
 
 cos_sim = CosineSimilarity()
 G = Gumbel(0, 1)
 seed = 69 
 
 # left truncated binary classification task
-def test_truncated_logistic_regression(self):
-    d, k = 5, 1
+def test_truncated_one_dimension_logistic_regression_no_intercept():
+    d, k = 1, 1
     C = -1.0
     # ground-truth logistic regression model 
-    gt = ch.nn.Linear(in_features=d, out_features=k, bias=True)
-    W = Uniform(-1, 1)
+    w = Uniform(-1, 1)
     U = Uniform(-5, 5)
-    gt.weight = ch.nn.Parameter(W.sample([k, d]))
-    gt.bias = ch.nn.Parameter(W.sample([1, k]))
-    gt_ = ch.cat([gt.weight.flatten(), gt.bias.flatten()])
-
+    W = w.sample([k, d])
+    
     # input features
-    X = U.sample([10000, d])
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
     # latent variables
-    z = gt(X) + logistic.sample([X.size(0), 1])
+    z = X@W.T + logistic.sample([X.size(0), 1])
     # classification
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(Tensor([C]))
-    phi_gumbel = oracle.GumbelLogisticLeftTruncation(Tensor([C]))
+    phi = oracle.Left_Regression(C)
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     y_trunc = y[indices][...,None]
@@ -50,7 +49,82 @@ def test_truncated_logistic_regression(self):
     print(f'C: {C}')
     print(f'alpha: {alpha}')
                 
-    sklearn = LogisticRegression(penalty='none', fit_intercept=True)
+    sklearn = LogisticRegression(penalty=None, fit_intercept=False)
+    sklearn.fit(X, y.flatten())
+    sklearn_ = ch.from_numpy(sklearn.coef_.flatten())
+    print(f'sklearn: {sklearn_}')
+    pred = sklearn.predict(X)
+    acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'sklearn acc: {acc}')
+    sklearn_conf_matrix = confusion_matrix(y, pred)
+    print(f'sklearn confusion matrix: \n {sklearn_conf_matrix}')
+        
+    trunc_sklearn = LogisticRegression(penalty=None, fit_intercept=False)
+    trunc_sklearn.fit(x_trunc, y_trunc.flatten())
+    trunc_sklearn_ = ch.from_numpy(trunc_sklearn.coef_.flatten())
+    print(f'trunc sklearn: {trunc_sklearn_}')
+    trunc_sklearn_cos_sim = float(cos_sim(trunc_sklearn_[None,...], sklearn_[None,...]))
+    pred = trunc_sklearn.predict(X)
+    trunc_sklearn_acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'trunc sklearn acc: {trunc_sklearn_acc}')
+    print(f'trunc sklearn cos sim: {trunc_sklearn_cos_sim}')
+    trunc_sklearn_conf_matrix = confusion_matrix(y, pred)
+    print(f'trunc sklearn confusion matrix: \n {trunc_sklearn_conf_matrix}')
+                        
+    args = Parameters({
+                        'normalize': False, 
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
+                        'verbose': True,
+                        'early_stopping': True})
+    ch.manual_seed(seed)
+    trunc_log_reg = TruncatedLogisticRegression(args, 
+                                                phi, 
+                                                alpha, 
+                                                fit_intercept=False)
+    trunc_log_reg.fit(x_trunc, y_trunc) 
+    
+    delphi_log_reg_ = trunc_log_reg.coef_.flatten()
+    print(f'delphi log reg: {delphi_log_reg_}')
+    delphi_log_reg_pred = trunc_log_reg.predict(X)
+    delphi_log_reg_acc = delphi_log_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi log reg accuracy: {delphi_log_reg_acc}')
+    delphi_log_reg_conf_matrix = confusion_matrix(y, delphi_log_reg_pred)
+    print(f'delphi log reg confusion matrix: \n {delphi_log_reg_conf_matrix}')
+
+    delphi_log_reg_cos_sim = float(cos_sim(delphi_log_reg_[None,...], sklearn_[None,...]))
+    print(f'delphi cos sim: {delphi_log_reg_cos_sim}')
+    assert delphi_log_reg_cos_sim > 9e-1, f"trunc log reg cosine similarity is {delphi_log_reg_cos_sim}"
+
+# left truncated binary classification task
+def test_truncated_one_dimension_logistic_regression():
+    d, k = 1, 1
+    C = -1.0
+    # ground-truth logistic regression model 
+    w = Uniform(-1, 1)
+    U = Uniform(-5, 5)
+    W = w.sample([k, d+1])
+    
+    # input features
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
+    X_ones = ch.cat([X, ch.ones([SAMPLES, 1])], dim=1)
+    # latent variables
+    z = X_ones@W.T + logistic.sample([X.size(0), 1])
+    # classification
+    y = (z > 0).float()
+
+    # generate ground-truth data
+    phi = oracle.Left_Regression(C)
+    indices = phi(z).nonzero(as_tuple=True)
+    x_trunc = X[indices[0]]
+    y_trunc = y[indices][...,None]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'C: {C}')
+    print(f'alpha: {alpha}')
+                
+    sklearn = LogisticRegression(penalty=None, fit_intercept=True)
     sklearn.fit(X, y.flatten())
     sklearn_ = ch.from_numpy(np.concatenate([sklearn.coef_.flatten(), sklearn.intercept_]))
     print(f'sklearn: {sklearn_}')
@@ -60,7 +134,7 @@ def test_truncated_logistic_regression(self):
     sklearn_conf_matrix = confusion_matrix(y, pred)
     print(f'sklearn confusion matrix: \n {sklearn_conf_matrix}')
         
-    trunc_sklearn = LogisticRegression(penalty='none', fit_intercept=True)
+    trunc_sklearn = LogisticRegression(penalty=None, fit_intercept=True)
     trunc_sklearn.fit(x_trunc, y_trunc.flatten())
     trunc_sklearn_ = ch.from_numpy(np.concatenate([trunc_sklearn.coef_.flatten(), trunc_sklearn.intercept_]))
     print(f'trunc sklearn: {trunc_sklearn_}')
@@ -72,110 +146,326 @@ def test_truncated_logistic_regression(self):
     trunc_sklearn_conf_matrix = confusion_matrix(y, pred)
     print(f'trunc sklearn confusion matrix: \n {trunc_sklearn_conf_matrix}')
                         
-    id_ = oracle.Identity()
-    train_kwargs = Parameters({'phi': id_,
-                        'alpha': alpha,
-                        'fit_intercept': True, 
-                        'momentum': 0.0,
+    args = Parameters({
                         'normalize': False, 
-                        'batch_size': 100,
-                        'epochs': 30,
-                        'trials': 3,
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
                         'verbose': True,
-                        'early_stopping': True, 
-                        'num_samples': 100})
+                        'early_stopping': True})
     ch.manual_seed(seed)
-    trunc_log_reg = stats.TruncatedLogisticRegression(train_kwargs)
+    trunc_log_reg = TruncatedLogisticRegression(args, 
+                                                phi, 
+                                                alpha)
     trunc_log_reg.fit(x_trunc, y_trunc) 
-    trunc_log_reg_ = ch.cat([trunc_log_reg.coef_.flatten(), trunc_log_reg.intercept_])
-    print(f'id trunc log reg: {trunc_log_reg_}')
-    trunc_log_reg_cos_sim = float(cos_sim(trunc_log_reg_[None,...], sklearn_[None,...]))
-    trunc_log_reg_pred = trunc_log_reg.predict(X)
-    trunc_log_reg_acc = trunc_log_reg_pred.eq(y).sum() / len(y)
-    print(f'id trunc log reg accuracy: {trunc_log_reg_acc}')
-    print(f'id trunc cos sim: {trunc_log_reg_cos_sim}')
-    trunc_log_reg_conf_matrix = confusion_matrix(y, trunc_log_reg_pred)
-    print(f'id trunc log reg confusion matrix: \n {trunc_log_reg_conf_matrix}')
+    
+    delphi_log_reg_ = ch.cat([trunc_log_reg.coef_.flatten(), trunc_log_reg.intercept_])
+    print(f'delphi log reg: {delphi_log_reg_}')
+    delphi_log_reg_pred = trunc_log_reg.predict(X)
+    delphi_log_reg_acc = delphi_log_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi log reg accuracy: {delphi_log_reg_acc}')
+    delphi_log_reg_conf_matrix = confusion_matrix(y, delphi_log_reg_pred)
+    print(f'delphi log reg confusion matrix: \n {delphi_log_reg_conf_matrix}')
+
+    delphi_log_reg_cos_sim = float(cos_sim(delphi_log_reg_[None,...], sklearn_[None,...]))
+    print(f'delphi cos sim: {delphi_log_reg_cos_sim}')
+    assert delphi_log_reg_cos_sim > 9e-1, f"trunc log reg cosine similarity is {delphi_log_reg_cos_sim}"
+
+# left truncated binary classification task
+def test_truncated_ten_dimension_logistic_regression():
+    d, k = 10, 1
+    C = -.5
+    # ground-truth logistic regression model 
+    w = Uniform(-1, 1)
+    U = Uniform(-5, 5)
+    W = w.sample([k, d+1])
+    
+    # input features
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
+    X_ones = ch.cat([X, ch.ones([SAMPLES, 1])], dim=1)
+    # latent variables
+    z = X_ones@W.T + logistic.sample([X.size(0), 1])
+    # classification
+    y = (z > 0).float()
+
+    # generate ground-truth data
+    phi = oracle.Left_Regression(C)
+    indices = phi(z).nonzero(as_tuple=True)
+    x_trunc = X[indices[0]]
+    y_trunc = y[indices][...,None]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'C: {C}')
+    print(f'alpha: {alpha}')
+                
+    sklearn = LogisticRegression(penalty=None, fit_intercept=True)
+    sklearn.fit(X, y.flatten())
+    sklearn_ = ch.from_numpy(np.concatenate([sklearn.coef_.flatten(), sklearn.intercept_]))
+    print(f'sklearn: {sklearn_}')
+    pred = sklearn.predict(X)
+    acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'sklearn acc: {acc}')
+    sklearn_conf_matrix = confusion_matrix(y, pred)
+    print(f'sklearn confusion matrix: \n {sklearn_conf_matrix}')
         
-    train_kwargs = Parameters({'phi': id_,
-                        'alpha': alpha,
-                        'fit_intercept': True, 
+    trunc_sklearn = LogisticRegression(penalty=None, fit_intercept=True)
+    trunc_sklearn.fit(x_trunc, y_trunc.flatten())
+    trunc_sklearn_ = ch.from_numpy(np.concatenate([trunc_sklearn.coef_.flatten(), trunc_sklearn.intercept_]))
+    print(f'trunc sklearn: {trunc_sklearn_}')
+    trunc_sklearn_cos_sim = float(cos_sim(trunc_sklearn_[None,...], sklearn_[None,...]))
+    pred = trunc_sklearn.predict(X)
+    trunc_sklearn_acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'trunc sklearn acc: {trunc_sklearn_acc}')
+    print(f'trunc sklearn cos sim: {trunc_sklearn_cos_sim}')
+    trunc_sklearn_conf_matrix = confusion_matrix(y, pred)
+    print(f'trunc sklearn confusion matrix: \n {trunc_sklearn_conf_matrix}')
+                        
+    args = Parameters({
                         'normalize': False, 
-                        'batch_size': 100,
-                        'epochs': 30,
-                        'momentum': 0.0,
-                        'trials': 3,
-                        'multi_class': 'multinomial', 
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
                         'verbose': True,
-                        'early_stopping': True,
-                        'num_samples': 100})
+                        'early_stopping': True})
     ch.manual_seed(seed)
-    trunc_multi_log_reg = stats.TruncatedLogisticRegression(train_kwargs)
-    trunc_multi_log_reg.fit(x_trunc, y_trunc.flatten().long()) 
-    trunc_multi_log_reg_diff = ch.cat([trunc_multi_log_reg.coef_[1] - trunc_multi_log_reg.coef_[0], 
-    (trunc_multi_log_reg.intercept_[1] - trunc_multi_log_reg.intercept_[0])[...,None]])
-    trunc_multi_log_reg_ = ch.cat([trunc_multi_log_reg.coef_, trunc_multi_log_reg.intercept_[...,None]], axis=1)
-    trunc_multi_cos_sim = float(cos_sim(trunc_multi_log_reg_diff[None,...], sklearn_[None,...]))
-    trunc_multi_log_reg_pred = trunc_multi_log_reg.predict(X)
-    trunc_multi_log_reg_acc = trunc_multi_log_reg_pred.eq(y.flatten()).sum() / len(y)
-    print(f'id trunc multi log reg accuracy: {trunc_multi_log_reg_acc}')
-    print(f'id trunc multi cos sim: {trunc_multi_cos_sim}')
-    trunc_multi_log_reg_conf_matrix = confusion_matrix(y, trunc_multi_log_reg_pred)
-    print(f'id trunc multi log reg confusion matrix: \n {trunc_multi_log_reg_conf_matrix}')
-        
-    train_kwargs = Parameters({'phi': phi,
-                        'alpha': alpha,
-                        'fit_intercept': True, 
-                        'momentum': 0.5,
-                        'normalize': False, 
-                        'batch_size': 100,
-                        'epochs': 30,
-                        'trials': 3,
-                        'verbose': True,
-                        'early_stopping': True, 
-                        'num_samples': 100})
-    ch.manual_seed(seed)
-    size = trunc_log_reg_[None,...].size()
-    print(f'trunc log reg size: {size}')
-    trunc_log_reg = stats.TruncatedLogisticRegression(train_kwargs, weight=trunc_log_reg_[None,...])
+    trunc_log_reg = TruncatedLogisticRegression(args, 
+                                                phi, 
+                                                alpha)
     trunc_log_reg.fit(x_trunc, y_trunc) 
-    trunc_log_reg_ = ch.cat([trunc_log_reg.coef_.flatten(), trunc_log_reg.intercept_])
-    print(f'trunc log reg: {trunc_log_reg_}')
-    trunc_log_reg_cos_sim = float(cos_sim(trunc_log_reg_[None,...], sklearn_[None,...]))
-    trunc_log_reg_pred = trunc_log_reg.predict(X)
-    trunc_log_reg_acc = trunc_log_reg_pred.eq(y).sum() / len(y)
-    print(f'trunc log reg accuracy: {trunc_log_reg_acc}')
-    print(f'trunc log reg cos sim: {trunc_log_reg_cos_sim}')
-    self.assertTrue(trunc_log_reg_cos_sim >= .9, f'trunc log reg cos sim: {trunc_log_reg_cos_sim}')
-    trunc_log_reg_conf_matrix = confusion_matrix(y, trunc_log_reg_pred)
-    print(f'trunc log reg confusion matrix: \n {trunc_sklearn_conf_matrix}')
+    
+    delphi_log_reg_ = ch.cat([trunc_log_reg.coef_.flatten(), trunc_log_reg.intercept_])
+    print(f'delphi log reg: {delphi_log_reg_}')
+    delphi_log_reg_pred = trunc_log_reg.predict(X)
+    delphi_log_reg_acc = delphi_log_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi log reg accuracy: {delphi_log_reg_acc}')
+    delphi_log_reg_conf_matrix = confusion_matrix(y, delphi_log_reg_pred)
+    print(f'delphi log reg confusion matrix: \n {delphi_log_reg_conf_matrix}')
+
+    delphi_log_reg_cos_sim = float(cos_sim(delphi_log_reg_[None,...], sklearn_[None,...]))
+    print(f'delphi cos sim: {delphi_log_reg_cos_sim}')
+    assert delphi_log_reg_cos_sim > 9e-1, f"trunc log reg cosine similarity is {delphi_log_reg_cos_sim}"
+
+# left truncated binary classification task with no intercept
+def test_truncated_one_dimension_probit_regression_no_intercept():
+    d, k = 1, 1
+    C = -.25
+    # ground-truth logistic regression model 
+    w = Uniform(-1, 1)
+    U = Uniform(-5, 5)
+    W = w.sample([k, d])
+    
+    # input features
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
+    # latent variables
+    z = X@W.T + ch.randn([X.size(0), 1])
+    # classification
+    y = (z > 0).float()
+
+    # generate ground-truth data
+    phi = oracle.Left_Regression(C)
+    indices = phi(z).nonzero(as_tuple=True)
+    x_trunc = X[indices[0]]
+    y_trunc = y[indices][...,None]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'C: {C}')
+    print(f'alpha: {alpha}')
+                
+    probit = Probit(y.numpy(), X.numpy())
+    probit_results = probit.fit()
+    probit_ = ch.from_numpy(probit_results.params) 
+    print(f'probit: {probit_}')
+    pred = probit_results.predict(X) > .5
+    acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'probit acc: {acc}')
+    probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'probit confusion matrix: \n {probit_conf_matrix}')
         
-    train_kwargs = Parameters({'phi': phi_gumbel,
-                        'alpha': alpha,
-                        'fit_intercept': True, 
+    trunc_probit = Probit(y_trunc.numpy(), x_trunc.numpy()) 
+    trunc_probit_results = trunc_probit.fit()
+    trunc_probit_ = ch.from_numpy(trunc_probit_results.params)
+    print(f'trunc probit: {trunc_probit_}')
+    trunc_probit_cos_sim = float(cos_sim(trunc_probit_[None,...], probit_[None,...]))
+    pred = trunc_probit_results.predict(X) > .5
+    trunc_probit_acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'trunc probit acc: {trunc_probit_acc}')
+    print(f'trunc probit cos sim: {trunc_probit_cos_sim}')
+    trunc_probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'trunc probit confusion matrix: \n {trunc_probit_conf_matrix}')
+                        
+    args = Parameters({
                         'normalize': False, 
-                        'batch_size': 100,
-                        'epochs': 30,
-                        'momentum': 0.5,
-                        'trials': 3,
-                        'multi_class': 'multinomial', 
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
                         'verbose': True,
-                        'early_stopping': True,
-                        'num_samples': 100})
+                        'early_stopping': True})
     ch.manual_seed(seed)
-    trunc_multi_log_reg = stats.TruncatedLogisticRegression(train_kwargs, weight=trunc_multi_log_reg_.T)
-    trunc_multi_log_reg.fit(x_trunc, y_trunc.flatten().long()) 
-    trunc_multi_log_reg_diff = ch.cat([trunc_multi_log_reg.coef_[1] - trunc_multi_log_reg.coef_[0], 
-    (trunc_multi_log_reg.intercept_[1] - trunc_multi_log_reg.intercept_[0])[...,None]])
-    trunc_multi_log_reg_ = ch.cat([trunc_multi_log_reg.coef_, trunc_multi_log_reg.intercept_[...,None]], axis=1)
-    trunc_multi_cos_sim = float(cos_sim(trunc_multi_log_reg_diff[None,...], sklearn_[None,...]))
-    self.assertTrue(trunc_multi_cos_sim >= .9, f'trunc multi cos sim: {trunc_multi_cos_sim}')
-    trunc_multi_log_reg_pred = trunc_multi_log_reg.predict(X)
-    trunc_multi_log_reg_acc = trunc_multi_log_reg_pred.eq(y.flatten()).sum() / len(y)
-    print(f'trunc multi log reg accuracy: {trunc_multi_log_reg_acc}')
-    print(f'trunc multi cos sim: {trunc_multi_cos_sim}')
-    trunc_multi_log_reg_conf_matrix = confusion_matrix(y, trunc_multi_log_reg_pred)
-    print(f'trunc multi log reg confusion matrix: \n {trunc_multi_log_reg_conf_matrix}')
+    trunc_prob_reg = TruncatedProbitRegression(args, 
+                                                phi, 
+                                                alpha, 
+                                                fit_intercept=False)
+    trunc_prob_reg.fit(x_trunc, y_trunc) 
+    
+    delphi_prob_reg_ = trunc_prob_reg.coef_.flatten()
+    print(f'delphi prob reg: {delphi_prob_reg_}')
+    delphi_prob_reg_pred = trunc_prob_reg.predict(X)
+    delphi_prob_reg_acc = delphi_prob_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi prob reg accuracy: {delphi_prob_reg_acc}')
+    delphi_prob_reg_conf_matrix = confusion_matrix(y, delphi_prob_reg_pred)
+    print(f'delphi prob reg confusion matrix: \n {delphi_prob_reg_conf_matrix}')
+
+    delphi_prob_reg_cos_sim = float(cos_sim(delphi_prob_reg_[None,...], probit_[None,...]))
+    print(f'delphi cos sim: {delphi_prob_reg_cos_sim}')
+    assert delphi_prob_reg_cos_sim > 9e-1, f"trunc prob reg cosine similarity is {delphi_prob_reg_cos_sim}"
+
+# left truncated binary classification task 
+def test_truncated_one_dimension_probit_regression():
+    d, k = 1, 1
+    C = -.25
+    # ground-truth logistic regression model 
+    w = Uniform(-1, 1)
+    U = Uniform(-5, 5)
+    W = w.sample([k, d+1])
+    
+    # input features
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
+    X_ones = ch.cat([X, ch.ones([SAMPLES, 1])], dim=1)
+    # latent variables
+    z = X_ones@W.T + ch.randn([X.size(0), 1])
+    # classification
+    y = (z > 0).float()
+
+    # generate ground-truth data
+    phi = oracle.Left_Regression(C)
+    indices = phi(z).nonzero(as_tuple=True)
+    x_trunc = X[indices[0]]
+    x_trunc_ones = X_ones[indices[0]]
+    y_trunc = y[indices][...,None]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'C: {C}')
+    print(f'alpha: {alpha}')
+                
+    probit = Probit(y.numpy(), X_ones.numpy())
+    probit_results = probit.fit()
+    probit_ = ch.from_numpy(probit_results.params) 
+    print(f'probit: {probit_}')
+    pred = probit_results.predict(X_ones) > .5
+    acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'probit acc: {acc}')
+    probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'probit confusion matrix: \n {probit_conf_matrix}')
+        
+    trunc_probit = Probit(y_trunc.numpy(), x_trunc_ones.numpy()) 
+    trunc_probit_results = trunc_probit.fit()
+    trunc_probit_ = ch.from_numpy(trunc_probit_results.params)
+    print(f'trunc probit: {trunc_probit_}')
+    trunc_probit_cos_sim = float(cos_sim(trunc_probit_[None,...], probit_[None,...]))
+    pred = trunc_probit_results.predict(X_ones) > .5
+    trunc_probit_acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'trunc probit acc: {trunc_probit_acc}')
+    print(f'trunc probit cos sim: {trunc_probit_cos_sim}')
+    trunc_probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'trunc probit confusion matrix: \n {trunc_probit_conf_matrix}')
+                        
+    args = Parameters({
+                        'normalize': False, 
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
+                        'verbose': True,
+                        'early_stopping': True})
+    ch.manual_seed(seed)
+    trunc_prob_reg = TruncatedProbitRegression(args, 
+                                                phi, 
+                                                alpha)
+    trunc_prob_reg.fit(x_trunc, y_trunc) 
+    
+    delphi_prob_reg_ = ch.cat([trunc_prob_reg.coef_.flatten(), trunc_prob_reg.intercept_])
+    print(f'delphi prob reg: {delphi_prob_reg_}')
+    delphi_prob_reg_pred = trunc_prob_reg.predict(X)
+    delphi_prob_reg_acc = delphi_prob_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi prob reg accuracy: {delphi_prob_reg_acc}')
+    delphi_prob_reg_conf_matrix = confusion_matrix(y, delphi_prob_reg_pred)
+    print(f'delphi prob reg confusion matrix: \n {delphi_prob_reg_conf_matrix}')
+    delphi_prob_reg_cos_sim = float(cos_sim(delphi_prob_reg_[None,...], probit_[None,...]))
+    print(f'delphi cos sim: {delphi_prob_reg_cos_sim}')
+    assert delphi_prob_reg_cos_sim > 9e-1, f"trunc prob reg cosine similarity is {delphi_prob_reg_cos_sim}"
+
+# left truncated binary classification task 
+def test_truncated_ten_dimension_probit_regression():
+    d, k = 10, 1
+    C = -.25
+    # ground-truth logistic regression model 
+    w = Uniform(-1, 1)
+    U = Uniform(-5, 5)
+    W = w.sample([k, d+1])
+    
+    # input features
+    SAMPLES = 10000
+    X = U.sample([SAMPLES, d])
+    X_ones = ch.cat([X, ch.ones([SAMPLES, 1])], dim=1)
+    # latent variables
+    z = X_ones@W.T + ch.randn([X.size(0), 1])
+    # classification
+    y = (z > 0).float()
+
+    # generate ground-truth data
+    phi = oracle.Left_Regression(C)
+    indices = phi(z).nonzero(as_tuple=True)
+    x_trunc = X[indices[0]]
+    x_trunc_ones = X_ones[indices[0]]
+    y_trunc = y[indices][...,None]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'C: {C}')
+    print(f'alpha: {alpha}')
+                
+    probit = Probit(y.numpy(), X_ones.numpy())
+    probit_results = probit.fit()
+    probit_ = ch.from_numpy(probit_results.params) 
+    print(f'probit: {probit_}')
+    pred = probit_results.predict(X_ones) > .5
+    acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'probit acc: {acc}')
+    probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'probit confusion matrix: \n {probit_conf_matrix}')
+        
+    trunc_probit = Probit(y_trunc.numpy(), x_trunc_ones.numpy()) 
+    trunc_probit_results = trunc_probit.fit()
+    trunc_probit_ = ch.from_numpy(trunc_probit_results.params)
+    print(f'trunc probit: {trunc_probit_}')
+    trunc_probit_cos_sim = float(cos_sim(trunc_probit_[None,...], probit_[None,...]))
+    pred = trunc_probit_results.predict(X_ones) > .5
+    trunc_probit_acc = np.equal(pred, y.flatten()).sum() / len(y)
+    print(f'trunc probit acc: {trunc_probit_acc}')
+    print(f'trunc probit cos sim: {trunc_probit_cos_sim}')
+    trunc_probit_conf_matrix = confusion_matrix(y, pred)
+    print(f'trunc probit confusion matrix: \n {trunc_probit_conf_matrix}')
+                        
+    args = Parameters({
+                        'normalize': False, 
+                        'batch_size': 10,
+                        'epochs': 10,
+                        'trials': 1,
+                        'verbose': True,
+                        'early_stopping': True})
+    ch.manual_seed(seed)
+    trunc_prob_reg = TruncatedProbitRegression(args, 
+                                                phi, 
+                                                alpha)
+    trunc_prob_reg.fit(x_trunc, y_trunc) 
+    
+    delphi_prob_reg_ = ch.cat([trunc_prob_reg.coef_.flatten(), trunc_prob_reg.intercept_])
+    print(f'delphi prob reg: {delphi_prob_reg_}')
+    delphi_prob_reg_pred = trunc_prob_reg.predict(X)
+    delphi_prob_reg_acc = delphi_prob_reg_pred.eq(y).sum() / len(y)
+    print(f'delphi prob reg accuracy: {delphi_prob_reg_acc}')
+    delphi_prob_reg_conf_matrix = confusion_matrix(y, delphi_prob_reg_pred)
+    print(f'delphi prob reg confusion matrix: \n {delphi_prob_reg_conf_matrix}')
+    delphi_prob_reg_cos_sim = float(cos_sim(delphi_prob_reg_[None,...], probit_[None,...]))
+    print(f'delphi cos sim: {delphi_prob_reg_cos_sim}')
+    assert delphi_prob_reg_cos_sim > 9e-1, f"trunc prob reg cosine similarity is {delphi_prob_reg_cos_sim}"
 
 # gumbel ce classification task
 def test_gumbel_ce(self):     

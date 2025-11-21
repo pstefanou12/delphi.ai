@@ -25,7 +25,7 @@ class Trainer:
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store
 
-        self.epoch = 0
+        self.epoch, self.grad_steps = 0, None
         self.train_costs, self.val_costs = ch.Tensor([]), ch.Tensor([])
         self.loss_history, self.param_history = ch.Tensor([]), ch.Tensor([])
         self._best_loss, self._best_params = float('inf'), None
@@ -35,10 +35,9 @@ class Trainer:
     def model_loop_(self, 
                     loader: DataLoader, 
                     is_train: bool):
-        # ... (initial setup remains the same)
         loop_msg = 'Train' if is_train else 'Val'
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
-        iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.train_mode == 'epoch' else enumerate(loader)
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
         
         for i, batch in iterator:
             if is_train: self.model.optimizer.zero_grad()
@@ -48,14 +47,14 @@ class Trainer:
             pred = self.model(inp, targ)
             loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
             
-            if len(loss.shape) > 0: loss = loss.sum()
+            if len(loss.shape) > 0: loss = loss.sum(0)
 
             loss_.update(loss.item()) # Use item() to store scalar value
             reg_term = self.model.regularize(batch)
             if self.args.cuda:
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
-            
+
             if is_train:
                 self.train_costs = ch.cat([self.train_costs, loss.detach().cpu().unsqueeze(0)])
             else: 
@@ -69,12 +68,17 @@ class Trainer:
                 self.model.pre_step_hook(inp)
                 self.model.optimizer.step()
                 if self.model.schedule is not None: self.model.schedule.step()
+                self.grad_steps += 1
 
-            if self.args.verbose and self.args.train_mode == 'epoch':
-                desc = self.model.description(self.epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
-                iterator.set_description(desc)
+            if self.args.verbose:
+                if self.args.tqdm:
+                    desc = self.model.description(self.epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
+                    iterator.set_description(desc)
             
             self.model.iteration_hook(i, is_train, loss, batch)
+
+            if (self.grad_steps + i + 1) == self.args.grad_steps: 
+                break
             
         self.model.epoch_hook(self.epoch, is_train, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
@@ -182,9 +186,11 @@ class Trainer:
             })
             setup_store_with_metadata(self.args, store)
 
-        val_loss = None
         # stores model estimates after each gradient step
         for trial in range(self.args.trials):
+            val_loss = None
+            self.grad_steps = 0
+
             ch.manual_seed(rand_seed)
             if self.args.verbose: print(f'trial: {trial + 1}')
 
@@ -196,48 +202,49 @@ class Trainer:
                 epoch = checkpoint['epoch']
                 best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop_(val_loader, False)[0]
 
-            if self.args.train_mode == "epoch": 
-                for epoch in range(1, self.args.epochs + 1):
-                    self.epoch = epoch
-                    train_loss, train_prec1, train_prec5 = self.model_loop_(train_loader, True)
+            # if self.args.train_mode == "epoch": 
+            for epoch in range(1, self.args.epochs + 1):
+                self.epoch = epoch
+                train_loss, train_prec1, train_prec5 = self.model_loop_(train_loader, True)
 
-                    if val_loader is not None:
-                        with ch.no_grad():
-                            val_loss, val_prec1, val_prec5 = self.model_loop_(val_loader, False)
-                        if self.args.verbose: print(f'Epoch {epoch} - Loss: {val_loss}')
+                if val_loader is not None:
+                    with ch.no_grad():
+                        val_loss, val_prec1, val_prec5 = self.model_loop_(val_loader, False)
+                    if self.args.verbose: 
+                        print(f'Epoch {epoch} - Loss: {val_loss}')
             
-                    if store is not None:
-                        store['logs'].append_row({
-                            'trial': trial,
-                            'epoch': epoch,
-                            'train_loss': train_loss, 
-                            'train_prec1': train_prec1,
-                            'train_prec5': train_prec5,
-                            'val_loss': val_loss,
-                            'val_prec1': val_prec1, 
-                            'val_prec5': val_prec5})
+                if store is not None:
+                    store['logs'].append_row({
+                        'trial': trial,
+                        'epoch': epoch,
+                        'train_loss': train_loss, 
+                        'train_prec1': train_prec1,
+                        'train_prec5': train_prec5,
+                        'val_loss': val_loss,
+                        'val_prec1': val_prec1, 
+                        'val_prec5': val_prec5})
 
-                    """
-                    NOTE: Check for training procedure convergence. If 
-                    no improvement in loss for args.n_iter_no_change epochs, 
-                    then procedure has converged.
-                    """
-                    if self._best_params is None or val_loss < self._best_loss: 
-                        self._best_params, self._best_loss = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach(), val_loss
-                    if self.args.early_stopping: 
-                        if ch.abs(val_loss - self._best_loss) <= self.args.tol:
-                            self.no_improvement_count += 1
-                        else: 
-                            self.no_improvement_count = 0
-                        if self.no_improvement_count >= self.args.n_iter_no_change:
-                            if self.args.verbose: 
-                                print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
-                            break
+                """
+                NOTE: Check for training procedure convergence. If 
+                no improvement in loss for args.n_iter_no_change epochs, 
+                then procedure has converged.
+                """
+                if self._best_params is None or val_loss < self._best_loss: 
+                    self._best_params, self._best_loss = ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach(), val_loss
+                if self.args.early_stopping: 
+                    if abs(val_loss - self._best_loss) <= self.args.tol:
+                        self.no_improvement_count += 1
+                    else: 
+                        self.no_improvement_count = 0
+                    if self.no_improvement_count >= self.args.n_iter_no_change:
+                        if self.args.verbose: 
+                            print("Convergence after %d epochs took %.2f seconds" % (epoch, time() - t_start))
+                        break
                     
-                    if val_loss is not None: 
-                        self._final_loss, self._final_params = val_loss, ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach()
-            elif self.args.train_mode == "step": 
-                self.train_by_steps_(train_loader, val_loader)
+                if val_loss is not None: 
+                    self._final_loss, self._final_params = val_loss, ch.cat([param.flatten() for param in list(self.model.parameters())])[None,...].detach()
+            # elif self.args.train_mode == "step": 
+            #     self.train_by_steps_(train_loader, val_loader)
 
             self.model.post_training_hook()
                 

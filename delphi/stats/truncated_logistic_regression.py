@@ -7,16 +7,16 @@ from torch.nn import Softmax, Sigmoid
 from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from sklearn.linear_model import LogisticRegression
-import cox
 import warnings
 import math
+from typing import Callable
 
 from .linear_model import LinearModel
-from .stats import stats
+from ..trainer import Trainer
 from ..grad import TruncatedBCE, TruncatedCE
 from ..utils.datasets import make_train_and_val
-from ..utils.helpers import Parameters, accuracy, logistic
-from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_LOG_REG_DEFAULTS
+from ..utils.helpers import Parameters, accuracy 
+from ..utils.defaults import check_and_fill_args, TRUNC_LOG_REG_DEFAULTS
 
 
 # CONSTANTS 
@@ -25,54 +25,36 @@ softmax = Softmax(dim=0)
 sig = Sigmoid()
 
 
-class TruncatedLogisticRegression(stats):
+class TruncatedLogisticRegression(LinearModel):
     """
     Truncated Logistic Regression supports both binary cross entropy classification and truncated cross entropy classification.
     """
     def __init__(self,
-            args: Parameters,
-            weight: ch.Tensor=None,
-            store: cox.store.Store=None,
-):
+                 args: Parameters,
+                 phi: Callable, 
+                 alpha: float, 
+                 fit_intercept: bool=True,
+                 multi_class: str="ovr",
+                 emp_weight: ch.Tensor=None,
+                 rand_seed: int=0):
         '''
         Args: 
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
             alpha (float) : survival probability for truncated regression model
             fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
-            steps (int) : number of gradient steps to take
-            clamp (bool) : boolean indicating whether to clamp the projection set 
-            n (int) : number of gradient steps to take before checking gradient 
-            val (int) : number of samples to use for validation set 
-            tol (float) : gradient tolerance threshold 
-            workers (int) : number of workers to spawn 
-            r (float) : size for projection set radius 
-            rate (float): rate at which to increase the size of the projection set, when procedure does not converge - input as a decimal percentage
-            num_samples (int) : number of samples to sample in gradient 
-            batch_size (int) : batch size
-            lr (float) : initial learning rate for regression parameters 
-            var_lr (float) : initial learning rate to use for variance parameter in the settign where the variance is unknown 
-            step_lr (int) : number of gradient steps to take before decaying learning rate for step learning rate 
-            custom_lr_multiplier (str) : 'cosine' (cosine annealing), 'adam' (adam optimizer) - different learning rate schedulers available
-            lr_interpolation (str) : 'linear' linear interpolation
-            step_lr_gamma (float) : amount to decay learning rate when running step learning rate
-            momentum (float) : momentum for SGD optimizer 
-            weight_decay (float) : weight decay for SGD optimizer 
-            eps (float) :  epsilon value for gradient to prevent zero in denominator
-            store (cox.store.Store) : cox store object for logging 
         '''
-        super(TruncatedLogisticRegression).__init__()
-        # instance variables
-        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
-        self.store = store
-        self.trunc_log_reg = None
-        # algorithm hyperparameters
-        TRUNC_LOG_REG_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_LOG_REG_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
+        super().__init__(args, False, emp_weight=emp_weight)
+        self.phi = phi 
+        self.alpha = alpha
+        self.fit_intercept = fit_intercept
+        self.multi_class = multi_class
+        self.rand_seed = rand_seed        
 
-        assert weight is None or weight.dim() == 2, 'weight is size: {}. expecting two dims, with size 1 * d'.format(weight.size())
-        self.weight = weight
+        del self.criterion
+        del self.criterion_params
+        self.criterion = TruncatedBCE.apply
+        self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
 
     def fit(self, X: Tensor, y: Tensor):
         """
@@ -86,127 +68,62 @@ class TruncatedLogisticRegression(stats):
         assert isinstance(y, Tensor), "y is type: {}. expected type torch.Tensor.".format(type(y))
         assert X.size(0) >  X.size(1), "number of dimensions, larger than number of samples. procedure expects matrix with size num samples by num feature dimensions." 
         assert X.size(0) == y.size(0), 'number of samples in X and y is unequal. X has {} samples, and y has {} samples'.format(X.size(0), y.size(0))
-        if self.args.multi_class == 'ovr':
+        if self.multi_class == 'ovr':
             assert y.dim() == 2 and y.size(1) == 1, "y is size: {}. expecting y tensor with size num_samples by 1.".format(y.size()) 
             k = 1
-        else: 
+        elif self.multi_class == 'multinomial': 
             assert y.dim() == 1, "y is size: {}. expecting y tensor with size num_samples.".format(y.size()) 
             k = len(ch.unique(y))
+        else: 
+            raise Exception(f"multi class is: {self.multi_class}. ovr and multi are only valid inputs.")
+        
         # add one feature to x when fitting intercept
-        if self.args.fit_intercept:
+        if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
-        self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y) 
-        if self.args.multi_class == 'ovr': 
-            self.trunc_log_reg = TruncatedLogisticRegressionModel(self.args, self.weight, self.train_loader_, X.size(1), k)
-        else:
-            self.trunc_log_reg = TruncatedMultinomialLogisticRegressionModel(self.args, self.weight, self.train_loader_, X.size(1), k)
+        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y) 
 
-        trainer = Trainer(self.trunc_log_reg, self.args, store=self.store) 
-        # run PGD for parameter estimation 
-        trainer.train_model((self.train_loader_, self.val_loader_))
+        self.trainer = Trainer(self, self.args) 
+        self.trainer.train_model(self.train_loader, 
+                                 self.val_loader)
 
-        self.coef = self.trunc_log_reg.model.data[:]
-        if self.args.fit_intercept: 
-            self.intercept = self.coef[-1]
-            self.coef = self.coef[:-1]
         return self
-
-    def __call__(self, x: Tensor):
-        """
-        Calculate logistic regression's latent variable, based off of regression estimates.
-        """
-        if self.args.fit_intercept: 
-            x = ch.cat([x, ch.ones(x.size(0), 1)], axis=1)
-        return x@self.trunc_log_reg.model
-
-    def predict(self, x: Tensor): 
-        """
-        Make class predictions with regression estimates.
-        """
-        if self.args.fit_intercept:
-            stacked = (ch.cat([x, ch.ones(x.size(0), 1)], axis=1)@self.trunc_log_reg.model).repeat(self.args.num_samples, 1, 1)
-        else: 
-            stacked = (x@self.trunc_log_reg.model).repeat(self.args.num_samples, 1, 1)
-        if self.args.multi_class == 'multinomial':
-            noised = stacked + G.sample(stacked.size())
-            return noised.mean(0).argmax(-1)
-        noised = stacked + logistic.sample(stacked.size())
-        return noised.mean(0) > 0
-
-    @property
-    def coef_(self): 
-        """
-        Regression weight.
-        """
-        return self.coef
-
-    @property
-    def intercept_(self): 
-        """
-        Regression intercept.
-        """
-        if self.args.fit_intercept:
-            return self.intercept
-        warnings.warn('intercept not fit, check args input.') 
-
-
-class TruncatedLogisticRegressionModel(LinearModel):
-    '''
-    Truncated logistic regression model to pass into trainer framework.  
-    '''
-    def __init__(self, args, weight, train_loader, d, k): 
-        '''
-        Args: 
-            args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
-        '''
-        super().__init__(args, d, k)
-        if weight is not None:
-            self.weight = weight
-        self.X, self.y = train_loader.dataset[:]
-        self.base_radius = math.sqrt(math.log(1.0 / self.args.alpha))
-
-    def pretrain_hook(self): 
+    
+    def pretrain_hook(self,
+                      train_loader: ch.utils.data.DataLoader): 
         """
         SkLearn sets up multinomial classification differently. So when doing 
         multinomial classification, we initialize with random estimates.
         """
         # calculate empirical estimates for truncated linear model
-        self.calc_emp_model()
+        self.calc_emp_model(train_loader)
         self.radius = self.args.r * self.base_radius
-        # empirical estimates for projection set
-        self.model.data = self.weight
-        # assign empirical estimates
-        self.model.requires_grad = True
-        # assign empirical estimates
-        self.params = [self.model]
         
-    def calc_emp_model(self): 
+    def calc_emp_model(self, 
+                       train_loader: ch.utils.data.DataLoader): 
         """
         Calculate empirical logistic regression estimates using SKlearn module.
         """
-        # empirical estimates for logistic regression
-        self.log_reg = LogisticRegression(penalty='none', fit_intercept=False, multi_class=self.args.multi_class)
-        self.log_reg.fit(self.X, self.y.flatten())
-        self.emp_weight = Tensor(self.log_reg.coef_).T
-        self.weight = self.emp_weight.clone()
+        X, y = train_loader.dataset.tensors
+        if self.emp_weight is None:
+            # empirical estimates for logistic regression
+            log_reg = LogisticRegression(penalty=None, fit_intercept=False, multi_class=self.multi_class)
+            log_reg.fit(X, y.flatten())
+            self.emp_weight = ch.nn.Parameter(Tensor(log_reg.coef_).T)
+        else: 
+            self.emp_weight = ch.nn.Parameter(self.emp_weight)
+        self.register_parameter("weight", self.emp_weight)
     
-    def __call__(self, batch):
+    def __call__(self, X, y):
         '''
         Training step for defined model.
         Args: 
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         '''
-        # import pdb; pdb.set_trace()
-        inp, targ = batch
-        z = inp@self.model
-        loss = TruncatedBCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
-        # calculate precision accuracies 
-        prec1, _ = accuracy(z, targ.reshape(targ.size(0), 1).float(), topk=(1,))
-        return loss, prec1, None
+        return X@self.weight
 
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def iteration_hook(self, i, loop_type, loss, batch):
         '''
         Iteration hook for defined model. Method is called after each 
         training update.
@@ -220,8 +137,67 @@ class TruncatedLogisticRegressionModel(LinearModel):
     
     def post_training_hook(self): 
         self.args.r *= self.args.rate
-        # remove model from computation graph
-        self.model.requires_grad = False
+        best_params = self.trainer.best_params
+        final_params = self.trainer.final_params
+        if self.fit_intercept:
+            self.best_coef = best_params[:,:-1]
+            self.best_intercept = best_params[:,-1]
+
+            self.final_coef = final_params[:,:-1]
+            self.final_intercept = final_params[:,-1]
+
+        else:
+            self.best_coef = best_params
+            self.final_coef = final_params
+
+    def predict(self, X: Tensor): 
+        """
+        Make class predictions with regression estimates.
+        """
+        if self.fit_intercept:
+            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)@self.weight
+        else: 
+            logits = X@self.weight
+        if self.multi_class == 'multinomial':
+            noised = logits + G.sample(logits.size())
+            return noised.mean(0).argmax(-1)
+        return sig(logits) > .5
+    
+    @property
+    def best_coef_(self): 
+        return self.best_coef
+
+    @property
+    def best_intercept_(self): 
+        if self.fit_intercept:
+            return self.best_intercept
+        warnings.warn("intercept not fit, check inputs.") 
+    
+    @property
+    def final_coef_(self): 
+        return self.final_coef
+    
+    @property
+    def final_intercept_(self): 
+        if self.fit_intercept:
+            return self.final_intercept
+        warnings.warn("intercept not fit, check inputs.") 
+
+    @property
+    def coef_(self): 
+        """
+        Regression weight.
+        """
+        return self.best_coef
+
+    @property
+    def intercept_(self): 
+        """
+        Regression intercept.
+        """
+        if self.fit_intercept:
+            return self.best_intercept
+        warnings.warn('intercept not fit, check args input.') 
 
 
 class TruncatedMultinomialLogisticRegressionModel(LinearModel):
@@ -238,7 +214,7 @@ class TruncatedMultinomialLogisticRegressionModel(LinearModel):
             assert weight.size() == ch.Size([d, k]), "input weight must be size d - num_features by k - num_logits"
             self.weight = weight
         self.X, self.y = train_loader.dataset[:]
-        self.base_radius = math.sqrt(math.log(1.0 / self.args.alpha))
+        self.base_radius = math.sqrt(math.log(1.0 / self.alpha))
 
     def pretrain_hook(self): 
         """

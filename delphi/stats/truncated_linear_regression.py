@@ -283,7 +283,6 @@ class TruncatedLinearRegression(LinearModel):
         """
         Regression coefficient weights.
         """
-
         return self.best_coef.clone()
 
     @property

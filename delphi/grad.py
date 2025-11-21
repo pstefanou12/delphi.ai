@@ -681,12 +681,51 @@ class SwitchGrad(ch.autograd.Function):
         None, None, None, None, None, None, None
 
 
+# class TruncatedBCE(ch.autograd.Function):
+#     """
+#     Truncated binary cross entropy gradient for truncated binary classification tasks. 
+#     """
+#     @staticmethod
+#     def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
+#         """
+#         Args: 
+#             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+#             targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+#             phi (oracle.oracle): dependent variable membership oracle
+#             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+#             eps (float): denominator error constant to avoid divide by zero errors
+#         """
+#         ctx.save_for_backward()
+#         bce_loss = ch.nn.BCEWithLogitsLoss()
+        
+#         stacked = pred[None, ...].repeat(num_samples, 1, 1)
+#         rand_noise = logistic.sample(stacked.size())
+#         # add noise
+#         noised = stacked + rand_noise
+#         noised_labs = noised >= 0
+#         # filter
+#         filtered = phi(noised)
+#         mask = (noised_labs).eq(targ)
+#         nll = (filtered * mask * logistic.log_prob(rand_noise)).sum(0) / ((filtered * mask).sum(0) + eps)
+#         const = (filtered * logistic.log_prob(rand_noise)).sum(0) / (filtered.sum(0) + eps)
+#         ctx.save_for_backward(mask, filtered, rand_noise)
+#         ctx.eps = eps
+#         return -(nll - const) / pred.size(0)
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         mask, filtered, rand_noise = ctx.saved_tensors
+
+#         avg = 2*(sig(rand_noise) * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps) 
+#         norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
+#         return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
+
 class TruncatedBCE(ch.autograd.Function):
     """
     Truncated binary cross entropy gradient for truncated binary classification tasks. 
     """
     @staticmethod
-    def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5):
+    def forward(ctx, pred, targ, phi, num_samples=1000, eps=1e-5):
         """
         Args: 
             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
@@ -694,10 +733,7 @@ class TruncatedBCE(ch.autograd.Function):
             phi (oracle.oracle): dependent variable membership oracle
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
-        """
-        ctx.save_for_backward()
-        bce_loss = ch.nn.BCEWithLogitsLoss()
-        
+        """      
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         rand_noise = logistic.sample(stacked.size())
         # add noise
@@ -706,11 +742,11 @@ class TruncatedBCE(ch.autograd.Function):
         # filter
         filtered = phi(noised)
         mask = (noised_labs).eq(targ)
-        nll = (filtered * mask * logistic.log_prob(rand_noise)).sum(0) / ((filtered * mask).sum(0) + eps)
-        const = (filtered * logistic.log_prob(rand_noise)).sum(0) / (filtered.sum(0) + eps)
+        filtered = filtered.float()
         ctx.save_for_backward(mask, filtered, rand_noise)
         ctx.eps = eps
-        return -(nll - const) / pred.size(0)
+        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + ctx.eps)
+        return -ch.log(prob_est) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -723,7 +759,7 @@ class TruncatedBCE(ch.autograd.Function):
 
 class TruncatedProbitMLE(ch.autograd.Function): 
     @staticmethod
-    def forward(ctx, pred, targ, phi, num_samples=10, eps=1e-5): 
+    def forward(ctx, pred, targ, phi, num_samples=1000, eps=1e-5): 
         """
         Args: 
             pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
@@ -732,19 +768,20 @@ class TruncatedProbitMLE(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """
-        M = MultivariateNormal(ch.zeros(1,), ch.eye(1, 1))
         stacked = pred[None,...].repeat(num_samples, 1, 1)
         rand_noise = ch.randn(stacked.size())
         noised = stacked + rand_noise 
         noised_labs = noised >= 0
         mask = noised_labs.eq(targ)
         filtered = phi(noised)
-        pdf = M.log_prob(rand_noise)[...,None]
-        nll = (pdf * filtered * mask).sum(0) / ((filtered * mask).sum(0) + eps)
-        const = (filtered * pdf).sum(0) / (filtered.sum(0) + eps)
+    
+        mle = (filtered * mask).sum(0) + eps
+        trunc_const = (filtered).sum(0)
+
         ctx.save_for_backward(rand_noise, filtered, mask)
         ctx.eps = eps
-        return -(nll - const) / pred.size(0)
+
+        return -ch.log(mle/(trunc_const + eps)) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output): 
