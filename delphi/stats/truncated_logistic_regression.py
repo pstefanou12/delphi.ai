@@ -13,14 +13,14 @@ from typing import Callable
 
 from .linear_model import LinearModel
 from ..trainer import Trainer
-from ..grad import TruncatedBCE, TruncatedCE
+from ..grad import TruncatedBCE, TruncatedCE, TruncatedCELabels
 from ..utils.datasets import make_train_and_val
 from ..utils.helpers import Parameters, accuracy 
 from ..utils.defaults import check_and_fill_args, TRUNC_LOG_REG_DEFAULTS
 
 
 # CONSTANTS 
-softmax = Softmax(dim=0)
+softmax = Softmax(dim=-1)
 sig = Sigmoid()
 OVR = "ovr"
 MULTI = "multinomial"
@@ -60,6 +60,7 @@ class TruncatedLogisticRegression(LinearModel):
             self.criterion = TruncatedBCE.apply
         else: 
             self.criterion = TruncatedCE.apply
+            # self.criterion = TruncatedCELabels.apply
         self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
 
     def fit(self, X: Tensor, y: Tensor):
@@ -79,13 +80,14 @@ class TruncatedLogisticRegression(LinearModel):
         unique_classes = len(ch.unique(y))
         assert unique_classes > 1, "y contains only 1 unique class. 2+ uniques classes are required for classification procedures"
         if self.multi_class == OVR:
-            k = 1
+            self.K = 1
         elif self.multi_class == MULTI: 
-            k = unique_classes
+            self.K = unique_classes
 
         # add one feature to x when fitting intercept
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
+        self.D = X.size(1)
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y) 
 
@@ -111,13 +113,13 @@ class TruncatedLogisticRegression(LinearModel):
         Calculate empirical logistic regression estimates using SKlearn module.
         """
         X, y = train_loader.dataset.tensors
-        if self.emp_weight is None:
+        if self._emp_weight is None and self.multi_class == "ovr":
             log_reg = LogisticRegression(penalty=None, fit_intercept=False, multi_class=self.multi_class)
             log_reg.fit(X, y.flatten())
-            self.emp_weight = ch.nn.Parameter(ch.from_numpy(log_reg.coef_).float())
-        else: 
-            self.emp_weight = ch.nn.Parameter(self.emp_weight)
-        self.register_parameter("weight", self.emp_weight)
+            self._emp_weight = ch.from_numpy(log_reg.coef_).float()
+        elif self._emp_weight is None: 
+            self._emp_weight = ch.randn(self.K, self.D) 
+        self.register_parameter("weight", ch.nn.Parameter(self._emp_weight.clone()))
     
     def __call__(self, X, y):
         '''
@@ -127,6 +129,7 @@ class TruncatedLogisticRegression(LinearModel):
             batch (Iterable) : iterable of inputs that 
         '''
         return X@self.weight.T
+    
 
     def iteration_hook(self, i, loop_type, loss, batch):
         '''
@@ -142,8 +145,8 @@ class TruncatedLogisticRegression(LinearModel):
     
     def post_training_hook(self): 
         self.args.r *= self.args.rate
-        best_params = self.trainer.best_params.reshape(self.emp_weight.size())
-        final_params = self.trainer.final_params.reshape(self.emp_weight.size())
+        best_params = self.trainer.best_params.reshape(self.weight.size())
+        final_params = self.trainer.final_params.reshape(self.weight.size())
         if self.fit_intercept:
             self.best_coef = best_params[:,:-1]
             self.best_intercept = best_params[:,-1]
@@ -160,9 +163,9 @@ class TruncatedLogisticRegression(LinearModel):
         Probability predictions for input features.
         """
         if self.fit_intercept:
-            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)@self.weight.T
+            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)@self.best_coef.T
         else: 
-            logits = X@self.weight.T
+            logits = X@self.best_coef.T
         if self.multi_class == MULTI:
             return  softmax(logits)
         return sig(logits)
@@ -211,79 +214,3 @@ class TruncatedLogisticRegression(LinearModel):
         if self.fit_intercept:
             return self.best_intercept
         warnings.warn('intercept not fit, check args input.') 
-
-
-class TruncatedMultinomialLogisticRegressionModel(LinearModel):
-    '''
-    Truncated multinomial logistic regression model to pass into trainer framework.  
-    '''
-    def __init__(self, args, weight, train_loader, d, k): 
-        '''
-        Args: 
-            args (delphi.utils.helpers.Parameters) : parameter object holding hyperparameters
-        '''
-        super().__init__(args, d, k)
-        if weight is not None:
-            assert weight.size() == ch.Size([d, k]), "input weight must be size d - num_features by k - num_logits"
-            self.weight = weight
-        self.X, self.y = train_loader.dataset[:]
-        self.base_radius = math.sqrt(math.log(1.0 / self.alpha))
-
-    def pretrain_hook(self): 
-        """
-        SkLearn sets up multinomial classification differently. So when doing 
-        multinomial classification, we initialize with random estimates.
-        """
-        # calculate empirical estimates for truncated linear model
-        self.calc_emp_model()
-        self.radius = self.args.r * self.base_radius
-        # empirical estimates for projection set
-        self.model.data = self.weight
-        # assign empirical estimates
-        self.model.requires_grad = True
-        # assign empirical estimates
-        self.params = [self.model]
-        
-    def calc_emp_model(self): 
-        """
-        Calculate empirical logistic regression estimates using SKlearn module.
-        """
-        # randomly assign initial estimates
-        if self.weight is None:
-            # temp = ch.nn.Linear(in_features=self.d, out_features=self.k)
-            self.weight = self.weight = ch.randn(self.d, self.k)
-    
-    def __call__(self, batch):
-        '''
-        Training step for defined model.
-        Args: 
-            i (int) : gradient step or epoch number
-            batch (Iterable) : iterable of inputs that 
-        '''
-        inp, targ = batch
-        z = inp@self.model
-        loss = TruncatedCE.apply(z, targ, self.args.phi, self.args.num_samples, self.args.eps)
-        # calculate precision accuracies 
-        prec1, prec5 = None, None
-        if z.size(1) >= 5:
-            prec1, prec5 = accuracy(z, targ, topk=(1, 5))
-        else: 
-            prec1, = accuracy(z, targ, topk=(1,))
-        return loss, prec1, prec5
-
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
-        '''
-        Iteration hook for defined model. Method is called after each 
-        training update.
-        Args:
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
-        '''
-        pass
-    
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
-        # remove model from computation graph
-        self.model.requires_grad = False

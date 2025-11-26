@@ -36,13 +36,6 @@ class LinearModel(delphi):
         if self.dependent: 
             self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
 
-    def calc_emp_model(self, 
-                        train_loader: ch.Tensor): 
-        '''
-        Calculates empirical estimates for a truncated linear model. Assigns 
-        estimates to a Linear layer. By default calculates OLS for truncated liner regression.
-        '''
-        pass
-        
+    
     def iteration_hook(self, i, is_train, loss, batch):
         if not self.args.constant: self.schedule.step()

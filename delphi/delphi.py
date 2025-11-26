@@ -352,7 +352,7 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def pre_step_hook(self, inp) -> None: 
+    def pre_step_hook(self, inp, targ) -> None: 
         '''
         Hook called after .backward call, but before taking a step 
         with the optimizer. 

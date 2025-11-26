@@ -73,8 +73,10 @@ TRAINER_DEFAULTS = {
     'disable_no_grad': (bool, False), 
     'epoch_step': (bool, False),
     'train_mode': (['epoch', 'step'], 'epoch'),
-    'gradient_steps': (int, 1000, {'min': 1}), 
-    'val_interval': (int, 50, {'min': 1})
+    'gradient_steps': (int, float('inf'), {'min': 1}), 
+    'val_interval': (int, 50, {'min': 1}),
+    'patience': (int, float('inf'), {'min': 1}),
+    # 'grad_tol': ()
 }
 
 DATASET_DEFAULTS = {

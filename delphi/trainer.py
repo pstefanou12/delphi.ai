@@ -2,8 +2,7 @@
 Module used for training models.
 """
 import torch as ch
-import numpy as np
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader 
 from time import time
 from tqdm import tqdm
 from cox.store import Store
@@ -13,14 +12,16 @@ from .utils import constants as consts
 from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
+STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_gradient_steps"]
+
 def ensure_tuple(x):
     return x if isinstance(x, (tuple, list)) else (x,)
 
 class Trainer:
     def __init__(self, 
-                model: delphi,
-                args: Parameters, 
-                store=None): 
+                 model: delphi, 
+                 args: Parameters, 
+                 store=None): 
         self.model = model
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.store = store
@@ -73,7 +74,7 @@ class Trainer:
 
             if is_train:
                 loss.backward()
-                self.model.pre_step_hook(inp)
+                self.model.pre_step_hook(inp, targ)
 
                 flat_grads = ch.cat([param.grad.flatten() for param in list(self.model.parameters_()) if param.grad is not None]).detach().clone() 
                 grad_norm = flat_grads.norm()
@@ -81,10 +82,10 @@ class Trainer:
 
             # stopping criteria
             stop, reason = self.should_stop()
-            self.stop_reason = reason
             if stop:
+                self.stop_reason = reason
                 if self.args.verbose:
-                    print("Stopped due to: %s at iteration %d. \n Total time: %.2f seconds" % (self.stop_reason, self.epoch, time() - self.t_start))
+                    print("Stopped due to %s after %d gradient steps. \n Total time: %.2f seconds" % (self.stop_reason, self.iterations, time() - self.t_start))
                 break
 
             if is_train: 
@@ -103,24 +104,25 @@ class Trainer:
         return loss_.avg, prec1_.avg, prec5_.avg
     
     def should_stop(self): 
-        # Criterion 1: max iterations
-        if self.args.gradient_steps is not None and self.iterations >= self.args.gradient_steps:
-            return True, "max_gradient_steps"
+        if self.stop_reason not in STOP_REASONS:
+            # Criterion 1: max iterations
+            if self.args.gradient_steps is not None and self.iterations >= self.args.gradient_steps:
+                return True, "max_gradient_steps"
 
-        # Criterion 2: gradient norm small (scipy-like)
-        if self.args.grad_tol is not None and len(self.grad_norms) > 1 and (self.grad_norms[-1]) < self.args.grad_tol:
-            return True, "grad_tol"
+            # Criterion 2: gradient norm small (scipy-like)
+            if self.args.grad_tol is not None and len(self.grad_norms) > 1 and (self.grad_norms[-1]) < self.args.grad_tol:
+                return True, "grad_tol"
 
-        # Criterion 3: loss change small
-        if self.args.loss_tol is not None and len(self.train_losses) > 1:
-            if abs(self.train_losses[-1] - self.train_losses[-2]) < self.args.loss_tol:
-                return True, "loss_tol"
+            # Criterion 3: loss change small
+            if self.args.loss_tol is not None and len(self.train_losses) > 1:
+                if abs(self.train_losses[-1] - self.train_losses[-2]) < self.args.loss_tol:
+                    return True, "loss_tol"
 
-        # Criterion 4: early stopping on val loss
-        if len(self.val_losses) > self.args.patience:
-            recent = self.val_losses[-self.args.patience:]
-            if recent[-1] > min(recent[:-1]):
-                return True, "early_stop"
+            # Criterion 4: early stopping on val loss
+            if len(self.val_losses) > self.args.patience:
+                recent = self.val_losses[-self.args.patience:]
+                if recent[-1] > min(recent[:-1]):
+                    return True, "early_stop"
 
         return False, None
 
@@ -168,7 +170,6 @@ class Trainer:
                 epoch = checkpoint['epoch']
                 best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.model_loop_(val_loader, False)[0]
 
-            # if self.args.train_mode == "epoch": 
             for epoch in range(1, self.args.epochs + 1):
                 self.epoch = epoch
                 train_loss, train_prec1, train_prec5 = self.model_loop_(train_loader, True)
@@ -183,6 +184,9 @@ class Trainer:
 
                     if self.args.verbose: 
                         print(f'Epoch {epoch} - Loss: {val_loss}')
+
+                if self.stop_reason in STOP_REASONS: 
+                    break
             
                 if store is not None:
                     store['logs'].append_row({
@@ -195,18 +199,20 @@ class Trainer:
                         'val_prec1': val_prec1, 
                         'val_prec5': val_prec5})
 
-                self._final_loss = val_loss
-                self._final_params = self.val_param_history[-1] 
+            self._final_loss = val_loss 
+            self._final_params = self.val_param_history[-1] 
 
             self.model.post_training_hook()
+
         # convert training loss/param history to tensors
         self.train_losses = ch.tensor(self.train_losses)
         self.val_losses   = ch.tensor(self.val_losses)
         self.train_param_history = ch.stack(self.train_param_history)
         self.val_param_history = ch.stack(self.val_param_history)
-                
-        if self.stop_reason == 'max_gradient_steps': 
-            print('Procedure did not converge after %d epochs and %.2f seconds' % (self.epoch, time() - self.t_start))
+        self.grad_norms = ch.Tensor(self.grad_norms)
+
+        if self.stop_reason is None or self.stop_reason == 'max_gradient_steps': 
+            print('Procedure did not converge after %d epochs in %.2f seconds' % (self.epoch, time() - self.t_start))
     
     def eval_model(self, 
                     loader: DataLoader, 

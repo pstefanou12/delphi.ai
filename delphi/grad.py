@@ -8,7 +8,7 @@ from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
-from .utils.helpers import logistic, cov
+from .utils.helpers import logistic 
 
 softmax = Softmax(dim=1)
 gumbel = Gumbel(0, 1)
@@ -830,12 +830,45 @@ class TruncatedCE(ch.autograd.Function):
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
         """     
-        # import pdb; pdb.set_trace()   
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         rand_noise = gumbel.sample(stacked.size())
         noised = stacked + rand_noise
         noised_labs = noised.argmax(-1, keepdim=True)
         filtered = phi(noised).float()
+        mask = (noised_labs).eq(targ)
+        ctx.save_for_backward(mask, filtered, rand_noise, pred)
+        ctx.eps = eps
+        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + eps)
+        return -ch.log(prob_est) / pred.size(0)
+        
+    @staticmethod
+    def backward(ctx, grad_output):  
+        mask, filtered, rand_noise, pred = ctx.saved_tensors
+        inner_exp = (1 - ch.exp(-rand_noise))
+        nll = ((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps))
+        nll = ((inner_exp * mask * filtered).sum(0) / ((mask * filtered).sum(0) + ctx.eps))
+
+        const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
+        const = ((inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps))
+
+        return (-nll + const) / pred.size(0), None, None, None, None
+    
+class TruncatedCELabels(ch.autograd.Function):
+    @staticmethod
+    def forward(ctx, pred, targ, phi, num_samples=5000, eps=1e-5):
+        """
+        Args: 
+            pred (torch.Tensor): size (batch_size, 1) matrix for regression model predictions
+            targ (torch.Tensor): size (batch_size, 1) matrix for regression target predictions
+            phi (oracle.oracle): dependent variable membership oracle
+            num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
+            eps (float): denominator error constant to avoid divide by zero errors
+        """     
+        stacked = pred[None, ...].repeat(num_samples, 1, 1)
+        rand_noise = gumbel.sample(stacked.size())
+        noised = stacked + rand_noise
+        noised_labs = noised.argmax(-1, keepdim=True)
+        filtered = phi(noised, targ).float()
         mask = (noised_labs).eq(targ)
         ctx.save_for_backward(mask, filtered, rand_noise, pred)
         ctx.eps = eps
