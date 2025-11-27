@@ -106,7 +106,7 @@ TRUNC_REG_DEFAULTS = {
         'rate': (float, 1.5), 
         'batch_size': (int, 50),
         'workers': (int, 0),
-        'num_samples': (int, 10000),
+        'num_samples': (int, 1000),
         'shuffle': (bool, True),
         'train_mode': (['epoch', 'step'], 'step'),
         'gradient_steps': (int, 1500),

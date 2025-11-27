@@ -94,6 +94,7 @@ class TruncatedMultivariateNormalScore:
         # calculates the negative log-likelihood for one sample of a censored normal
         return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
+
 class PreSampler: 
     def __init__(self, dims: int, num_samples: int=1000000): 
         self.dims = dims 
@@ -181,10 +182,10 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
         return term_one / loc_grad.size(0), term_two / cov_grad.size(0), None, None, None, None, None
 
 
-samples  = ch.randn(10000, 1)
+samples  = ch.randn(1000, 1)
 class TruncatedMSE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ, phi, noise_var, num_samples=10000, eps=1e-5):
+    def forward(ctx, pred, targ, phi, noise_var, num_samples=1000, eps=1e-5):
         N = pred.shape[0]
 
         # Sample latent points
@@ -238,6 +239,7 @@ import torch
 import torch.nn.functional as F
 import math
 
+samples  = ch.randn(1000, 1)
 class TruncatedUnknownVarianceMSE(torch.autograd.Function):
     """
     Maximum Likelihood Estimator for Truncated Gaussian Regression
@@ -258,8 +260,10 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
         
         # --- 1. MC Estimation of Conditional Moments and Probability ---
         # Generate samples from the *latent* Gaussian distribution
-        stacked = pred.repeat(1, num_samples) # Shape: [Batch, num_samples]
-        noised = stacked + sigma * torch.randn_like(stacked)
+        stacked = pred[...,None].repeat(1, num_samples, 1) # Shape: [Batch, num_samples]
+        # noised = stacked + sigma * torch.randn_like(stacked)
+        noise = sigma * samples.repeat(pred.size(0), 1, 1) 
+        noised = stacked + noise 
 
         # Apply the arbitrary truncation filter phi(y)
         filtered = phi(noised)
@@ -268,13 +272,13 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
         # E[Y | S] approx= (Sum Y_i * phi(Y_i)) / (Sum phi(Y_i))
         weighted_y = noised * filtered
         
-        sum_weights = filtered.sum(dim=1, keepdim=True) # Sum of phi(Y_i)
+        sum_weights = filtered.sum(dim=1) # Sum of phi(Y_i)
         
         # Conditional Mean E[Y | S] approx= z (Used in backward pass)
-        z = weighted_y.sum(dim=1, keepdim=True) / (sum_weights + eps)
+        z = weighted_y.sum(dim=1) / (sum_weights + eps)
         
         # Conditional Second Moment E[Y^2 | S] approx= z_2 (Used in backward pass)
-        z_2 = weighted_y.pow(2).sum(dim=1, keepdim=True) / (sum_weights + eps)
+        z_2 = weighted_y.pow(2).sum(dim=1) / (sum_weights + eps)
         
         # Conditional Probability P(Y in S) approx= P_hat (Used in loss)
         P_hat = sum_weights / num_samples

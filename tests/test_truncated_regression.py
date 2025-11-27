@@ -184,7 +184,8 @@ def test_known_truncated_regression_higher_dimensions():
                                 'optimizer': 'lbfgs',
                                 'batch_size': -1,
                                 'trials': 1,
-                                'verbose': True
+                                'verbose': True,
+                                'num_samples': 1000,
                             }) 
     trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                 phi_scale, 
@@ -246,13 +247,12 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
     train_kwargs = Parameters({
+                                'optimizer': 'lbfgs',
                                 'trials': 1,
-                                'epochs': 2,
-                                'batch_size': 10,
-                                'var_lr': 1e-2, 
+                                'epochs': 5,
+                                'batch_size': -1,
+                                'var_lr': None, 
                                 'verbose': True,
-                                # 'step_lr': 500,
-                                'step_lr_gamma': 1.0,
                             })
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                         phi_emp_scale,

@@ -373,7 +373,7 @@ class TruncatedLinearRegression(LinearModel):
         return args, kwargs
 
     def parameters_(self): 
-        if self.noise_var is None: 
+        if self.noise_var is None and self.args.var_lr is not None: 
             return [{"params": self.v, 'lr': self.args.lr},
                     {"params": self.lambda_, "lr": self.args.var_lr}]
         else: 
