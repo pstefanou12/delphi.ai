@@ -342,7 +342,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
 # left truncated regression with unknown noise variance in one dimension with noise variance 3
 def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     D  = 1
-    NUM_SAMPLES = 5000
+    NUM_SAMPLES = 10000
     # generate ground truth
     noise_var = 3 * ch.ones(1, 1)
     W = ch.ones(1, D)
@@ -388,15 +388,16 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     train_kwargs = Parameters({
                                 'trials': 1,
                                 'epochs': 10,
-                                'batch_size': 10,
-                                'var_lr': 1e-1, 
+                                'optimizer': 'lbfgs',
+                                'batch_size': -1,
+                                'var_lr': None, 
                                 'verbose': True,
+                                'num_samples': 1000
                             })
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                         phi_emp_scale,
                                                         alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
-    # unknown_trunc_reg.fit(x_trunc.repeat(1, 1), y_trunc_emp_scale.repeat(1, 1))
     w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_ + ols_trunc.intercept_]) * ch.sqrt(emp_noise_var)
     noise_var_ = unknown_trunc_reg.best_variance_ * emp_noise_var
     print(f'estimated_weights: {w_.tolist()}')
