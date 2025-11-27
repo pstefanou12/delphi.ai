@@ -37,5 +37,5 @@ class LinearModel(delphi):
             self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
 
     
-    def iteration_hook(self, i, is_train, loss, batch):
+    def post_step_hook(self, optimizer, args, kwargs):
         if not self.args.constant: self.schedule.step()

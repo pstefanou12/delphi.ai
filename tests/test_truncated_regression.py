@@ -57,9 +57,9 @@ def test_known_truncated_regression_one_dimension_no_intercept():
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
     train_kwargs = Parameters({
-                                'lr': 1e-1,
-                                'batch_size': 10,
-                                'gradient_steps': 1000,
+                                'epochs': 5,
+                                'optimizer': 'lbfgs',
+                                'batch_size': -1,
                                 'trials': 1,
                                 'verbose': True
                             }) 
@@ -179,9 +179,10 @@ def test_known_truncated_regression_higher_dimensions():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters({'epochs': 5,
-                                'lr': 1e-1,
-                                'batch_size': 10,
+    train_kwargs = Parameters({
+                                'epochs': 5,
+                                'optimizer': 'lbfgs',
+                                'batch_size': -1,
                                 'trials': 1,
                                 'verbose': True
                             }) 
@@ -190,7 +191,7 @@ def test_known_truncated_regression_higher_dimensions():
                                                 alpha, 
                                                 noise_var=ch.ones(1, 1))
     trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]) * ch.sqrt(NOISE_VAR)
+    w_ = ch.cat([(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_[...,None]]) * ch.sqrt(NOISE_VAR)
     print(f'estimated weights: {w_}')
     known_mse_loss = mse_loss(gt_, w_.flatten())
     print(f'known mse loss: {known_mse_loss}')

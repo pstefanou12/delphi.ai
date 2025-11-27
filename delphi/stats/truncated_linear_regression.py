@@ -203,31 +203,31 @@ class TruncatedLinearRegression(LinearModel):
             self.final_weight = v*self.final_variance
 
             if self.fit_intercept: 
-                best_lambda_ = best_params[:,-1]
+                best_lambda_ = best_params[-1]
                 self.best_variance = 1/best_lambda_
-                self.best_coef = (best_params[:,:-2] * self.best_variance) / self.beta
-                self.best_intercept = best_params[:,-2] * self.best_variance 
-                final_lambda_ = final_params[:,-1]
+                self.best_coef = (best_params[:-2] * self.best_variance) / self.beta
+                self.best_intercept = best_params[-2] * self.best_variance 
+                final_lambda_ = final_params[-1]
                 self.final_variance = 1/final_lambda_
-                self.final_coef = (final_params[:,:-2] * self.final_variance) / self.beta
-                self.final_intercept = final_params[:,-2] * self.final_variance 
+                self.final_coef = (final_params[:-2] * self.final_variance) / self.beta
+                self.final_intercept = final_params[-2] * self.final_variance 
                 self.emp_weight /= self.beta
             else: 
-                best_lambda_ = best_params[:,-1]
+                best_lambda_ = best_params[-1]
                 self.best_variance = 1/best_lambda_
-                self.best_coef = (best_params[:,:-1] * self.best_variance) / self.beta
-                final_lambda_ = final_params[:,-1]
+                self.best_coef = (best_params[:-1] * self.best_variance) / self.beta
+                final_lambda_ = final_params[-1]
                 self.final_variance = 1/final_lambda_
-                self.final_coef = (final_params[:,:-1] * self.final_variance) / self.beta
+                self.final_coef = (final_params[:-1] * self.final_variance) / self.beta
                 self.emp_weight /= self.beta
         
         # assign results from procedure to instance variables
         else: 
             if self.fit_intercept: 
-                self.best_coef = best_params[:,:-1] / self.beta
-                self.best_intercept = best_params[:,-1]
-                self.final_coef = final_params[:,:-1] / self.beta
-                self.final_intercept = final_params[:,-1]
+                self.best_coef = best_params[:-1] / self.beta
+                self.best_intercept = best_params[-1]
+                self.final_coef = final_params[:-1] / self.beta
+                self.final_intercept = final_params[-1]
                 self.emp_weight /= self.beta
             else: 
                 self.best_coef = best_params[:] / self.beta
@@ -353,20 +353,24 @@ class TruncatedLinearRegression(LinearModel):
 
         return X@self.weight
 
-    def pre_step_hook(self, 
-                        inp: ch.Tensor) -> None:
+    def step_pre_hook(self, 
+                      optimizer, 
+                      args,
+                      kwargs): 
         if self.dependent:
             self.weight.grad = self.Sigma.inverse()@self.weight.grad
+
+        return args, kwargs
                 
-    def iteration_hook(self, 
-                        i: int, 
-                        loop_type: str, 
-                        loss: ch.Tensor, 
-                        batch: ch.Tensor) -> None:
+    def step_post_hook(self, 
+                       optimizer, 
+                       args, 
+                       kwargs): 
         if self.noise_var is None:
             # project model parameters back to domain 
             var = 1.0/self.lambda_
             self.lambda_.data = 1.0/ch.clamp(var, self.var_bounds.lower, self.var_bounds.upper)
+        return args, kwargs
 
     def parameters_(self): 
         if self.noise_var is None: 

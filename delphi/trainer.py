@@ -39,6 +39,24 @@ class Trainer:
         self._final_loss, self._final_params = None, None
         self.stop_reason = None
 
+    def make_closure(self, batch): 
+        def closure(): 
+            inp, targ = batch
+            self.model.optimizer.zero_grad()
+            
+            pred = self.model(inp, targ)
+            loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
+            if len(loss.shape) > 0: loss = loss.sum(0)
+            reg_term = self.model.regularize(batch)
+
+            if self.args.cuda:
+                reg_term = reg_term.cuda()
+            loss = loss + reg_term
+            
+            loss.backward()
+            return loss 
+        return closure
+
     def model_loop_(self, 
                     loader: DataLoader, 
                     is_train: bool):
@@ -47,60 +65,58 @@ class Trainer:
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
         
         for i, batch in iterator:
-            if is_train: self.model.optimizer.zero_grad()
-            inp, targ = batch
+            # if is_train: self.model.optimizer.zero_grad()
+            # inp, targ = batch
 
-            # forward pass
-            pred = self.model(inp, targ)
-            loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
-            if len(loss.shape) > 0: loss = loss.sum(0)
+            # pred = self.model(inp, targ)
+            # loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
+            # if len(loss.shape) > 0: loss = loss.sum(0)
 
-            loss_.update(loss.item()) # Use item() to store scalar value
-            reg_term = self.model.regularize(batch)
-            if self.args.cuda:
-                reg_term = reg_term.cuda()
-            loss = loss + reg_term
-
+            # loss_.update(loss.item()) # Use item() to store scalar value
+            # reg_term = self.model.regularize(batch)
+            # if self.args.cuda:
+            #     reg_term = reg_term.cuda()
+            # loss = loss + reg_term
             flat_params = ch.cat([param.flatten() for param in list(self.model.parameters_())]).detach().clone()
             if is_train: 
                 self.train_param_history.append(flat_params)
-                self.train_losses.append(loss)
             else: 
                 self.val_param_history.append(flat_params)
-                self.val_losses.append(loss)
 
-            # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
-            # if not, you'll need to define what these mean for your model and loss.
+            if is_train: 
+                loss = self.model.optimizer.step(self.make_closure(batch))
+                if self.model.schedule is not None: self.model.schedule.step()
 
-            if is_train:
-                loss.backward()
-                self.model.pre_step_hook(inp, targ)
-
+                self.train_losses.append(loss)
                 flat_grads = ch.cat([param.grad.flatten() for param in list(self.model.parameters_()) if param.grad is not None]).detach().clone() 
                 grad_norm = flat_grads.norm()
                 self.grad_norms.append(grad_norm.item())
+                
+                self.iterations += 1
+            else:
+                inp, targ = batch
+                pred = self.model(inp, targ)
+                loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
+                if len(loss.shape) > 0: loss = loss.sum(0)
+                self.val_losses.append(loss)
+
+            loss_.update(loss.item()) # Use item() to store scalar value
+            # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
+            # if not, you'll need to define what these mean for your model and loss.
 
             # stopping criteria
             stop, reason = self.should_stop()
             if stop:
                 self.stop_reason = reason
-                if self.args.verbose:
-                    print("Stopped due to %s after %d gradient steps. \n Total time: %.2f seconds" % (self.stop_reason, self.iterations, time() - self.t_start))
                 break
-
-            if is_train: 
-                self.model.optimizer.step()
-                if self.model.schedule is not None: self.model.schedule.step()
-                self.iterations += 1
 
             if self.args.verbose:
                 if self.args.tqdm:
                     desc = self.model.description(self.epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term)
                     iterator.set_description(desc)
             
-            self.model.iteration_hook(i, is_train, loss, batch)
             
-        self.model.epoch_hook(self.epoch, is_train, loss)
+        self.model.post_epoch_hook(self.epoch, is_train, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
     
     def should_stop(self): 
@@ -186,6 +202,8 @@ class Trainer:
                         print(f'Epoch {epoch} - Loss: {val_loss}')
 
                 if self.stop_reason in STOP_REASONS: 
+                    if self.args.verbose:
+                        print("Stopped due to %s after %d gradient steps. \n Total time: %.2f seconds" % (self.stop_reason, self.iterations, time() - self.t_start))
                     break
             
                 if store is not None:

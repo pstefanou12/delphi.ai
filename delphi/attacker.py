@@ -428,7 +428,7 @@ class AttackerModel(delphi):
     def val_step(self, batch):
         self.step(batch, self.val_losses, self.val_top1, self.val_top5, is_train=False) 
 
-    def iteration_hook(self, epoch, i, loop_type, batch): 
+    def post_step_hook(self, epoch, i, loop_type, batch): 
         pass 
 
     def description(self, epoch, i, loop_msg):
@@ -442,7 +442,7 @@ class AttackerModel(delphi):
                     'Reg term: {reg} ||'.format(epoch, loop_msg,
                                                 loss=losses, top1_acc=top1, top5_acc=top5, reg=self.reg_term))
   
-    def epoch_hook(self, epoch, loop_type): 
+    def post_epoch_hook(self, epoch, loop_type): 
         # update learning rate
         if self.schedule: 
             self.schedule.step()

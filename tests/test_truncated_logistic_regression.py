@@ -518,12 +518,11 @@ def test_untruncated_multinomial_logistic_regression():
     # print(f'emp weight: {emp_weight}')
     args = Parameters({
                         'batch_size': 50,
-                        'epochs': 10,
+                        'epochs': 50,
                         'trials': 1,
                         'verbose': True,
                         'early_stopping': True,
                         'num_samples': 10000,
-                        'gradient_steps': 1500,
                         'grad_tol': 1e-3,
                         'step_lr_gamma': 1.0, 
                         'lr': 1e-1,
@@ -534,7 +533,6 @@ def test_untruncated_multinomial_logistic_regression():
                                                 alpha, 
                                                 fit_intercept=False,
                                                 multi_class="multinomial")
-                                                # emp_weight=emp_weight)
     delphi_log_reg.fit(X_trunc, Y_trunc)
     delphi_log_reg_ = delphi_log_reg.coef_                
     print(f'delphi log reg: {delphi_log_reg_}')
@@ -551,11 +549,11 @@ def test_untruncated_multinomial_logistic_regression():
 
     args = Parameters({
                         'batch_size': 50,
-                        'epochs': 10,
+                        'epochs': 50,
                         'trials': 1,
                         'verbose': True,
                         'early_stopping': True,
-                        'gradient_steps': 1500,
+                        # 'gradient_steps': 1500,
                         'grad_tol': 1e-3,
                         'step_lr_gamma': 1.0,
                     })        
@@ -574,6 +572,7 @@ def test_untruncated_multinomial_logistic_regression():
     print(f'delphi soft cos sim: {delphi_soft_cos_sim}')
     delphi_soft_conf_matrix = confusion_matrix(Y_trunc, delphi_soft_pred)
     print(f'delphi soft confusion matrix: \n {delphi_soft_conf_matrix}')
+    import pdb; pdb.set_trace()
     assert delphi_soft_cos_sim > 9e-1, f"trunc multinomial log reg cosine similarity is {delphi_soft_cos_sim}"
 
 # 1 dimensional truncated multinomial logistic regression 

@@ -125,7 +125,7 @@ class TruncatedMultivariateNormal(distributions):
         L_clipped = ch.clamp(L, min=eps)
         return Q @ ch.diag_embed(L_clipped) @ Q.T
 
-    def iteration_hook(self, i, is_train, loss, batch) -> None:
+    def post_step_hook(self, optimizer, args, kwargs) -> None:
         if len(self.trainer.param_history) > 1 and ch.abs(self.trainer.param_history[-1, 1] - self.v) > .1: import pdb; pdb.set_trace()
         with ch.no_grad():
             # Clone current parameters

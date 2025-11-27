@@ -5,14 +5,12 @@ Parent class for models to train in delphi trainer.
 import torch as ch
 import cox
 from cox.store import Store
-import warnings
-from typing import Any, Iterable
-from torch.optim import SGD, Adam, lr_scheduler
+from typing import Callable, Iterable
+from torch.optim import SGD, LBFGS, Adam, lr_scheduler
 import numpy as np
 
 from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS 
 from .utils.helpers import Parameters
-from .optimizers import NewtonOptimizer
 
 # CONSTANTS 
 BY_ALG = 'by algorithm'  # default parameter depends on algorithm
@@ -92,19 +90,20 @@ class delphi(ch.nn.Module):
         self.optimizer = None 
         self.schedule = None
 
-    def make_optimizer_and_schedule(self, params: Iterable, checkpoint: dict = None):
+    def make_optimizer_and_schedule(self, 
+                                    params: Iterable, 
+                                    checkpoint: dict=None):
         """
         Comprehensive optimizer and scheduler factory with full PyTorch support.
         """
         params = list(params)
     
-        # Create optimizer with full configuration support
         self.optimizer = self._create_optimizer(params)
-    
-        # Create scheduler if needed
+        self.optimizer.register_step_pre_hook(self.step_pre_hook)
+        self.optimizer.register_step_post_hook(self.step_post_hook)
+
         self.schedule = self._create_scheduler()
     
-        # Load checkpoint if provided
         if checkpoint:
             self._load_checkpoint(checkpoint)
     
@@ -116,8 +115,8 @@ class delphi(ch.nn.Module):
     
         optimizer_creators = {
             'sgd': self._create_sgd,
+            'lbfgs': self._create_lbfgs,
             'adam': self._create_adam, 
-            'newton': self._create_newton,
         }
     
         if optimizer_type not in optimizer_creators:
@@ -153,6 +152,27 @@ class delphi(ch.nn.Module):
             print(f"Creating SGD optimizer: {config}")
         
         return  SGD(params, **config)
+    
+    def _create_lbfgs(self, params):
+        """Create L-BFGS optimizer with all PyTorch parameters"""
+        max_iter = getattr(self.args, 'max_iter', 20)
+        config = {
+            'lr': getattr(self.args, 'lbfgs_lr', 1.0),
+            'max_iter': max_iter,
+            'max_eval': getattr(self.args, 'max_eval', int(1.25*max_iter)),
+            'tolerance_grad': getattr(self.args, 'tolerance_grad', 1e-7),
+            'tolerance_change': getattr(self.args, 'tolerance_change', 1e-9),
+            'history_size': getattr(self.args, 'history_size', 100),
+            'line_search_fn': getattr(self.args, 'line_search_fn', None),
+        }
+    
+        # Filter out None values (use PyTorch defaults)
+        config = {k: v for k, v in config.items() if v is not None}
+    
+        if self.args.verbose:
+            print(f"Creating LBFGS optimizer: {config}")
+        
+        return  LBFGS(params, **config)
 
     def _create_adam(self, params):
         """Create Adam optimizer with all PyTorch parameters"""
@@ -178,22 +198,6 @@ class delphi(ch.nn.Module):
             print(f"Creating Adam optimizer: {config}")
     
         return Adam(params, **config)
-
-    def _create_newton(self, params):
-        """Create Newton optimizer (your custom optimizer)"""
-        config = {
-            'damping': getattr(self.args, 'damping', 1e-3),
-            'hessian_approx': getattr(self.args, 'hessian_approx', 'auto'),
-            'max_update_norm': getattr(self.args, 'max_update_norm', 1.0),
-            'custom_hessian_fn': getattr(self.args, 'custom_hessian_fn', None),
-        }
-    
-        config = {k: v for k, v in config.items() if v is not None}
-    
-        if self.args.verbose:
-            print(f"Creating Newton optimizer: {config}")
-    
-        return NewtonOptimizer(params, **config)
 
     def _create_scheduler(self):
         """Create learning rate scheduler"""
@@ -287,12 +291,10 @@ class delphi(ch.nn.Module):
 
     def _load_checkpoint(self, checkpoint):
         """Properly restore optimization state from checkpoint"""
-        # 1. Load optimizer state
         if 'optimizer' in checkpoint and hasattr(self, 'optimizer'):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             print("✓ Loaded optimizer state from checkpoint")
     
-        # 2. Load scheduler state and step to correct position
         if 'scheduler' in checkpoint and hasattr(self, 'schedule') and self.schedule is not None:
             self.schedule.load_state_dict(checkpoint['scheduler'])
             print("✓ Loaded scheduler state from checkpoint")
@@ -305,11 +307,9 @@ class delphi(ch.nn.Module):
                 self.schedule.step()
             print(f"✓ Advanced scheduler to epoch {current_epoch}")
     
-        # 3. Load random states for reproducibility
         if 'random_states' in checkpoint:
             self._load_random_states(checkpoint['random_states'])
     
-        # 4. Load any custom training state
         if 'training_state' in checkpoint:
             self._load_training_state(checkpoint['training_state'])
 
@@ -342,7 +342,7 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def __call__(self, inp, targ=None) -> [ch.Tensor, float, float]:
+    def __call__(self, inp, targ=None) -> ch.Tensor:
         '''
         Forward pass for the model during training/evaluation.
         Args: 
@@ -352,14 +352,14 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def pre_step_hook(self, inp, targ) -> None: 
+    def step_pre_hook(lself, optimizer, args, kwargs) -> None: 
         '''
         Hook called after .backward call, but before taking a step 
         with the optimizer. 
         ''' 
         pass
 
-    def iteration_hook(self, i, is_train, loss, batch) -> None:
+    def step_post_hook(self, i, is_train, loss, batch) -> None:
         '''
         Iteration hook for defined model. Method is called after each 
         training update.
@@ -371,7 +371,7 @@ class delphi(ch.nn.Module):
         '''
         pass 
 
-    def epoch_hook(self, i, is_train, loss) -> None:
+    def post_epoch_hook(self, i, is_train, loss) -> None:
         '''
         Epoch hook for defined model. Method is called after each 
         complete iteration through dataset.
@@ -390,9 +390,9 @@ class delphi(ch.nn.Module):
         Returns string description for model at each iteration.
         '''
         return ('{2} Epoch:{0} | Loss {loss.avg:.4f} | '
-        'Prec1: {top1_acc:.3f} | Prec5: {top5_acc:.3f} | '
-        'Reg term: {reg} ||'.format( epoch, i, loop_msg, 
-        loss=loss_, top1_acc=float(prec1_.avg), top5_acc=float(prec5_.avg), reg=float(reg_term)))
+                'Prec1: {top1_acc:.3f} | Prec5: {top5_acc:.3f} | '
+                'Reg term: {reg} ||'.format( epoch, i, loop_msg, 
+                loss=loss_, top1_acc=float(prec1_.avg), top5_acc=float(prec5_.avg), reg=float(reg_term)))
 
     def regularize(self, batch) -> ch.Tensor:
         '''
@@ -400,21 +400,5 @@ class delphi(ch.nn.Module):
         '''
         return ch.zeros(1, 1)
 
-    @property
-    def model(self): 
-        '''
-        Model property.
-        '''
-        if self._model is None: 
-            warnings.warn('model is None')
-        return self._model
-
-    @model.setter
-    def model(self, model: Any): 
-        '''
-        Model setter.
-        '''
-        self._model = model
-    
     def parameters_(self):
         return self.parameters()

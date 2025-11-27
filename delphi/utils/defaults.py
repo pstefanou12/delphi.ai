@@ -3,10 +3,9 @@ Default parameters for running algorithms in delphi.ai.
 """
 
 import torch as ch
-from typing import Callable, Iterable, Optional, Union, get_origin, get_args
+from typing import Optional, Union, get_origin, get_args
 
 from .helpers import has_attr
-from ..grad import TruncatedMultivariateNormalNLL
 
 
 # CONSTANTS
@@ -15,7 +14,7 @@ REQ = 'required'
 # Enhanced defaults with all optimizer parameters
 OPTIMIZER_DEFAULTS = {
     # Basic parameters
-    'optimizer': (['sgd', 'adam', 'newton'], 'sgd'),
+    'optimizer': (['sgd', 'lbfgs', 'adam'], 'sgd'),
     'lr': (float, 1e-1, {'min': 0}),
     'weight_decay': (float, 0.0, {'min': 0}),
     
@@ -27,6 +26,15 @@ OPTIMIZER_DEFAULTS = {
     'foreach': (Optional[bool], None),
     'differentiable': (bool, False),
     'fused': (Optional[bool], None),
+
+    # LBFGS specific
+    'lbfgs_lr': (float, 1.0, {'min': 0}),
+    'max_iter': (int, 20, {'min': 1}),
+    'max_eval': (Optional[int], None),
+    'tolerance_grad': (float, 1e-7),
+    'tolerance_change': (float, 1e-9),
+    'history_size':  (int, 100),
+    'line_search_fn': (['strong_wolfe', None], 'strong_wolfe'),
     
     # Adam specific
     'beta1': (float, 0.9, {'min': 0, 'max': 1}),
@@ -34,11 +42,6 @@ OPTIMIZER_DEFAULTS = {
     'eps': (float, 1e-8, {'min': 0}),
     'amsgrad': (bool, False),
     'capturable': (bool, False),
-    
-    # Newton specific
-    'damping': (float, 1e-3, {'min': 0}),
-    'hessian_approx': (['auto', 'full', 'diagonal'], 'auto'),
-    'max_update_norm': (float, 1.0, {'min': 0}),
     
     # Scheduler parameters
     'scheduler': (Optional[['cyclic', 'cosine', 'step', 'multi_step', 'exponential', 'reduce_on_plateau']], None),
@@ -76,7 +79,7 @@ TRAINER_DEFAULTS = {
     'gradient_steps': (int, float('inf'), {'min': 1}), 
     'val_interval': (int, 50, {'min': 1}),
     'patience': (int, float('inf'), {'min': 1}),
-    # 'grad_tol': ()
+    'grad_tol': (float, 0, {'min': 0})
 }
 
 DATASET_DEFAULTS = {

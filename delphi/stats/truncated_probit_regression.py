@@ -102,7 +102,7 @@ class TruncatedProbitRegression(LinearModel):
         '''
         return X@self.weight
     
-    def iteration_hook(self, i, loop_type, loss, batch):
+    def post_step_hook(self, i, loop_type, loss, batch):
         '''
         Iteration hook for defined model. Method is called after each 
         training update.

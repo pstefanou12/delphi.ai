@@ -104,7 +104,7 @@ class TruncatedBooleanProductDistribution(delphi.delphi):
         loss = TruncatedBooleanProductNLL.apply(self.model.logits, *batch, self.args.phi, self.args.num_samples)
         return loss, None, None
 
-    def iteration_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def post_step_hook(self, i, loop_type, loss, prec1, prec5, batch):
         """
         Iteration hook for defined model. Method is called after each 
         training update.
