@@ -190,9 +190,9 @@ class TruncatedMSE(ch.autograd.Function):
 
         # Sample latent points
         stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
-        noise = (noise_var ** 0.5) * samples.repeat(pred.size(0), 1, 1) 
+        # noise = (noise_var ** 0.5) * samples.repeat(pred.size(0), 1, 1) 
 
-        # noise = (noise_var ** 0.5) * ch.randn_like(stacked)
+        noise = (noise_var ** 0.5) * ch.randn_like(stacked)
         noised = stacked + noise
 
         # Apply truncation
@@ -261,9 +261,9 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
         # --- 1. MC Estimation of Conditional Moments and Probability ---
         # Generate samples from the *latent* Gaussian distribution
         stacked = pred[...,None].repeat(1, num_samples, 1) # Shape: [Batch, num_samples]
-        # noised = stacked + sigma * torch.randn_like(stacked)
-        noise = sigma * samples.repeat(pred.size(0), 1, 1) 
-        noised = stacked + noise 
+        noised = stacked + sigma * torch.randn_like(stacked)
+        # noise = sigma * samples.repeat(pred.size(0), 1, 1) 
+        # noised = stacked + noise 
 
         # Apply the arbitrary truncation filter phi(y)
         filtered = phi(noised)
@@ -318,9 +318,12 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
         mc_sq_res = z_2 - 2 * pred * z + pred.pow(2)
         
         # Full lambda gradient
-        lambda_grad = 0.5 * (1.0 / lambda_) * (analytic_sq_res - mc_sq_res)
+        # lambda_grad = 0.5 * (1.0 / lambda_) * (analytic_sq_res - mc_sq_res)
 #         lambda_grad = 0.5 * (analytic_sq_res - mc_sq_res)
         lambda_grad = 0.5 * (targ.pow(2).mean(0) - z_2.mean(0))[...,None]
+        # print(f'lambda grad: {lambda_grad}')
+        # print(f'mu grad: {mu_grad.mean(0)}')
+        # import ipdb; ipdb.set_trace()
 
         
         # --- 3. Return Gradients ---
@@ -554,7 +557,7 @@ class TruncatedCELabels(ch.autograd.Function):
             phi (oracle.oracle): dependent variable membership oracle
             num_samples (int): number of samples to generate per sample in batch in rejection sampling procedure
             eps (float): denominator error constant to avoid divide by zero errors
-        """     
+        """ 
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
         rand_noise = gumbel.sample(stacked.size())
         noised = stacked + rand_noise

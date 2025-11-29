@@ -185,7 +185,7 @@ def test_known_truncated_regression_higher_dimensions():
                                 'batch_size': -1,
                                 'trials': 1,
                                 'verbose': True,
-                                'num_samples': 1000,
+                                'num_samples': 5000,
                             }) 
     trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                 phi_scale, 
@@ -317,9 +317,11 @@ def test_unknown_variance_truncated_regression_one_dimension():
     phi_emp_scale = oracle.Left_Regression((phi.left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var))
     # train algorithm
     train_kwargs = Parameters({
+                                'epochs': 10,
+                                'optimizer': 'lbfgs',
                                 'trials': 1,
-                                'batch_size': 50,
-                                'var_lr': 1e-1, 
+                                'batch_size': -1,
+                                'var_lr': None, 
                                 'verbose': True,
                                 'early_stopping': True,
                                 'gradient_steps': 500,
@@ -342,7 +344,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
 # left truncated regression with unknown noise variance in one dimension with noise variance 3
 def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     D  = 1
-    NUM_SAMPLES = 10000
+    NUM_SAMPLES = 3000
     # generate ground truth
     noise_var = 3 * ch.ones(1, 1)
     W = ch.ones(1, D)
@@ -352,7 +354,9 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     print(f"gt bias: {W0.tolist()}")
     print(f"gt noise var: {noise_var.item()}")
     # generate data
-    X = ch.rand(NUM_SAMPLES, D) 
+    # X = ch.rand(NUM_SAMPLES, D) 
+    a, b = -5, 5
+    X = a + (b - a) * ch.randn(NUM_SAMPLES, D)
     y = X@W.T + W0 
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
@@ -381,25 +385,90 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     print(f'emp noise var l1: {emp_var_l1}')
 
     # scale y features by empirical noise variance
-    y_trunc_emp_scale = (y_trunc - ols_trunc.intercept_) / ch.sqrt(emp_noise_var)
-    # y_trunc_emp_scale = y_trunc
-    phi_emp_scale = oracle.Left_Regression((phi.left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var))
     # train algorithm
-    train_kwargs = Parameters({
+    args = Parameters({
                                 'trials': 1,
                                 'epochs': 10,
                                 'optimizer': 'lbfgs',
                                 'batch_size': -1,
                                 'var_lr': None, 
                                 'verbose': True,
-                                'num_samples': 1000
+                                'num_samples': 5000
+                            })
+    unknown_trunc_reg = stats.TruncatedLinearRegression(args,
+                                                        phi,
+                                                        alpha)
+    unknown_trunc_reg.fit(x_trunc, y_trunc)
+    w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_[...,None]]) 
+    noise_var_ = unknown_trunc_reg.best_variance_
+    print(f'estimated_weights: {w_.tolist()}')
+    print(f'estimated noise variance: {noise_var_.item()}')
+    unknown_mse_loss = mse_loss(gt_, w_.flatten())
+    print(f'unknown mse loss: {unknown_mse_loss}')
+    unknown_var_l1 = float(ch.abs(noise_var - noise_var_))
+    print(f'unknown var l1: {unknown_var_l1}')
+    assert unknown_mse_loss <= 1e-1, f'unknown mse loss: {unknown_mse_loss} is larger than 1e-1'
+    assert unknown_var_l1 <= 1e-1, f'unknown var l1: {unknown_var_l1} is larger than 1e-1'
+
+def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
+    D = 10
+    NUM_SAMPLES = 20000
+    # generate ground truth
+    noise_var = 3*ch.ones(1, 1)
+    W = ch.ones(1, D)
+
+    print(f"gt weights: {W.tolist()}")
+    print(f"gt noise var: {noise_var.item()}")
+    # generate data
+    X = ch.rand(NUM_SAMPLES, D) 
+    y = X@W.T
+    noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
+    # generate ground-truth data
+    phi = oracle.Left_Regression(5*ch.ones(1))
+    # truncate
+    indices = phi(noised).nonzero()[:,0]
+    x_trunc, y_trunc = X[indices], noised[indices]
+    alpha = x_trunc.size(0) / X.size(0)
+    print(f'alpha: {alpha}')
+
+    gt_norm = LinearRegression(fit_intercept=False)
+    gt_norm.fit(X, noised)
+    gt_ = ch.from_numpy(gt_norm.coef_.flatten())
+
+    # calculate empirical noise variance for regression 
+    ols_trunc = LinearRegression(fit_intercept=False)
+    ols_trunc.fit(x_trunc, y_trunc)
+    emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
+    emp_ = ch.from_numpy(ols_trunc.coef_.flatten())
+    print(f'emp weight estimates: {emp_.tolist()}')
+    print(f'emp noise estimate: {emp_noise_var.item()}')
+    emp_mse_loss = mse_loss(emp_, gt_)
+    emp_var_l1 = float(ch.abs(emp_noise_var - noise_var))
+    print(f'emp mse loss: {emp_mse_loss}')
+    print(f'emp noise var l1: {emp_var_l1}')
+    # scale y features by empirical noise variance
+    y_trunc_emp_scale = (y_trunc ) / ch.sqrt(emp_noise_var)
+    phi_emp_scale = oracle.Left_Regression((phi.left) / ch.sqrt(emp_noise_var))
+    # train algorithm
+    train_kwargs = Parameters({
+                                'epochs': 10,
+                                'optimizer': 'lbfgs',
+                                'trials': 1,
+                                'batch_size': -1,
+                                'var_lr': None, 
+                                'verbose': True,
+                                'early_stopping': True,
+                                'gradient_steps': 500,
+                                # 'lbfgs_lr': 2.0
                             })
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
-                                                        phi_emp_scale,
-                                                        alpha)
-    unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
-    w_ = ch.cat([(unknown_trunc_reg.best_coef_).flatten(), unknown_trunc_reg.best_intercept_ + ols_trunc.intercept_]) * ch.sqrt(emp_noise_var)
-    noise_var_ = unknown_trunc_reg.best_variance_ * emp_noise_var
+                                                        phi,
+                                                        alpha, 
+                                                        fit_intercept=False)
+    unknown_trunc_reg.fit(x_trunc, y_trunc)
+    # unknown_trunc_reg.fit(x_trunc.repeat(1, 1), y_trunc_emp_scale.repeat(1, 1))
+    w_ = unknown_trunc_reg.best_coef_.flatten() 
+    noise_var_ = unknown_trunc_reg.best_variance_
     print(f'estimated_weights: {w_.tolist()}')
     print(f'estimated noise variance: {noise_var_.item()}')
     unknown_mse_loss = mse_loss(gt_, w_.flatten())
@@ -452,10 +521,15 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     phi_emp_scale = oracle.Left_Regression((phi.left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var))
     # train algorithm
     train_kwargs = Parameters({
+                                'epochs': 10,
+                                'optimizer': 'lbfgs',
                                 'trials': 1,
-                                'batch_size': 10,
-                                'var_lr': 1e-2, 
+                                'batch_size': -1,
+                                'var_lr': None, 
                                 'verbose': True,
+                                'early_stopping': True,
+                                'gradient_steps': 500,
+                                'lbfgs_lr': 2,
                             })
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                         phi_emp_scale,

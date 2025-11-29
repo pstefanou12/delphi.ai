@@ -65,18 +65,6 @@ class Trainer:
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
         
         for i, batch in iterator:
-            # if is_train: self.model.optimizer.zero_grad()
-            # inp, targ = batch
-
-            # pred = self.model(inp, targ)
-            # loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
-            # if len(loss.shape) > 0: loss = loss.sum(0)
-
-            # loss_.update(loss.item()) # Use item() to store scalar value
-            # reg_term = self.model.regularize(batch)
-            # if self.args.cuda:
-            #     reg_term = reg_term.cuda()
-            # loss = loss + reg_term
             flat_params = ch.cat([param.flatten() for param in list(self.model.parameters_())]).detach().clone()
             if is_train: 
                 self.train_param_history.append(flat_params)

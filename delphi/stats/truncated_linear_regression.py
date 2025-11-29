@@ -113,25 +113,15 @@ class TruncatedLinearRegression(LinearModel):
             ]
 
         # add one feature to x when fitting intercept
-        if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
-
-        if self.fit_intercept: 
-            k = X.size(1) - 1
-        else: 
-            k = X.size(1)
-
+        k = X.size(1)
         # Normalization factor: B * √k
         # Compute B = maximum L∞ norm across all samples
         B = X.norm(dim=1, p=float('inf')).max()  # L∞ norm for each sample, then max
         self.beta = B * (k ** .5)
+        X = X / self.beta
     
-        # Normalize all features except intercept column
         if self.fit_intercept:
-            X_normalized = X[:, :-1] / self.beta
-            X = ch.cat([X_normalized, X[:, -1:]], dim=1)  # Keep intercept as 1
-        else:
-            X = X / self.beta
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # Keep intercept as 1
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
         self.trainer = Trainer(self, self.args)
