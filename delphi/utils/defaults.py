@@ -78,7 +78,8 @@ TRAINER_DEFAULTS = {
     'train_mode': (['epoch', 'step'], 'epoch'),
     'val_interval': (int, 50, {'min': 1}),
     'patience': (int, float('inf'), {'min': 1}),
-    'grad_tol': (float, 0, {'min': 0})
+    'grad_tol': (float, 0, {'min': 0}), 
+    'log_every': (int, 50, {'min': 1})
 }
 
 DATASET_DEFAULTS = {

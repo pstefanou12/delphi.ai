@@ -9,6 +9,7 @@ from scipy.linalg import lstsq
 from typing import Callable
 
 from .linear_model import LinearModel
+from ..delphi_logger import delphiLogger
 from ..grad import TruncatedMSE, TruncatedUnknownVarianceMSE, SwitchGrad
 from ..utils.datasets import make_train_and_val
 from .linear_model import LinearModel
@@ -58,13 +59,14 @@ class TruncatedLinearRegression(LinearModel):
             dependent (bool) : boolean indicating whether dataset is dependent and you should run SwitchGrad instead
             store (cox.store.Store) : cox store object for logging 
         """
+        self.logger = delphiLogger()
         if dependent: 
             args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
-            super().__init__(args, dependent, emp_weight=emp_weight)
+            super().__init__(args, dependent, self.logger, emp_weight=emp_weight)
             self.args.__setattr__('lr', (2/self.alpha) ** self.args.c_eta)
         else:    
             args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
-            super().__init__(args, dependent, emp_weight=emp_weight)
+            super().__init__(args, dependent, self.logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -124,7 +126,7 @@ class TruncatedLinearRegression(LinearModel):
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # Keep intercept as 1
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
-        self.trainer = Trainer(self, self.args)
+        self.trainer = Trainer(self, self.args, self.logger)
         self.trainer.train_model(self.train_loader, 
                                  self.val_loader, 
                                  rand_seed=self.rand_seed)
@@ -143,13 +145,9 @@ class TruncatedLinearRegression(LinearModel):
             self.var_bounds = Bounds(lower_bound, self.emp_noise_var + self.radius) 
         
             lambda_ = self.emp_noise_var.clone().inverse()
-            # lambda_ = ch.ones(1, 1)
             v = self.emp_weight * lambda_
-            # v = ch.ones(1, 1) * lambda_
             self.register_parameter("v", nn.Parameter(v))
             self.register_parameter("lambda_", nn.Parameter(lambda_))
-            # self.v.requires_grad = False
-            # self.lambda_.requires_grad = False
 
             self.criterion_params = [ 
                 self.lambda_, self.phi,
@@ -167,11 +165,10 @@ class TruncatedLinearRegression(LinearModel):
         X, y = train_loader.dataset.tensors
         coef_, _, self.rank_, self.singular_ = lstsq(X, y)
         self.ols_coef_ = Tensor(coef_)
-        self.register_buffer('emp_noise_var', ch.var(Tensor(X@coef_) - y, dim=0)[..., None])
-        if self._emp_weight is None: 
-            self.register_buffer('emp_weight', Tensor(coef_))
-        else: 
-            self.register_buffer('emp_weight', self._emp_weight)
+        self.emp_noise_var = ch.var(Tensor(X@coef_) - y, dim=0)[..., None]
+        
+        if self.emp_weight is None: 
+            self.emp_weight = self.ols_coef_
 
         if self.dependent:
             calc_sigma_0 = lambda X: ch.bmm(X.view(X.size(0), X.size(1), 1), \

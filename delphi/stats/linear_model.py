@@ -11,6 +11,7 @@ import cox
 from scipy.linalg import lstsq
 
 from ..delphi import delphi
+from ..delphi_logger import delphiLogger
 from ..utils.helpers import Bounds
 
 
@@ -21,21 +22,18 @@ class LinearModel(delphi):
     def __init__(self, 
                 args: Parameters,
                 dependent: bool,
+                logger: delphiLogger,
                 emp_weight=None): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
             k (int): number of output logits
         '''
-        super().__init__(args)
-        self._emp_weight = emp_weight
-        self.register_buffer('emp_weight', self._emp_weight)
+        super().__init__(args, logger)
+        self.emp_weight = emp_weight
+        
         self.d, self.k = None, None
         self.base_radius = 2.0
         self.dependent = dependent
         if self.dependent: 
             self.s = self.args.c_s * (ch.sqrt(ch.log(Tensor([1/self.args.alpha]))) + 1)
-
-    
-    def post_step_hook(self, optimizer, args, kwargs):
-        if not self.args.constant: self.schedule.step()

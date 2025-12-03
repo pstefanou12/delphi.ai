@@ -5,10 +5,11 @@ Parent class for models to train in delphi trainer.
 import torch as ch
 import cox
 from cox.store import Store
-from typing import Callable, Iterable
+from typing import Iterable
 from torch.optim import SGD, LBFGS, Adam, lr_scheduler
 import numpy as np
 
+from .delphi_logger import delphiLogger
 from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS 
 from .utils.helpers import Parameters
 
@@ -31,6 +32,7 @@ class delphi(ch.nn.Module):
     '''
     def __init__(self, 
                 args: Parameters, 
+                logger: delphiLogger,
                 store: Store=None, 
                 checkpoint=None): 
         '''
@@ -74,6 +76,7 @@ class delphi(ch.nn.Module):
         super().__init__()
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         self.args = check_and_fill_args(args, DELPHI_DEFAULTS)
+        self.logger = logger
 
         self.best_loss, self.best_model = None, None
         self.optimizer, self.schedule = None, None
@@ -149,7 +152,7 @@ class delphi(ch.nn.Module):
         config = {k: v for k, v in config.items() if v is not None}
     
         if self.args.verbose:
-            print(f"Creating SGD optimizer: {config}")
+            self.logger.info(f"Creating SGD optimizer: {config}")
         
         return  SGD(params, **config)
     
@@ -170,7 +173,7 @@ class delphi(ch.nn.Module):
         config = {k: v for k, v in config.items() if v is not None}
     
         if self.args.verbose:
-            print(f"Creating LBFGS optimizer: {config}")
+            self.logger.info(f"Creating LBFGS optimizer: {config}")
         
         return  LBFGS(params, **config)
 
@@ -195,7 +198,7 @@ class delphi(ch.nn.Module):
         config = {k: v for k, v in config.items() if v is not None}
     
         if self.args.verbose:
-            print(f"Creating Adam optimizer: {config}")
+            self.logger.info(f"Creating Adam optimizer: {config}")
     
         return Adam(params, **config)
 
@@ -293,11 +296,11 @@ class delphi(ch.nn.Module):
         """Properly restore optimization state from checkpoint"""
         if 'optimizer' in checkpoint and hasattr(self, 'optimizer'):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
-            print("✓ Loaded optimizer state from checkpoint")
+            self.logger.info("✓ Loaded optimizer state from checkpoint")
     
         if 'scheduler' in checkpoint and hasattr(self, 'schedule') and self.schedule is not None:
             self.schedule.load_state_dict(checkpoint['scheduler'])
-            print("✓ Loaded scheduler state from checkpoint")
+            self.logger.info("✓ Loaded scheduler state from checkpoint")
         
             # CRITICAL: Step the scheduler to the correct position
             # The checkpoint contains the state AT THE TIME OF SAVING
@@ -305,7 +308,7 @@ class delphi(ch.nn.Module):
             current_epoch = checkpoint.get('epoch', 0)
             for _ in range(current_epoch):
                 self.schedule.step()
-            print(f"✓ Advanced scheduler to epoch {current_epoch}")
+            self.logger.info(f"✓ Advanced scheduler to epoch {current_epoch}")
     
         if 'random_states' in checkpoint:
             self._load_random_states(checkpoint['random_states'])
@@ -326,7 +329,7 @@ class delphi(ch.nn.Module):
         if 'pytorch' in random_states:
             ch.set_rng_state(random_states['pytorch'])
     
-        print("✓ Restored random number generator states")
+        self.logger.info("✓ Restored random number generator states")
 
     def _load_training_state(self, training_state):
         """Restore custom training state"""
@@ -334,7 +337,7 @@ class delphi(ch.nn.Module):
         self.best_loss = training_state.get('best_loss', float('inf'))
         self.train_losses = training_state.get('train_losses', [])
         self.val_losses = training_state.get('val_losses', [])
-        print(f"✓ Resuming from epoch {self.start_epoch}")
+        self.logger.info(f"✓ Resuming from epoch {self.start_epoch}")
 
     def pretrain_hook(self, train_loader) -> None:
         '''
