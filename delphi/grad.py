@@ -187,29 +187,20 @@ class TruncatedMSE(ch.autograd.Function):
     @staticmethod
     def forward(ctx, pred, targ, phi, noise_var, num_samples=1000, eps=1e-5):
         N = pred.shape[0]
-
-        # Sample latent points
         stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
-        # noise = (noise_var ** 0.5) * samples.repeat(pred.size(0), 1, 1) 
-
         noise = (noise_var ** 0.5) * ch.randn_like(stacked)
         noised = stacked + noise
 
-        # Apply truncation
         mask = phi(noised).float()
 
-        # Conditional mean E[Y | Y ∈ S]
         z_num = (mask * noised).sum(dim=1)
         z_den = mask.sum(dim=1) + eps
         z = z_num / z_den  # (N, 1)
 
-        # Probability mass P(Y in S)
         P_hat = mask.mean(dim=1)  # (N, 1)
 
-        # Save for backward
         ctx.save_for_backward(pred, targ, noised, mask, P_hat, z, noise_var)
 
-        # Compute log-likelihood
         quadratic_loss = -0.5 * (targ - pred).pow(2)
         log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
 
@@ -220,20 +211,14 @@ class TruncatedMSE(ch.autograd.Function):
         pred, targ, noised, mask, P_hat, z, noise_var = ctx.saved_tensors
         eps = 1e-8
 
-        # Mean-centered samples
         centered = noised 
-
-        # Monte Carlo estimate of E[(z - pred) phi(z)]
         correction_term = (mask * centered).mean(dim=1) / (P_hat + eps)
 
-        # Gradient wrt pred
         grad_pred = (targ - correction_term) / noise_var
 
-        # Multiply by grad_output (from upstream)
         grad_pred = grad_pred 
-
         return - grad_pred / pred.size(0), None, None, None, None, None
-
+    
 
 import torch
 import torch.nn.functional as F
@@ -249,55 +234,27 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
     """
     
     @staticmethod
-    def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-10):
-        # pred is the conditional mean (mu)
-        # targ is the observed target (y)
-        # lambda_ is the precision (1/sigma^2)
-        
-        # --- 0. Prepare for MC Sampling ---
+    def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-10, noise=None):
         sigma_sq = 1.0 / lambda_
         sigma = torch.sqrt(sigma_sq)
         
-        # --- 1. MC Estimation of Conditional Moments and Probability ---
-        # Generate samples from the *latent* Gaussian distribution
         stacked = pred[...,None].repeat(1, num_samples, 1) # Shape: [Batch, num_samples]
-        noised = stacked + sigma * torch.randn_like(stacked)
-        # noise = sigma * samples.repeat(pred.size(0), 1, 1) 
-        # noised = stacked + noise 
+        if noise is None: noise = ch.randn_like(stacked)
+        noised = stacked + sigma * noise 
 
-        # Apply the arbitrary truncation filter phi(y)
         filtered = phi(noised)
-        
-        # Calculate MC estimates of E[Y | Y in S] and E[Y^2 | Y in S]
-        # E[Y | S] approx= (Sum Y_i * phi(Y_i)) / (Sum phi(Y_i))
         weighted_y = noised * filtered
-        
         sum_weights = filtered.sum(dim=1) # Sum of phi(Y_i)
-        
-        # Conditional Mean E[Y | S] approx= z (Used in backward pass)
         z = weighted_y.sum(dim=1) / (sum_weights + eps)
         
-        # Conditional Second Moment E[Y^2 | S] approx= z_2 (Used in backward pass)
         z_2 = weighted_y.pow(2).sum(dim=1) / (sum_weights + eps)
-        
-        # Conditional Probability P(Y in S) approx= P_hat (Used in loss)
         P_hat = sum_weights / num_samples
-        # --- 2. Negative Log-Likelihood (NLL) Calculation ---
-        
-        # The NLL is L = - [ Log(f_N(y | mu, lambda)) - Log(P(Y in S)) ]
-        
-        # a) Analytic Log-Density Term (for observed y)
-        # log(f_N(y)) = 0.5 * log(lambda) - 0.5 * log(2*pi) - 0.5 * lambda * (y - mu)^2
         log_f_analytic = 0.5 * torch.log(lambda_) - 0.5 * math.log(2*math.pi) \
                        - 0.5 * lambda_ * (targ - pred).pow(2)
         
-        # b) MC Log-Normalization Term (for the arbitrary set S)
         log_P_hat = torch.log(P_hat + eps)
-        
-        # Final Loss: NLL = - [ Log(f_analytic) - Log(P_hat) ]
         loss = - (log_f_analytic - log_P_hat)
         
-        # --- 3. Save for Backward Pass ---
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
         return loss / pred.size(0)
 
@@ -305,32 +262,13 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
     def backward(ctx, grad_output):
         pred, targ, lambda_, z, z_2 = ctx.saved_tensors
         
-        # Note: The gradient is the difference (analytic - MC) due to the negative sign in NLL
         mu_grad = lambda_ * (z - targ)
-        
-        # --- 2. Gradient w.r.t. Precision (lambda_ = 1/sigma^2) ---
-        # Derived as: ∂L/∂λ ∝ 0.5 * (1/λ) * [ (y - μ)^2 - (E[Y^2|S] - 2μE[Y|S] + μ^2) ]
-
-        # Analytic component squared residual (y - mu)^2
-        analytic_sq_res = (targ - pred).pow(2) 
-
-        # MC component squared residual E[(Y - mu)^2 | S] = E[Y^2|S] - 2mu*E[Y|S] + mu^2
-        mc_sq_res = z_2 - 2 * pred * z + pred.pow(2)
-        
-        # Full lambda gradient
-        # lambda_grad = 0.5 * (1.0 / lambda_) * (analytic_sq_res - mc_sq_res)
-#         lambda_grad = 0.5 * (analytic_sq_res - mc_sq_res)
         lambda_grad = 0.5 * (targ.pow(2).mean(0) - z_2.mean(0))[...,None]
-        # print(f'lambda grad: {lambda_grad}')
-        # print(f'mu grad: {mu_grad.mean(0)}')
-        # import ipdb; ipdb.set_trace()
-
         
-        # --- 3. Return Gradients ---
         return mu_grad / pred.size(0), \
                None, \
                lambda_grad, \
-               None, None, None
+               None, None, None, None
     
 
 def Test(mu, phi, c_gamma, alpha, T): 

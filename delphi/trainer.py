@@ -12,10 +12,17 @@ from .utils import constants as consts
 from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
+
 STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_gradient_steps"]
 
 def ensure_tuple(x):
     return x if isinstance(x, (tuple, list)) else (x,)
+
+def flatten_param(param): 
+    return param["params"].flatten() if isinstance(param, dict) else param.flatten()
+
+def flatten_grad(param): 
+    return param["params"].grad.flatten() if isinstance(param, dict) else param.grad.flatten()
 
 class Trainer:
     def __init__(self, 
@@ -43,9 +50,10 @@ class Trainer:
         def closure(): 
             inp, targ = batch
             self.model.optimizer.zero_grad()
-            
+
             pred = self.model(inp, targ)
             loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
+            
             if len(loss.shape) > 0: loss = loss.sum(0)
             reg_term = self.model.regularize(batch)
 
@@ -54,6 +62,7 @@ class Trainer:
             loss = loss + reg_term
             
             loss.backward()
+            # import ipdb; ipdb.set_trace()
             return loss 
         return closure
 
@@ -65,23 +74,22 @@ class Trainer:
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
         
         for i, batch in iterator:
-            flat_params = ch.cat([param.flatten() for param in list(self.model.parameters_())]).detach().clone()
-            if is_train: 
-                self.train_param_history.append(flat_params)
-            else: 
-                self.val_param_history.append(flat_params)
+            flat_params = ch.cat([flatten_param(param) for param in list(self.model.parameters_())]).detach().clone()
 
             if is_train: 
+                self.train_param_history.append(flat_params)
                 loss = self.model.optimizer.step(self.make_closure(batch))
                 if self.model.schedule is not None: self.model.schedule.step()
 
                 self.train_losses.append(loss)
-                flat_grads = ch.cat([param.grad.flatten() for param in list(self.model.parameters_()) if param.grad is not None]).detach().clone() 
+                flat_grads = ch.cat([flatten_grad(param) for param in list(self.model.parameters_()) if flatten_grad(param) is not None]).detach().clone() 
+
                 grad_norm = flat_grads.norm()
                 self.grad_norms.append(grad_norm.item())
                 
                 self.iterations += 1
             else:
+                self.val_param_history.append(flat_params)
                 inp, targ = batch
                 pred = self.model(inp, targ)
                 loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
@@ -105,6 +113,11 @@ class Trainer:
             
             
         self.model.post_epoch_hook(self.epoch, is_train, loss)
+        if self.args.verbose: 
+            print(f'{loop_msg} - epoch: {self.epoch}')
+            print(f'loss: {loss_.avg}')
+            print(f'parameters:\n {flat_params.tolist()}')
+            if is_train: print(f'gradients:\n {flat_grads.tolist()}')
         return loss_.avg, prec1_.avg, prec5_.avg
     
     def should_stop(self): 
@@ -186,9 +199,6 @@ class Trainer:
                             self._best_loss = val_loss
                             self._best_params = self.val_param_history[-1]
 
-                    if self.args.verbose: 
-                        print(f'Epoch {epoch} - Loss: {val_loss}')
-
                 if self.stop_reason in STOP_REASONS: 
                     if self.args.verbose:
                         print("Stopped due to %s after %d gradient steps. \n Total time: %.2f seconds" % (self.stop_reason, self.iterations, time() - self.t_start))
@@ -217,7 +227,7 @@ class Trainer:
         self.val_param_history = ch.stack(self.val_param_history)
         self.grad_norms = ch.Tensor(self.grad_norms)
 
-        if self.stop_reason is None or self.stop_reason == 'max_gradient_steps': 
+        if self.stop_reason is None: 
             print('Procedure did not converge after %d epochs in %.2f seconds' % (self.epoch, time() - self.t_start))
     
     def eval_model(self, 

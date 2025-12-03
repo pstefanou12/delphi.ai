@@ -138,7 +138,9 @@ class TruncatedLinearRegression(LinearModel):
         # empirical estimates for projection set
         # generate noise variance radius bounds if unknown 
         if self.noise_var is None:
-            self.var_bounds = Bounds(1e-1*ch.ones(1,1), self.emp_noise_var + self.radius) 
+            import math
+            lower_bound = self.emp_noise_var / (8 * (5 + 2 * math.log(1/self.alpha)))
+            self.var_bounds = Bounds(lower_bound, self.emp_noise_var + self.radius) 
         
             lambda_ = self.emp_noise_var.clone().inverse()
             # lambda_ = ch.ones(1, 1)

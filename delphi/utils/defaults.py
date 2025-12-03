@@ -4,6 +4,7 @@ Default parameters for running algorithms in delphi.ai.
 
 import torch as ch
 from typing import Optional, Union, get_origin, get_args
+import sys
 
 from .helpers import has_attr
 
@@ -67,7 +68,6 @@ OPTIMIZER_DEFAULTS = {
 
 TRAINER_DEFAULTS = { 
     'num_trials': (int, 1),
-    'epochs': (int, 1),
     'trials': (int, 3),
     'tol': (float, 1e-3),
     'early_stopping': (bool, False), 
@@ -76,7 +76,6 @@ TRAINER_DEFAULTS = {
     'disable_no_grad': (bool, False), 
     'epoch_step': (bool, False),
     'train_mode': (['epoch', 'step'], 'epoch'),
-    'gradient_steps': (int, float('inf'), {'min': 1}), 
     'val_interval': (int, 50, {'min': 1}),
     'patience': (int, float('inf'), {'min': 1}),
     'grad_tol': (float, 0, {'min': 0})
@@ -96,7 +95,6 @@ DELPHI_DEFAULTS = {**OPTIMIZER_DEFAULTS, **{
     'device': (str, 'cpu')
 }}
 
-# Default configuraitons for specific algorithms
 TRUNC_REG_DEFAULTS = {
         'val': (float, .2),
         'var_lr': (float, 1e-2), 
@@ -247,7 +245,6 @@ def check_and_fill_args(args, defaults):
     """
     def is_valid_value(value, type_spec):
         """Check if value matches type specification"""
-        # Handle choice lists (like ['sgd', 'adam', 'newton'])
         if isinstance(type_spec, (list, tuple)) and not isinstance(type_spec, type):
             return value in type_spec
 
@@ -327,5 +324,39 @@ def check_and_fill_args(args, defaults):
                 f"Argument '{arg_name}' failed constraints. "
                 f"Value {value} must be {', '.join(constraints_desc)}"
             )
+    
+    if not has_attr(args, "_auto_epochs"):
+        setattr(args, "_auto_epochs", False)
+    if not has_attr(args, "_auto_gradient_steps"):
+        setattr(args, "_auto_gradient_steps", False)
+
+    epochs_val = getattr(args, "epochs", None)
+    steps_val  = getattr(args, "gradient_steps", None)
+
+    epochs_provided_by_user = (epochs_val is not None and not args._auto_epochs)
+    steps_provided_by_user  = (steps_val  is not None and not args._auto_gradient_steps)
+
+    # Case 1: both provided by user -> error
+    if epochs_provided_by_user and steps_provided_by_user:
+        raise ValueError(
+            "You must provide exactly ONE of 'epochs' or 'gradient_steps' (not both)."
+        )
+
+    # Case 2: neither provided by user -> error
+    if not epochs_provided_by_user and not steps_provided_by_user:
+        raise ValueError(
+            "You must provide exactly ONE of 'epochs' or 'gradient_steps', "
+            "but neither was supplied."
+        )
+
+    # Case 3: user supplied epochs → fill gradient_steps = inf
+    if epochs_provided_by_user and not steps_provided_by_user:
+        setattr(args, "gradient_steps", sys.maxsize)
+        setattr(args, "_auto_gradient_steps", True)
+
+    # Case 4: user supplied gradient_steps → fill epochs = inf
+    if steps_provided_by_user and not epochs_provided_by_user:
+        setattr(args, "epochs", sys.maxsize)
+        setattr(args, "_auto_epochs", True)
     return args
 
