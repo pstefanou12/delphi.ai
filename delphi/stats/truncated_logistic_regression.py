@@ -8,10 +8,10 @@ from torch.distributions import Gumbel
 from torch import sigmoid as sig
 from sklearn.linear_model import LogisticRegression
 import warnings
-import math
 from typing import Callable
 
 from .linear_model import LinearModel
+from ..delphi_logger import delphiLogger
 from ..trainer import Trainer
 from ..grad import TruncatedBCE, TruncatedCE, TruncatedCELabels
 from ..utils.datasets import make_train_and_val
@@ -45,8 +45,9 @@ class TruncatedLogisticRegression(LinearModel):
             alpha (float) : survival probability for truncated regression model
             fit_intercept (bool) : boolean indicating whether to fit a intercept or not 
         '''
+        logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
-        super().__init__(args, False, emp_weight=emp_weight)
+        super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi 
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -91,7 +92,7 @@ class TruncatedLogisticRegression(LinearModel):
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y) 
 
-        self.trainer = Trainer(self, self.args) 
+        self.trainer = Trainer(self, self.args, self.logger) 
         self.trainer.train_model(self.train_loader, 
                                  self.val_loader)
 

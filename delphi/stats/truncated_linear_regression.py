@@ -59,14 +59,14 @@ class TruncatedLinearRegression(LinearModel):
             dependent (bool) : boolean indicating whether dataset is dependent and you should run SwitchGrad instead
             store (cox.store.Store) : cox store object for logging 
         """
-        self.logger = delphiLogger()
+        logger = delphiLogger()
         if dependent: 
             args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
-            super().__init__(args, dependent, self.logger, emp_weight=emp_weight)
+            super().__init__(args, dependent, logger, emp_weight=emp_weight)
             self.args.__setattr__('lr', (2/self.alpha) ** self.args.c_eta)
         else:    
             args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
-            super().__init__(args, dependent, self.logger, emp_weight=emp_weight)
+            super().__init__(args, dependent, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -114,14 +114,14 @@ class TruncatedLinearRegression(LinearModel):
                 self.noise_var, self.args.num_samples, self.args.eps,
             ]
 
-        # add one feature to x when fitting intercept
         k = X.size(1)
         # Normalization factor: B * √k
         # Compute B = maximum L∞ norm across all samples
         B = X.norm(dim=1, p=float('inf')).max()  # L∞ norm for each sample, then max
         self.beta = B * (k ** .5)
         X = X / self.beta
-    
+
+        # add one feature to x when fitting intercept
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # Keep intercept as 1
 
@@ -180,6 +180,7 @@ class TruncatedLinearRegression(LinearModel):
             self.register_buffer('Sigma', self.Sigma_0.clone())
 
     def post_training_hook(self): 
+        if self.args.r is not None: self.args.r *= self.args.rate
         best_params = self.trainer.best_params
         final_params = self.trainer.final_params
         if self.args.r is not None: self.args.r *= self.args.rate
@@ -204,6 +205,8 @@ class TruncatedLinearRegression(LinearModel):
             else: 
                 best_lambda_ = best_params[-1]
                 self.best_variance = 1/best_lambda_
+                temp_coef = (best_params[:-1] * self.best_variance) / self.beta
+
                 self.best_coef = (best_params[:-1] * self.best_variance) / self.beta
                 final_lambda_ = final_params[-1]
                 self.final_variance = 1/final_lambda_

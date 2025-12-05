@@ -185,39 +185,27 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
 samples  = ch.randn(1000, 1)
 class TruncatedMSE(ch.autograd.Function):
     @staticmethod
-    def forward(ctx, pred, targ, phi, noise_var, num_samples=1000, eps=1e-5):
-        N = pred.shape[0]
+    def forward(ctx, pred, targ, phi, noise_var, num_samples=1000, eps=1e-10):
         stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
         noise = (noise_var ** 0.5) * ch.randn_like(stacked)
         noised = stacked + noise
 
         mask = phi(noised).float()
+        z = (mask * noised).sum(dim=1) / (mask.sum(dim=1) + eps)  
+        P_hat = mask.mean(dim=1).clamp_min(eps)
 
-        z_num = (mask * noised).sum(dim=1)
-        z_den = mask.sum(dim=1) + eps
-        z = z_num / z_den  # (N, 1)
+        ctx.save_for_backward(targ, z, noise_var)
+        quadratic_loss = -.5*(pred - targ).pow(2) / noise_var
+        trunc_const = ch.log(P_hat + eps)
 
-        P_hat = mask.mean(dim=1)  # (N, 1)
-
-        ctx.save_for_backward(pred, targ, noised, mask, P_hat, z, noise_var)
-
-        quadratic_loss = -0.5 * (targ - pred).pow(2)
-        log_integral = ch.log(math.sqrt(2 * math.pi * noise_var) * P_hat + eps)
-
-        return (log_integral - quadratic_loss) / pred.size(0)
+        return -(quadratic_loss - trunc_const) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):
-        pred, targ, noised, mask, P_hat, z, noise_var = ctx.saved_tensors
-        eps = 1e-8
+        targ, z, noise_var = ctx.saved_tensors
 
-        centered = noised 
-        correction_term = (mask * centered).mean(dim=1) / (P_hat + eps)
-
-        grad_pred = (targ - correction_term) / noise_var
-
-        grad_pred = grad_pred 
-        return - grad_pred / pred.size(0), None, None, None, None, None
+        grad_pred = (targ - z) / noise_var
+        return - grad_pred / targ.size(0), None, None, None, None, None
     
 
 import torch
@@ -225,7 +213,7 @@ import torch.nn.functional as F
 import math
 
 samples  = ch.randn(1000, 1)
-class TruncatedUnknownVarianceMSE(torch.autograd.Function):
+class TruncatedUnknownVarianceMSE(ch.autograd.Function):
     """
     Maximum Likelihood Estimator for Truncated Gaussian Regression
     using Monte Carlo (MC) estimation for the arbitrary truncation set.
@@ -234,29 +222,25 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
     """
     
     @staticmethod
-    def forward(ctx, pred, targ, lambda_, phi, num_samples=100, eps=1e-10, noise=None):
-        sigma_sq = 1.0 / lambda_
-        sigma = torch.sqrt(sigma_sq)
+    def forward(ctx, pred, targ, lambda_, phi, num_samples=1000, eps=1e-10, noise=None):
+        noise_var = 1.0 / lambda_
+        sigma = ch.sqrt(noise_var)
         
         stacked = pred[...,None].repeat(1, num_samples, 1) # Shape: [Batch, num_samples]
-        if noise is None: noise = ch.randn_like(stacked)
-        noised = stacked + sigma * noise 
+        noise = sigma * ch.randn_like(stacked)
+        noised = stacked +  noise 
 
-        filtered = phi(noised)
-        weighted_y = noised * filtered
-        sum_weights = filtered.sum(dim=1) # Sum of phi(Y_i)
-        z = weighted_y.sum(dim=1) / (sum_weights + eps)
+        mask = phi(noised).float()
+        filtered = mask * noised
+        z = filtered.sum(dim=1) / (mask.sum(dim=1) + eps)
+        z_2 = filtered.pow(2).sum(dim=1) / (mask.sum(dim=1) + eps)
+        P_hat = mask.mean(dim=1).clamp_min(eps)
         
-        z_2 = weighted_y.pow(2).sum(dim=1) / (sum_weights + eps)
-        P_hat = sum_weights / num_samples
-        log_f_analytic = 0.5 * torch.log(lambda_) - 0.5 * math.log(2*math.pi) \
-                       - 0.5 * lambda_ * (targ - pred).pow(2)
-        
-        log_P_hat = torch.log(P_hat + eps)
-        loss = - (log_f_analytic - log_P_hat)
-        
+        quadratic_loss = -0.5 * lambda_ * (targ - pred).pow(2)
+        log_lambda_ = -.5*ch.log(lambda_)
+        trunc_const = ch.log(P_hat)
         ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        return loss / pred.size(0)
+        return -(quadratic_loss - log_lambda_ - trunc_const) / pred.size(0)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -264,6 +248,7 @@ class TruncatedUnknownVarianceMSE(torch.autograd.Function):
         
         mu_grad = lambda_ * (z - targ)
         lambda_grad = 0.5 * (targ.pow(2).mean(0) - z_2.mean(0))[...,None]
+    
         
         return mu_grad / pred.size(0), \
                None, \

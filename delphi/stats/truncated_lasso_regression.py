@@ -11,6 +11,7 @@ from typing import Callable
 import warnings
 
 from .linear_model import LinearModel
+from ..delphi_logger import delphiLogger
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
 from ..grad import TruncatedMSE 
@@ -60,8 +61,9 @@ class TruncatedLassoRegression(LinearModel):
             eps (float) :  epsilon value for gradient to prevent zero in denominator
             store (cox.store.Store) : cox store object for logging 
         """
+        logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_LASSO_DEFAULTS)
-        super().__init__(args, False, emp_weight=emp_weight)
+        super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1
@@ -70,7 +72,6 @@ class TruncatedLassoRegression(LinearModel):
         self.rand_seed = rand_seed
 
         del self.criterion 
-        # def self.criterion_params
     
         self.criterion = TruncatedMSE.apply
         self.criterion_params = [
@@ -115,7 +116,7 @@ class TruncatedLassoRegression(LinearModel):
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y) 
         
-        self.trainer = Trainer(self, self.args) 
+        self.trainer = Trainer(self, self.args, self.logger) 
         self.trainer.train_model(self.train_loader, 
                                  self.val_loader, 
                                  rand_seed=self.rand_seed)
@@ -202,7 +203,6 @@ class TruncatedLassoRegression(LinearModel):
         """
         Regression coefficient weights.
         """
-
         return self.best_coef.clone()
 
     @property

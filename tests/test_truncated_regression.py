@@ -324,7 +324,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
                                 'verbose': True,
                                 'step_lr_gamma': 1.0,
                                 'early_stopping': True,
-                                'gradient_steps': 1500,
+                                'gradient_steps': 1,
                             })
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs,
                                                         phi_emp_scale,
@@ -338,6 +338,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
     print(f'unknown mse loss: {unknown_mse_loss}')
     unknown_var_l1 = float(ch.abs(noise_var - noise_var_))
     print(f'unknown var l1: {unknown_var_l1}')
+    import ipdb; ipdb.set_trace()
     assert unknown_mse_loss <= 1e-1, f'unknown mse loss: {unknown_mse_loss} is larger than 1e-1'
     assert unknown_var_l1 <= 1e-1, f'unknown var l1: {unknown_var_l1} is larger than 1e-1'
 

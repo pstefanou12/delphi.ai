@@ -39,7 +39,8 @@ class Trainer:
         self.val_param_history = []
         self.grad_norms = []
         
-        self.t_start = None
+        self.t_start, self.t_end = None, None
+        self.procedure_duration = None
         self._best_loss, self._best_params = float('inf'), None
         self._final_loss, self._final_params = None, None
         self.stop_reason = None
@@ -73,7 +74,7 @@ class Trainer:
         loss = self.model.optimizer.step(self.make_closure(batch))
         if self.model.schedule is not None: self.model.schedule.step()
 
-        self.train_losses.append(loss)
+        self.train_losses.append(loss.detach())
         grad_vec = ch.nn.utils.parameters_to_vector([param.grad for param in self.model.parameters()]) 
         grad_norm = grad_vec.norm()
         self.grad_norms.append(grad_norm.item())
@@ -210,7 +211,9 @@ class Trainer:
 
                 if self.stop_reason in STOP_REASONS: 
                     if self.args.verbose:
-                        self.logger.info("stopped due to %s after %d gradient steps. total time: %.2f seconds" % (self.stop_reason, self.gradient_steps, time() - self.t_start))
+                        self.t_end = time() 
+                        self.procedure_duration = self.t_end - self.t_start
+                        self.logger.info("stopped due to %s after %d gradient steps. total time: %.2f seconds" % (self.stop_reason, self.gradient_steps, self.procedure_duration))
                     break
             
                 if store is not None:
@@ -229,6 +232,9 @@ class Trainer:
 
             self.model.post_training_hook()
 
+        self.t_end = time()
+        self.procedure_duration = self.t_end - self.t_start 
+
         # convert training loss/param history to tensors
         self.train_losses = ch.tensor(self.train_losses)
         self.val_losses   = ch.tensor(self.val_losses)
@@ -237,7 +243,7 @@ class Trainer:
         self.grad_norms = ch.Tensor(self.grad_norms)
 
         if self.stop_reason is None: 
-            self.logger.info('procedure did not converge after %d epochs in %.2f seconds' % (self.epoch, time() - self.t_start))
+            self.logger.info('procedure did not converge after %d epochs in %.2f seconds' % (self.epoch, self.procedure_duration))
     
     def eval_model(self, 
                     loader: DataLoader, 

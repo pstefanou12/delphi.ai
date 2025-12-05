@@ -10,6 +10,7 @@ import torch.nn as nn
 from typing import Callable, Optional
 
 from .distributions import distributions
+from ..delphi_logger import delphiLogger
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore, PreSampler
 from ..trainer import Trainer
@@ -30,10 +31,11 @@ class TruncatedMultivariateNormal(distributions):
                 sampler: Callable = None):
         """
         """
+        logger = delphiLogger()
         # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
-        super().__init__(args)
+        super().__init__(args, logger)
  
         self.phi = phi
         self.alpha = alpha
@@ -72,7 +74,8 @@ class TruncatedMultivariateNormal(distributions):
         try: 
             self.trainer = Trainer(
                 self,
-                self.args
+                self.args, 
+                self.logger
             )
             self.trainer.train_model(self.train_loader_, self.val_loader_)
             return self

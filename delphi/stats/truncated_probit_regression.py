@@ -10,6 +10,7 @@ import warnings
 from typing import Callable
 
 from .linear_model import LinearModel
+from ..delphi_logger import delphiLogger
 from ..grad import TruncatedProbitMLE
 from ..trainer import Trainer
 from ..utils.datasets import make_train_and_val
@@ -33,8 +34,9 @@ class TruncatedProbitRegression(LinearModel):
             phi (delphi.oracle.oracle) : oracle object for truncated regression model 
             alpha (float) : survival probability for truncated regression model 
         '''
+        logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_PROB_REG_DEFAULTS)
-        super().__init__(args, False, emp_weight=emp_weight)
+        super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi 
         self.alpha = alpha 
         self.fit_intercept = fit_intercept
@@ -64,7 +66,7 @@ class TruncatedProbitRegression(LinearModel):
         k = 1
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y) 
 
-        self.trainer = Trainer(self, self.args) 
+        self.trainer = Trainer(self, self.args, self.logger) 
         # run PGD for parameter estimation 
         self.trainer.train_model(self.train_loader, 
                                  self.val_loader)
