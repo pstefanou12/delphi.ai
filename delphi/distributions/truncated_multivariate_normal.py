@@ -14,7 +14,7 @@ from ..delphi_logger import delphiLogger
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
 from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore, PreSampler
 from ..trainer import Trainer
-from ..utils.helpers import PSDError, Parameters, is_psd
+from ..utils.helpers import Parameters, cov
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
@@ -53,9 +53,6 @@ class TruncatedMultivariateNormal(distributions):
         self.best_covariance_matrix, self.best_loc, self.best_loss = None, None, None
         self.final_covariance_matrix, self.final_loc, self.final_loss = None, None, None
 
-        if self.args.verbose:
-            print(f'args: {self.args}')
-
     def fit(self, S: Tensor):
         """
         """
@@ -68,31 +65,26 @@ class TruncatedMultivariateNormal(distributions):
         self.samples = M.sample([10000])
         self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, self.sampler, self.args.num_samples, self.args.eps]
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
-                                                                self.S, 
-                                                                TruncatedNormalDataset,
-                                                                {'trunc_multi_norm_score': self.trunc_multi_norm_score})
-        try: 
-            self.trainer = Trainer(
-                self,
-                self.args, 
-                self.logger
-            )
-            self.trainer.train_model(self.train_loader_, self.val_loader_)
-            return self
-        except PSDError as psd:
-            raise PSDError(psd, "covariance matrix became not positive semi-definite. try decreasing the the projection set radius and try again.")
-        except Exception as e: 
-            raise e
+                                                                        self.S, 
+                                                                        TruncatedNormalDataset,
+                                                                        {'trunc_multi_norm_score': self.trunc_multi_norm_score})
+        self.trainer = Trainer(
+            self,
+            self.args, 
+            self.logger
+        )
+        self.trainer.train_model(self.train_loader_, self.val_loader_)
+        return self
             
     def _calc_emp_model(self): 
-        # initialize projection set
+        # empirical mean and variance
+        S = self.train_loader_.dataset.S
+        self.emp_loc = ch.mean(S, dim=0)
         if self.covariance_matrix is not None: 
             self.emp_covariance_matrix = self.covariance_matrix
         else:   
-            self.emp_covariance_matrix = self.train_loader_.dataset.covariance_matrix
-        self.emp_loc = self.train_loader_.dataset.loc
+            self.emp_covariance_matrix = cov(S)
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
-
         self.dims = self.emp_loc.size(0)
             
     def pretrain_hook(self, train_loader):
@@ -105,12 +97,12 @@ class TruncatedMultivariateNormal(distributions):
             T = self.emp_covariance_matrix.clone().inverse()
         v = self.emp_loc.clone() @ T
 
-        self.emp_v = v
-        self.emp_T = T
+        self.emp_v = v.clone()
+        self.emp_T = T.clone()
 
         # Initialize empirical model 
-        self.register_parameter('T', nn.Parameter(T))
-        if self.covariance_matrix: self.T.requires_grad = False # remove from the computation graph
+        self.register_parameter('T', nn.Parameter(T.flatten()))
+        if self.covariance_matrix is not None: self.T.requires_grad = False # remove from the computation graph
         self.register_parameter('v', nn.Parameter(v))
 
     def __call__(self, batch, targ):
@@ -128,15 +120,13 @@ class TruncatedMultivariateNormal(distributions):
         L_clipped = ch.clamp(L, min=eps)
         return Q @ ch.diag_embed(L_clipped) @ Q.T
 
-    def post_step_hook(self, optimizer, args, kwargs) -> None:
-        if len(self.trainer.param_history) > 1 and ch.abs(self.trainer.param_history[-1, 1] - self.v) > .1: import pdb; pdb.set_trace()
+    def step_post_hook(self, 
+                       optimizer, 
+                       args, 
+                       kwargs) -> None:
         with ch.no_grad():
-            # Clone current parameters
-            T_prev = self.T.clone()
-            v_prev = self.v.clone()
-
-            T = T_prev.clone()
-            v = v_prev.clone()
+            T = self.T.clone().view(self.dims, self.dims)
+            v = self.v.clone()
 
             # --- 1) Project mean into L2 ball ---
             loc_diff = self.emp_v - v
@@ -156,43 +146,23 @@ class TruncatedMultivariateNormal(distributions):
             T = 0.5 * (T + T.T)
 
             # --- 3) Final PSD projection ---
-            T = self.project_to_psd(T, eps=1e-8)
+            T = self.project_to_psd(T, eps=1e-6)
 
             # Symmetrize again after PSD projection
             T = 0.5 * (T + T.T)
 
-            # --- 4) Damping / stabilization ---
-            # Prevent projection oscillation and shrink toward feasible region
-            damping = 0.05
-            T = (1 - damping) * T + damping * self.emp_T
-            v = (1 - damping) * v + damping * self.emp_v
-
-            # --- 5) Condition check before assigning ---
-            cond = ch.linalg.cond(T)
-            if cond > 1e12:
-                print(f"[iter {i}] Warning: ill-conditioned T (cond={cond:.2e}) → re-PSD")
-                T = self.project_to_psd(T, eps=1e-6)
-
-            # --- 6) Assign safely ---
-            self.T.copy_(T)
+            self.T.copy_(T.flatten())
             self.v.copy_(v)
 
-            # Debug: ensure PSD (no inverse!)
-            if ch.any(ch.linalg.eigvalsh(T) < -1e-10):
-                print("PSD violation — applying repair")
-                self.T.copy_(self.project_to_psd(T, eps=1e-6))
-                    
-        if not is_psd(self.T.inverse()):
-            raise PSDError("Covariance matrix is no longer positive-definite. Try reducing covariance_matrix_lr.")
-
+            from delphi.utils.helpers import is_psd
+            covariance_matrix = self.T.view(self.dims, self.dims).inverse()
+            if not is_psd(covariance_matrix): import ipdb; ipdb.set_trace()
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # reparameterize distribution
-
         self.best_covariance_matrix, self.best_loc, self.best_theta_loss = *self._reparameterize(self.trainer.best_params), self.trainer.best_loss
         self.final_covariance_matrix, self.final_loc, self.final_theta_loss = *self._reparameterize(self.trainer.final_params), self.trainer.final_loss
-
 
     def parameters_(self):
         if self.args.covariance_matrix_lr is not None: 
@@ -200,12 +170,16 @@ class TruncatedMultivariateNormal(distributions):
                 {'params': self.T, 'lr': self.args.covariance_matrix_lr},   
                 {'params': self.v, 'lr': self.args.lr},
             ]
-        
         return self.parameters()
 
-    def _reparameterize(self, theta): 
-        T = theta[:,:self.dims**2].resize(self.dims, self.dims)
-        v = theta[:,self.dims**2:] 
+    def _reparameterize(self, 
+                        theta): 
+        if self.covariance_matrix is not None: 
+            T = self.T.view(self.dims, self.dims)
+            v = theta 
+        else:
+            T = theta[:self.dims**2].resize(self.dims, self.dims)
+            v = theta[self.dims**2:] 
 
         covariance_matrix = T.inverse()
         loc = v @ covariance_matrix

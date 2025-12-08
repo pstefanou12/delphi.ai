@@ -10,7 +10,7 @@ from torch.optim import SGD, LBFGS, Adam, lr_scheduler
 import numpy as np
 
 from .delphi_logger import delphiLogger
-from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS 
+from .utils.defaults import check_and_fill_args, DELPHI_DEFAULTS, SGD_DEFAULTS, LBFGS_DEFAULTS, ADAM_DEFAULTS
 from .utils.helpers import Parameters
 
 # CONSTANTS 
@@ -129,13 +129,15 @@ class delphi(ch.nn.Module):
 
     def _get_optimizer_type(self):
         """Determine which optimizer to use"""
-        # Priority: explicit optimizer > custom_lr_multiplier > default SGD
-        if hasattr(self.args, 'optimizer'):
-            return self.args.optimizer.lower()
-        return 'sgd'
+        return self.args.optimizer.lower()
+    
+    def _remove_none_config(self, config): 
+        """Filter out None values (use PyTorch defaults)"""
+        return {k: v for k, v in config.items() if v is not None}
 
     def _create_sgd(self, params):
         """Create SGD optimizer with all PyTorch parameters"""
+        check_and_fill_args(self.args, SGD_DEFAULTS)
         config = {
             'lr': self.args.lr,
             'momentum': getattr(self.args, 'momentum', 0),
@@ -147,40 +149,27 @@ class delphi(ch.nn.Module):
             'differentiable': getattr(self.args, 'differentiable', False),
             'fused': getattr(self.args, 'fused', None),
         }
-    
-        # Filter out None values (use PyTorch defaults)
-        config = {k: v for k, v in config.items() if v is not None}
-    
-        if self.args.verbose:
-            self.logger.info(f"Creating SGD optimizer: {config}")
-        
-        return  SGD(params, **config)
+        return  SGD(params, **self._remove_none_config(config))
     
     def _create_lbfgs(self, params):
         """Create L-BFGS optimizer with all PyTorch parameters"""
-        max_iter = getattr(self.args, 'max_iter', 20)
+        check_and_fill_args(self.args, LBFGS_DEFAULTS)
         config = {
-            'lr': getattr(self.args, 'lbfgs_lr', 1.0),
-            'max_iter': max_iter,
-            'max_eval': getattr(self.args, 'max_eval', int(1.25*max_iter)),
+            'lr': getattr(self.args, 'lr', 1.0),
+            'max_iter': getattr(self.args, 'max_iter', 20),
+            'max_eval': getattr(self.args, 'max_eval', None),
             'tolerance_grad': getattr(self.args, 'tolerance_grad', 1e-7),
             'tolerance_change': getattr(self.args, 'tolerance_change', 1e-9),
             'history_size': getattr(self.args, 'history_size', 100),
             'line_search_fn': getattr(self.args, 'line_search_fn', None),
         }
-    
-        # Filter out None values (use PyTorch defaults)
-        config = {k: v for k, v in config.items() if v is not None}
-    
-        if self.args.verbose:
-            self.logger.info(f"Creating LBFGS optimizer: {config}")
-        
-        return  LBFGS(params, **config)
+        return  LBFGS(params, **self._remove_none_config(config) )
 
     def _create_adam(self, params):
         """Create Adam optimizer with all PyTorch parameters"""
+        check_and_fill_args(self.args, ADAM_DEFAULTS)
         config = {
-            'lr': self.args.lr,
+            'lr': getattr(self.args, 'lr', 1e-1),
             'betas': (
                 getattr(self.args, 'beta1', 0.9),
                 getattr(self.args, 'beta2', 0.999)
@@ -194,13 +183,7 @@ class delphi(ch.nn.Module):
             'differentiable': getattr(self.args, 'differentiable', False),
             'fused': getattr(self.args, 'fused', None),
         }
-    
-        config = {k: v for k, v in config.items() if v is not None}
-    
-        if self.args.verbose:
-            self.logger.info(f"Creating Adam optimizer: {config}")
-    
-        return Adam(params, **config)
+        return Adam(params, **self._remove_none_config(config))
 
     def _create_scheduler(self):
         """Create learning rate scheduler"""
@@ -230,12 +213,7 @@ class delphi(ch.nn.Module):
         # Priority: explicit scheduler > custom_lr_multiplier > step_lr
         if hasattr(self.args, 'scheduler') and self.args.scheduler:
             return self.args.scheduler.lower()
-        elif hasattr(self.args, 'custom_lr_multiplier') and self.args.custom_lr_multiplier:
-            return self.args.custom_lr_multiplier.lower()
-        elif hasattr(self.args, 'step_lr') and self.args.step_lr:
-            return 'step'
-        else:
-            return None
+        return None
 
     def _create_cyclic_scheduler(self):
         """Create cyclic learning rate scheduler"""
@@ -249,17 +227,16 @@ class delphi(ch.nn.Module):
             'T_max': getattr(self.args, 'epochs', 100),
             'eta_min': getattr(self.args, 'min_lr', 0),
         }
-        config = {k: v for k, v in config.items() if v is not None}
-        return lr_scheduler.CosineAnnealingLR(self.optimizer, **config)
+        return lr_scheduler.CosineAnnealingLR(self.optimizer, **self._remove_none_config(config))
 
     def _create_step_scheduler(self):
         """Create step LR scheduler"""
+
         config = {
             'step_size': getattr(self.args, 'step_lr', 100),
             'gamma': getattr(self.args, 'step_lr_gamma', 0.1),
         }
-        config = {k: v for k, v in config.items() if v is not None}
-        return lr_scheduler.StepLR(self.optimizer, **config)
+        return lr_scheduler.StepLR(self.optimizer, **self._remove_none_config(config))
 
     def _create_multi_step_scheduler(self):
         """Create multi-step LR scheduler"""
@@ -267,8 +244,7 @@ class delphi(ch.nn.Module):
             'milestones': getattr(self.args, 'milestones', [30, 60, 90]),
             'gamma': getattr(self.args, 'gamma', 0.1),
         }
-        config = {k: v for k, v in config.items() if v is not None}
-        return lr_scheduler.MultiStepLR(self.optimizer, **config)
+        return lr_scheduler.MultiStepLR(self.optimizer, **self._remove_none_config(config))
 
     def _create_exponential_scheduler(self):
         """Create exponential LR scheduler"""
@@ -362,7 +338,7 @@ class delphi(ch.nn.Module):
         ''' 
         pass
 
-    def step_post_hook(self, i, is_train, loss, batch) -> None:
+    def step_post_hook(self, optimizer, args, kwargs) -> None:
         '''
         Iteration hook for defined model. Method is called after each 
         training update.

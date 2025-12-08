@@ -15,7 +15,7 @@ from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
 
-STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_gradient_steps"]
+STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_iterations"]
 
 def ensure_tuple(x):
     return x if isinstance(x, (tuple, list)) else (x,)
@@ -31,7 +31,7 @@ class Trainer:
         self.logger = logger
         self.store = store
 
-        self.epoch, self.gradient_steps = 0, None
+        self.epoch, self.iterations = 0, None
         # store procedure history within lists because of torch.cat performance overhead
         self.train_losses = []
         self.val_losses = []
@@ -62,7 +62,6 @@ class Trainer:
             if self.args.cuda:
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
-            
             loss.backward()
             return loss 
         return closure
@@ -70,15 +69,17 @@ class Trainer:
     def train_step(self, 
                    batch: Iterable, 
                    param_vec: Optional[ch.Tensor]=None) -> ch.Tensor:
-        self.train_param_history.append(param_vec)
+        self.train_param_history.append(param_vec.detach())
         loss = self.model.optimizer.step(self.make_closure(batch))
         if self.model.schedule is not None: self.model.schedule.step()
 
         self.train_losses.append(loss.detach())
-        grad_vec = ch.nn.utils.parameters_to_vector([param.grad for param in self.model.parameters()]) 
+        grad_vec = ch.nn.utils.parameters_to_vector(
+            [p.grad.contiguous() for p in self.model.parameters() if p.requires_grad]
+        )
         grad_norm = grad_vec.norm()
         self.grad_norms.append(grad_norm.item())
-        self.gradient_steps += 1
+        self.iterations += 1
 
         return loss
     
@@ -102,7 +103,9 @@ class Trainer:
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
         
         for batch_idx, batch in iterator:
-            param_vec = ch.nn.utils.parameters_to_vector(self.model.parameters()).detach().clone()
+            param_vec = ch.nn.utils.parameters_to_vector(
+                [p.contiguous() for p in self.model.parameters() if p.requires_grad]
+            )
             loss = self.train_step(batch, param_vec) if is_train else self.val_step(batch, param_vec)
             loss_.update(loss.item())
             # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
@@ -118,9 +121,9 @@ class Trainer:
                     desc = self.model.description(self.epoch, batch_idx, mode, loss_, prec1_, prec5_, reg_term)
                     iterator.set_description(desc)
 
-            if self.args.verbose and (not is_train or (self.gradient_steps % self.args.log_every == 0)):
+            if self.args.verbose and (not is_train or (self.iterations % self.args.log_every == 0)):
                 self.logger.info(
-                    f"[{mode}] epoch={self.epoch} step={self.gradient_steps} "
+                    f"[{mode}] epoch={self.epoch} step={self.iterations} "
                     f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
                 )
             
@@ -129,9 +132,9 @@ class Trainer:
     
     def should_stop(self): 
         if self.stop_reason not in STOP_REASONS:
-            # Criterion 1: max gradient steps 
-            if self.args.gradient_steps is not None and self.gradient_steps >= self.args.gradient_steps:
-                return True, "max_gradient_steps"
+            # Criterion 1: max iterations 
+            if self.args.iterations is not None and self.iterations >= self.args.iterations:
+                return True, "max_iterations"
 
             # Criterion 2: gradient norm small (scipy-like)
             if self.args.grad_tol is not None and len(self.grad_norms) > 1 and (self.grad_norms[-1]) < self.args.grad_tol:
@@ -187,7 +190,7 @@ class Trainer:
 
         # stores model estimates after each gradient step
         for trial in range(self.args.trials):
-            self.gradient_steps = 0
+            self.iterations = 0
 
             ch.manual_seed(rand_seed)
             if self.args.verbose: self.logger.info(f'trial: {trial + 1}')
@@ -195,13 +198,17 @@ class Trainer:
             self.t_start = time()
             self.model.pretrain_hook(train_loader)
             self.model.make_optimizer_and_schedule(self.model.parameters_()) 
+
+            if self.args.verbose: 
+                self.logger.info(f'training: {self.model} with the following config:\n {self.args}')
    
             if checkpoint:
                 epoch = checkpoint['epoch']
                 best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.run_epoch(val_loader, False)[0]
 
-            for epoch in range(1, self.args.epochs + 1):
-                self.epoch = epoch
+            while True:
+            # for epoch in range(1, self.args.epochs + 1):
+                self.epoch += 1 
                 train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, True)
 
                 if val_loader:
@@ -213,7 +220,7 @@ class Trainer:
                     if self.args.verbose:
                         self.t_end = time() 
                         self.procedure_duration = self.t_end - self.t_start
-                        self.logger.info("stopped due to %s after %d gradient steps. total time: %.2f seconds" % (self.stop_reason, self.gradient_steps, self.procedure_duration))
+                        self.logger.info("stopped due to %s after %d iterations. total time: %.2f seconds" % (self.stop_reason, self.iterations, self.procedure_duration))
                     break
             
                 if store is not None:
@@ -226,6 +233,9 @@ class Trainer:
                         'val_loss': val_loss,
                         'val_prec1': val_prec1, 
                         'val_prec5': val_prec5})
+                
+                if self.args.epochs is not None and self.epoch == self.args.epochs: 
+                    break
 
             self._final_loss = val_loss 
             self._final_params = self.val_param_history[-1] 

@@ -60,10 +60,11 @@ def test_truncated_normal_known_variance():
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-1,
-                        'num_samples': 10000,
+                        'num_samples': 1000,
                         'early_stopping': True, 
                         'tol': 5e-2,
                         'gradient_steps': 1500,
+                        'num_samples': 10000
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
@@ -110,15 +111,15 @@ def test_truncated_normal():
     
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
-                        'batch_size': 10, 
+                        # 'iterations': 1500, 
+                        'epochs': 1,
+                        'batch_size': 1, 
                         'trials': 1, 
                         'verbose': True,
-                        'lr': 1e-1,
+                        'lr': 1e-2,
                         'num_samples': 10000,
                         'early_stopping': True,
                         'tol': 1e-3,
-                        'var_lr': 1e-1,
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
@@ -189,10 +190,12 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
 
+from delphi.grad import PreSampler
+
 def test_truncated_2_dim_multivariate_normal():
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
-    samples = M.rsample([5000,])
+    samples = M.rsample([10000,])
 
     phi = lambda x: x[:, 0] > 0
     # generate ground-truth data
@@ -212,19 +215,28 @@ def test_truncated_2_dim_multivariate_normal():
     print(f'empicial mean:\n {emp_loc.T}')
     print(f'empirical covariance matrix:\n {emp_covariance_matrix}')
 
+    sampler = PreSampler(2)
+
+
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
+                        'gradient_steps': 5, 
                         'trials': 1,
-                        'batch_size': 50,
-                        'num_samples': 10000, 
+                        'batch_size': -1,
+                        'num_samples': 50000, 
                         'verbose': True, 
-                        'lr': 1e-1,
+                        # 'lr': 1e-1,
+                        'optimizer': 'sgd',
+                        'covariance_matrix_lr': None,
+                        'optimizer': 'lbfgs',
+                        # 'momentum': .9,
+                        'line_search_fn': 'strong_wolfe',
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi, 
                                                           alpha, 
-                                                          dims)
+                                                          dims,
+                                                          sampler=sampler)
     truncated.fit(S)
     # rescale distribution
     rescale_loc = truncated.best_loc_
@@ -263,12 +275,13 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
 
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
+                        'epochs': 5, 
                         'trials': 1,
-                        'batch_size': 10,
+                        'batch_size': -1,
                         'num_samples': 10000, 
                         'verbose': True, 
-                        'lr': 1e-1,
+                        'optimizer': 'lbfgs',
+                        # 'lr': 1e-1,
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi, 
@@ -302,6 +315,8 @@ def test_truncated_10_dim_multivariate_normal():
         S = samples[indices]
         alpha = S.size(0) / samples.size(0)
 
+    import ipdb; ipdb.set_trace()
+
     print(f'alpha: {alpha}')
     print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
@@ -309,20 +324,24 @@ def test_truncated_10_dim_multivariate_normal():
     emp_loc = S.mean(0, keepdim=True)
     print(f'empirical mean:\n {emp_loc.T}')
 
+    sampler = PreSampler(dims)
+
     # train algorithm
     args = Parameters({
-                        'epochs': 20, 
+                        'epochs': 10, 
                         'trials': 1,
-                        'batch_size': 100,
-                        'num_samples': 10000, 
+                        'batch_size': 10,
+                        'num_samples': 50000, 
                         'verbose': True, 
-                        'lr': 1e-1,
-                        'covariance_matrix_lr': 1e-2,
+                        'optimizer': 'sgd'
+                        # 'lr': 1e-1,
+                        # 'covariance_matrix_lr': 1e-2,
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi, 
                                                           alpha, 
-                                                          dims) 
+                                                          dims, 
+                                                          sampler=sampler) 
     truncated.fit(S)
     # rescale distribution
     rescale_loc = truncated.best_loc_ 

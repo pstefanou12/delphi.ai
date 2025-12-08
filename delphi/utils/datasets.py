@@ -344,17 +344,17 @@ def make_train_and_val_distr(args, S, ds, kwargs={}):
     X_train, X_val = S[train_indices], S[val_indices]
     train_ds = ds(X_train, **kwargs)
     val_ds = ds(X_val, **kwargs)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size)
+    batch_size = len(train_ds) if args.batch_size == -1 else args.batch_size
+    train_loader = DataLoader(train_ds, batch_size=batch_size)
     val_loader = DataLoader(val_ds, batch_size=len(val_ds))
 
     return train_loader, val_loader
 
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S, trunc_multi_norm_score=TruncatedMultivariateNormalScore()):
-        # empirical mean and variance
-        self._loc = ch.mean(S, dim=0)
-        self._covariance_matrix = cov(S)
+    def __init__(self, 
+                 S, 
+                 trunc_multi_norm_score=TruncatedMultivariateNormalScore()):
         self.S = S 
         # apply gradient
         self.S_grad = trunc_multi_norm_score(S)

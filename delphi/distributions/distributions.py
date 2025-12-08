@@ -1,5 +1,6 @@
 from ..delphi import delphi
-from delphi.utils.helpers import Parameters
+from ..delphi_logger import delphiLogger
+from ..utils.helpers import Parameters
 
 
 class distributions(delphi):
@@ -7,10 +8,11 @@ class distributions(delphi):
     Parent class for distribution models.
     """
     def __init__(self, 
-            args: Parameters): 
+            args: Parameters, 
+            logger: delphiLogger): 
         '''
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
             k (int): number of output logits
         '''
-        super().__init__(args)
+        super().__init__(args, logger)

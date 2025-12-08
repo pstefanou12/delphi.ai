@@ -12,47 +12,50 @@ from .helpers import has_attr
 # CONSTANTS
 REQ = 'required'
 
-# Enhanced defaults with all optimizer parameters
 OPTIMIZER_DEFAULTS = {
-    # Basic parameters
     'optimizer': (['sgd', 'lbfgs', 'adam'], 'sgd'),
-    'lr': (float, 1e-1, {'min': 0}),
+    'scheduler': (Optional[['cyclic', 'cosine', 'step', 'multi_step', 'exponential', 'reduce_on_plateau']], None),
     'weight_decay': (float, 0.0, {'min': 0}),
-    
-    # SGD specific
+}
+
+SGD_DEFAULTS = {
+    'lr': (float, 1e-1, {'min': 0}), 
     'momentum': (float, 0.0, {'min': 0}),
     'dampening': (float, 0.0, {'min': 0}),
     'nesterov': (bool, False),
     'maximize': (bool, False),
     'foreach': (Optional[bool], None),
     'differentiable': (bool, False),
-    'fused': (Optional[bool], None),
+    'fused': (Optional[bool], None)
+}
 
-    # LBFGS specific
-    'lbfgs_lr': (float, 1.0, {'min': 0}),
+LBFGS_DEFAULTS = {
+    'lr': (float, 1.0, {'min': 0}),
     'max_iter': (int, 20, {'min': 1}),
     'max_eval': (Optional[int], None),
     'tolerance_grad': (float, 1e-7),
     'tolerance_change': (float, 1e-9),
     'history_size':  (int, 100),
-    'line_search_fn': (['strong_wolfe', None], 'strong_wolfe'),
+    'line_search_fn': (['strong_wolfe', None], 'strong_wolfe')
+}
     
-    # Adam specific
+ADAM_DEFAULTS = {
     'beta1': (float, 0.9, {'min': 0, 'max': 1}),
     'beta2': (float, 0.999, {'min': 0, 'max': 1}),
     'eps': (float, 1e-8, {'min': 0}),
     'amsgrad': (bool, False),
-    'capturable': (bool, False),
+    'capturable': (bool, False)
+}
     
-    # Scheduler parameters
-    'scheduler': (Optional[['cyclic', 'cosine', 'step', 'multi_step', 'exponential', 'reduce_on_plateau']], None),
+STEP_LR_DEFAULTS = {
     'step_lr': (int, 100, {'min': 1}),
     'step_lr_gamma': (float, 0.9, {'min': 0, 'max': 1}),
     'min_lr': (float, 0.0, {'min': 0}),
     'milestones': (list, [30, 60, 90]),
     'gamma': (float, 0.1, {'min': 0, 'max': 1}),
-    
-    # Plateau scheduler
+}
+
+PLATEAU_SCHEDULER_DEFAULTS = {
     'plateau_mode': (['min', 'max'], 'min'),
     'plateau_factor': (float, 0.1, {'min': 0, 'max': 1}),
     'plateau_patience': (int, 10, {'min': 1}),
@@ -60,12 +63,8 @@ OPTIMIZER_DEFAULTS = {
     'plateau_threshold_mode': (['rel', 'abs'], 'rel'),
     'plateau_cooldown': (int, 0, {'min': 0}),
     'plateau_eps': (float, 1e-8, {'min': 0}),
-    
-    # Backward compatibility
-    'custom_lr_multiplier': (Optional[str], None),
-    'constant': (bool, False),
 }
-
+    
 TRAINER_DEFAULTS = { 
     'num_trials': (int, 1),
     'trials': (int, 3),
@@ -74,8 +73,6 @@ TRAINER_DEFAULTS = {
     'n_iter_no_change': (int, 5),
     'verbose': (bool, False),
     'disable_no_grad': (bool, False), 
-    'epoch_step': (bool, False),
-    'train_mode': (['epoch', 'step'], 'epoch'),
     'val_interval': (int, 50, {'min': 1}),
     'patience': (int, float('inf'), {'min': 1}),
     'grad_tol': (float, 0, {'min': 0}), 
@@ -108,7 +105,7 @@ TRUNC_REG_DEFAULTS = {
         'num_samples': (int, 1000),
         'shuffle': (bool, True),
         'train_mode': (['epoch', 'step'], 'step'),
-        'gradient_steps': (int, 1500),
+        'iterations': (int, 1500),
         'val_interval': (int, 50)
 }
 
@@ -124,7 +121,7 @@ TRUNC_LASSO_DEFAULTS = {
         'num_samples': (int, 10000),
         'shuffle': (bool, True),
         'train_mode': (['epoch', 'step'], 'step'),
-        'gradient_steps': (int, 1500),
+        'iterations': (int, 1500),
         'val_interval': (int, 50)
 }
 
@@ -187,7 +184,7 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'covariance_matrix': (ch.Tensor, None),
         'distribution': (bool, True), 
         'optimizer': (str, 'sgd'),
-        'covariance_matrix_lr': (float, 1e-2),
+        'covariance_matrix_lr': (float, None),
         'train_mode': (['epoch', 'step'], 'step'),
 }
 
@@ -201,7 +198,7 @@ UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
         'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
-        'covariance_matrix': (ch.Tensor, None), 
+        'covariance_matrix_lr': (float, None), 
         'd': (int, 10),
 }
 
@@ -325,39 +322,21 @@ def check_and_fill_args(args, defaults):
                 f"Argument '{arg_name}' failed constraints. "
                 f"Value {value} must be {', '.join(constraints_desc)}"
             )
-    
-    if not has_attr(args, "_auto_epochs"):
-        setattr(args, "_auto_epochs", False)
-    if not has_attr(args, "_auto_gradient_steps"):
-        setattr(args, "_auto_gradient_steps", False)
 
-    epochs_val = getattr(args, "epochs", None)
-    steps_val  = getattr(args, "gradient_steps", None)
+    # verify that exactly one of iterations/epochs is provided 
+    epochs_provided_by_user = getattr(args, "epochs", None) is not None
+    steps_provided_by_user  = getattr(args, "iterations", None)  is not None
 
-    epochs_provided_by_user = (epochs_val is not None and not args._auto_epochs)
-    steps_provided_by_user  = (steps_val  is not None and not args._auto_gradient_steps)
-
-    # Case 1: both provided by user -> error
     if epochs_provided_by_user and steps_provided_by_user:
         raise ValueError(
-            "You must provide exactly ONE of 'epochs' or 'gradient_steps' (not both)."
+            "You must provide exactly ONE of 'epochs' or 'iterations' (not both)."
         )
 
-    # Case 2: neither provided by user -> error
     if not epochs_provided_by_user and not steps_provided_by_user:
         raise ValueError(
-            "You must provide exactly ONE of 'epochs' or 'gradient_steps', "
+            "You must provide exactly ONE of 'epochs' or 'iterations', "
             "but neither was supplied."
         )
 
-    # Case 3: user supplied epochs → fill gradient_steps = inf
-    if epochs_provided_by_user and not steps_provided_by_user:
-        setattr(args, "gradient_steps", sys.maxsize)
-        setattr(args, "_auto_gradient_steps", True)
-
-    # Case 4: user supplied gradient_steps → fill epochs = inf
-    if steps_provided_by_user and not epochs_provided_by_user:
-        setattr(args, "epochs", sys.maxsize)
-        setattr(args, "_auto_epochs", True)
     return args
 

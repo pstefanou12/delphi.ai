@@ -8,7 +8,7 @@ from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
-from .utils.helpers import logistic 
+from .utils.helpers import logistic, is_psd
 
 softmax = Softmax(dim=1)
 gumbel = Gumbel(0, 1)
@@ -23,27 +23,27 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     we provide a vector of zeros and calculate the untruncated log likelihood. 
     """
     @staticmethod
-    def forward(ctx, T, v, data, phi, dims, trunc_multi_norm_score, sampler=None,
-                 num_samples=100000, eps=1e-12):
-        # reconstruct Sigma and mu
-        sigma = ch.inverse(T)
-        mu = (sigma @ v).view(dims)   # (d,)
+    def forward(ctx,
+                T, 
+                v, 
+                data, 
+                phi, 
+                dims, 
+                trunc_multi_norm_score, 
+                sampler=None,
+                num_samples=1000, 
+                eps=1e-12):
         
+        covariance_matrix = ch.inverse(T.view(dims, dims))
+        if not is_psd(covariance_matrix): import ipdb; ipdb.set_trace()
+        mu = (covariance_matrix @ v).view(dims) 
+        
+        # gradient is pre-computed, extract from batch passed in
         S = data[:, :dims]
         S_grad = data[:, dims:]
-
-        sigma = T.inverse()
-        L = ch.linalg.cholesky(sigma)
-
-        # base Gaussian part
-        quad = 0.5 * (S @ T * S).sum(dim=1)
-        linear = (S @ v)
-        base = quad - linear  # (batch,)
-
-        # normalization stuff
-        muT_T_mu = 0.5 * (mu @ v)
-        const_term = 0.5 * dims * math.log(2 * math.pi)
-        logdet_sigma = 2 * ch.log(ch.diagonal(L)).sum()
+        
+        M = MultivariateNormal(mu, covariance_matrix)
+        log_prob = M.log_prob(S)
     
         if not sampler:             
             sampler = Sampler()   
@@ -52,33 +52,31 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
         num_sampled = 0
 
         while z.size(0) < num_samples:
-            # draw samples per-observation so phi can depend on each sample individually if needed
-            s = sampler.sample(mu, sigma, num_samples)
+            s = sampler.sample(mu, covariance_matrix, num_samples)
             mask = phi(s)
             z = ch.cat([z, s[mask.nonzero()[:,0]]])
             num_sampled += num_samples
+            
 
         p_hat = ch.Tensor([z.size(0) / num_sampled])
         if p_hat < .01:
             print(f'acceptance rate: {p_hat.item()}')
                         
-        log_p_hat = ch.log(p_hat + 1e-12)
-
-        log_I = muT_T_mu + const_term + 0.5 * logdet_sigma + log_p_hat
-
-        # final NLL 
-        nll = base + log_I
+        trunc_const = ch.log(p_hat + 1e-12)
+        
+        nll = log_prob - trunc_const
         ctx.save_for_backward(S_grad, z)
         ctx.trunc_multi_norm_score = trunc_multi_norm_score
         ctx.dims = dims
-        return nll.mean()
+        return -nll.mean()
 
     @staticmethod
     def backward(ctx, grad_output):
         S_grad, s = ctx.saved_tensors
-        grad = (-S_grad + ctx.trunc_multi_norm_score(s[:S_grad.size(0)]))
+        trunc_const_grad = ctx.trunc_multi_norm_score(s).mean(0)
+        grad = -S_grad + trunc_const_grad
 
-        cov_grad = grad[:,:ctx.dims**2].view(grad.size(0), ctx.dims, ctx.dims)
+        cov_grad = grad[:,:ctx.dims**2]
         loc_grad = grad[:,ctx.dims**2:]
 
         return  cov_grad / S_grad.size(0), loc_grad / S_grad.size(0), None, None, None, None, None, None, None
@@ -96,7 +94,7 @@ class TruncatedMultivariateNormalScore:
 
 
 class PreSampler: 
-    def __init__(self, dims: int, num_samples: int=1000000): 
+    def __init__(self, dims: int, num_samples: int=100000): 
         self.dims = dims 
         self.num_samples = num_samples 
         self.samples = ch.randn(self.num_samples, self.dims)
@@ -107,7 +105,8 @@ class PreSampler:
         rand_perm = ch.randint(self.num_samples, ch.Size([self.num_samples]))
         L = ch.linalg.cholesky(sigma)
         s = mu + self.samples @ L.T 
-        return s[rand_perm][:num_samples]
+        return s[:num_samples]
+        # return s[rand_perm][:num_samples]
 
     
 class Sampler: 
