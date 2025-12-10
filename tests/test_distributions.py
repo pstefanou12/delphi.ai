@@ -15,7 +15,7 @@ from delphi.utils.helpers import Parameters, cov, is_psd
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-class UnNorm_Sphere(oracle.oracle):
+class calc_multivariate_normal_sufficient_statistieUnNorm_Sphere(oracle.oracle):
     """
     Spherical truncation
     """
@@ -53,8 +53,7 @@ def test_truncated_normal_known_variance():
     
     S_std_norm = (S - emp_loc) 
     phi_std_norm = oracle.Left_Distribution((phi.left - emp_loc).flatten())
-    
-    # train algorithm
+
     args = Parameters({
                         'batch_size': 10, 
                         'trials': 1, 
@@ -63,8 +62,7 @@ def test_truncated_normal_known_variance():
                         'num_samples': 1000,
                         'early_stopping': True, 
                         'tol': 5e-2,
-                        'gradient_steps': 1500,
-                        'num_samples': 10000
+                        'iterations': 1500,
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
@@ -72,7 +70,6 @@ def test_truncated_normal_known_variance():
                                               1,
                                               variance=ch.eye(1))
     truncated.fit(S_std_norm)
-    
     # rescale distribution
     rescale_loc = truncated.best_loc_ + emp_loc
     print(f"pred loc:\n {rescale_loc}")
@@ -91,7 +88,7 @@ def test_truncated_normal_known_variance():
 # right truncated normal distribution with known truncation
 def test_truncated_normal():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([5000,])
+    samples = M.rsample([2000,])
     print(f'num total samples: {samples.size(0)}')
     # generate ground-truth data
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -108,31 +105,43 @@ def test_truncated_normal():
 
     S_std_norm = (S - emp_loc) / emp_scale
     phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
-    
+
+    from delphi.grad import Sampler
+    sampler = Sampler()
+
     # train algorithm
     args = Parameters({
-                        # 'iterations': 1500, 
-                        'epochs': 1,
+                        'iterations': 5000, 
                         'batch_size': 1, 
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-2,
-                        'num_samples': 10000,
+                        'num_samples': 1000,
                         'early_stopping': True,
                         'tol': 1e-3,
+                        'val_interval': 100
                     }) 
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
                                               alpha, 
-                                              1)
+                                              1, 
+                                              sampler=sampler)
     truncated.fit(S_std_norm)
-
     # rescale distribution
-    rescale_loc = truncated.best_loc_ * emp_scale + emp_loc
-    print(f"pred loc:\n {rescale_loc}")
-    rescale_var = truncated.best_variance_ * emp_var
-    print(f"pred var:\n {rescale_var}")
-    m = MultivariateNormal(rescale_loc, rescale_var)
+    rescale_best_loc = truncated.best_loc_ * emp_scale + emp_loc
+    print(f"pred best loc:\n {rescale_best_loc}")
+    rescale_best_var = truncated.best_variance_ * emp_var
+    print(f"pred best var:\n {rescale_best_var}")
+    rescale_ema_loc = truncated.ema_loc_ * emp_scale + emp_loc
+    print(f"pred ema loc:\n {rescale_ema_loc}")
+    rescale_ema_var = truncated.ema_covariance_matrix_ * emp_var
+    print(f"pred ema var:\n {rescale_ema_var}")
+    rescale_avg_loc = truncated.avg_loc_ * emp_scale + emp_loc
+    print(f"pred avg loc:\n {rescale_avg_loc}")
+    rescale_avg_var = truncated.avg_covariance_matrix_ * emp_var
+    print(f"pred avg var:\n {rescale_avg_var}")
+
+    m = MultivariateNormal(rescale_best_loc, rescale_best_var)
         
     # check performance
     kl_truncated = kl_divergence(m, M)
@@ -147,6 +156,9 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
     samples = M.rsample([5000,])
 
+    from delphi.grad import Sampler
+    sampler = Sampler()
+
     phi = lambda x: x[:, 0] > 0
     # generate ground-truth data
     alpha = 0
@@ -164,18 +176,19 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
 
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
+                        'iterations': 2500, 
                         'trials': 1,
-                        'batch_size': 50,
+                        'batch_size': 1,
                         'num_samples': 10000, 
                         'verbose': True, 
-                        'lr': 1e-1,
+                        'lr': 1e-2,
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi, 
                                                           alpha, 
                                                           dims,
-                                                          covariance_matrix=M.covariance_matrix)
+                                                          covariance_matrix=M.covariance_matrix, 
+                                                          sampler=sampler)
     truncated.fit(S)
     # rescale distribution
     rescale_loc = truncated.best_loc_
@@ -190,64 +203,85 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
 
-from delphi.grad import PreSampler
-
 def test_truncated_2_dim_multivariate_normal():
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
-    samples = M.rsample([10000,])
 
     phi = lambda x: x[:, 0] > 0
     # generate ground-truth data
-    alpha = 0
-    while alpha < .3: 
-        indices = phi(samples).nonzero()[:,0]
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
+    num_accepted, num_sampled = 0, 0
+    num_samples = 1000
 
+    S = []
+    while num_accepted < num_samples: 
+        samples = M.rsample([num_samples,])
+        indices = phi(samples).nonzero()[:,0]
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
     print(f'alpha: {alpha}')
     print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
     emp_covariance_matrix = cov(S)
+    emp_var = S.var(0)
+    emp_sigma_diag = ch.diag(ch.sqrt(emp_var))
+    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
     print(f'empicial mean:\n {emp_loc.T}')
     print(f'empirical covariance matrix:\n {emp_covariance_matrix}')
 
-    sampler = PreSampler(2)
+    phi_std_norm = lambda x: x[:,0] > (0 - emp_loc[0,0]) / ch.sqrt(emp_var[0])
+    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
+    from delphi.grad import Sampler
+    sampler = Sampler()
 
     # train algorithm
     args = Parameters({
-                        'gradient_steps': 5, 
-                        'trials': 1,
-                        'batch_size': -1,
-                        'num_samples': 50000, 
+                        'iterations': 5000, 
+                        'batch_size': 10,
+                        'num_samples': 1000, 
                         'verbose': True, 
-                        # 'lr': 1e-1,
+                        'lr': 1e-1,
                         'optimizer': 'sgd',
-                        'covariance_matrix_lr': None,
-                        'optimizer': 'lbfgs',
+                        'covariance_matrix_lr': 1e-2,
                         # 'momentum': .9,
-                        'line_search_fn': 'strong_wolfe',
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
-                                                          phi, 
+                                                          phi_std_norm, 
                                                           alpha, 
                                                           dims,
                                                           sampler=sampler)
-    truncated.fit(S)
-    # rescale distribution
-    rescale_loc = truncated.best_loc_
-    rescale_covariance_matrix = truncated.best_covariance_matrix_
-    print(f'pred loc:\n {rescale_loc.T}')
-    print(f'pred covariance matrix:\n {rescale_covariance_matrix}')
-    m = MultivariateNormal(rescale_loc, rescale_covariance_matrix)
+    truncated.fit(S_std_norm)
+    best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
+    best_covariance_matrix = emp_sigma_diag @ truncated.best_covariance_matrix_ @ emp_sigma_diag 
+    print(f'best loc:\n {best_loc.T}')
+    print(f'best covariance matrix:\n {best_covariance_matrix}')
+    best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+
+    ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
+    ema_covariance_matrix = emp_sigma_diag @ truncated.ema_covariance_matrix_ @ emp_sigma_diag 
+    print(f'ema loc:\n {ema_loc.T}')
+    print(f'ema covariance matrix:\n {ema_covariance_matrix}')
+    ema_m = MultivariateNormal(ema_loc, ema_covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_loc = truncated.avg_loc_ * ch.sqrt(emp_var) + emp_loc
+    avg_covariance_matrix = emp_sigma_diag @ truncated.avg_covariance_matrix_ @ emp_sigma_diag 
+    print(f'avg loc:\n {avg_loc.T}')
+    print(f'avg covariance matrix:\n {avg_covariance_matrix}')
+    avg_m = MultivariateNormal(avg_loc, avg_covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f'avg kl divergence: {avg_kl_div}')
         
     # check performance
-    kl_truncated = kl_divergence(m, M)
-    kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_truncated = kl_divergence(best_m, M)
+    kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f'empirical kl divergence: {kl_emp.item():.3f}')
     print(f'truncated kl divergence: {kl_truncated.item():.3f}')
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
@@ -256,46 +290,74 @@ def test_truncated_2_dim_multivariate_normal():
 def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     dims = 10
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
-    samples = M.rsample([10000,])
 
     phi = lambda x: x[:, 0] > 0
-    # generate ground-truth data
-    alpha = 0
-    while alpha < .3: 
-        indices = phi(samples).nonzero()[:,0]
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
+    num_accepted, num_sampled = 0, 0
+    num_samples = 1000
 
+    S = []
+    while num_accepted < num_samples: 
+        samples = M.rsample([num_samples,])
+        indices = phi(samples).nonzero()[:,0]
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
     print(f'alpha: {alpha}')
     print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
-    print(f'empirical mean:\n {emp_loc.T}')
+    emp_covariance_matrix = cov(S)
+    emp_var = samples.var(0)
+    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
+
+    print(f'empicial mean:\n {emp_loc.T}')
+    print(f'empirical covariance matrix:\n {emp_covariance_matrix}')
+
+    phi_std_norm = lambda x: x[:,0] > ((0 - emp_loc[0,0]) / ch.sqrt(emp_var[0]))
+    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
+
+    from delphi.grad import Sampler
+    sampler = Sampler()
 
     # train algorithm
     args = Parameters({
-                        'epochs': 5, 
-                        'trials': 1,
-                        'batch_size': -1,
-                        'num_samples': 10000, 
+                        'epochs': 2, 
+                        'batch_size': 1,
+                        'num_samples': 1000, 
                         'verbose': True, 
-                        'optimizer': 'lbfgs',
-                        # 'lr': 1e-1,
+                        'optimizer': 'sgd',
+                        'lr': 1e-2,
                     }) 
+    
+    scaled_cov = ch.diag(ch.sqrt(emp_var)).inverse() * M.covariance_matrix * ch.diag(ch.sqrt(emp_var)).inverse()
     truncated = distributions.TruncatedMultivariateNormal(args, 
-                                                          phi, 
+                                                          phi_std_norm, 
                                                           alpha, 
                                                           dims,
-                                                          covariance_matrix=M.covariance_matrix)
-    truncated.fit(S)
-    # rescale distribution
-    rescale_loc = truncated.best_loc_
-    print(f'pred loc:\n {rescale_loc.T}')
-    m = MultivariateNormal(rescale_loc, truncated.best_covariance_matrix_)
+                                                          covariance_matrix=scaled_cov, 
+                                                          sampler=sampler)
+    truncated.fit(S_std_norm)
+    best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
+    print(f'best loc:\n {best_loc.T}')
+    best_m = MultivariateNormal(best_loc, M.covariance_matrix)
+
+    ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
+    print(f'ema loc:\n {ema_loc.T}')
+    ema_m = MultivariateNormal(ema_loc, M.covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_loc = truncated.avg_loc_ * ch.sqrt(emp_var) + emp_loc
+    print(f'avg loc:\n {avg_loc.T}')
+    avg_m = MultivariateNormal(avg_loc, M.covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f'avg kl divergence: {avg_kl_div}')
         
     # check performance
-    kl_truncated = kl_divergence(m, M)
+    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f'empirical kl divergence: {kl_emp.item():.3f}')
     print(f'truncated kl divergence: {kl_truncated.item():.3f}')
@@ -305,58 +367,87 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
 def test_truncated_10_dim_multivariate_normal():
     dims = 10
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
-    samples = M.rsample([20000,])
 
     phi = lambda x: x[:, 0] > 0
-    # generate ground-truth data
-    alpha = 0
-    while alpha < .3: 
+    num_accepted, num_sampled = 0, 0
+    num_samples = 10000
+
+    S = []
+    while num_accepted < num_samples: 
+        samples = M.rsample([num_samples,])
         indices = phi(samples).nonzero()[:,0]
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
-
-    import ipdb; ipdb.set_trace()
-
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
     print(f'alpha: {alpha}')
     print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
-    print(f'empirical mean:\n {emp_loc.T}')
+    emp_covariance_matrix = cov(S)
+    emp_var = S.var(0)
+    emp_sigma_diag = ch.diag(ch.sqrt(emp_var))
+    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
-    sampler = PreSampler(dims)
+    print(f'empicial mean:\n {emp_loc.T}')
+    print(f'empirical covariance matrix:\n {emp_covariance_matrix}')
+
+    phi_std_norm = lambda x: x[:,0] > ((0 - emp_loc[0,0]) / ch.sqrt(emp_var[0]))
+    S_std_norm = (S - emp_loc)  / ch.sqrt(emp_var)
+
+    from delphi.grad import Sampler
+    sampler = Sampler()
 
     # train algorithm
     args = Parameters({
-                        'epochs': 10, 
+                        'iterations': 5000, 
                         'trials': 1,
-                        'batch_size': 10,
-                        'num_samples': 50000, 
+                        'batch_size': 1,
+                        'num_samples': 1000, 
                         'verbose': True, 
-                        'optimizer': 'sgd'
-                        # 'lr': 1e-1,
-                        # 'covariance_matrix_lr': 1e-2,
+                        'optimizer': 'sgd',
+                        'lr': 1e-1,
+                        'covariance_matrix_lr': 1e-2,
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
-                                                          phi, 
+                                                          phi_std_norm, 
                                                           alpha, 
                                                           dims, 
                                                           sampler=sampler) 
-    truncated.fit(S)
+    truncated.fit(S_std_norm)
     # rescale distribution
-    rescale_loc = truncated.best_loc_ 
-    rescale_cov = truncated.best_covariance_matrix_
-    print(f'pred loc:\n {rescale_loc.T}')
-    print(f'pred covariance matrix: {rescale_cov}')
-    m = MultivariateNormal(rescale_loc, rescale_cov)
+    best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
+    best_covariance_matrix = emp_sigma_diag @ truncated.best_covariance_matrix_ @ emp_sigma_diag 
+    print(f'best loc:\n {best_loc.T}')
+    print(f'best covariance matrix:\n {best_covariance_matrix}')
+    best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+
+    ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
+    ema_covariance_matrix = emp_sigma_diag @ truncated.ema_covariance_matrix_ @ emp_sigma_diag 
+    print(f'ema loc:\n {ema_loc.T}')
+    print(f'ema covariance matrix:\n {ema_covariance_matrix}')
+    ema_m = MultivariateNormal(ema_loc, ema_covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_loc = truncated.avg_loc_ * ch.sqrt(emp_var) + emp_loc
+    avg_covariance_matrix = emp_sigma_diag @ truncated.avg_covariance_matrix_ @ emp_sigma_diag 
+    print(f'avg loc:\n {avg_loc.T}')
+    print(f'avg covariance matrix:\n {avg_covariance_matrix}')
+    avg_m = MultivariateNormal(avg_loc, avg_covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f'avg kl divergence: {avg_kl_div}')
         
     # check performance
-    kl_truncated = kl_divergence(m, M)
-    kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_truncated = kl_divergence(best_m, M)
+    kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f'empirical kl divergence: {kl_emp.item():.3f}')
     print(f'truncated kl divergence: {kl_truncated.item():.3f}')
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
+
 
 # right truncated 1D normal distribution with unknown truncation and known variance
 def test_unknown_truncation_normal_known_variance():

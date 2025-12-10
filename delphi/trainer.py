@@ -5,7 +5,7 @@ import torch as ch
 from torch.utils.data import DataLoader 
 from time import time
 from tqdm import tqdm
-from typing import Iterable, Optional
+from typing import Iterable
 from cox.store import Store
 
 from .delphi import delphi
@@ -15,7 +15,7 @@ from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
 
-STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_iterations"]
+STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_iterations", "max_epochs"]
 
 def ensure_tuple(x):
     return x if isinstance(x, (tuple, list)) else (x,)
@@ -31,19 +31,30 @@ class Trainer:
         self.logger = logger
         self.store = store
 
-        self.epoch, self.iterations = 0, None
+    def _initialize_trial(self, 
+                          trial, 
+                          train_loader, 
+                          rand_seed):
+        self.epoch, self.iterations = 0, 0 
         # store procedure history within lists because of torch.cat performance overhead
         self.train_losses = []
         self.val_losses = []
-        self.train_param_history = []
-        self.val_param_history = []
+        self.param_history = []
+        self.val_param_history_indices = []
         self.grad_norms = []
+        self._ema_params = None
         
         self.t_start, self.t_end = None, None
         self.procedure_duration = None
-        self._best_loss, self._best_params = float('inf'), None
-        self._final_loss, self._final_params = None, None
+        self._best_loss_index, self._best_param_index = None, None
         self.stop_reason = None
+
+        self.t_start = time()
+        ch.manual_seed(rand_seed)
+
+        self.model.pretrain_hook(train_loader)
+        self.model.make_optimizer_and_schedule(self.model.parameters_()) 
+        self.logger.info(f'trial: {trial}, training: {self.model} with the following config:\n {self.args}')
 
     def make_closure(self, batch): 
         inp, targ = batch
@@ -67,46 +78,51 @@ class Trainer:
         return closure
 
     def train_step(self, 
-                   batch: Iterable, 
-                   param_vec: Optional[ch.Tensor]=None) -> ch.Tensor:
-        self.train_param_history.append(param_vec.detach())
+                   batch: Iterable) -> ch.Tensor:
         loss = self.model.optimizer.step(self.make_closure(batch))
+        
         if self.model.schedule is not None: self.model.schedule.step()
 
         self.train_losses.append(loss.detach())
-        grad_vec = ch.nn.utils.parameters_to_vector(
+ 
+        grad_norm = ch.nn.utils.parameters_to_vector(
             [p.grad.contiguous() for p in self.model.parameters() if p.requires_grad]
-        )
-        grad_norm = grad_vec.norm()
+        ).norm()
         self.grad_norms.append(grad_norm.item())
+       
+        param_vec = ch.nn.utils.parameters_to_vector(
+            [p.contiguous() for p in self.model.parameters() if p.requires_grad]
+        ).detach() 
+        self.param_history.append(param_vec)
+        if self._ema_params is None:
+            self._ema_params = param_vec
+        else:
+            self._ema_params = self.args.ema_decay * self._ema_params + (1 - self.args.ema_decay) * param_vec
+        
         self.iterations += 1
 
         return loss
     
     def val_step(self, 
-                 batch: Iterable, 
-                 param_vec: Optional[ch.Tensor]=None) -> ch.Tensor:
-        self.val_param_history.append(param_vec)
+                 batch: Iterable) -> ch.Tensor:
         inp, targ = batch
         pred = self.model(inp, targ)
         loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
         if len(loss.shape) > 0: loss = loss.sum(0)
         self.val_losses.append(loss)
-
+        self.val_param_history_indices.append(len(self.param_history) - 1)
         return loss
 
     def run_epoch(self, 
                     loader: DataLoader, 
-                    is_train: bool):
+                    is_train: bool,
+                    val_loader: DataLoader=None):
         mode = 'train' if is_train else 'val'
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
-        iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.verbose and self.args.tqdm else enumerate(loader)
+        iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.tqdm else enumerate(loader)
         
         for batch_idx, batch in iterator:
-            param_vec = ch.nn.utils.parameters_to_vector(
-                [p.contiguous() for p in self.model.parameters() if p.requires_grad]
-            )
-            loss = self.train_step(batch, param_vec) if is_train else self.val_step(batch, param_vec)
+            loss = self.train_step(batch) if is_train else self.val_step(batch)
             loss_.update(loss.item())
             # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
             # if not, you'll need to define what these mean for your model and loss.
@@ -116,36 +132,45 @@ class Trainer:
                 self.stop_reason = reason
                 break
 
-            if self.args.verbose:
-                if self.args.tqdm:
-                    desc = self.model.description(self.epoch, batch_idx, mode, loss_, prec1_, prec5_, reg_term)
-                    iterator.set_description(desc)
+            # check on validation set periodically during the training epoch 
+            if is_train and self.args.val_interval is not None and self.iterations % self.args.val_interval == 0:
+                for batch in val_loader:
+                    val_loss = self.val_step(batch)
+                    self.update_best(val_loss)
 
-            if self.args.verbose and (not is_train or (self.iterations % self.args.log_every == 0)):
+            if self.args.tqdm:
+                desc = self.model.description(self.epoch, batch_idx, mode, loss_, prec1_, prec5_, None)
+                iterator.set_description(desc)
+
+            if is_train and (self.iterations % self.args.log_every == 0):
                 self.logger.info(
                     f"[{mode}] epoch={self.epoch} step={self.iterations} "
                     f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
-                )
+        ) 
+        self.logger.info(
+            f"[{mode}] epoch={self.epoch} step={self.iterations} "
+            f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
+        )
             
         self.model.post_epoch_hook(self.epoch, is_train, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
     
     def should_stop(self): 
-        if self.stop_reason not in STOP_REASONS:
-            # Criterion 1: max iterations 
-            if self.args.iterations is not None and self.iterations >= self.args.iterations:
-                return True, "max_iterations"
+        # max iterations 
+        if self.args.iterations is not None and self.iterations >= self.args.iterations:
+            return True, "max_iterations"
 
-            # Criterion 2: gradient norm small (scipy-like)
+        if self.args.early_stopping:
+            # gradient norm small
             if self.args.grad_tol is not None and len(self.grad_norms) > 1 and (self.grad_norms[-1]) < self.args.grad_tol:
                 return True, "grad_tol"
 
-            # Criterion 3: loss change small
+            # loss change small
             if self.args.loss_tol is not None and len(self.train_losses) > 1:
                 if abs(self.train_losses[-1] - self.train_losses[-2]) < self.args.loss_tol:
                     return True, "loss_tol"
 
-            # Criterion 4: early stopping on val loss
+            # early stopping on val loss
             if len(self.val_losses) > self.args.patience:
                 recent = self.val_losses[-self.args.patience:]
                 if recent[-1] > min(recent[:-1]):
@@ -155,9 +180,9 @@ class Trainer:
 
     def update_best(self, 
                     loss: ch.Tensor): 
-        if loss < self.best_loss: 
-            self._best_loss = loss 
-            self._best_params = self.val_param_history[-1]
+        if self.best_loss is None or loss < self.best_loss:
+            self._best_loss_index = len(self.val_losses) - 1
+            self._best_param_index = len(self.param_history) - 1
 
     def train_model(self,
                     train_loader: DataLoader, 
@@ -189,27 +214,16 @@ class Trainer:
             setup_store_with_metadata(self.args, store)
 
         # stores model estimates after each gradient step
-        for trial in range(self.args.trials):
-            self.iterations = 0
+        for trial in range(1, self.args.trials+1):
+            self._initialize_trial(trial, train_loader, rand_seed)
 
-            ch.manual_seed(rand_seed)
-            if self.args.verbose: self.logger.info(f'trial: {trial + 1}')
-
-            self.t_start = time()
-            self.model.pretrain_hook(train_loader)
-            self.model.make_optimizer_and_schedule(self.model.parameters_()) 
-
-            if self.args.verbose: 
-                self.logger.info(f'training: {self.model} with the following config:\n {self.args}')
-   
             if checkpoint:
-                epoch = checkpoint['epoch']
+                self.epoch = checkpoint['epoch']
                 best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.run_epoch(val_loader, False)[0]
 
             while True:
-            # for epoch in range(1, self.args.epochs + 1):
                 self.epoch += 1 
-                train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, True)
+                train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, True, val_loader)
 
                 if val_loader:
                     with ch.no_grad():
@@ -217,16 +231,15 @@ class Trainer:
                         self.update_best(val_loss)
 
                 if self.stop_reason in STOP_REASONS: 
-                    if self.args.verbose:
-                        self.t_end = time() 
-                        self.procedure_duration = self.t_end - self.t_start
-                        self.logger.info("stopped due to %s after %d iterations. total time: %.2f seconds" % (self.stop_reason, self.iterations, self.procedure_duration))
+                    self.t_end = time() 
+                    self.procedure_duration = self.t_end - self.t_start
+                    self.logger.info("stopped due to %s after %d iterations. total time: %.2f seconds" % (self.stop_reason, self.iterations, self.procedure_duration))
                     break
             
                 if store is not None:
                     store['logs'].append_row({
                         'trial': trial,
-                        'epoch': epoch,
+                        'epoch': self.epoch,
                         'train_loss': train_loss, 
                         'train_prec1': train_prec1,
                         'train_prec5': train_prec5,
@@ -234,27 +247,21 @@ class Trainer:
                         'val_prec1': val_prec1, 
                         'val_prec5': val_prec5})
                 
-                if self.args.epochs is not None and self.epoch == self.args.epochs: 
+                if self.args.epochs is not None and self.epoch == self.args.epochs:
+                    self.stop_reason = "max_epochs"
+                    self.t_end = time() 
+                    self.procedure_duration = self.t_end - self.t_start
+                    self.logger.info("stopped due to %s after %d epochs. total time: %.2f seconds" % (self.stop_reason, self.epoch, self.procedure_duration))
                     break
 
-            self._final_loss = val_loss 
-            self._final_params = self.val_param_history[-1] 
+            # convert training loss&param history to tensors
+            self.train_losses = ch.tensor(self.train_losses)
+            self.val_losses   = ch.tensor(self.val_losses)
+            self.param_history = ch.stack(self.param_history)
+            self.grad_norms = ch.Tensor(self.grad_norms)
 
             self.model.post_training_hook()
 
-        self.t_end = time()
-        self.procedure_duration = self.t_end - self.t_start 
-
-        # convert training loss/param history to tensors
-        self.train_losses = ch.tensor(self.train_losses)
-        self.val_losses   = ch.tensor(self.val_losses)
-        self.train_param_history = ch.stack(self.train_param_history)
-        self.val_param_history = ch.stack(self.val_param_history)
-        self.grad_norms = ch.Tensor(self.grad_norms)
-
-        if self.stop_reason is None: 
-            self.logger.info('procedure did not converge after %d epochs in %.2f seconds' % (self.epoch, self.procedure_duration))
-    
     def eval_model(self, 
                     loader: DataLoader, 
                     store: Store=None):
@@ -282,19 +289,35 @@ class Trainer:
             }
             store['eval'].append_row(log_info)
         return log_info
+    
+    @property
+    def val_param_history(self): 
+        return self.param_history[self.val_param_history_indices]
 
     @property
     def best_params(self): 
-        return self._best_params
+        if self._best_param_index is None: 
+            return None
+        return self.param_history[self._best_param_index]
     
     @property
     def best_loss(self): 
-        return self._best_loss
+        if self._best_loss_index is None: 
+            return None
+        return self.val_losses[self._best_loss_index]
     
     @property
-    def final_params(self): 
-        return self._final_params
+    def final_params(self):
+        return self.param_history[-1]
 
     @property
     def final_loss(self): 
-        return self._final_loss
+        return self.val_param_history[-1]
+
+    @property 
+    def ema_params(self): 
+        return self._ema_params
+    
+    @property
+    def avg_params(self): 
+        return self.param_history.mean(0)

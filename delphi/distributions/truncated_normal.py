@@ -19,12 +19,13 @@ class TruncatedNormal(TruncatedMultivariateNormal):
                  phi: Callable, 
                  alpha: float,
                  dims: int, 
-                 variance: Tensor=None):
+                 variance: Tensor=None, 
+                 sampler=None):
         """
         Args:
            args (delphi.utils.helpers.Parameters): hyperparameters for censored algorithm 
         """
-        super().__init__(args, phi, alpha, dims, covariance_matrix=variance)
+        super().__init__(args, phi, alpha, dims, covariance_matrix=variance, sampler=sampler)
 
     @property 
     def best_variance_(self): 
@@ -32,3 +33,17 @@ class TruncatedNormal(TruncatedMultivariateNormal):
         Returns the variance for the normal distribution.
         """
         return self.best_covariance_matrix_ 
+    
+    @property
+    def ema_variance_(self): 
+        """
+        Returns the ema variance estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.ema_covariance_matrix
+
+    @property
+    def avg_variance_(self): 
+        """
+        Returns the avg variance estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.avg_covariance_matrix

@@ -24,118 +24,70 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
     """
     @staticmethod
     def forward(ctx,
-                T, 
-                v, 
+                theta, 
                 data, 
                 phi, 
                 dims, 
-                trunc_multi_norm_score, 
-                sampler=None,
+                dist,
+                calc_suff_stat, 
+                # sampler=None,
                 num_samples=1000, 
                 eps=1e-12):
-        
-        covariance_matrix = ch.inverse(T.view(dims, dims))
-        if not is_psd(covariance_matrix): import ipdb; ipdb.set_trace()
-        mu = (covariance_matrix @ v).view(dims) 
-        
-        # gradient is pre-computed, extract from batch passed in
         S = data[:, :dims]
-        S_grad = data[:, dims:]
-        
-        M = MultivariateNormal(mu, covariance_matrix)
-        log_prob = M.log_prob(S)
-    
-        if not sampler:             
-            sampler = Sampler()   
+        S_suff_stat = data[:, dims:]
+
+        D = dist(theta, dims)
+        log_prob = D.log_prob(S)
 
         z = ch.Tensor([])
+        z = []
         num_sampled = 0
+        num_accepted = 0
 
-        while z.size(0) < num_samples:
-            s = sampler.sample(mu, covariance_matrix, num_samples)
+        while num_accepted < num_samples:
+            s = D.sample([10*num_samples])
             mask = phi(s)
-            z = ch.cat([z, s[mask.nonzero()[:,0]]])
-            num_sampled += num_samples
-            
-
-        p_hat = ch.Tensor([z.size(0) / num_sampled])
+            accepted = s[mask.nonzero()[:,0]] 
+            z.append(accepted)
+            num_accepted += accepted.size(0)
+            num_sampled += 10*num_samples
+        z = ch.cat(z)
+        
+        p_hat = ch.Tensor([num_accepted / num_sampled])
         if p_hat < .01:
             print(f'acceptance rate: {p_hat.item()}')
-                        
-        trunc_const = ch.log(p_hat + 1e-12)
-        
+
+        trunc_const = ch.log(p_hat + eps)
         nll = log_prob - trunc_const
-        ctx.save_for_backward(S_grad, z)
-        ctx.trunc_multi_norm_score = trunc_multi_norm_score
+        ctx.save_for_backward(z, S_suff_stat)
+        ctx.calc_suff_stat = calc_suff_stat 
         ctx.dims = dims
         return -nll.mean()
 
     @staticmethod
-    def backward(ctx, grad_output):
-        S_grad, s = ctx.saved_tensors
-        trunc_const_grad = ctx.trunc_multi_norm_score(s).mean(0)
-        grad = -S_grad + trunc_const_grad
-
-        cov_grad = grad[:,:ctx.dims**2]
-        loc_grad = grad[:,ctx.dims**2:]
-
-        return  cov_grad / S_grad.size(0), loc_grad / S_grad.size(0), None, None, None, None, None, None, None
+    def backward(ctx, 
+                 grad_output):
+        s, S_suff_stat = ctx.saved_tensors
+        trunc_const_suff_stat = ctx.calc_suff_stat(s).mean(0)
+        grad = -S_suff_stat + trunc_const_suff_stat 
+        return  grad / S_suff_stat.size(0), None, None, None, None, None, None, None, None
 
 
-class TruncatedMultivariateNormalScore: 
-    def __init__(self, known_cov=False): 
-        self.known_cov = known_cov
-
-    def __call__(self, x):
-        if self.known_cov: 
-            return ch.cat([ch.zeros(x.size(0), x.size(1)**2), x], 1)
-        # calculates the negative log-likelihood for one sample of a censored normal
-        return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+def calc_multi_norm_suff_stat(x):
+    return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
 
-class PreSampler: 
-    def __init__(self, dims: int, num_samples: int=100000): 
-        self.dims = dims 
-        self.num_samples = num_samples 
-        self.samples = ch.randn(self.num_samples, self.dims)
-        
-    def sample(self, mu: ch.Tensor, sigma: ch.Tensor, num_samples: int):
-        if num_samples > self.num_samples: 
-            raise Exception(f"num samples: ({num_samples}) greater than number of samples presampled: ({self.num_samples})")
-        rand_perm = ch.randint(self.num_samples, ch.Size([self.num_samples]))
-        L = ch.linalg.cholesky(sigma)
-        s = mu + self.samples @ L.T 
-        return s[:num_samples]
-        # return s[rand_perm][:num_samples]
+class delphiMultivariateNormal(MultivariateNormal):
 
-    
-class Sampler: 
-    def sample(self, mu: ch.Tensor, sigma: ch.Tensor, num_samples: int): 
-        samples = ch.randn(num_samples, mu.size(0))
-        L = ch.linalg.cholesky(sigma)
-        s = mu + samples @ L.T 
-        return s 
+    def __init__(self, 
+                 theta: ch.Tensor, 
+                 dims: int):
+        self.dims = dims
+        T, v = theta[:self.dims**2], theta[self.dims**2:]
+        covariance_matrix = ch.inverse(T.view(self.dims, self.dims))
+        mu = (covariance_matrix @ v).view(self.dims)   
+        super().__init__(mu, covariance_matrix) 
 
-def rejection_sampling(mu, sigma, phi, dims, batch_size, num_samples=1000): 
-    M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
-    L = ch.linalg.cholesky(sigma)
-
-    accepted_samples = ch.Tensor([])
-    num_sampled = 0
-
-    while accepted_samples.size(0) < batch_size:
-        # draw samples per-observation so phi can depend on each sample individually if needed
-        samples = M.sample((num_samples,))  # -> (num_samples, dims) 
-        s = mu + samples @ L.T 
-        mask = phi(s) 
-        accepted_samples = ch.cat([accepted_samples, s[mask.nonzero()[:,0]]])
-        num_sampled += num_samples
-
-    p_hat = ch.Tensor([accepted_samples.size(0) / num_sampled])
-    if p_hat < .01:
-        print(f'acceptance rate: {p_hat.item()}')
-
-    return accepted_samples[:batch_size], p_hat
     
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """

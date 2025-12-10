@@ -4,10 +4,8 @@ Default parameters for running algorithms in delphi.ai.
 
 import torch as ch
 from typing import Optional, Union, get_origin, get_args
-import sys
 
 from .helpers import has_attr
-
 
 # CONSTANTS
 REQ = 'required'
@@ -66,14 +64,13 @@ PLATEAU_SCHEDULER_DEFAULTS = {
 }
     
 TRAINER_DEFAULTS = { 
-    'num_trials': (int, 1),
-    'trials': (int, 3),
+    'trials': (int, 1),
+    'ema_decay': (float, .99),
     'tol': (float, 1e-3),
     'early_stopping': (bool, False), 
-    'n_iter_no_change': (int, 5),
     'verbose': (bool, False),
     'disable_no_grad': (bool, False), 
-    'val_interval': (int, 50, {'min': 1}),
+    'val_interval': (int, None, {'min': 1}),
     'patience': (int, float('inf'), {'min': 1}),
     'grad_tol': (float, 0, {'min': 0}), 
     'log_every': (int, 50, {'min': 1})
@@ -104,7 +101,6 @@ TRUNC_REG_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 1000),
         'shuffle': (bool, True),
-        'train_mode': (['epoch', 'step'], 'step'),
         'iterations': (int, 1500),
         'val_interval': (int, 50)
 }
@@ -120,7 +116,6 @@ TRUNC_LASSO_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10000),
         'shuffle': (bool, True),
-        'train_mode': (['epoch', 'step'], 'step'),
         'iterations': (int, 1500),
         'val_interval': (int, 50)
 }
@@ -146,7 +141,6 @@ TRUNC_LDS_DEFAULTS = {
 
 TRUNC_LOG_REG_DEFAULTS = {
         'epochs': (int, 1),
-        'trials': (int, 3),
         'val': (float, .2),
         'l1': (float, 0.0), 
         'eps': (float, 1e-5),
@@ -157,9 +151,7 @@ TRUNC_LOG_REG_DEFAULTS = {
         'num_samples': (int, 1000),
 }
 
-
 TRUNC_PROB_REG_DEFAULTS = {
-        'trials': (int, 3),
         'val': (float, .2),
         'l1': (float, 0.0), 
         'eps': (float, 1e-5),
@@ -171,7 +163,6 @@ TRUNC_PROB_REG_DEFAULTS = {
         'num_samples': (int, 1000),
 }
 
-
 TRUNC_MULTI_NORM_DEFAULTS = {
         'val': (float, .2),
         'eps': (float, 1e-5),
@@ -182,12 +173,9 @@ TRUNC_MULTI_NORM_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10000),
         'covariance_matrix': (ch.Tensor, None),
-        'distribution': (bool, True), 
         'optimizer': (str, 'sgd'),
         'covariance_matrix_lr': (float, None),
-        'train_mode': (['epoch', 'step'], 'step'),
 }
-
 
 UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
         'val': (float, .2),
@@ -199,9 +187,7 @@ UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
         'workers': (int, 0),
         'num_samples': (int, 10),
         'covariance_matrix_lr': (float, None), 
-        'd': (int, 10),
 }
-
 
 TRUNC_BOOL_PROD_DEFAULTS = {
         'val': (float, .2),

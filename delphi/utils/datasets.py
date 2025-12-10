@@ -12,7 +12,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import datasets
 
 from .helpers import cov
-from ..grad import TruncatedMultivariateNormalScore
+from ..grad import calc_multi_norm_suff_stat 
 from .defaults import DATASET_DEFAULTS, check_and_fill_args
 from . import data_augmentation as da
 from .. import cifar_models
@@ -353,11 +353,11 @@ def make_train_and_val_distr(args, S, ds, kwargs={}):
 
 class TruncatedNormalDataset(ch.utils.data.Dataset):
     def __init__(self, 
-                 S, 
-                 trunc_multi_norm_score=TruncatedMultivariateNormalScore()):
+                 S):
         self.S = S 
-        # apply gradient
-        self.S_grad = trunc_multi_norm_score(S)
+        # precalculate dataset score, so that it doesn't need to be computed within gradient
+        self.S_grad = calc_multi_norm_suff_stat(S)
+        self.data = self.S
         self.data = ch.cat([self.S, self.S_grad], dim=1)
 
     def __len__(self): 
@@ -365,14 +365,6 @@ class TruncatedNormalDataset(ch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         return [ch.empty([]), self.data[idx],]
-
-    @property
-    def loc(self):
-        return self._loc.clone()
-
-    @property
-    def covariance_matrix(self):
-        return self._covariance_matrix.clone()
 
 
 class UnknownTruncationNormalDataset(ch.utils.data.Dataset):

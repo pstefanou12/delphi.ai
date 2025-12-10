@@ -55,7 +55,6 @@ class delphiLogger:
         level 20 is the int code for logging.INFO. Full list of logging levels here: 
         https://docs.python.org/3/library/logging.html#logging-levels
         """
-        import ipdb; ipdb.set_trace()
         # Write structured data to JSONL
         record = {"timestamp": time.time(), **data}
         self._history.append(record)
@@ -66,7 +65,6 @@ class delphiLogger:
 
         # Human-readable logging via Python logging
         pretty = ", ".join(f"{k}={v}" for k, v in data.items())
-        import ipdb; ipdb.set_trace()
         self.logger.log(level, pretty)
 
     def info(self, msg):

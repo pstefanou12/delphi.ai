@@ -8,11 +8,12 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 import math
 import torch.nn as nn
 from typing import Callable, Optional
+import logging
 
 from .distributions import distributions
 from ..delphi_logger import delphiLogger
 from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..grad import TruncatedMultivariateNormalNLL, TruncatedMultivariateNormalScore, PreSampler
+from ..grad import TruncatedMultivariateNormalNLL, delphiMultivariateNormal, calc_multi_norm_suff_stat 
 from ..trainer import Trainer
 from ..utils.helpers import Parameters, cov
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
@@ -31,18 +32,16 @@ class TruncatedMultivariateNormal(distributions):
                 sampler: Callable = None):
         """
         """
-        logger = delphiLogger()
-        # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
         args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+        
+        logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, logger)
  
         self.phi = phi
         self.alpha = alpha
         self.dims = dims
         self.covariance_matrix = covariance_matrix
-        self.sampler = PreSampler(self.dims, self.args.num_samples) if sampler is None else sampler
-        self.trunc_multi_norm_score = TruncatedMultivariateNormalScore(self.covariance_matrix is not None)
         
         del self.criterion
         self.criterion = TruncatedMultivariateNormalNLL.apply
@@ -62,12 +61,10 @@ class TruncatedMultivariateNormal(distributions):
         
         self.S = S
         M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
-        self.samples = M.sample([10000])
-        self.criterion_params = [self.phi, self.dims, self.trunc_multi_norm_score, self.sampler, self.args.num_samples, self.args.eps]
+        self.criterion_params = [self.phi, self.dims, delphiMultivariateNormal, calc_multi_norm_suff_stat, self.args.num_samples, self.args.eps]
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
                                                                         self.S, 
-                                                                        TruncatedNormalDataset,
-                                                                        {'trunc_multi_norm_score': self.trunc_multi_norm_score})
+                                                                        TruncatedNormalDataset)
         self.trainer = Trainer(
             self,
             self.args, 
@@ -90,7 +87,9 @@ class TruncatedMultivariateNormal(distributions):
     def pretrain_hook(self, train_loader):
         self._calc_emp_model()
         # parameterize projection set
-        self.radius = self.args.r * (math.log(1.0 / self.alpha) / (self.alpha ** 2)) + 12
+        self.radius = self.args.r * math.log(1.0 / self.alpha) + 12
+        self.eigenvalue_lower_bound = self.alpha ** 2
+        self.eigenvalue_lower_bound = 1e-2
         if self.covariance_matrix is not None:
             T = self.covariance_matrix.clone().inverse()
         else:
@@ -112,7 +111,7 @@ class TruncatedMultivariateNormal(distributions):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        return self.T, self.v
+        return ch.cat([self.T, self.v]) 
     
     def project_to_psd(self, M, eps=1e-6):
         """Projects a symmetric matrix M onto the Positive Semi-Definite (PSD) cone."""
@@ -125,6 +124,7 @@ class TruncatedMultivariateNormal(distributions):
                        args, 
                        kwargs) -> None:
         with ch.no_grad():
+            # import ipdb; ipdb.set_trace()
             T = self.T.clone().view(self.dims, self.dims)
             v = self.v.clone()
 
@@ -144,16 +144,14 @@ class TruncatedMultivariateNormal(distributions):
 
             # Symmetrize after projection (important!)
             T = 0.5 * (T + T.T)
-
             # --- 3) Final PSD projection ---
-            T = self.project_to_psd(T, eps=1e-6)
-
+            T = self.project_to_psd(T, eps=self.eigenvalue_lower_bound)
             # Symmetrize again after PSD projection
             T = 0.5 * (T + T.T)
-
             self.T.copy_(T.flatten())
             self.v.copy_(v)
-
+            # if T[0, 1] != T[1, 0]: import ipdb; ipdb.set_trace()
+            
             from delphi.utils.helpers import is_psd
             covariance_matrix = self.T.view(self.dims, self.dims).inverse()
             if not is_psd(covariance_matrix): import ipdb; ipdb.set_trace()
@@ -163,6 +161,8 @@ class TruncatedMultivariateNormal(distributions):
         # reparameterize distribution
         self.best_covariance_matrix, self.best_loc, self.best_theta_loss = *self._reparameterize(self.trainer.best_params), self.trainer.best_loss
         self.final_covariance_matrix, self.final_loc, self.final_theta_loss = *self._reparameterize(self.trainer.final_params), self.trainer.final_loss
+        self.ema_covariance_matrix, self.ema_loc = self._reparameterize(self.trainer.ema_params)
+        self.avg_covariance_matrix, self.avg_loc = self._reparameterize(self.trainer.avg_params)
 
     def parameters_(self):
         if self.args.covariance_matrix_lr is not None: 
@@ -213,10 +213,37 @@ class TruncatedMultivariateNormal(distributions):
         Returns the final covariance matrix estimate for the multivariate normal distribution based off of the loss function.
         """
         return self.final_covariance_matrix
+    
+    @property
+    def ema_loc_(self): 
+        """
+        Returns the ema mean vector estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.ema_loc
 
-    def calculate_score(self, S): 
-        return self.trunc_multi_norm_score(S)
+    @property
+    def ema_covariance_matrix_(self): 
+        """
+        Returns the ema covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.ema_covariance_matrix
+
+    @property
+    def avg_loc_(self): 
+        """
+        Returns the avg mean vector estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.avg_loc
+
+    @property
+    def avg_covariance_matrix_(self): 
+        """
+        Returns the avg covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+        """
+        return self.avg_covariance_matrix
+
+    def calc_suff_stat(self, S): 
+        return calc_multi_norm_suff_stat(S)
     
     def calculate_loss(self, S): 
-        data = ch.cat([S, self.calculate_score(S)], dim=1)
-        return self.criterion(self.theta, data, *self.criterion_params)
+        return self.criterion(self.theta, self.calc_suff_stat(S), *self.criterion_params)
