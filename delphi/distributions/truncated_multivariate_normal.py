@@ -84,7 +84,7 @@ class TruncatedMultivariateNormal(distributions):
         self.model = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
         self.dims = self.emp_loc.size(0)
             
-    def pretrain_hook(self, train_loader):
+    def pretrain_hook(self):
         self._calc_emp_model()
         # parameterize projection set
         self.radius = self.args.r * math.log(1.0 / self.alpha) + 12
@@ -104,7 +104,7 @@ class TruncatedMultivariateNormal(distributions):
         if self.covariance_matrix is not None: self.T.requires_grad = False # remove from the computation graph
         self.register_parameter('v', nn.Parameter(v))
 
-    def __call__(self, batch, targ):
+    def forward(self, x):
         """
         Training step for defined model.
         Args: 

@@ -122,16 +122,14 @@ class TruncatedLassoRegression(LinearModel):
                                  rand_seed=self.rand_seed)
         return self
 
-    def pretrain_hook(self, 
-                      train_loader: ch.utils.data.DataLoader):
-        self.calc_emp_model(train_loader)
+    def pretrain_hook(self):
+        self.calc_emp_model()
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
-    def calc_emp_model(self, 
-                       train_loader: ch.utils.data.DataLoader) -> None: 
-        X, y = train_loader.dataset.tensors
+    def calc_emp_model(self) -> None: 
+        X, y = self.train_loader.dataset.tensors
         emp_lasso = LassoCV(fit_intercept=self.fit_intercept, alphas=[self.l1]) 
         emp_lasso.fit(X, y)
         if self.args.fit_intercept:
@@ -140,9 +138,8 @@ class TruncatedLassoRegression(LinearModel):
             lasso_coef_ = ch.from_numpy(emp_lasso.coef_).float()[...,None]
         self.register_buffer('emp_weight', lasso_coef_)
 
-    def __call__(self, 
-                 X: ch.Tensor, 
-                 y: ch.Tensor): 
+    def forward(self, 
+                 X: ch.Tensor) -> ch.Tensor: 
         return X@self.weight
 
     def pre_step_hook(self, 

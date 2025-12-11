@@ -132,9 +132,8 @@ class TruncatedLinearRegression(LinearModel):
                                  rand_seed=self.rand_seed)
         return self
 
-    def pretrain_hook(self, 
-                      train_loader: ch.utils.data.DataLoader):
-        self.calc_emp_model(train_loader)
+    def pretrain_hook(self):
+        self.calc_emp_model()
         # use OLS as empirical estimate to define projection set
         self.radius = self.args.r * self.base_radius
         # empirical estimates for projection set
@@ -156,13 +155,12 @@ class TruncatedLinearRegression(LinearModel):
         else:
             self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
-    def calc_emp_model(self, 
-                       train_loader: ch.utils.data.DataLoader) -> None: 
+    def calc_emp_model(self) -> None: 
         '''
         Calculates empirical estimates for a truncated linear model. Assigns 
         estimates to a Linear layer. By default calculates OLS for truncated linear regression.
         '''
-        X, y = train_loader.dataset.tensors
+        X, y = self.train_loader.dataset.tensors
         coef_, _, self.rank_, self.singular_ = lstsq(X, y)
         self.ols_coef_ = Tensor(coef_)
         self.emp_noise_var = ch.var(Tensor(X@coef_) - y, dim=0)[..., None]
@@ -333,9 +331,7 @@ class TruncatedLinearRegression(LinearModel):
         """
         return self.trunc_reg.emp_var.clone()
 
-    def __call__(self,
-                X: ch.Tensor,
-                y: ch.Tensor) -> ch.Tensor:
+    def forward(self, X: ch.Tensor) -> ch.Tensor:
         if self.noise_var is None:
             return X@self.v * 1.0/self.lambda_
 

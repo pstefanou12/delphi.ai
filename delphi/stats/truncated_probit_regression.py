@@ -72,13 +72,7 @@ class TruncatedProbitRegression(LinearModel):
                                  self.val_loader)
 
         return self
-
-    def pretrain_hook(self, 
-                      train_loader: ch.utils.data.DataLoader): 
-        self.calc_emp_model()
-        # projection set radius
-        self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.alpha)))
-
+    
     def calc_emp_model(self): 
         """
         Calculate empirical probit regression estimates using statsmodels module. 
@@ -95,7 +89,12 @@ class TruncatedProbitRegression(LinearModel):
             self.emp_weight = ch.nn.Parameter(self.emp_weight)
         self.register_parameter("weight", self.emp_weight)
 
-    def __call__(self, X, y):
+    def pretrain_hook(self): 
+        self.calc_emp_model()
+        # projection set radius
+        self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.alpha)))
+
+    def forward(self, X):
         '''
         Training step for defined model.
         Args: 

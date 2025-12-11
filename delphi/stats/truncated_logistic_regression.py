@@ -98,22 +98,11 @@ class TruncatedLogisticRegression(LinearModel):
 
         return self
     
-    def pretrain_hook(self,
-                      train_loader: ch.utils.data.DataLoader): 
-        """
-        SkLearn sets up multinomial classification differently. So when doing 
-        multinomial classification, we initialize with random estimates.
-        """
-        # calculate empirical estimates for truncated linear model
-        self.calc_emp_model(train_loader)
-        self.radius = self.args.r * self.base_radius
-        
-    def calc_emp_model(self, 
-                       train_loader: ch.utils.data.DataLoader): 
+    def _calc_emp_model(self): 
         """
         Calculate empirical logistic regression estimates using SKlearn module.
         """
-        X, y = train_loader.dataset.tensors
+        X, y = self.train_loader.dataset.tensors
         if self._emp_weight is None and self.multi_class == "ovr":
             log_reg = LogisticRegression(penalty=None, fit_intercept=False, multi_class=self.multi_class)
             log_reg.fit(X, y.flatten())
@@ -122,7 +111,16 @@ class TruncatedLogisticRegression(LinearModel):
             self._emp_weight = ch.randn(self.K, self.D) 
         self.register_parameter("weight", ch.nn.Parameter(self._emp_weight.clone()))
     
-    def __call__(self, X, y):
+    def pretrain_hook(self): 
+        """
+        SkLearn sets up multinomial classification differently. So when doing 
+        multinomial classification, we initialize with random estimates.
+        """
+        # calculate empirical estimates for truncated linear model
+        self._calc_emp_model()
+        self.radius = self.args.r * self.base_radius
+    
+    def forward(self, X):
         '''
         Training step for defined model.
         Args: 

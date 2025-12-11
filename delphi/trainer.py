@@ -52,7 +52,7 @@ class Trainer:
         self.t_start = time()
         ch.manual_seed(rand_seed)
 
-        self.model.pretrain_hook(train_loader)
+        self.model.pretrain_hook()
         self.model.make_optimizer_and_schedule(self.model.parameters_()) 
         self.logger.info(f'trial: {trial}, training: {self.model} with the following config:\n {self.args}')
 
@@ -61,9 +61,10 @@ class Trainer:
 
         def closure(): 
             self.model.optimizer.zero_grad()
-
-            pred = self.model(inp, targ)
-            loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
+            pred = self.model(inp)
+            loss = self.model.criterion(*ensure_tuple(pred), 
+                                        targ, 
+                                        *self.model.criterion_params)
             
             if loss.ndim > 0: 
                 loss = loss.sum()
@@ -80,7 +81,6 @@ class Trainer:
     def train_step(self, 
                    batch: Iterable) -> ch.Tensor:
         loss = self.model.optimizer.step(self.make_closure(batch))
-        
         if self.model.schedule is not None: self.model.schedule.step()
 
         self.train_losses.append(loss.detach())
@@ -106,7 +106,7 @@ class Trainer:
     def val_step(self, 
                  batch: Iterable) -> ch.Tensor:
         inp, targ = batch
-        pred = self.model(inp, targ)
+        pred = self.model(inp)
         loss = self.model.criterion(*ensure_tuple(pred), targ, *self.model.criterion_params)
         if len(loss.shape) > 0: loss = loss.sum(0)
         self.val_losses.append(loss)
@@ -115,14 +115,13 @@ class Trainer:
 
     def run_epoch(self, 
                     loader: DataLoader, 
-                    is_train: bool,
                     val_loader: DataLoader=None):
-        mode = 'train' if is_train else 'val'
+        mode = 'train' if self.model.training else 'val'
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         iterator = tqdm(enumerate(loader), total=len(loader), leave=False) if self.args.tqdm else enumerate(loader)
         
         for batch_idx, batch in iterator:
-            loss = self.train_step(batch) if is_train else self.val_step(batch)
+            loss = self.train_step(batch) if self.model.training else self.val_step(batch)
             loss_.update(loss.item())
             # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
             # if not, you'll need to define what these mean for your model and loss.
@@ -133,16 +132,18 @@ class Trainer:
                 break
 
             # check on validation set periodically during the training epoch 
-            if is_train and self.args.val_interval is not None and self.iterations % self.args.val_interval == 0:
+            if self.model.training and self.args.val_interval is not None and self.iterations % self.args.val_interval == 0:
+                self.model.eval()
                 for batch in val_loader:
                     val_loss = self.val_step(batch)
                     self.update_best(val_loss)
+                self.model.train()
 
             if self.args.tqdm:
-                desc = self.model.description(self.epoch, batch_idx, mode, loss_, prec1_, prec5_, None)
+                desc = self.model.description(self.epoch, batch_idx, loss_, prec1_, prec5_, None)
                 iterator.set_description(desc)
 
-            if is_train and (self.iterations % self.args.log_every == 0):
+            if self.model.training and (self.iterations % self.args.log_every == 0):
                 self.logger.info(
                     f"[{mode}] epoch={self.epoch} step={self.iterations} "
                     f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
@@ -152,7 +153,7 @@ class Trainer:
             f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
         )
             
-        self.model.post_epoch_hook(self.epoch, is_train, loss)
+        self.model.post_epoch_hook(self.epoch, self.model.training, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
     
     def should_stop(self): 
@@ -223,11 +224,13 @@ class Trainer:
 
             while True:
                 self.epoch += 1 
-                train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, True, val_loader)
+                self.model.train()
+                train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, val_loader)
 
                 if val_loader:
                     with ch.no_grad():
-                        val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader, False)
+                        self.model.eval()
+                        val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
                         self.update_best(val_loss)
 
                 if self.stop_reason in STOP_REASONS: 
@@ -279,7 +282,8 @@ class Trainer:
             store.add_table('eval', consts.EVAL_LOGS_SCHEMA)
 
         writer = store.tensorboard if store else None
-        test_prec1, test_loss = self.run_epoch(loader, is_train=False)
+        self.model.eval()
+        test_prec1, test_loss = self.run_epoch(loader)
 
         if store:
             log_info = {

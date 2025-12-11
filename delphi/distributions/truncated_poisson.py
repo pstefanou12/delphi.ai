@@ -1,5 +1,5 @@
 """
-Truncated Boolean Product Distributions.
+Truncated Exponential Distribution.
 """
 
 import torch as ch
@@ -12,15 +12,15 @@ import logging
 from .distributions import distributions
 from ..delphi_logger import delphiLogger
 from ..utils.datasets import TruncatedExponentialDistributionDataset, make_train_and_val_distr
-from ..grad import TruncatedExponentialFamilyDistributionNLL, ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat
+from ..grad import TruncatedExponentialFamilyDistributionNLL, ExponentialFamilyPoisson, calc_poiss_suff_stat 
 from ..trainer import Trainer
 from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_BOOL_PROD_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
 
 
-class TruncatedBooleanProduct(distributions):
+class TruncatedPoisson(distributions):
     """
-    Model for truncated boolean product distributions to be passed into trainer.
+    Model for truncated exponential distributions to be passed into trainer.
     """
     def __init__(self, 
                 args: Parameters,
@@ -32,7 +32,7 @@ class TruncatedBooleanProduct(distributions):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_EXP_DEFAULTS)
         
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, logger)
@@ -41,16 +41,15 @@ class TruncatedBooleanProduct(distributions):
         self.alpha = alpha
         self.dims = dims
 
-        del self.criterion
         self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
 
         self.emp_p = None
         self.S = None
 
-        self.best_p, self.best_loss = None, None
-        self.final_p, self.final_loss = None, None
-        self.ema_p = None
-        self.avg_p = None
+        self.best_lambda, self.best_loss = None, None
+        self.final_lambda, self.final_loss = None, None
+        self.ema_lambda = None
+        self.avg_lambda = None
 
     def fit(self, S: Tensor):
         """
@@ -60,11 +59,11 @@ class TruncatedBooleanProduct(distributions):
         assert self.args.batch_size <= self.args.num_samples, "batch size must be smaller than or equal to the number of samples being sampled"
         
         self.S = S
-        self.criterion_params = [self.phi, self.dims, ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat, self.args.num_samples, self.args.eps]
+        self.criterion_params = [self.phi, self.dims, ExponentialFamilyPoisson, calc_poiss_suff_stat, self.args.num_samples, self.args.eps]
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
                                                                         self.S, 
                                                                         TruncatedExponentialDistributionDataset, 
-                                                                        {'calc_suff_stat': calc_bool_prod_suff_stat})
+                                                                        {'calc_suff_stat': calc_poiss_suff_stat})
         self.trainer = Trainer(
             self,
             self.args, 
@@ -74,15 +73,14 @@ class TruncatedBooleanProduct(distributions):
         return self
     
     def _calc_emp_model(self): 
-        # percentage of points in S that have label 1
         self.S = self.train_loader_.dataset.S
-        self.emp_p = self.S.mean(0)
-        self.emp_z = ch.log(self.emp_p / (1 - self.emp_p))
+        self.emp_lambda_ = self.S.mean(0)
+        self.emp_theta = ch.log(self.emp_lambda_)
 
     def pretrain_hook(self):
         self._calc_emp_model()
         self.radius = self.args.r * math.log((1 / self.alpha) ** .5)
-        self.register_parameter('z', nn.Parameter(self.emp_z))
+        self.register_parameter('theta', nn.Parameter(self.emp_theta))
 
     def forward(self, x):
         """
@@ -91,7 +89,7 @@ class TruncatedBooleanProduct(distributions):
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        return self.z 
+        return self.theta
 
     def step_post_hook(self, 
                        optimizer, 
@@ -103,38 +101,41 @@ class TruncatedBooleanProduct(distributions):
         Args:
 
         """
-        prob_diff = (self.z - self.emp_z)[...,None].norm()
-        if prob_diff > self.radius: 
-            prob_diff = prob_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
-            self.z.copy_(self.emp_z + prob_diff)
+        theta_diff = (self.theta - self.emp_theta)[...,None].norm()
+        if theta_diff > self.radius: 
+            theta_diff = theta_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+            self.theta.copy_(self.emp_theta + theta_diff)
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # remove distribution from the computation graph
-        self.best_p, self.best_loss = self._reparameterize(self.trainer.best_params), self.trainer.best_loss
-        self.final_p, self.final_loss = self._reparameterize(self.trainer.final_params), self.trainer.final_loss 
-        self.ema_p = self._reparameterize(self.trainer.ema_params)
-        self.avg_p = self._reparameterize(self.trainer.avg_params)
+        self.best_lambda, self.best_loss = self._reparameterize(self.trainer.best_params), self.trainer.best_loss
+        self.final_lambda, self.final_loss = self._reparameterize(self.trainer.final_params), self.trainer.final_loss 
+        self.ema_lambda = self._reparameterize(self.trainer.ema_params)
+        self.avg_lambda = self._reparameterize(self.trainer.avg_params)
 
     def _reparameterize(self, 
                         theta): 
-        return ch.exp(theta) / (1 + ch.exp(theta))
+        return ch.exp(theta)
     
     @property
-    def best_p_(self): 
-        return self.best_p
+    def best_lambda_(self): 
+        return self.best_lambda
     
     @property
-    def final_p_(self): 
-        return self.final_p
+    def final_lambda_(self): 
+        return self.final_lambda
     
     @property
-    def ema_p_(self): 
-        return self.ema_p
+    def ema_lambda_(self): 
+        return self.ema_lambda
     
     @property
-    def avg_p_(self): 
-        return self.avg_p
+    def avg_lambda_(self): 
+        return self.avg_lambda
+    
+    def __str__(self): 
+        return "truncated poisson distribution"
 
 
 

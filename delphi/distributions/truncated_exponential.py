@@ -41,7 +41,6 @@ class TruncatedExponential(distributions):
         self.alpha = alpha
         self.dims = dims
 
-        del self.criterion
         self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
 
         self.emp_p = None
@@ -78,12 +77,12 @@ class TruncatedExponential(distributions):
         self.emp_lambda_ = 1.0/self.S.mean(0)
         self.emp_theta = -self.emp_lambda_
 
-    def pretrain_hook(self, train_loader):
+    def pretrain_hook(self):
         self._calc_emp_model()
         self.radius = self.args.r * math.log((1 / self.alpha) ** .5)
         self.register_parameter('theta', nn.Parameter(self.emp_theta))
 
-    def __call__(self, batch, targ):
+    def forward(self, x):
         """
         Training step for defined model.
         Args: 
@@ -134,6 +133,9 @@ class TruncatedExponential(distributions):
     @property
     def avg_lambda_(self): 
         return self.avg_lambda
+    
+    def __str__(self): 
+        return "truncated exponential distribution"
 
 
 

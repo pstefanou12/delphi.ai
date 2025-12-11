@@ -68,8 +68,7 @@ class SoftmaxRegression(LinearModel):
 
         return self
 
-    def pretrain_hook(self,
-                      train_loader: ch.utils.data.DataLoader):
+    def pretrain_hook(self):
         weight = ch.nn.Parameter(ch.randn(self.k, self.d))
         self.register_parameter("weight", weight)
         

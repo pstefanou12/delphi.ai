@@ -87,7 +87,7 @@ class delphi(ch.nn.Module):
         assert checkpoint is None or isinstance(checkpoint, dict), "prorvided checkpoint is type: {}. expecting checkpoint dictionary".format(type(checkpoint))
         self.checkpoint = checkpoint
 
-        self.criterion = ch.nn.CrossEntropyLoss()
+        self.criterion = None
         self.criterion_params = []
         self.model = None
         self.optimizer = None 
@@ -137,7 +137,7 @@ class delphi(ch.nn.Module):
 
     def _create_sgd(self, params):
         """Create SGD optimizer with all PyTorch parameters"""
-        check_and_fill_args(self.args, SGD_DEFAULTS)
+        # check_and_fill_args(self.args, SGD_DEFAULTS)
         config = {
             'lr': self.args.lr,
             'momentum': getattr(self.args, 'momentum', 0),
@@ -315,30 +315,26 @@ class delphi(ch.nn.Module):
         self.val_losses = training_state.get('val_losses', [])
         self.logger.info(f"✓ Resuming from epoch {self.start_epoch}")
 
-    def pretrain_hook(self, train_loader) -> None:
+    def pretrain_hook(self) -> None:
         '''
         Hook called before training procedure begins.
         '''
         pass 
 
-    def __call__(self, inp, targ=None) -> ch.Tensor:
-        '''
-        Forward pass for the model during training/evaluation.
-        Args: 
-            batch (Iterable) : iterable of inputs that 
-        Returns: 
-            list with loss, top 1 accuracy, and top 5 accuracy
-        '''
-        pass 
-
-    def step_pre_hook(lself, optimizer, args, kwargs) -> None: 
+    def step_pre_hook(self, 
+                      optimizer, 
+                      args, 
+                      kwargs) -> None: 
         '''
         Hook called after .backward call, but before taking a step 
         with the optimizer. 
         ''' 
         pass
 
-    def step_post_hook(self, optimizer, args, kwargs) -> None:
+    def step_post_hook(self, 
+                       optimizer, 
+                       args, 
+                       kwargs) -> None:
         '''
         Iteration hook for defined model. Method is called after each 
         training update.
@@ -364,13 +360,13 @@ class delphi(ch.nn.Module):
         '''
         pass
 
-    def description(self, epoch, i, loop_msg, loss_, prec1_, prec5_, reg_term):
+    def description(self, epoch, i, loss_, prec1_, prec5_, reg_term):
         '''
         Returns string description for model at each iteration.
         '''
         return ('{2} Epoch:{0} | Loss {loss.avg:.4f} | '
                 'Prec1: {top1_acc:.3f} | Prec5: {top5_acc:.3f} | '
-                'Reg term: {reg} ||'.format( epoch, i, loop_msg, 
+                'Reg term: {reg} ||'.format( epoch, i, self.model.training, 
                 loss=loss_, top1_acc=float(prec1_.avg), top5_acc=float(prec5_.avg), reg=float(reg_term)))
 
     def regularize(self, batch) -> ch.Tensor:

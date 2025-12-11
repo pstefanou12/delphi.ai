@@ -47,7 +47,7 @@ class UnknownTruncationMultivariateNormal(TruncatedMultivariateNormal):
         self.criterion_params = [self.phi, self.exp_h, self.dims]
         while True:
             try:
-                self.trainer = Trainer(self, self.args) 
+                self.trainer = Trainer(self, self.args, self.logger) 
                 self.trainer.train_model(self.train_loader_, self.val_loader_)
                 return self
             except PSDError as psd:

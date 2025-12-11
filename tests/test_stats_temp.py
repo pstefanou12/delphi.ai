@@ -73,9 +73,6 @@ class GumbelCEModel(stats.LinearModel):
         '''
         super().__init__(args, d=d, k=k)
 
-    def calc_emp_model(self): 
-        pass    
-
     def pretrain_hook(self):
         self.model.data = self.weight
         self.model.requires_grad = True

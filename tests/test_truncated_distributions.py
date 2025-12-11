@@ -2,7 +2,7 @@
 
 import torch as ch
 from torch import Tensor
-from torch.distributions import MultivariateNormal, Uniform, Bernoulli, Exponential
+from torch.distributions import MultivariateNormal, Uniform, Bernoulli, Exponential, Poisson
 from torch.distributions.kl import kl_divergence
 
 from delphi import distributions 
@@ -786,6 +786,177 @@ def test_truncated_exponential_20_dims():
     # check performance
     kl_truncated = kl_divergence(best_m, dist).sum()
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_poisson():
+    dims = 1
+    lambda_ = ch.Tensor([1])
+    print(f'true lambda: {lambda_}')
+    dist = Poisson(lambda_)
+
+    def phi(z):
+        return z > 1
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
+    
+    truncated = distributions.TruncatedPoisson(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Poisson(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Poisson(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Poisson(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_poisson_20_dims():
+    dims = 2
+    lambda_ = ch.Tensor([1.0, 2.0])
+    print(f'true lambda: {lambda_}')
+    dist = Poisson(lambda_)
+
+    def phi(z):
+        return z[:,0] > .25
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
+    
+    truncated = distributions.TruncatedPoisson(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Poisson(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Poisson(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Poisson(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_poisson_20_dims():
+    dims = 20
+    lambda_ = 2*ch.ones(20,)
+    print(f'true lambda: {lambda_}')
+    dist = Poisson(lambda_)
+
+    def phi(z):
+        return z[:,0] > 1
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 10,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
+    
+    truncated = distributions.TruncatedPoisson(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Poisson(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Poisson(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Poisson(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f'empirical kl divergence: {kl_emp.item():.3f}')
     print(f'truncated kl divergence: {kl_truncated.item():.3f}')
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'

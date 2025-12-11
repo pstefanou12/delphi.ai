@@ -3,4 +3,5 @@ from .truncated_multivariate_normal import TruncatedMultivariateNormal
 from .unknown_truncated_normal import UnknownTruncationNormal 
 from .unknown_truncated_multivariate_normal import  UnknownTruncationMultivariateNormal, Exp_h
 from .truncated_boolean_product import TruncatedBooleanProduct
-from .truncated_exponential import TruncatedExponential 
+from .truncated_exponential import TruncatedExponential
+from .truncated_poisson import TruncatedPoisson 
