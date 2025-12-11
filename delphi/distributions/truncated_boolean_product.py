@@ -1,124 +1,141 @@
 """
-Censored multivariate normal distribution with oracle access (ie. known truncation set).
+Truncated Boolean Product Distributions.
 """
 
 import torch as ch
 from torch import Tensor
-from torch.distributions import Bernoulli
-from torch.utils.data import TensorDataset
-import cox
+import torch.nn as nn
+from typing import Callable
 import math
 
-from .. import delphi
 from .distributions import distributions
-from ..utils.datasets import make_train_and_val_distr
-from ..grad import TruncatedBooleanProductNLL
+from ..delphi_logger import delphiLogger
+from ..utils.datasets import TruncatedExponentialDistributionDataset, make_train_and_val_distr
+from ..grad import TruncatedExponentialDistributionNLL, delphiBooleanProduct, calc_bool_prod_suff_stat
 from ..trainer import Trainer
 from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRAINER_DEFAULTS, DELPHI_DEFAULTS, TRUNC_BOOL_PROD_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRUNC_BOOL_PROD_DEFAULTS
 
 
-class TruncatedBernoulli(distributions):
+class TruncatedBooleanProduct(distributions):
     """
-    Truncated boolean product distribution class.
+    Model for truncated boolean product distributions to be passed into trainer.
     """
-    def __init__(self,
-            args: Parameters,
-            store: cox.store.Store=None):
+    def __init__(self, 
+                args: Parameters,
+                phi: Callable, 
+                alpha: float,
+                dims: int,): 
         """
+        Args: 
+            args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
-        super(TruncatedBernoulli).__init__()
-        # instance variables
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        assert store is None or isinstance(store, cox.store.Store), "store is type: {}. expecting cox.store.Store.".format(type(store))
-        self.store = store 
-        self.trunc_bool_prod = None
-        # algorithm hyperparameters
-        TRUNC_BOOL_PROD_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_BOOL_PROD_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
+        
+        logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+        super().__init__(args, logger)
+
+        self.phi = phi
+        self.alpha = alpha
+        self.dims = dims
+
+        del self.criterion
+        self.criterion = TruncatedExponentialDistributionNLL.apply
+
+        self.emp_p = None
+        self.S = None
+
+        self.best_p, self.best_loss = None, None
+        self.final_p, self.final_loss = None, None
+        self.ema_p = None
+        self.avg_p = None
 
     def fit(self, S: Tensor):
         """
         """
         assert isinstance(S, Tensor), "S is type: {}. expected type torch.Tensor.".format(type(S))
         assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
+        assert self.args.batch_size <= self.args.num_samples, "batch size must be smaller than or equal to the number of samples being sampled"
         
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, S, TensorDataset)
-        self.trunc_bool = TruncatedBooleanProductDistribution(self.args, self.train_loader_.dataset)
-        # run PGD to predict actual estimates
-        trainer = Trainer(self.trunc_bool, self.args, store=self.store)
-        trainer.train_model((self.train_loader_, self.val_loader_))
+        self.S = S
+        self.criterion_params = [self.phi, self.dims, delphiBooleanProduct, calc_bool_prod_suff_stat, self.args.num_samples, self.args.eps]
+        self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
+                                                                        self.S, 
+                                                                        TruncatedExponentialDistributionDataset, 
+                                                                        {'calc_suff_stat': calc_bool_prod_suff_stat})
+        self.trainer = Trainer(
+            self,
+            self.args, 
+            self.logger
+        )
+        self.trainer.train_model(self.train_loader_, self.val_loader_)
         return self
     
-    @property 
-    def probs_(self): 
-        """
-        Returns the probability vector for the d dimensional Bernoulli distribution. 
-        """
-        return self.trunc_bool.model.probs.clone()
-    
-    @property
-    def logits_(self): 
-        """
-        Returns the logits vector for the d dimensional Bernoulli distribution.
-        """
-        return self.trunc_bool.model.logits.clone()
-
-
-class TruncatedBooleanProductDistribution(delphi.delphi):
-    """
-    Model for truncated boolean product distributions to be passed into trainer.
-    """
-    def __init__(self, args, train_ds): 
-        """
-        Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
-        super().__init__(args)
-        self.train_ds = train_ds
-        self.model = None
-        self.emp_p, self.emp_z = None, None
-        # initialize empirical estimates
-        self.calc_emp_model()
-
-    def pretrain_hook(self):
-        self.radius = self.args.r * math.log((1 / self.args.alpha) ** .5)
-        # initialize empirical model 
-        self.model = Bernoulli(logits=self.emp_z)
-        self.model.logits.requires_grad = True
-        self.params = [self.model.logits]
-    
-    def calc_emp_model(self): 
+    def _calc_emp_model(self): 
         # percentage of points in S that have label 1
-        self.emp_p = self.train_ds.tensors[0].mean(0)
+        self.S = self.train_loader_.dataset.S
+        self.emp_p = self.S.mean(0)
         self.emp_z = ch.log(self.emp_p / (1 - self.emp_p))
 
-    def __call__(self, batch):
+    def pretrain_hook(self, train_loader):
+        self._calc_emp_model()
+        self.radius = self.args.r * math.log((1 / self.alpha) ** .5)
+
+        self.register_parameter('z', nn.Parameter(self.emp_z))
+
+    def __call__(self, batch, targ):
         """
         Training step for defined model.
         Args: 
             i (int) : gradient step or epoch number
             batch (Iterable) : iterable of inputs that 
         """
-        loss = TruncatedBooleanProductNLL.apply(self.model.logits, *batch, self.args.phi, self.args.num_samples)
-        return loss, None, None
+        return self.z 
 
-    def post_step_hook(self, i, loop_type, loss, prec1, prec5, batch):
+    def step_post_hook(self, 
+                       optimizer, 
+                       args, 
+                       kwargs) -> None:
         """
         Iteration hook for defined model. Method is called after each 
         training update.
         Args:
-            loop_type (str) : "train" or "val"; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            prec1 (float) : accuracy for top prediction
-            prec5 (float) : accuracy for top-5 predictions
+
         """
-        logit_diff = (self.model.logits - self.emp_z)[...,None]
-        logit_diff = logit_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
-        self.model.logits.data = self.emp_z + logit_diff
+        logit_diff = (self.z - self.emp_z)[...,None].norm()
+        # import ipdb; ipdb.set_trace()
+        if logit_diff > self.radius: 
+            logit_diff = logit_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+            self.z.copy_(self.emp_z + logit_diff)
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # remove distribution from the computation graph
-        self.model.logits.requires_grad = False
+        self.best_p, self.best_loss = self._reparameterize(self.trainer.best_params), self.trainer.best_loss
+        self.final_p, self.final_loss = self._reparameterize(self.trainer.final_params), self.trainer.final_loss 
+        self.ema_p = self._reparameterize(self.trainer.ema_params)
+        self.avg_p = self._reparameterize(self.trainer.avg_params)
+
+    def _reparameterize(self, 
+                        theta): 
+        return ch.exp(theta) / (1 + ch.exp(theta))
+    
+    @property
+    def best_p_(self): 
+        return self.best_p
+    
+    @property
+    def final_p_(self): 
+        return self.final_p
+    
+    @property
+    def ema_p_(self): 
+        return self.ema_p
+    
+    @property
+    def avg_p_(self): 
+        return self.avg_p
+
+
+

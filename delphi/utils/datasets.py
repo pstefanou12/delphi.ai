@@ -351,12 +351,14 @@ def make_train_and_val_distr(args, S, ds, kwargs={}):
     return train_loader, val_loader
 
 
-class TruncatedNormalDataset(ch.utils.data.Dataset):
+class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
     def __init__(self, 
-                 S):
+                 S, 
+                 calc_suff_stat):
         self.S = S 
+        self.calc_suff_stat = calc_suff_stat
         # precalculate dataset score, so that it doesn't need to be computed within gradient
-        self.S_grad = calc_multi_norm_suff_stat(S)
+        self.S_grad = self.calc_suff_stat(S)
         self.data = self.S
         self.data = ch.cat([self.S, self.S_grad], dim=1)
 

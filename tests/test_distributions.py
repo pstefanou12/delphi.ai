@@ -2,11 +2,10 @@
 
 import torch as ch
 from torch import Tensor
-from torch.distributions import MultivariateNormal, Uniform
+from torch.distributions import MultivariateNormal, Uniform, Bernoulli
 from torch.distributions.kl import kl_divergence
 from torch.distributions.multivariate_normal import _batch_mahalanobis
 from torch.linalg import cholesky 
-from scipy.linalg import sqrtm
 
 from delphi import distributions 
 from delphi import oracle
@@ -570,8 +569,139 @@ def test_unknown_truncation_multivariate_normal():
     self.assertTrue(kl_truncated <= 1e-1)  
 
 
-def test_truncated_bernoulli(): 
-    pass     
+def test_truncated_boolean_product_2_dims():
+    dims = 2
+    p = ch.Tensor([.5, .75])
+    print(f'true p: {p}')
+    dist = Bernoulli(p)
+
+    def phi(z):
+        return ~((z[:,0] == 1) * (z[:,1] == 1))
+
+    num_accepted, num_sampled = 0, 0
+    num_samples = 10000
+
+    S = []
+    while num_accepted < num_samples: 
+        samples = dist.sample([num_samples,])
+        indices = phi(samples).nonzero()[:,0]
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
+    emp_p = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num total samples: {samples.size(0)}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_p: {emp_p}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
+    
+    truncated = distributions.TruncatedBooleanProduct(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+
+    best_p = truncated.best_p_ 
+    print(f'best p:\n {best_p.T}')
+    best_m = Bernoulli(best_p)
+
+    ema_p = truncated.ema_p_ 
+    print(f'ema p:\n {ema_p.T}')
+    ema_m = Bernoulli(ema_p)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_p = truncated.avg_p_
+    print(f'avg p:\n {avg_p.T}')
+    avg_m = Bernoulli(avg_p)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_boolean_product_20_dims():
+    dims = 20
+    p = ch.Tensor([.5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8])
+    print(f'true p: {p}')
+    dist = Bernoulli(p)
+
+    def phi(z):
+        return ~((z[:,0] == 1) * (z[:,1] == 1))
+
+    num_accepted, num_sampled = 0, 0
+    num_samples = 10000
+
+    S = []
+    while num_accepted < num_samples: 
+        samples = dist.sample([num_samples,])
+        indices = phi(samples).nonzero()[:,0]
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
+    emp_p = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num total samples: {samples.size(0)}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_p: {emp_p}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-1,
+                }) 
+    
+    truncated = distributions.TruncatedBooleanProduct(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+
+    best_p = truncated.best_p_ 
+    print(f'best p:\n {best_p.T}')
+    best_m = Bernoulli(best_p)
+
+    ema_p = truncated.ema_p_ 
+    print(f'ema p:\n {ema_p.T}')
+    ema_m = Bernoulli(ema_p)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_p = truncated.avg_p_
+    print(f'avg p:\n {avg_p.T}')
+    avg_m = Bernoulli(avg_p)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
 
 
 def generate_sphere_truncation(samples, covariance_matrix, target_alpha=0.5):

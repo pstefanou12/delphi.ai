@@ -12,8 +12,8 @@ import logging
 
 from .distributions import distributions
 from ..delphi_logger import delphiLogger
-from ..utils.datasets import TruncatedNormalDataset, make_train_and_val_distr
-from ..grad import TruncatedMultivariateNormalNLL, delphiMultivariateNormal, calc_multi_norm_suff_stat 
+from ..utils.datasets import TruncatedExponentialDistributionDataset, make_train_and_val_distr
+from ..grad import TruncatedExponentialDistributionNLL, delphiMultivariateNormal, calc_multi_norm_suff_stat 
 from ..trainer import Trainer
 from ..utils.helpers import Parameters, cov
 from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
@@ -44,7 +44,7 @@ class TruncatedMultivariateNormal(distributions):
         self.covariance_matrix = covariance_matrix
         
         del self.criterion
-        self.criterion = TruncatedMultivariateNormalNLL.apply
+        self.criterion = TruncatedExponentialDistributionNLL.apply
 
         self.emp_loc, self.emp_covariance_matrix = None, None
         self.S = None
@@ -60,11 +60,11 @@ class TruncatedMultivariateNormal(distributions):
         assert self.args.batch_size <= self.args.num_samples, "batch size must be smaller than or equal to the number of samples being sampled"
         
         self.S = S
-        M = MultivariateNormal(ch.zeros(self.dims), ch.eye(self.dims))
         self.criterion_params = [self.phi, self.dims, delphiMultivariateNormal, calc_multi_norm_suff_stat, self.args.num_samples, self.args.eps]
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
                                                                         self.S, 
-                                                                        TruncatedNormalDataset)
+                                                                        TruncatedExponentialDistributionDataset, 
+                                                                        {'calc_suff_stat': calc_multi_norm_suff_stat})
         self.trainer = Trainer(
             self,
             self.args, 

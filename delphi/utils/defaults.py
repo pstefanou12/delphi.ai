@@ -198,7 +198,7 @@ TRUNC_BOOL_PROD_DEFAULTS = {
         'tol': (float, 1e-1),
         'workers': (int, 0),
         'num_samples': (int, 10),
-        'step_lr_gamma': 1.0,
+        'step_lr_gamma': (float, 1.0),
 }
 
 TRUNC_LQR_DEFAULTS =  { 

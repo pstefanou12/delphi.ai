@@ -8,12 +8,12 @@ from torch.nn import Softmax
 from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
 import math
 
-from .utils.helpers import logistic, is_psd
+from .utils.helpers import logistic
 
 softmax = Softmax(dim=1)
 gumbel = Gumbel(0, 1)
 
-class TruncatedMultivariateNormalNLL(ch.autograd.Function):
+class TruncatedExponentialDistributionNLL(ch.autograd.Function):
     """
     Computes the truncated negative population log likelihood for truncated multivariate normal distribution with known truncation. 
     Function calculates the truncated negative log likelihood in the forward method and then calculates the 
@@ -30,16 +30,14 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
                 dims, 
                 dist,
                 calc_suff_stat, 
-                # sampler=None,
                 num_samples=1000, 
                 eps=1e-12):
         S = data[:, :dims]
         S_suff_stat = data[:, dims:]
 
         D = dist(theta, dims)
-        log_prob = D.log_prob(S)
+        log_prob = D.log_prob(S).sum(-1)
 
-        z = ch.Tensor([])
         z = []
         num_sampled = 0
         num_accepted = 0
@@ -76,6 +74,8 @@ class TruncatedMultivariateNormalNLL(ch.autograd.Function):
 def calc_multi_norm_suff_stat(x):
     return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
+def calc_bool_prod_suff_stat(x): 
+    return x
 
 class delphiMultivariateNormal(MultivariateNormal):
 
@@ -87,6 +87,15 @@ class delphiMultivariateNormal(MultivariateNormal):
         covariance_matrix = ch.inverse(T.view(self.dims, self.dims))
         mu = (covariance_matrix @ v).view(self.dims)   
         super().__init__(mu, covariance_matrix) 
+
+class delphiBooleanProduct(Bernoulli):
+
+    def __init__(self, 
+                 theta: ch.Tensor, 
+                 dims: int):
+        self.dims = dims
+        p = ch.exp(theta) / (1 + ch.exp(theta))
+        super().__init__(p) 
 
     
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
