@@ -2,54 +2,43 @@
 
 import torch as ch
 from torch import Tensor
-from torch.distributions import MultivariateNormal, Uniform, Bernoulli
+from torch.distributions import MultivariateNormal, Uniform, Bernoulli, Exponential
 from torch.distributions.kl import kl_divergence
-from torch.distributions.multivariate_normal import _batch_mahalanobis
-from torch.linalg import cholesky 
 
 from delphi import distributions 
 from delphi import oracle
-from delphi.utils.helpers import Parameters, cov, is_psd
+from delphi.utils.helpers import Parameters, cov 
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
+def generate_truncated_dataset(dist, phi, num_samples): 
+    num_accepted, num_sampled = 0, 0
 
-class calc_multivariate_normal_sufficient_statistieUnNorm_Sphere(oracle.oracle):
-    """
-    Spherical truncation
-    """
-    def __init__(self, covariance_matrix, centroid, radius, loc, cov):
-        self._unbroadcasted_scale_tril = cholesky(covariance_matrix)
-        self.centroid = centroid
-        self.radius = radius
-        self.loc, self.cov = loc, cov
-        self.scale = ch.linalg.cholesky(cov)
+    S = []
+    while num_accepted < num_samples: 
+        samples = dist.sample([num_samples,])
+        indices = phi(samples).nonzero()[:,0]
+        S.append(samples[indices])
+        num_accepted +=  indices.size(0)
+        num_sampled += num_samples
+    S = ch.cat(S)[:num_samples]
+    alpha = num_accepted / num_sampled
 
-    def __call__(self, x):
-        x_rescale = x @ self.scale.T + self.loc
-        diff = x_rescale - self.centroid
-        dist = ch.sqrt(_batch_mahalanobis(self._unbroadcasted_scale_tril, diff))
-        return (dist < self.radius).float().flatten()
+    return S, alpha
 
-    def __str__(self): 
-        return 'sphere'
 
 # right truncated normal distribution with known truncation and known variance
 def test_truncated_normal_known_variance():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([1000,])
-    print(f'num total samples: {samples.size(0)}')
-    # generate ground-truth data
     phi = oracle.Left_Distribution(Tensor([0.0]))
-    # truncate
-    indices = phi(samples).nonzero()[:,0]
-    S = samples[indices]
-    print(f'num truncated samples: {S.size(0)}')
-    alpha = S.size(0) / samples.size(0)
+    num_samples = 1000
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
+    print(f'alpha: {alpha}')
+    print(f'num_samples: {num_samples}')
+
     emp_loc = S.mean(0)
     print(f"emp loc:\n {emp_loc}")
     print(f"known variance:\n {ch.eye(1)}")
-    
     S_std_norm = (S - emp_loc) 
     phi_std_norm = oracle.Left_Distribution((phi.left - emp_loc).flatten())
 
@@ -87,15 +76,13 @@ def test_truncated_normal_known_variance():
 # right truncated normal distribution with known truncation
 def test_truncated_normal():
     M = MultivariateNormal(ch.zeros(1), ch.eye(1)) 
-    samples = M.rsample([2000,])
-    print(f'num total samples: {samples.size(0)}')
-    # generate ground-truth data
+
     phi = oracle.Left_Distribution(Tensor([0.0]))
-    # truncate
-    indices = phi(samples).nonzero()[:,0]
-    S = samples[indices]
-    print(f'num truncated samples: {S.size(0)}')
-    alpha = S.size(0) / samples.size(0)
+    num_samples = 1000
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
+    print(f'alpha: {alpha}')
+    print(f'num_samples: {num_samples}')
+
     emp_loc = S.mean(0)
     print(f"emp loc:\n {emp_loc}")
     emp_var = S.var(0)[...,None]
@@ -105,13 +92,9 @@ def test_truncated_normal():
     S_std_norm = (S - emp_loc) / emp_scale
     phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
 
-    from delphi.grad import Sampler
-    sampler = Sampler()
-
-    # train algorithm
     args = Parameters({
                         'iterations': 5000, 
-                        'batch_size': 1, 
+                        'batch_size': 10, 
                         'trials': 1, 
                         'verbose': True,
                         'lr': 1e-2,
@@ -123,8 +106,7 @@ def test_truncated_normal():
     truncated = distributions.TruncatedNormal(args,
                                               phi_std_norm, 
                                               alpha, 
-                                              1, 
-                                              sampler=sampler)
+                                              1)
     truncated.fit(S_std_norm)
     # rescale distribution
     rescale_best_loc = truncated.best_loc_ * emp_scale + emp_loc
@@ -153,22 +135,14 @@ def test_truncated_normal():
 def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
-    samples = M.rsample([5000,])
 
-    from delphi.grad import Sampler
-    sampler = Sampler()
-
+    num_samples = 5000
     phi = lambda x: x[:, 0] > 0
     # generate ground-truth data
-    alpha = 0
-    while alpha < .3: 
-        indices = phi(samples).nonzero()[:,0]
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
 
     print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
-    print(f'num truncated samples: {S.size(0)}')
+    print(f'num_samples: {num_samples}')
 
     emp_loc = S.mean(0, keepdim=True)
     print(f'empirical mean:\n {emp_loc.T}')
@@ -186,16 +160,27 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
                                                           phi, 
                                                           alpha, 
                                                           dims,
-                                                          covariance_matrix=M.covariance_matrix, 
-                                                          sampler=sampler)
+                                                          covariance_matrix=M.covariance_matrix)
+
     truncated.fit(S)
-    # rescale distribution
-    rescale_loc = truncated.best_loc_
-    print(f'pred mean:\n {rescale_loc.T}')
-    print(f'pred covariance matrix:\n {M.covariance_matrix}')
-    m = MultivariateNormal(rescale_loc, truncated.best_covariance_matrix_)
-    # check performance
-    kl_truncated = kl_divergence(m, M)
+
+    best_loc = truncated.best_loc_ 
+    print(f'best loc:\n {best_loc.T}')
+    best_m = MultivariateNormal(best_loc, M.covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+
+    ema_loc = truncated.ema_loc_ 
+    print(f'ema loc:\n {ema_loc.T}')
+    ema_m = MultivariateNormal(ema_loc, M.covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_loc = truncated.avg_loc_ 
+    print(f'avg loc:\n {avg_loc.T}')
+    avg_m = MultivariateNormal(avg_loc, M.covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f'avg kl divergence: {avg_kl_div}')
+
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f'empirical kl divergence: {kl_emp.item():.3f}')
     print(f'truncated kl divergence: {kl_truncated.item():.3f}')
@@ -205,23 +190,11 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
 def test_truncated_2_dim_multivariate_normal():
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims)) 
-
-    phi = lambda x: x[:, 0] > 0
-    # generate ground-truth data
-    num_accepted, num_sampled = 0, 0
     num_samples = 1000
-
-    S = []
-    while num_accepted < num_samples: 
-        samples = M.rsample([num_samples,])
-        indices = phi(samples).nonzero()[:,0]
-        S.append(samples[indices])
-        num_accepted +=  indices.size(0)
-        num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
-    alpha = num_accepted / num_sampled
+    phi = lambda x: x[:, 0] > 0
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
+    
     print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
@@ -236,9 +209,6 @@ def test_truncated_2_dim_multivariate_normal():
     phi_std_norm = lambda x: x[:,0] > (0 - emp_loc[0,0]) / ch.sqrt(emp_var[0])
     S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
-    from delphi.grad import Sampler
-    sampler = Sampler()
-
     # train algorithm
     args = Parameters({
                         'iterations': 5000, 
@@ -248,13 +218,11 @@ def test_truncated_2_dim_multivariate_normal():
                         'lr': 1e-1,
                         'optimizer': 'sgd',
                         'covariance_matrix_lr': 1e-2,
-                        # 'momentum': .9,
                     }) 
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi_std_norm, 
                                                           alpha, 
-                                                          dims,
-                                                          sampler=sampler)
+                                                          dims)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     best_covariance_matrix = emp_sigma_diag @ truncated.best_covariance_matrix_ @ emp_sigma_diag 
@@ -291,25 +259,14 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
 
     phi = lambda x: x[:, 0] > 0
-    num_accepted, num_sampled = 0, 0
     num_samples = 1000
-
-    S = []
-    while num_accepted < num_samples: 
-        samples = M.rsample([num_samples,])
-        indices = phi(samples).nonzero()[:,0]
-        S.append(samples[indices])
-        num_accepted +=  indices.size(0)
-        num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
-    alpha = num_accepted / num_sampled
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
     print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
     emp_covariance_matrix = cov(S)
-    emp_var = samples.var(0)
+    emp_var = M.covariance_matrix.diag()
     S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
     print(f'empicial mean:\n {emp_loc.T}')
@@ -317,9 +274,6 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
 
     phi_std_norm = lambda x: x[:,0] > ((0 - emp_loc[0,0]) / ch.sqrt(emp_var[0]))
     S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
-
-    from delphi.grad import Sampler
-    sampler = Sampler()
 
     # train algorithm
     args = Parameters({
@@ -336,8 +290,7 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
                                                           phi_std_norm, 
                                                           alpha, 
                                                           dims,
-                                                          covariance_matrix=scaled_cov, 
-                                                          sampler=sampler)
+                                                          covariance_matrix=scaled_cov)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f'best loc:\n {best_loc.T}')
@@ -368,20 +321,9 @@ def test_truncated_10_dim_multivariate_normal():
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims)) 
 
     phi = lambda x: x[:, 0] > 0
-    num_accepted, num_sampled = 0, 0
-    num_samples = 10000
-
-    S = []
-    while num_accepted < num_samples: 
-        samples = M.rsample([num_samples,])
-        indices = phi(samples).nonzero()[:,0]
-        S.append(samples[indices])
-        num_accepted +=  indices.size(0)
-        num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
-    alpha = num_accepted / num_sampled
+    num_samples = 5000
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
     print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
 
     emp_loc = S.mean(0, keepdim=True)
@@ -395,9 +337,6 @@ def test_truncated_10_dim_multivariate_normal():
 
     phi_std_norm = lambda x: x[:,0] > ((0 - emp_loc[0,0]) / ch.sqrt(emp_var[0]))
     S_std_norm = (S - emp_loc)  / ch.sqrt(emp_var)
-
-    from delphi.grad import Sampler
-    sampler = Sampler()
 
     # train algorithm
     args = Parameters({
@@ -413,8 +352,7 @@ def test_truncated_10_dim_multivariate_normal():
     truncated = distributions.TruncatedMultivariateNormal(args, 
                                                           phi_std_norm, 
                                                           alpha, 
-                                                          dims, 
-                                                          sampler=sampler) 
+                                                          dims) 
     truncated.fit(S_std_norm)
     # rescale distribution
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -568,7 +506,6 @@ def test_unknown_truncation_multivariate_normal():
     kl_truncated = kl_divergence(m, M)
     self.assertTrue(kl_truncated <= 1e-1)  
 
-
 def test_truncated_boolean_product_2_dims():
     dims = 2
     p = ch.Tensor([.5, .75])
@@ -578,88 +515,11 @@ def test_truncated_boolean_product_2_dims():
     def phi(z):
         return ~((z[:,0] == 1) * (z[:,1] == 1))
 
-    num_accepted, num_sampled = 0, 0
     num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
 
-    S = []
-    while num_accepted < num_samples: 
-        samples = dist.sample([num_samples,])
-        indices = phi(samples).nonzero()[:,0]
-        S.append(samples[indices])
-        num_accepted +=  indices.size(0)
-        num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
-    alpha = num_accepted / num_sampled
     emp_p = S.mean(0)
     print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
-    print(f'num truncated samples: {S.size(0)}')
-    print(f'emp_p: {emp_p}') 
-
-    args = Parameters({
-                    'iterations': 2500, 
-                    'trials': 1,
-                    'batch_size': 1,
-                    'num_samples': 1000, 
-                    'verbose': True, 
-                    'optimizer': 'sgd',
-                    'lr': 1e-2,
-                }) 
-    
-    truncated = distributions.TruncatedBooleanProduct(args,
-                                           phi, 
-                                           alpha, 
-                                           dims)
-    truncated.fit(S)
-
-    best_p = truncated.best_p_ 
-    print(f'best p:\n {best_p.T}')
-    best_m = Bernoulli(best_p)
-
-    ema_p = truncated.ema_p_ 
-    print(f'ema p:\n {ema_p.T}')
-    ema_m = Bernoulli(ema_p)
-    ema_kl_div = kl_divergence(ema_m, dist).sum()
-    print(f'ema kl divergence: {ema_kl_div}')
-
-    avg_p = truncated.avg_p_
-    print(f'avg p:\n {avg_p.T}')
-    avg_m = Bernoulli(avg_p)
-    avg_kl_div = kl_divergence(avg_m, dist).sum()
-    print(f'avg kl divergence: {avg_kl_div}')
-        
-    # check performance
-    kl_truncated = kl_divergence(best_m, dist).sum()
-    kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
-    print(f'empirical kl divergence: {kl_emp.item():.3f}')
-    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
-    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
-    assert kl_truncated <= 1e-1, msg
-
-def test_truncated_boolean_product_20_dims():
-    dims = 20
-    p = ch.Tensor([.5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8])
-    print(f'true p: {p}')
-    dist = Bernoulli(p)
-
-    def phi(z):
-        return ~((z[:,0] == 1) * (z[:,1] == 1))
-
-    num_accepted, num_sampled = 0, 0
-    num_samples = 10000
-
-    S = []
-    while num_accepted < num_samples: 
-        samples = dist.sample([num_samples,])
-        indices = phi(samples).nonzero()[:,0]
-        S.append(samples[indices])
-        num_accepted +=  indices.size(0)
-        num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
-    alpha = num_accepted / num_sampled
-    emp_p = S.mean(0)
-    print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
     print(f'num truncated samples: {S.size(0)}')
     print(f'emp_p: {emp_p}') 
 
@@ -703,26 +563,230 @@ def test_truncated_boolean_product_20_dims():
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
 
+def test_truncated_boolean_product_20_dims():
+    dims = 20
+    p = ch.Tensor([.5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8, .5, .75, .3, .4, .8])
+    print(f'true p: {p}')
+    dist = Bernoulli(p)
 
-def generate_sphere_truncation(samples, covariance_matrix, target_alpha=0.5):
-    """Generate spherical truncation with target retention rate."""
-    # Sample centroid
-    centroid = ch.randn(10) * 0.5
+    def phi(z):
+        return ~((z[:,0] == 1) * (z[:,1] == 1))
+
+    num_samples = 10000
+
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+    emp_p = S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_p: {emp_p}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-1,
+                }) 
     
-    # Binary search for radius
-    low, high = 0.1, 10.0
-    for _ in range(20):
-        radius = (low + high) / 2
-        phi = oracle.Sphere(covariance_matrix, centroid, radius)
-        indices = phi(samples).nonzero()[:,0]
-        alpha = len(indices) / len(samples)
+    truncated = distributions.TruncatedBooleanProduct(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+
+    best_p = truncated.best_p_ 
+    print(f'best p:\n {best_p.T}')
+    best_m = Bernoulli(best_p)
+
+    ema_p = truncated.ema_p_ 
+    print(f'ema p:\n {ema_p.T}')
+    ema_m = Bernoulli(ema_p)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_p = truncated.avg_p_
+    print(f'avg p:\n {avg_p.T}')
+    avg_m = Bernoulli(avg_p)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
         
-        if alpha < target_alpha:
-            low = radius
-        else:
-            high = radius
-            
-        if abs(alpha - target_alpha) < 0.05:
-            return phi, indices, alpha
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_exponential():
+    dims = 1
+    lambda_ = ch.Tensor([1])
+    print(f'true lambda: {lambda_}')
+    dist = Exponential(lambda_)
+
+    def phi(z):
+        return z > 1
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = 1.0/S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 1,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
     
-    return phi, indices, alpha  
+    truncated = distributions.TruncatedExponential(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Exponential(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Exponential(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Exponential(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_exponential_2_dims():
+    dims = 2
+    lambda_ = ch.Tensor([1, 2.0])
+    print(f'true lambda: {lambda_}')
+    dist = Exponential(lambda_)
+
+    def phi(z):
+        return z[:,0] > .5
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = 1.0/S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 2500, 
+                    'trials': 1,
+                    'batch_size': 10,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-2,
+                }) 
+    
+    truncated = distributions.TruncatedExponential(args,
+                                           phi, 
+                                           alpha, 
+                                           dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Exponential(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Exponential(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Exponential(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+        
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
+
+def test_truncated_exponential_20_dims():
+    dims = 20
+    lambda_ = 2*ch.ones(20,)
+    print(f'true lambda: {lambda_}')
+    dist = Exponential(lambda_)
+
+    def phi(z):
+        return z[:,0] > .25
+
+    num_samples = 10000
+    S, alpha = generate_truncated_dataset(dist, phi, num_samples)
+
+    emp_lambda = 1.0/S.mean(0)
+    print(f'alpha: {alpha}')
+    print(f'num truncated samples: {S.size(0)}')
+    print(f'emp_lambda: {emp_lambda}') 
+
+    args = Parameters({
+                    'iterations': 1500, 
+                    'trials': 1,
+                    'batch_size': 10,
+                    'num_samples': 1000, 
+                    'verbose': True, 
+                    'optimizer': 'sgd',
+                    'lr': 1e-1,
+                }) 
+    
+    truncated = distributions.TruncatedExponential(args,
+                                                   phi, 
+                                                   alpha, 
+                                                   dims)
+    truncated.fit(S)
+    
+    best_lambda = truncated.best_lambda_ 
+    print(f'best lambda:\n {best_lambda.T}')
+    best_m = Exponential(best_lambda)
+
+    ema_lambda = truncated.ema_lambda_ 
+    print(f'ema lambda:\n {ema_lambda.T}')
+    ema_m = Exponential(ema_lambda)
+    ema_kl_div = kl_divergence(ema_m, dist).sum()
+    print(f'ema kl divergence: {ema_kl_div}')
+
+    avg_lambda = truncated.avg_lambda_
+    print(f'avg lambda:\n {avg_lambda.T}')
+    avg_m = Exponential(avg_lambda)
+    avg_kl_div = kl_divergence(avg_m, dist).sum()
+    print(f'avg kl divergence: {avg_kl_div}')
+    
+    # check performance
+    kl_truncated = kl_divergence(best_m, dist).sum()
+    kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
+    print(f'empirical kl divergence: {kl_emp.item():.3f}')
+    print(f'truncated kl divergence: {kl_truncated.item():.3f}')
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg

@@ -196,9 +196,15 @@ TRUNC_BOOL_PROD_DEFAULTS = {
         'rate': (float, 1.5), 
         'batch_size': (int, 10),
         'tol': (float, 1e-1),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'step_lr_gamma': (float, 1.0),
+}
+
+TRUNC_EXP_DEFAULTS = {
+        'val': (float, .2),
+        'eps': (float, 1e-5),
+        'r': (float, 1.0), 
+        'rate': (float, 1.5), 
+        'batch_size': (int, 10),
+        'tol': (float, 1e-1),
 }
 
 TRUNC_LQR_DEFAULTS =  { 

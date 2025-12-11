@@ -5,7 +5,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import sigmoid as sig
 from torch.nn import Softmax
-from torch.distributions import Gumbel, MultivariateNormal, Bernoulli
+from torch.distributions import Gumbel, MultivariateNormal, Bernoulli, Exponential
 import math
 
 from .utils.helpers import logistic
@@ -13,7 +13,7 @@ from .utils.helpers import logistic
 softmax = Softmax(dim=1)
 gumbel = Gumbel(0, 1)
 
-class TruncatedExponentialDistributionNLL(ch.autograd.Function):
+class TruncatedExponentialFamilyDistributionNLL(ch.autograd.Function):
     """
     Computes the truncated negative population log likelihood for truncated multivariate normal distribution with known truncation. 
     Function calculates the truncated negative log likelihood in the forward method and then calculates the 
@@ -36,7 +36,7 @@ class TruncatedExponentialDistributionNLL(ch.autograd.Function):
         S_suff_stat = data[:, dims:]
 
         D = dist(theta, dims)
-        log_prob = D.log_prob(S).sum(-1)
+        log_prob = D.log_prob(S)
 
         z = []
         num_sampled = 0
@@ -56,11 +56,10 @@ class TruncatedExponentialDistributionNLL(ch.autograd.Function):
             print(f'acceptance rate: {p_hat.item()}')
 
         trunc_const = ch.log(p_hat + eps)
-        nll = log_prob - trunc_const
+        ll = log_prob - trunc_const
         ctx.save_for_backward(z, S_suff_stat)
         ctx.calc_suff_stat = calc_suff_stat 
-        ctx.dims = dims
-        return -nll.mean()
+        return -ll.mean()
 
     @staticmethod
     def backward(ctx, 
@@ -71,13 +70,11 @@ class TruncatedExponentialDistributionNLL(ch.autograd.Function):
         return  grad / S_suff_stat.size(0), None, None, None, None, None, None, None, None
 
 
-def calc_multi_norm_suff_stat(x):
-    return ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+calc_multi_norm_suff_stat = lambda x: ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+calc_bool_prod_suff_stat = lambda x: x
+calc_exp_suff_stat = lambda x: x
 
-def calc_bool_prod_suff_stat(x): 
-    return x
-
-class delphiMultivariateNormal(MultivariateNormal):
+class ExponentialFamilyMultivariateNormal(MultivariateNormal):
 
     def __init__(self, 
                  theta: ch.Tensor, 
@@ -85,10 +82,10 @@ class delphiMultivariateNormal(MultivariateNormal):
         self.dims = dims
         T, v = theta[:self.dims**2], theta[self.dims**2:]
         covariance_matrix = ch.inverse(T.view(self.dims, self.dims))
-        mu = (covariance_matrix @ v).view(self.dims)   
+        mu = (covariance_matrix @ v).view(self.dims)
         super().__init__(mu, covariance_matrix) 
 
-class delphiBooleanProduct(Bernoulli):
+class ExponentialFamilyBooleanProduct(Bernoulli):
 
     def __init__(self, 
                  theta: ch.Tensor, 
@@ -96,6 +93,23 @@ class delphiBooleanProduct(Bernoulli):
         self.dims = dims
         p = ch.exp(theta) / (1 + ch.exp(theta))
         super().__init__(p) 
+
+    def log_prob(self, value):
+        result = super().log_prob(value)
+        return result.sum(-1)
+    
+class ExponentialFamilyExponential(Exponential):
+    def __init__(self, 
+                 theta: ch.Tensor,
+                 dims: int):
+        self.dims = dims
+        lambda_ = -theta
+        super().__init__(lambda_)
+
+    def log_prob(self, value):
+        result = super().log_prob(value)
+        return result.sum(-1)
+    
 
     
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
