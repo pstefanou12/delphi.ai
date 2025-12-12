@@ -848,7 +848,7 @@ def test_truncated_poisson():
     msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
     assert kl_truncated <= 1e-1, msg
 
-def test_truncated_poisson_20_dims():
+def test_truncated_poisson_2_dims():
     dims = 2
     lambda_ = ch.Tensor([1.0, 2.0])
     print(f'true lambda: {lambda_}')
