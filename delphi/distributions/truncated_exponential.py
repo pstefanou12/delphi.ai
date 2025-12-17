@@ -2,6 +2,7 @@
 Truncated Exponential Distribution.
 """
 
+import torch as ch
 import torch.nn as nn
 from typing import Callable
 import math
@@ -33,18 +34,20 @@ class TruncatedExponential(TruncatedExponentialFamilyDistribution):
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, phi, alpha, dims, ExponentialFamilyExponential, calc_exp_suff_stat, logger)
 
-    def _calc_emp_model(self): 
-        S = self.train_loader_.dataset.S
-        self.emp_params = 1.0/S.mean(0)
-        self.emp_theta = -self.emp_params
-
     def pretrain_hook(self):
         self._calc_emp_model()
         self.radius = self.args.r * math.log((1 / self.alpha) ** .5)
         self.register_parameter('theta', nn.Parameter(self.emp_theta))
 
-    def _reparameterize(self, 
-                        theta): 
+    def _constraints(self, theta):
+        return ch.clamp(theta, max=-1e-6)
+    
+    def _reparameterize_nat_form(self, 
+                                 theta): 
+        return -theta
+
+    def _reparameterize_canon_form(self, 
+                                   theta): 
         return -theta
     
     @property

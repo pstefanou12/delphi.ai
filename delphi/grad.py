@@ -5,7 +5,7 @@ Gradients for truncated and untruncated latent variable models.
 import torch as ch
 from torch import sigmoid as sig
 from torch.nn import Softmax
-from torch.distributions import Gumbel, MultivariateNormal, Bernoulli, Exponential, Poisson
+from torch.distributions import Gumbel, MultivariateNormal, Bernoulli, Exponential, Poisson, Weibull
 import math
 
 from .utils.helpers import logistic
@@ -34,7 +34,7 @@ class TruncatedExponentialFamilyDistributionNLL(ch.autograd.Function):
                 eps=1e-12):
         S = data[:, :dims]
         S_suff_stat = data[:, dims:]
-
+        
         D = dist(theta, dims)
         log_prob = D.log_prob(S)
 
@@ -50,6 +50,7 @@ class TruncatedExponentialFamilyDistributionNLL(ch.autograd.Function):
             num_accepted += accepted.size(0)
             num_sampled += 10*num_samples
         z = ch.cat(z)
+
         
         p_hat = ch.Tensor([num_accepted / num_sampled])
         if p_hat < .01:
@@ -69,11 +70,11 @@ class TruncatedExponentialFamilyDistributionNLL(ch.autograd.Function):
         grad = -S_suff_stat + trunc_const_suff_stat 
         return  grad / S_suff_stat.size(0), None, None, None, None, None, None, None, None
 
-
 calc_multi_norm_suff_stat = lambda x: ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 calc_bool_prod_suff_stat = lambda x: x
 calc_exp_suff_stat = lambda x: x
 calc_poiss_suff_stat = lambda x: x
+calc_weibull_suff_stat = lambda k, x: x.pow(k)
 
 class ExponentialFamilyMultivariateNormal(MultivariateNormal):
 
@@ -122,7 +123,19 @@ class ExponentialFamilyPoisson(Poisson):
     def log_prob(self, value):
         result = super().log_prob(value)
         return result.sum(-1)
+    
+class ExponentialFamilyWeibull(Weibull):
+    def __init__(self, 
+                 k: ch.Tensor,
+                 theta: ch.Tensor,
+                 dims: int):
+        self.dims = dims
+        lambda_ =  (-1/theta).pow(1/k)
+        super().__init__(lambda_, k)
 
+    def log_prob(self, value):
+        result = super().log_prob(value)
+        return result.sum(-1)
     
 class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     """

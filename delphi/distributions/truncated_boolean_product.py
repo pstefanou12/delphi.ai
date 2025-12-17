@@ -21,7 +21,7 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
                 args: Parameters,
                 phi: Callable, 
                 alpha: float,
-                dims: int,): 
+                dims: int): 
         """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
@@ -32,12 +32,11 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, phi, alpha, dims, ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat, logger)
 
-    def _calc_emp_model(self): 
-        S = self.train_loader_.dataset.S
-        self.emp_params = S.mean(0)
-        self.emp_theta = ch.log(self.emp_params / (1 - self.emp_params))
+    def _reparameterize_nat_form(self, 
+                                 theta):
+        return ch.log(theta / (1 - theta))
 
-    def _reparameterize(self, 
+    def _reparameterize_canon_form(self, 
                         theta): 
         return ch.exp(theta) / (1 + ch.exp(theta))
     

@@ -4,16 +4,17 @@ Truncated Exponential Distribution.
 
 import torch as ch
 from typing import Callable
+from functools import partial
 import logging
 
 from .truncated_exponential_family_distributions import TruncatedExponentialFamilyDistribution
 from ..delphi_logger import delphiLogger
-from ..grad import ExponentialFamilyPoisson, calc_poiss_suff_stat 
+from ..grad import ExponentialFamilyWeibull, calc_weibull_suff_stat 
 from ..utils.helpers import Parameters
 from ..utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
 
 
-class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
+class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
     """
     Model for truncated exponential distributions to be passed into trainer.
     """
@@ -21,7 +22,8 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
                 args: Parameters,
                 phi: Callable, 
                 alpha: float,
-                dims: int,): 
+                dims: int, 
+                k: int): 
         """
         Args: 
             args (cox.utils.Parameters) : parameter object holding hyperparameters
@@ -30,20 +32,19 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
         args = check_and_fill_args(args, TRUNC_EXP_DEFAULTS)
         
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
-        super().__init__(args, phi, alpha, dims, ExponentialFamilyPoisson, calc_poiss_suff_stat, logger)
+        super().__init__(args, phi, alpha, dims, partial(ExponentialFamilyWeibull, k), partial(calc_weibull_suff_stat, k), logger)
+        self.k = k
 
-    # def _calc_emp_model(self): 
-    #     self.S = self.train_loader_.dataset.S
-    #     self.emp_params = self.S.mean(0)
-    #     self.emp_theta = ch.log(self.emp_params)
-
+    def _constraints(self, theta):
+        return ch.clamp(theta, max=-1e-6)
+    
     def _reparameterize_nat_form(self, 
-                                 theta):
-        return ch.log(theta) 
-
+                                 theta): 
+        return -1.0/theta.pow(self.k)
+    
     def _reparameterize_canon_form(self, 
-                        theta): 
-        return ch.exp(theta)
+                                   theta): 
+        return (-1/theta).pow(1/self.k)
     
     @property
     def best_lambda_(self): 
@@ -62,7 +63,7 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
         return self.avg_params
     
     def __str__(self): 
-        return "truncated poisson distribution"
+        return "truncated weibull distribution"
 
 
 

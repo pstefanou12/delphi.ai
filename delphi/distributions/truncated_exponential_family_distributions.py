@@ -60,7 +60,9 @@ class TruncatedExponentialFamilyDistribution(distributions):
         return self
     
     def _calc_emp_model(self): 
-        self.emp_theta = ch.randn(self.dims)
+        S = self.train_loader_.dataset.S
+        self.emp_canon_params = self.calc_suff_stat(S).mean(0)
+        self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
     
     def pretrain_hook(self):
         self._calc_emp_model()
@@ -76,6 +78,9 @@ class TruncatedExponentialFamilyDistribution(distributions):
         """
         return self.theta
     
+    def _constraints(self, theta): 
+        return theta
+
     def step_post_hook(self, 
                        optimizer, 
                        args, 
@@ -86,19 +91,27 @@ class TruncatedExponentialFamilyDistribution(distributions):
         Args:
 
         """
-        theta_diff = (self.theta - self.emp_theta)[...,None].norm()
-        if theta_diff > self.radius: 
-            theta_diff = theta_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
-            self.z.copy_(self.emp_theta + theta_diff)
+        with ch.no_grad():
+            proj_theta = self.emp_theta
+            theta_diff = (self.theta - self.emp_theta)[...,None].norm()
+            if theta_diff > self.radius: 
+                theta_diff = theta_diff.renorm(p=2, dim=0, maxnorm=self.radius).flatten()
+                proj_theta = self.emp_theta + theta_diff
+
+            self.theta.copy_(self._constraints(proj_theta))
 
     def post_training_hook(self): 
         self.args.r *= self.args.rate
         # remove distribution from the computation graph
-        self.best_params, self.best_loss = self._reparameterize(self.trainer.best_params), self.trainer.best_loss
-        self.final_params, self.final_loss = self._reparameterize(self.trainer.final_params), self.trainer.final_loss 
-        self.ema_params = self._reparameterize(self.trainer.ema_params)
-        self.avg_params = self._reparameterize(self.trainer.avg_params)
+        self.best_params, self.best_loss = self._reparameterize_canon_form(self.trainer.best_params), self.trainer.best_loss
+        self.final_params, self.final_loss = self._reparameterize_canon_form(self.trainer.final_params), self.trainer.final_loss 
+        self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
+        self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
 
-    def _reparameterize(self, 
-                        theta): 
+    def _reparameterize_nat_form(self, 
+                                 theta):
+        return theta
+    
+    def _reparameterize_canon_form(self, 
+                                   theta): 
         return theta
