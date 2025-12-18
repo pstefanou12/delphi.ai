@@ -29,9 +29,10 @@ class TruncatedExponentialFamilyDistribution(distributions):
         self.phi = phi 
         self.alpha = alpha 
         self.dims = dims 
-        self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
         self.dist = dist
         self.calc_suff_stat = calc_suff_stat
+        self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
+        self.criterion_params = [self.phi, self.dims, self.dist, self.calc_suff_stat, self.args.num_samples, self.args.eps]
 
         self.best_params, self.best_loss = None, None
         self.final_params, self.final_loss = None, None
@@ -45,30 +46,101 @@ class TruncatedExponentialFamilyDistribution(distributions):
         assert S.size(0) > S.size(1), "input expected to be shape num samples by dimenions, current input is size {}.".format(S.size()) 
         assert self.args.batch_size <= self.args.num_samples, "batch size must be smaller than or equal to the number of samples being sampled"
         
-        self.S = S
-        self.criterion_params = [self.phi, self.dims, self.dist, self.calc_suff_stat, self.args.num_samples, self.args.eps]
         self.train_loader_, self.val_loader_ = make_train_and_val_distr(self.args, 
-                                                                        self.S, 
+                                                                        S, 
                                                                         TruncatedExponentialDistributionDataset, 
                                                                         {'calc_suff_stat': self.calc_suff_stat})
-        self.trainer = Trainer(
-            self,
-            self.args, 
-            self.logger
-        )
-        self.trainer.train_model(self.train_loader_, self.val_loader_)
+        # Initialize tracking
+        self.prev_best_loss = None
+        self.radius_history = []
+        self.loss_history = []
+        # Initialize radius and parameters
+        self._calc_emp_model()
+        self.radius = self.args.min_radius
+
+        phase = 0
+        while phase < self.args.max_phases: 
+            phase += 1
+            self.logger.info(f"\n{'='*60}")
+            self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
+            self.logger.info(f"\n{'='*60}")
+
+            self.trainer = Trainer(
+                self,
+                self.args, 
+                self.logger
+            )
+            self.trainer.train_model(self.train_loader_, self.val_loader_)
+
+            # Update tracking
+            current_loss = self.trainer.best_loss
+            self.radius_history.append(self.radius)
+            self.loss_history.append(current_loss)
+
+            self.best_params, self.best_loss = self._reparameterize_canon_form(self.trainer.best_params), self.trainer.best_loss
+            self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
+            self.final_params, self.final_loss = self._reparameterize_canon_form(self.trainer.final_params), self.trainer.final_loss 
+            self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
+            self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
+
+            should_stop, reason = self._check_convergence()
+            
+            if should_stop:
+                self.logger.info(f"\n{'='*60}")
+                self.logger.info(f"procedure converged: {reason}")
+                self.logger.info(f"final radius: {self.radius:.4f}, final loss: {current_loss:.6f}")
+                self.logger.info(f"total phases: {phase}")
+                self.logger.info(f"\n{'='*60}")
+                break
+
+            # Expand radius for next phase
+            self.prev_best_loss = current_loss
+            old_radius = self.radius
+            self.radius = min(self.radius * self.args.rate, self.args.max_radius)
+            
+            self.logger.info(
+                f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
+                f"loss improved by: {self.prev_best_loss - current_loss:.6e}"
+            )
+
         return self
+    
+    def _check_convergence(self): 
+        """
+        Determines if the entire procedure should stop.
+        Returns: (should_stop: bool, reason: str)
+        """
+        current_loss = self.trainer.best_loss
+        
+        # Criterion 1: Reached maximum radius
+        if self.radius >= self.args.max_radius:
+            return True, "max_radius_reached"
+        
+        # Criterion 2: Loss improvement is negligible
+        if self.prev_best_loss is not None:
+            loss_improvement = self.prev_best_loss - current_loss
+            
+            if abs(loss_improvement) < self.args.loss_convergence_tol:
+                return True, f"loss_improvement_small (Δloss={loss_improvement:.6e})"
+            
+            # Relative threshold
+            relative_improvement = abs(loss_improvement) / (abs(self.prev_best_loss) + 1e-10)
+            if relative_improvement < self.args.relative_loss_tol:
+                return True, f"relative_improvement_small ({relative_improvement:.6e})"
+        
+        # Criterion 3: Loss is increasing (suggests we've passed optimum)
+        if self.prev_best_loss is not None and current_loss > self.prev_best_loss:
+            if current_loss - self.prev_best_loss > self.args.loss_increase_tol:
+                return True, "loss_increasing"
+            
+        return False, None
     
     def _calc_emp_model(self): 
         S = self.train_loader_.dataset.S
         self.emp_canon_params = self.calc_suff_stat(S).mean(0)
         self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
-    
-    def pretrain_hook(self):
-        self._calc_emp_model()
-        self.radius = self.args.r * math.log((1 / self.alpha) ** .5)
         self.register_parameter('theta', nn.Parameter(self.emp_theta))
-    
+
     def forward(self, x):
         """
         Training step for defined model.
@@ -100,14 +172,6 @@ class TruncatedExponentialFamilyDistribution(distributions):
 
             self.theta.copy_(self._constraints(proj_theta))
 
-    def post_training_hook(self): 
-        self.args.r *= self.args.rate
-        # remove distribution from the computation graph
-        self.best_params, self.best_loss = self._reparameterize_canon_form(self.trainer.best_params), self.trainer.best_loss
-        self.final_params, self.final_loss = self._reparameterize_canon_form(self.trainer.final_params), self.trainer.final_loss 
-        self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
-        self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
-
     def _reparameterize_nat_form(self, 
                                  theta):
         return theta
@@ -115,3 +179,6 @@ class TruncatedExponentialFamilyDistribution(distributions):
     def _reparameterize_canon_form(self, 
                                    theta): 
         return theta
+
+    def __str__(self): 
+        return "truncated exponential family distribution"

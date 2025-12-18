@@ -15,7 +15,7 @@ from ..utils.helpers import Parameters, PSDError
 from ..utils.defaults import check_and_fill_args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
 
 
-class UnknownTruncationMultivariateNormal(TruncatedMultivariateNormal):
+class UnknownTruncationMultivariateNormal:
     """
     Truncated multivariate normal distribution class.
     """

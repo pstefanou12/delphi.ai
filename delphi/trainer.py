@@ -30,11 +30,7 @@ class Trainer:
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.logger = logger
         self.store = store
-
-    def _initialize_trial(self, 
-                          trial, 
-                          train_loader, 
-                          rand_seed):
+        
         self.epoch, self.iterations = 0, 0 
         # store procedure history within lists because of torch.cat performance overhead
         self.train_losses = []
@@ -48,13 +44,6 @@ class Trainer:
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
         self.stop_reason = None
-
-        self.t_start = time()
-        ch.manual_seed(rand_seed)
-
-        self.model.pretrain_hook()
-        self.model.make_optimizer_and_schedule(self.model.parameters_()) 
-        self.logger.info(f'trial: {trial}, training: {self.model} with the following config:\n {self.args}')
 
     def make_closure(self, batch): 
         inp, targ = batch
@@ -84,7 +73,7 @@ class Trainer:
         if self.model.schedule is not None: self.model.schedule.step()
 
         self.train_losses.append(loss.detach())
- 
+
         grad_norm = ch.nn.utils.parameters_to_vector(
             [p.grad.contiguous() for p in self.model.parameters() if p.requires_grad]
         ).norm()
@@ -203,7 +192,6 @@ class Trainer:
 
         if store is not None: 
             store.add_table('logs', {
-                'trial': int,
                 'epoch': int,
                 'train_loss': float, 
                 'train_prec1': float,
@@ -215,55 +203,58 @@ class Trainer:
             setup_store_with_metadata(self.args, store)
 
         # stores model estimates after each gradient step
-        for trial in range(1, self.args.trials+1):
-            self._initialize_trial(trial, train_loader, rand_seed)
+        ch.manual_seed(rand_seed)
+        self.t_start = time()
+        self.model.pretrain_hook()
 
-            if checkpoint:
-                self.epoch = checkpoint['epoch']
-                best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.run_epoch(val_loader, False)[0]
+        self.model.make_optimizer_and_schedule(self.model.parameters_()) 
+        self.logger.info(f'training: {self.model} with the following config:\n {self.args}')
 
-            while True:
-                self.epoch += 1 
-                self.model.train()
-                train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, val_loader)
+        if checkpoint:
+            self.epoch = checkpoint['epoch']
+            best_loss, best_prec1, best_prec5 = checkpoint['prec1'] if 'prec1' in checkpoint else self.run_epoch(val_loader, False)[0]
 
-                if val_loader:
-                    with ch.no_grad():
-                        self.model.eval()
-                        val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
-                        self.update_best(val_loss)
+        while True:
+            self.epoch += 1 
+            self.model.train()
+            train_loss, train_prec1, train_prec5 = self.run_epoch(train_loader, val_loader)
 
-                if self.stop_reason in STOP_REASONS: 
-                    self.t_end = time() 
-                    self.procedure_duration = self.t_end - self.t_start
-                    self.logger.info("stopped due to %s after %d iterations. total time: %.2f seconds" % (self.stop_reason, self.iterations, self.procedure_duration))
-                    break
+            if val_loader:
+                with ch.no_grad():
+                    self.model.eval()
+                    val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
+                    self.update_best(val_loss)
+
+            if self.stop_reason in STOP_REASONS: 
+                self.t_end = time() 
+                self.procedure_duration = self.t_end - self.t_start
+                self.logger.info("stopped due to %s after %d iterations. total time: %.2f seconds" % (self.stop_reason, self.iterations, self.procedure_duration))
+                break
             
-                if store is not None:
-                    store['logs'].append_row({
-                        'trial': trial,
-                        'epoch': self.epoch,
-                        'train_loss': train_loss, 
-                        'train_prec1': train_prec1,
-                        'train_prec5': train_prec5,
-                        'val_loss': val_loss,
-                        'val_prec1': val_prec1, 
-                        'val_prec5': val_prec5})
+            if store is not None:
+                store['logs'].append_row({
+                    'epoch': self.epoch,
+                    'train_loss': train_loss, 
+                    'train_prec1': train_prec1,
+                    'train_prec5': train_prec5,
+                    'val_loss': val_loss,
+                    'val_prec1': val_prec1, 
+                    'val_prec5': val_prec5})
                 
-                if self.args.epochs is not None and self.epoch == self.args.epochs:
-                    self.stop_reason = "max_epochs"
-                    self.t_end = time() 
-                    self.procedure_duration = self.t_end - self.t_start
-                    self.logger.info("stopped due to %s after %d epochs. total time: %.2f seconds" % (self.stop_reason, self.epoch, self.procedure_duration))
-                    break
+            if self.args.epochs is not None and self.epoch == self.args.epochs:
+                self.stop_reason = "max_epochs"
+                self.t_end = time() 
+                self.procedure_duration = self.t_end - self.t_start
+                self.logger.info("stopped due to %s after %d epochs. total time: %.2f seconds" % (self.stop_reason, self.epoch, self.procedure_duration))
+                break
 
-            # convert training loss&param history to tensors
-            self.train_losses = ch.tensor(self.train_losses)
-            self.val_losses   = ch.tensor(self.val_losses)
-            self.param_history = ch.stack(self.param_history)
-            self.grad_norms = ch.Tensor(self.grad_norms)
+        # convert training loss&param history to tensors
+        self.train_losses = ch.tensor(self.train_losses)
+        self.val_losses   = ch.tensor(self.val_losses)
+        self.param_history = ch.stack(self.param_history)
+        self.grad_norms = ch.Tensor(self.grad_norms)
 
-            self.model.post_training_hook()
+        self.model.post_training_hook()
 
     def eval_model(self, 
                     loader: DataLoader, 

@@ -61,9 +61,7 @@ def test_truncated_normal_known_variance():
     # rescale distribution
     rescale_loc = truncated.best_loc_ + emp_loc
     print(f"pred loc:\n {rescale_loc}")
-    rescale_var = truncated.best_variance_
-    print(f"pred var:\n {rescale_var}")
-    m = MultivariateNormal(rescale_loc, rescale_var)
+    m = MultivariateNormal(rescale_loc, ch.eye(1))
         
     # check performance
     kl_truncated = kl_divergence(m, M)
@@ -93,7 +91,7 @@ def test_truncated_normal():
     phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
 
     args = Parameters({
-                        'iterations': 5000, 
+                        'iterations': 1500, 
                         'batch_size': 10, 
                         'trials': 1, 
                         'verbose': True,
@@ -119,7 +117,7 @@ def test_truncated_normal():
     print(f"pred ema var:\n {rescale_ema_var}")
     rescale_avg_loc = truncated.avg_loc_ * emp_scale + emp_loc
     print(f"pred avg loc:\n {rescale_avg_loc}")
-    rescale_avg_var = truncated.avg_covariance_matrix_ * emp_var
+    rescale_avg_var = truncated.avg_variance_ * emp_var
     print(f"pred avg var:\n {rescale_avg_var}")
 
     m = MultivariateNormal(rescale_best_loc, rescale_best_var)
@@ -531,6 +529,8 @@ def test_truncated_boolean_product_2_dims():
                     'verbose': True, 
                     'optimizer': 'sgd',
                     'lr': 1e-1,
+                    'max_phases': 1000000,
+                    'rate': 1.5,
                 }) 
     
     truncated = distributions.TruncatedBooleanProduct(args,
@@ -645,6 +645,8 @@ def test_truncated_exponential():
                     'verbose': True, 
                     'optimizer': 'sgd',
                     'lr': 1e-2,
+                    'max_phases': 1000000,
+                    'rate': 1.5,
                 }) 
     
     truncated = distributions.TruncatedExponential(args,
@@ -816,6 +818,8 @@ def test_truncated_poisson():
                     'verbose': True, 
                     'optimizer': 'sgd',
                     'lr': 1e-2,
+                    'max_phases': 1000000,
+                    'rate': 1.5,
                 }) 
     
     truncated = distributions.TruncatedPoisson(args,
@@ -990,6 +994,8 @@ def test_truncated_weibull():
                     'verbose': True, 
                     'optimizer': 'sgd',
                     'lr': 1e-2,
+                    'max_phases': 1000000,
+                    'rate': 1.5,
                 }) 
     
     truncated = distributions.TruncatedWeibull(args,

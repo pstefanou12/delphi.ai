@@ -37,7 +37,7 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
         return ch.log(theta / (1 - theta))
 
     def _reparameterize_canon_form(self, 
-                        theta): 
+                                   theta): 
         return ch.exp(theta) / (1 + ch.exp(theta))
     
     @property
@@ -55,6 +55,9 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
     @property
     def avg_p_(self): 
         return self.avg_params
+    
+    def __str__(self): 
+        return "truncated boolean product distribution"
 
 
 

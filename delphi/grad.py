@@ -70,11 +70,23 @@ class TruncatedExponentialFamilyDistributionNLL(ch.autograd.Function):
         grad = -S_suff_stat + trunc_const_suff_stat 
         return  grad / S_suff_stat.size(0), None, None, None, None, None, None, None, None
 
-calc_multi_norm_suff_stat = lambda x: ch.cat([-.5*ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
+calc_multi_norm_suff_stat_known_cov = lambda x: x
+calc_multi_norm_suff_stat = lambda x: ch.cat([ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 calc_bool_prod_suff_stat = lambda x: x
 calc_exp_suff_stat = lambda x: x
 calc_poiss_suff_stat = lambda x: x
 calc_weibull_suff_stat = lambda k, x: x.pow(k)
+
+class ExponentialFamilyMultivariateNormalKnownCovariance(MultivariateNormal):
+
+    def __init__(self, 
+                 covariance_matrix: ch.Tensor,
+                 theta: ch.Tensor, 
+                 dims: int):
+        self.dims = dims
+        v = theta
+        mu = (covariance_matrix @ v).view(self.dims)
+        super().__init__(mu, covariance_matrix) 
 
 class ExponentialFamilyMultivariateNormal(MultivariateNormal):
 
@@ -83,7 +95,7 @@ class ExponentialFamilyMultivariateNormal(MultivariateNormal):
                  dims: int):
         self.dims = dims
         T, v = theta[:self.dims**2], theta[self.dims**2:]
-        covariance_matrix = ch.inverse(T.view(self.dims, self.dims))
+        covariance_matrix = ch.inverse(-2*T.view(self.dims, self.dims))
         mu = (covariance_matrix @ v).view(self.dims)
         super().__init__(mu, covariance_matrix) 
 

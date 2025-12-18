@@ -10,7 +10,7 @@ from .truncated_exponential_family_distributions import TruncatedExponentialFami
 from ..delphi_logger import delphiLogger
 from ..grad import ExponentialFamilyPoisson, calc_poiss_suff_stat 
 from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRUNC_POISS_DEFAULTS
 
 
 class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
@@ -27,15 +27,10 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        args = check_and_fill_args(args, TRUNC_EXP_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_POISS_DEFAULTS)
         
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, phi, alpha, dims, ExponentialFamilyPoisson, calc_poiss_suff_stat, logger)
-
-    # def _calc_emp_model(self): 
-    #     self.S = self.train_loader_.dataset.S
-    #     self.emp_params = self.S.mean(0)
-    #     self.emp_theta = ch.log(self.emp_params)
 
     def _reparameterize_nat_form(self, 
                                  theta):

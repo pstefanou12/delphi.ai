@@ -11,7 +11,7 @@ from .truncated_exponential_family_distributions import TruncatedExponentialFami
 from ..delphi_logger import delphiLogger
 from ..grad import ExponentialFamilyWeibull, calc_weibull_suff_stat 
 from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
+from ..utils.defaults import check_and_fill_args, TRUNC_WEIBULL_DEFAULTS
 
 
 class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
@@ -29,7 +29,7 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
             args (cox.utils.Parameters) : parameter object holding hyperparameters
         """
         assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        args = check_and_fill_args(args, TRUNC_EXP_DEFAULTS)
+        args = check_and_fill_args(args, TRUNC_WEIBULL_DEFAULTS)
         
         logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         super().__init__(args, phi, alpha, dims, partial(ExponentialFamilyWeibull, k), partial(calc_weibull_suff_stat, k), logger)

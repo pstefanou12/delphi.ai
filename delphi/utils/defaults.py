@@ -91,141 +91,134 @@ DELPHI_DEFAULTS = {**OPTIMIZER_DEFAULTS, **{
 }}
 
 TRUNC_REG_DEFAULTS = {
-        'val': (float, .2),
-        'var_lr': (float, 1e-2), 
-        'weight_decay': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 50),
-        'workers': (int, 0),
-        'num_samples': (int, 1000),
-        'shuffle': (bool, True),
-        'iterations': (int, 1500),
-        'val_interval': (int, 50)
+    'val': (float, .2),
+    'var_lr': (float, 1e-2), 
+    'weight_decay': (float, 0.0), 
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 50),
+    'workers': (int, 0),
+    'num_samples': (int, 1000),
+    'shuffle': (bool, True),
+    'iterations': (int, 1500),
+    'val_interval': (int, 50)
 }
 
 TRUNC_LASSO_DEFAULTS = {
-        'val': (float, .2),
-        'l1': (float, 0.0),
-        'weight_decay': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 50),
-        'workers': (int, 0),
-        'num_samples': (int, 10000),
-        'shuffle': (bool, True),
-        'iterations': (int, 1500),
-        'val_interval': (int, 50)
+    'val': (float, .2),
+    'l1': (float, 0.0),
+    'weight_decay': (float, 0.0), 
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 50),
+    'workers': (int, 0),
+    'num_samples': (int, 10000),
+    'shuffle': (bool, True),
+    'iterations': (int, 1500),
+    'val_interval': (int, 50)
 }
 
 TRUNC_LDS_DEFAULTS = {
-        'val': (float, .2),
-        'l1': (float, 0.0),
-        'weight_decay': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 50),
-        'workers': (int, 0),
-        'num_samples': (int, 50),
-        'c_gamma': (float, 2.0),
-        'shuffle': (bool, False), 
-        'constant': (bool, True),
-        'c_eta': (float, 0.5), 
-        'c_s': (float, 10.0), 
-        'constant': (bool, True), 
-        'suffle': (bool, True)
+    'val': (float, .2),
+    'l1': (float, 0.0),
+    'weight_decay': (float, 0.0), 
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 50),
+    'workers': (int, 0),
+    'num_samples': (int, 50),
+    'c_gamma': (float, 2.0),
+    'shuffle': (bool, False), 
+    'constant': (bool, True),
+    'c_eta': (float, 0.5), 
+    'c_s': (float, 10.0), 
+    'constant': (bool, True), 
+    'suffle': (bool, True)
 }
 
 TRUNC_LOG_REG_DEFAULTS = {
-        'epochs': (int, 1),
-        'val': (float, .2),
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'workers': (int, 0),
-        'num_samples': (int, 1000),
+    'epochs': (int, 1),
+    'val': (float, .2),
+    'l1': (float, 0.0), 
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 10),
+    'workers': (int, 0),
+    'num_samples': (int, 1000),
 }
 
 TRUNC_PROB_REG_DEFAULTS = {
-        'val': (float, .2),
-        'l1': (float, 0.0), 
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-3),
-        'workers': (int, 0),
-        'num_samples': (int, 1000),
+    'val': (float, .2),
+    'l1': (float, 0.0), 
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 10),
+    'tol': (float, 1e-3),
+    'workers': (int, 0),
+    'num_samples': (int, 1000),
 }
 
-TRUNC_MULTI_NORM_DEFAULTS = {
-        'val': (float, .2),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
-        'workers': (int, 0),
-        'num_samples': (int, 10000),
-        'covariance_matrix': (ch.Tensor, None),
-        'optimizer': (str, 'sgd'),
-        'covariance_matrix_lr': (float, None),
+TRUNC_EXP_FAMILY_DISTR_DEFAULTS = { 
+    'val': (float, .2),
+    'eps': (float, 1e-5),
+    'min_radius': (float, 3.0),
+    'max_radius': (float, 10.0),
+    'rate': (float, 1.1),  # increase radius size by 10% each trial
+    'batch_size': (int, 10),
+    'tol': (float, 1e-1),
+    'num_samples': (int, 10000),
+    'optimizer': (str, 'sgd'),
+    'max_phases': (int, 1), 
+    'relative_loss_tol': (float, 1e-2), 
+    'loss_convergence_tol': (float, 1e-3),
+    'relative_loss_tol': (float, float('inf'))
 }
+
+TRUNC_MULTI_NORM_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS, **{
+    'covariance_matrix': (ch.Tensor, None),
+    'covariance_matrix_lr': (float, 1e-2), 
+    'eigenvalue_lower_bound': (float, 1e-2)}}
+TRUNC_BOOL_PROD_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS}
+TRUNC_POISS_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS}
+TRUNC_EXP_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS}
+TRUNC_WEIBULL_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS}
 
 UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
-        'val': (float, .2),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
-        'workers': (int, 0),
-        'num_samples': (int, 10),
-        'covariance_matrix_lr': (float, None), 
-}
-
-TRUNC_BOOL_PROD_DEFAULTS = {
-        'val': (float, .2),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
-}
-
-TRUNC_EXP_DEFAULTS = {
-        'val': (float, .2),
-        'eps': (float, 1e-5),
-        'r': (float, 1.0), 
-        'rate': (float, 1.5), 
-        'batch_size': (int, 10),
-        'tol': (float, 1e-1),
+    'val': (float, .2),
+    'eps': (float, 1e-5),
+    'r': (float, 1.0), 
+    'rate': (float, 1.5), 
+    'batch_size': (int, 10),
+    'tol': (float, 1e-1),
+    'workers': (int, 0),
+    'num_samples': (int, 10),
+    'covariance_matrix_lr': (float, None), 
 }
 
 TRUNC_LQR_DEFAULTS =  { 
-        'target_thickness': (float, float('inf')), 
-        'num_traj_phase_one': (int, int(1e100)),
-        'num_traj_phase_two': (int, int(1e100)), 
-        'num_traj_gen_samples_B': (int, int(1e100)), 
-        'num_traj_gen_samples_A': (int, int(1e100)),
-        'T_phase_one': (int, int(1e100)), 
-        'T_phase_two': (int, int(1e100)), 
-        'T_gen_samples_B': (int, int(1e100)),  
-        'T_gen_samples_A': (int, int(1e100)),
-        'R': (float, REQ),
-        'U_A': (float, REQ), 
-        'U_B': (float, REQ), 
-        'delta': (float, REQ), 
-        'eps1': (float, .9), 
-        'eps2': (float, .9),
-        'repeat': (int, None), 
-        'gamma': (float, REQ),
-        'alpha': (float, 1.0) 
+    'target_thickness': (float, float('inf')), 
+    'num_traj_phase_one': (int, int(1e100)),
+    'num_traj_phase_two': (int, int(1e100)), 
+    'num_traj_gen_samples_B': (int, int(1e100)), 
+    'num_traj_gen_samples_A': (int, int(1e100)),
+    'T_phase_one': (int, int(1e100)), 
+    'T_phase_two': (int, int(1e100)), 
+    'T_gen_samples_B': (int, int(1e100)),  
+    'T_gen_samples_A': (int, int(1e100)),
+    'R': (float, REQ),
+    'U_A': (float, REQ), 
+    'U_B': (float, REQ), 
+    'delta': (float, REQ), 
+    'eps1': (float, .9), 
+    'eps2': (float, .9),
+    'repeat': (int, None), 
+    'gamma': (float, REQ),
+    'alpha': (float, 1.0) 
 }
 
 
