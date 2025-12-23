@@ -5,25 +5,82 @@ Truncated normal distribution without oracle access (ie. unknown truncation set)
 from typing import Callable, Optional
 import torch as ch
 
-from .unknown_truncated_multivariate_normal import UnknownTruncationMultivariateNormal 
+from .unknown_truncated_multivariate_normal import UnknownTruncationMultivariateNormalKnownCovariance 
 from ..utils.helpers import Parameters
 
 
-class UnknownTruncationNormal(UnknownTruncationMultivariateNormal):
+class TruncatedNormalKnownCovariance(UnknownTruncationMultivariateNormalKnownCovariance):
     """
-    Truncated normal distribution class.
+    Truncated multivariate normal distribution class with known truncation set.
     """
     def __init__(self,
-                 args: Parameters,
-                 k: int,
-                 alpha: float,
-                 dims: int, 
-                 covariance_matrix: Optional[ch.Tensor] = None):
-        super().__init__(args, k, alpha, dims, covariance_matrix=covariance_matrix)
+                args: Parameters,
+                k: int,
+                alpha: float,
+                dims: int,
+                variance: Optional[ch.Tensor],
+                sampler: Callable = None):
+        """
+        """
+        super().__init__(args, k, alpha, dims,  variance)
+    
+    def __str__(self): 
+        return "truncated normal distribution with unknown truncation and known covariance"
 
-    @property 
-    def variance_(self): 
-        """
-        Returns the standard deviation for the normal distribution.
-        """
-        return self.unknown_truncated.model.covariance_matrix.clone()
+    
+# class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovariance):
+#     """
+#     Truncated multivariate normal distribution class with known truncation set.
+#     """
+#     def __init__(self,
+#                 args: Parameters,
+#                 phi: Callable, 
+#                 alpha: float,
+#                 dims: int,
+#                 sampler: Callable = None):
+#         """
+#         """
+#         super().__init__(args, phi, alpha, dims, sampler) 
+    
+#     @property
+#     def best_variance_(self): 
+#         """
+#         Returns the best covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+#         """
+#         return self.best_params[:self.dims**2].view(self.dims, self.dims)
+
+#     @property
+#     def final_variance_(self): 
+#         """
+#         Returns the final covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+#         """
+#         self.final_params[:self.dims**2].view(self.dims, self.dims)
+
+#     @property
+#     def ema_variance_(self): 
+#         """
+#         Returns the ema covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+#         """
+#         return self.ema_params[:self.dims**2].view(self.dims, self.dims)
+
+#     @property
+#     def avg_variance_(self): 
+#         """
+#         Returns the avg covariance matrix estimate for the multivariate normal distribution based off of the loss function.
+#         """
+#         return self.avg_params[:self.dims**2].view(self.dims, self.dims)
+    
+#     def __str__(self): 
+#         return "truncated normal distribution with unknown truncation"
+
+
+def UnknownTruncationNormal(
+          args: Parameters,
+          k: int,
+          alpha: float,
+          dims: int, 
+          variance: Optional[ch.Tensor] = None):
+    assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
+    if variance is not None: 
+        return UnknownTruncationMultivariateNormalKnownCovariance(args, k, alpha, dims, variance)
+

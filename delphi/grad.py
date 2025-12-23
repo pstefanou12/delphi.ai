@@ -156,7 +156,7 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     then calculates its gradient in the backwards step.
     """
     @staticmethod
-    def forward(ctx, v, T, data, phi, exp_h, dims):
+    def forward(ctx, theta, data, phi, exp_h, dims):
         """
         Args: 
             params (torch.Tensor): size (dims + dims ** 2,) - current reparameterized mean and covariance matrix estimates concatenated together
@@ -172,6 +172,8 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
             dims (int): the dimension number 
             known_cov (bool): whether the covariance matrix is known; if so, provide 0 as gradient for covariance matrix
         """
+        T = theta[:dims**2]
+        v = theta[dims**2:]
         x = data[:,:dims].view(data.size(0), dims)
         pdf = data[:,dims][...,None]
         loc_grad = data[:,dims+1:dims+dims+1].view(data.size(0), dims)
@@ -190,7 +192,7 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
         loss, loc_grad, cov_grad = ctx.saved_tensors
         term_one = (loc_grad * loss)
         term_two = ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([ctx.dims, ctx.dims]))) 
-        return term_one / loc_grad.size(0), term_two / cov_grad.size(0), None, None, None, None, None
+        return ch.cat([term_two.squeeze(-1), term_one], dim=1) / cov_grad.size(0), None, None, None, None, None
 
 
 samples  = ch.randn(1000, 1)

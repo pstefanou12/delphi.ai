@@ -190,6 +190,8 @@ TRUNC_WEIBULL_DEFAULTS = {**TRUNC_EXP_FAMILY_DISTR_DEFAULTS}
 
 UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS = {
     'val': (float, .2),
+    'min_radius': (float, 3.0),
+    'max_radius': (float, 10.0),
     'eps': (float, 1e-5),
     'r': (float, 1.0), 
     'rate': (float, 1.5), 

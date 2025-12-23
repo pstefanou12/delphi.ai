@@ -57,6 +57,7 @@ class TruncatedExponentialFamilyDistribution(distributions):
         # Initialize radius and parameters
         self._calc_emp_model()
         self.radius = self.args.min_radius
+        import ipdb; ipdb.set_trace()
 
         phase = 0
         while phase < self.args.max_phases: 

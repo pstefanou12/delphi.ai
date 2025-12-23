@@ -387,23 +387,24 @@ def test_truncated_10_dim_multivariate_normal():
 # right truncated 1D normal distribution with unknown truncation and known variance
 def test_unknown_truncation_normal_known_variance():
     dims = 1
-    # generate ground-truth data
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims)) 
-    samples = M.rsample([10000,])
-    phi = oracle.Right_Distribution(Tensor([0.0]))
-    indices = phi(samples).nonzero()[:,0]
-    S = samples[indices]
-    alpha = S.size(0) / samples.size(0)
-        
-    print(f'alpha: {alpha}')
-    print(f'num total samples: {samples.size(0)}')
-    print(f'num truncated samples: {S.size(0)}')
-    emp_loc = S.mean(0)
-    emp_var = S.var(0)
-    S_norm = S - emp_loc
 
+    phi = oracle.Left_Distribution(Tensor([0.0]))
+    num_samples = 1000
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
+    print(f'alpha: {alpha}')
+    print(f'num_samples: {num_samples}')
+
+    emp_loc = S.mean(0)
+    print(f"emp loc:\n {emp_loc}")
+    emp_var = S.var(0)[...,None]
+    print(f"emp var:\n {emp_var}")
+    emp_scale = ch.sqrt(emp_var) 
+
+    # S_std_norm = (S - emp_loc) / emp_scale
+    # phi_std_norm = oracle.Left_Distribution(((phi.left - emp_loc) / emp_scale).flatten())
+        
     print(f'emp loc: {emp_loc}')
-    print(f'emp var: {emp_var}')
     print(f'known variance: {M.covariance_matrix}')
     k = 5
     print(f'k: {k}')
@@ -417,13 +418,16 @@ def test_unknown_truncation_normal_known_variance():
                         'early_stopping': True,
                         'verbose': True,
                     }) 
-    truncated = distributions.UnknownTruncationNormal(args, k, alpha, dims, covariance_matrix=M.covariance_matrix)
+    truncated = distributions.UnknownTruncationNormal(args, 
+                                                      k, 
+                                                      alpha, 
+                                                      dims, 
+                                                      variance=M.covariance_matrix)
     truncated.fit(S)
     # rescale distribution
     rescale_loc = truncated.best_loc_
     print(f'pred loc: {rescale_loc}')
-    print(f'pred variance: {truncated.best_covariance_matrix_}')
-    m = MultivariateNormal(rescale_loc, truncated.best_covariance_matrix_)
+    m = MultivariateNormal(rescale_loc, ch.eye(dims))
                 
     # check distribution parameter estimates
     kl_truncated = kl_divergence(m, M)
@@ -473,7 +477,8 @@ def test_unknown_truncation_normal():
                 
     # check distribution parameter estimates
     kl_truncated = kl_divergence(m, M)
-    self.assertTrue(kl_truncated <= 1e-1) 
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg
 
 # 10D sphere truncated multivariate normal distribution with unknown truncation
 def test_unknown_truncation_multivariate_normal():
@@ -502,7 +507,8 @@ def test_unknown_truncation_multivariate_normal():
         
     # check distribution parameter estimates
     kl_truncated = kl_divergence(m, M)
-    self.assertTrue(kl_truncated <= 1e-1)  
+    msg = f'kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}'
+    assert kl_truncated <= 1e-1, msg 
 
 def test_truncated_boolean_product_2_dims():
     dims = 2

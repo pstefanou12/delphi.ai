@@ -3,9 +3,7 @@ import torch.linalg as LA
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal, _batch_mahalanobis
 from abc import ABC
-from decimal import Decimal
 import math
-from scipy.linalg import sqrtm
 
 from .utils.helpers import Bounds, cov
 
@@ -218,7 +216,6 @@ class Sphere(oracle):
         return 'sphere'
 
 
-# LAMBDA FUNCTIONS TRIED
 #  2D DIMENSIONAL GAUSSIAN LAMBDA FUNCTIONS
 set_two_d = lambda x: (x[1].pow(2) + x[0].pow(2) > .5)
 horseshoe = lambda x: x[0] > 0 and x[0] ** 2 + x[1] ** 2 > 1 and x[0] ** 2 + x[1] ** 2 < 2
@@ -230,11 +227,17 @@ three_d_union_check = lambda x: x[0] > 0 and x[2] > 0 or x.pow(2).sum() < 1.0
 
 
 class UnknownGaussian(oracle):
-    def __init__(self, emp_loc, emp_covariance_matrix, S, k):
-        self.emp_loc = emp_loc  # shape (d,) or (,) for univariate
-        self.emp_covariance_matrix = emp_covariance_matrix
-        self._emp_dist = MultivariateNormal(emp_loc, emp_covariance_matrix)
-        self._d = int(emp_loc.shape[0])
+    def __init__(self, 
+                 k, 
+                 S):
+                #  emp_loc, 
+                #  emp_covariance_matrix):
+        self.emp_loc = S.mean(0)
+        self.emp_covariance_matrix = cov(S)
+        # self.emp_loc = emp_loc  # shape (d,) or (,) for univariate
+        # self.emp_covariance_matrix = emp_covariance_matrix
+        self._emp_dist = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
+        self._d = int(S.shape[1])
         self._k = k
         self._factorials = ch.tensor([math.factorial(i) for i in range(k + 1)], dtype=ch.float32)
 
