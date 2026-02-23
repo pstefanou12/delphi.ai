@@ -39,13 +39,11 @@ class TruncatedMultivariateNormalKnownCovariance(TruncatedExponentialFamilyDistr
                                  theta):
         T = self.covariance_matrix.inverse()
         v = theta@T
-
         return v.flatten()
 
     def _reparameterize_canon_form(self, 
                         theta): 
         loc = theta @ self.covariance_matrix
-
         return loc.flatten()
     
     @property 
@@ -77,13 +75,14 @@ class TruncatedMultivariateNormalKnownCovariance(TruncatedExponentialFamilyDistr
         return self.avg_params
 
     def calc_suff_stat(self, S): 
-        return calc_multi_norm_suff_stat(S)
+        return calc_multi_norm_suff_stat_known_cov(S)
     
     def calculate_loss(self, S): 
         return self.criterion(self.theta, self.calc_suff_stat(S), *self.criterion_params)
     
     def __str__(self): 
         return "truncated multivariate normal distribution known covariance"
+
     
 class TruncatedMultivariateNormalUnknownCovariance(TruncatedExponentialFamilyDistribution):
     """
@@ -150,7 +149,7 @@ class TruncatedMultivariateNormalUnknownCovariance(TruncatedExponentialFamilyDis
             
             self.T.copy_(T)
             self.v.copy_(v)
-            
+
     def parameters_(self):
         if self.args.covariance_matrix_lr is not None: 
             return [

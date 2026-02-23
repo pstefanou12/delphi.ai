@@ -172,7 +172,7 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
             dims (int): the dimension number 
             known_cov (bool): whether the covariance matrix is known; if so, provide 0 as gradient for covariance matrix
         """
-        T = theta[:dims**2]
+        T = theta[:dims**2].view(dims, dims)
         v = theta[dims**2:]
         x = data[:,:dims].view(data.size(0), dims)
         pdf = data[:,dims][...,None]
@@ -181,8 +181,9 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
         exp = exp_h(v, T, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi
-        if loss.mean(0) == ch.nan: import pdb; pdb.set_trace()
-
+        print(f'psi: {psi}')
+        print(f'exp: {exp}')
+        print(f'pdf: {pdf}')
         ctx.save_for_backward(loss, loc_grad, cov_grad)
         ctx.dims = dims
         return loss / data.size(0)
@@ -190,9 +191,11 @@ class UnknownTruncationMultivariateNormalNLL(ch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         loss, loc_grad, cov_grad = ctx.saved_tensors
-        term_one = (loc_grad * loss)
-        term_two = ((cov_grad.flatten(1) * loss).unflatten(1, ch.Size([ctx.dims, ctx.dims]))) 
-        return ch.cat([term_two.squeeze(-1), term_one], dim=1) / cov_grad.size(0), None, None, None, None, None
+        term_one = loc_grad * loss
+        term_two = cov_grad.flatten(1) * loss
+        print(f'loc grad: {term_one.mean(0)}')
+        print(f'cov grad: {term_two.mean(0)}')
+        return ch.cat([term_two, term_one], dim=1) / cov_grad.size(0), None, None, None, None, None
 
 
 samples  = ch.randn(1000, 1)
@@ -220,10 +223,6 @@ class TruncatedMSE(ch.autograd.Function):
         grad_pred = (targ - z) / noise_var
         return - grad_pred / targ.size(0), None, None, None, None, None
     
-
-import torch
-import torch.nn.functional as F
-import math
 
 samples  = ch.randn(1000, 1)
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):

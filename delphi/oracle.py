@@ -3,9 +3,9 @@ import torch.linalg as LA
 from torch import Tensor
 from torch.distributions.multivariate_normal import MultivariateNormal, _batch_mahalanobis
 from abc import ABC
-import math
 
 from .utils.helpers import Bounds, cov
+from .polynomials import NormalizedProbabilistHermitePolynomial
 
 
 class oracle(ABC):
@@ -230,137 +230,44 @@ class UnknownGaussian(oracle):
     def __init__(self, 
                  k, 
                  S):
-                #  emp_loc, 
-                #  emp_covariance_matrix):
         self.emp_loc = S.mean(0)
-        self.emp_covariance_matrix = cov(S)
-        # self.emp_loc = emp_loc  # shape (d,) or (,) for univariate
-        # self.emp_covariance_matrix = emp_covariance_matrix
-        self._emp_dist = MultivariateNormal(self.emp_loc, self.emp_covariance_matrix)
+        self.emp_cov = cov(S)
+
+        # verify that the S is whitened to N(0, I)
+        if ch.norm(self.emp_loc - ch.zeros(S.size(1))) >= 1e-3 or ch.norm(self.emp_cov - ch.eye(S.size(1))) >= 1e-3:
+            raise Exception(f"input dataset must be whitened (eg. N(O, I)). \n dataset mean: {self.emp_loc}, covariance matrix: {self.emp_cov}")
+        
+        self._emp_dist = MultivariateNormal(self.emp_loc, self.emp_cov)
         self._d = int(S.shape[1])
         self._k = k
-        self._factorials = ch.tensor([math.factorial(i) for i in range(k + 1)], dtype=ch.float32)
 
-        self.multi_indices = self._generate_multi_indices(self._k)
-
-        self._norm_const = self._compute_norm_constants()
-
+        self.herm_poly = NormalizedProbabilistHermitePolynomial(self._k, self._d)
         self._C_v = self._compute_hermite_coefficients(S)
-
         self._dist = None
-
-    def _generate_multi_indices(self, k):
-        # For d=1 this returns [[0],[1],...,[k]]
-        from itertools import product
-        indices = []
-        for degree in range(k + 1):
-            for combo in product(range(degree + 1), repeat=self._d):
-                if sum(combo) == degree:
-                    indices.append(list(combo))
-        return ch.tensor(indices, dtype=ch.long)
-
-    def _hermite_polynomial_1d(self, z, degree):
-        """Probabilist's Hermite He_n(z) computed via stable recurrence."""
-        if degree == 0:
-            return ch.ones_like(z)
-        elif degree == 1:
-            return z
-        else:
-            He_prev_prev = ch.ones_like(z)
-            He_prev = z
-            for n in range(2, degree + 1):
-                He_curr = z * He_prev - (n - 1) * He_prev_prev
-                He_prev_prev, He_prev = He_prev, He_curr
-            return He_prev
-
-    def H_v(self, x):
-        """
-        Evaluate multivariate Hermite polynomials *at standardized inputs*.
-        For univariate: z = (x - emp_loc) / sqrt(emp_var).
-        Returns tensor shape (n, num_indices).
-        """
-        n = x.shape[0]
-        num_indices = len(self.multi_indices)
-        result = ch.ones(n, num_indices, dtype=x.dtype, device=x.device)
-
-        # Standardize: for each dim use emp_loc and emp_covariance_matrix diag
-        # For univariate:
-        if self._d == 1:
-            var = self.emp_covariance_matrix.reshape(-1)[0] if self.emp_covariance_matrix.numel() == 1 else self.emp_covariance_matrix[0,0]
-            std = ch.sqrt(var)
-            z = (x[:, 0] - self.emp_loc[0]) / (std + 1e-12)   # (n,)
-            for idx, V in enumerate(self.multi_indices):
-                deg = int(V[0].item())
-                He = self._hermite_polynomial_1d(z, deg)      # (n,)
-                # Normalize by sqrt(deg!) so basis is orthonormal under N(0,1)
-                if deg > 0:
-                    He = He / ch.sqrt(self._factorials[deg])
-                result[:, idx] = He
-            return result
-
-        # fallback for multivariate (not used here)
-        for idx, V in enumerate(self.multi_indices):
-            prod = ch.ones(n, dtype=x.dtype, device=x.device)
-            for dim in range(self._d):
-                degree = int(V[dim].item())
-                if degree > 0:
-                    # standardize dimension
-                    var = self.emp_covariance_matrix[dim, dim]
-                    std = ch.sqrt(var)
-                    z = (x[:, dim] - self.emp_loc[dim]) / (std + 1e-12)
-                    He = self._hermite_polynomial_1d(z, degree) / ch.sqrt(self._factorials[degree])
-                    prod = prod * He
-            result[:, idx] = prod
-        return result
 
     def _compute_hermite_coefficients(self, S):
         """
         Compute c_v = E_D[H_V(z)] where H_V evaluated at standardized samples from S.
         S should be samples *from the truncated set* (i.e., only samples x in S).
         """
-        H_vals = self.H_v(S)   # shape (n, num_indices)
+        H_vals = self.herm_poly.H_v(S)   # shape (n, num_indices)
         return H_vals.mean(dim=0)
-    
-    def fit_ridge_coefficients(self, H_all, y, lambda_reg=1e-3, dtype=ch.float32, device='cpu'):
-        # Solve (H^T H + lambda I) c = H^T y
-        HtH = H_all.t() @ H_all   # (m, m)
-        m = HtH.size(0)
-        A = HtH + lambda_reg * ch.eye(m, dtype=dtype, device=device)
-        rhs = H_all.t() @ y
-        c = ch.linalg.solve(A, rhs)   # (m,)
-        return c
 
-    def psi_k(self, x, clamp_range=(0,1), use_sigmoid=True, alpha=10.0):
+    def psi_k(self, x):
         """
         Evaluate psi approximation on x (tensor shape (n,d)).
         Returns (n, 1) tensor with values ~[0,1].
         """
-        H_vals = self.H_v(x)                      # (n, num_indices)
+        H_vals = self.herm_poly.H_v(x)                      # (n, num_indices)
         expansion = (self._C_v * H_vals).sum(dim=1)   # (n,)
-        if use_sigmoid:
-            psi_vals = ch.sigmoid(alpha * expansion)
-        else:
-            # ReLU then clamp to [0,1]
-            psi_vals = ch.clamp(expansion, min=clamp_range[0], max=clamp_range[1])
-    
-        return psi_vals.unsqueeze(-1)   # (n,1)
-
-    def _compute_norm_constants(self):
-        """Compute sqrt(V!) for each multi-index V."""
-        norms = []
-        for V in self.multi_indices:
-            # V! = product of v_i! for each component
-            V_factorial = ch.prod(self._factorials[V.long()])
-            norms.append(ch.sqrt(V_factorial.float()))
-        return ch.tensor(norms)
+        return ch.clamp(expansion, min=0)[...,None]
 
     def __call__(self, x):
         if self._dist is None:
             raise Exception("must learn underlying distribution for membership oracle")
         
-        # Compute the rescaled characteristic function
-        ratio = ch.exp(self._emp_dist.log_prob(x) - self._dist.log_prob(x))
-        return (ratio.unsqueeze(-1) * self.psi_k(x) > 0.5).float()
+        ratio = ch.exp(self._emp_dist.log_prob(x) - self._dist.log_prob(x))[:,None]
+        return ((ratio * self.psi_k(x)) > 0.5).float()
 
     @property
     def emp_dist(self):
@@ -377,10 +284,6 @@ class UnknownGaussian(oracle):
     @property
     def C_v(self):
         return self._C_v
-
-    @property
-    def norm_const(self):
-        return self._norm_const
 
     @property
     def d(self):
