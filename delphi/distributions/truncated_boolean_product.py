@@ -2,11 +2,14 @@
 Truncated Boolean Product Distributions.
 """
 
-import torch as ch
-from typing import Callable
 import logging
+from typing import Callable
 
-from .truncated_exponential_family_distributions import TruncatedExponentialFamilyDistribution
+import torch as ch
+
+from .truncated_exponential_family_distributions import (
+    TruncatedExponentialFamilyDistribution,
+)
 from ..delphi_logger import delphiLogger
 from ..grad import ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat
 from ..utils.helpers import Parameters
@@ -17,47 +20,60 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
     """
     Model for truncated boolean product distributions to be passed into trainer.
     """
-    def __init__(self, 
-                args: Parameters,
-                phi: Callable, 
-                alpha: float,
-                dims: int): 
-        """
-        Args: 
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
-        assert isinstance(args, Parameters), "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
-        
-        logger = delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
-        super().__init__(args, phi, alpha, dims, ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat, logger)
 
-    def _reparameterize_nat_form(self, 
-                                 theta):
+    def __init__(self, args: Parameters, phi: Callable, alpha: float, dims: int):
+        """
+        Args:
+            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            phi (Callable): truncation set oracle
+            alpha (float): survival probability lower bound
+            dims (int): number of dimensions
+        """
+        assert isinstance(args, Parameters), (
+            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
+        )
+        args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
+
+        logger = (
+            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+        )
+        super().__init__(
+            args,
+            phi,
+            alpha,
+            dims,
+            ExponentialFamilyBooleanProduct,
+            calc_bool_prod_suff_stat,
+            logger,
+        )
+
+    def _reparameterize_nat_form(self, theta):
+        """Convert canonical probability parameter to natural log-odds form."""
         return ch.log(theta / (1 - theta))
 
-    def _reparameterize_canon_form(self, 
-                                   theta): 
+    def _reparameterize_canon_form(self, theta):
+        """Convert natural log-odds to canonical probability parameter."""
         return ch.exp(theta) / (1 + ch.exp(theta))
-    
+
     @property
-    def best_p_(self): 
+    def best_p_(self):
+        """Return the best probability parameter estimate."""
         return self.best_params
-    
+
     @property
-    def final_p_(self): 
+    def final_p_(self):
+        """Return the final probability parameter estimate."""
         return self.final_params
-    
+
     @property
-    def ema_p_(self): 
+    def ema_p_(self):
+        """Return the EMA probability parameter estimate."""
         return self.ema_params
-    
+
     @property
-    def avg_p_(self): 
+    def avg_p_(self):
+        """Return the averaged probability parameter estimate."""
         return self.avg_params
-    
-    def __str__(self): 
+
+    def __str__(self):
         return "truncated boolean product distribution"
-
-
-

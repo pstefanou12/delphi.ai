@@ -8,6 +8,7 @@ Test suite for evaluating truncated lqr algorithm.
 # from delphi.utils.helpers import Parameters, calc_spectral_norm
 # from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
+
 def test_truncated_lqr():
     assert True
     # RAND_SEED = 69
@@ -22,8 +23,8 @@ def test_truncated_lqr():
     # NOISE_VAR = ch.eye(D)
     # assert M >= D, f'M is currently: {M}, but it needs to be larger than D: {D}'
 
-    # A = ch.Tensor([[1.01, .01, 0], 
-    #             [.01, 1.01, .01], 
+    # A = ch.Tensor([[1.01, .01, 0],
+    #             [.01, 1.01, .01],
     #             [0, .01, 1.01]])
     # B = ch.eye(M)
 
@@ -38,18 +39,18 @@ def test_truncated_lqr():
     #     'phi': phi,
     #     'c_gamma': 2.0,
     #     'fit_intercept': False,
-    #     'epochs': 2, 
-    #     'trials': 1, 
+    #     'epochs': 2,
+    #     'trials': 1,
     #     'batch_size': 10,
     #     'num_samples': 10,
     #     'tol': 1e-2,
-    #     'R': R, 
-    #     'U_A': U_A, 
+    #     'R': R,
+    #     'U_A': U_A,
     #     'U_B': U_B,
-    #     'delta': .9, 
-    #     'gamma': gamma, 
+    #     'delta': .9,
+    #     'gamma': gamma,
     #     'repeat': 1,
-    #     'num_traj_phase_one': NUM_TRAJ // 4, 
+    #     'num_traj_phase_one': NUM_TRAJ // 4,
     #     'num_traj_phase_two': NUM_TRAJ // 4,
     #     'num_traj_gen_samples_A': NUM_TRAJ // 4,
     #     'num_traj_gen_samples_B': NUM_TRAJ // 4,
@@ -57,19 +58,19 @@ def test_truncated_lqr():
     #     'c_eta': .1,
     # })
 
-    # trunc_lqr = TruncatedLQR(TRAIN_KWARGS, 
-    #                             gen_data, 
-    #                             D, 
-    #                             M, 
+    # trunc_lqr = TruncatedLQR(TRAIN_KWARGS,
+    #                             gen_data,
+    #                             D,
+    #                             M,
     #                             rand_seed=RAND_SEED)
     # trunc_lqr.fit()
 
     # A_yao, B_yao = trunc_lqr.A_, trunc_lqr.B_
-    # A_sarah_dean_plev, B_sarah_dean_plev, A_sarah_dean_ols, B_sarah_dean_ols = calc_sarah_dean(TRAIN_KWARGS, 
-    #                                                                                             gen_data, 
-    #                                                                                             NUM_TRAJ, 
-    #                                                                                             D, 
-    #                                                                                             M, 
+    # A_sarah_dean_plev, B_sarah_dean_plev, A_sarah_dean_ols, B_sarah_dean_ols = calc_sarah_dean(TRAIN_KWARGS,
+    #                                                                                             gen_data,
+    #                                                                                             NUM_TRAJ,
+    #                                                                                             D,
+    #                                                                                             M,
     #                                                                                             rand_seed=RAND_SEED)
 
     # A_yao_spec_norm = calc_spectral_norm(A_yao - A)
@@ -92,6 +93,6 @@ def test_truncated_lqr():
 
     # assert A_yao_spec_norm < A_sd_ols_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean ols spectral norm is: {A_sd_ols_spec_norm}"
     # assert B_yao_spec_norm < B_sd_ols_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean ols spectral norm is: {B_sd_ols_spec_norm}"
-       
+
     # assert A_yao_spec_norm < A_sd_plevr_spec_norm, f"A yao spectral norm is: {A_yao_spec_norm}, and A sarah dean plevrakis spectral norm is: {A_sd_plevr_spec_norm}"
     # assert B_yao_spec_norm < B_sd_plevr_spec_norm, f"B yao spectral norm is: {B_yao_spec_norm}, and B sarah dean plevrakis spectral norm is: {B_sd_plevr_spec_norm}"

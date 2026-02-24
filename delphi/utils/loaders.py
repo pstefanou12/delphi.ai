@@ -1,28 +1,31 @@
-import os
-import numpy as np
+"""
+Data loader wrappers providing per-epoch recomputation and real-time transformations.
+"""
+
 import torch as ch
-from torch.utils.data import Subset
-from torch.utils.data import DataLoader, TensorDataset
 
 from . import folder
 from .helpers import type_of_script
 from . import constants as consts
+
 # determine running environment
-script = type_of_script()
-if script == consts.JUPYTER:
-    from tqdm.autonotebook import tqdm as tqdm
+SCRIPT = type_of_script()
+if SCRIPT == consts.JUPYTER:
+    from tqdm.autonotebook import tqdm
 else:
     from tqdm import tqdm
 
 
 ## loader wrapper (for adding custom functions to dataloader)
 class PerEpochLoader:
-    '''
+    """
     A blend between TransformedLoader and LambdaLoader: stores the whole loader
     in memory, but recomputes it from scratch every epoch, instead of just once
     at initialization.
-    '''
+    """
+
     def __init__(self, loader, func, do_tqdm=True):
+        """Initialize with a loader, transformation function, and tqdm flag."""
         self.orig_loader = loader
         self.func = func
         self.do_tqdm = do_tqdm
@@ -30,9 +33,15 @@ class PerEpochLoader:
         self.loader = iter(self.data_loader)
 
     def compute_loader(self):
-        return TransformedLoader(self.orig_loader, self.func, None,
-                    self.orig_loader.num_workers, self.orig_loader.batch_size,
-                    do_tqdm=self.do_tqdm)
+        """Rebuild the transformed loader from the original loader."""
+        return transformed_loader(
+            self.orig_loader,
+            self.func,
+            None,
+            self.orig_loader.num_workers,
+            self.orig_loader.batch_size,
+            do_tqdm=self.do_tqdm,
+        )
 
     def __len__(self):
         return len(self.orig_loader)
@@ -46,16 +55,14 @@ class PerEpochLoader:
     def __next__(self):
         try:
             return next(self.loader)
-        except StopIteration as e:
+        except StopIteration:
             self.data_loader = self.compute_loader()
             self.loader = iter(self.data_loader)
-            raise StopIteration
-
-        return self.func(im, targ)
+            raise StopIteration from None
 
 
 class LambdaLoader:
-    '''
+    """
     This is a class that allows one to apply any given (fixed)
     transformation to the output from the loader in *real-time*.
     For instance, you could use for applications such as custom
@@ -66,17 +73,17 @@ class LambdaLoader:
     as data augmentation can only be applied *before* passing the
     data through the LambdaLoader.
     For more information see :ref:`our detailed walkthrough <using-custom-loaders>`
-    '''
+    """
 
     def __init__(self, loader, func):
-        '''
+        """
         Args:
             loader (PyTorch dataloader) : loader for dataset (*required*).
             func (function) : fixed transformation to be applied to
                 every batch in real-time (*required*). It takes in
                 (images, labels) and returns (images, labels) of the
                 same shape.
-        '''
+        """
         self.data_loader = loader
         self.loader = iter(self.data_loader)
         self.func = func
@@ -91,27 +98,33 @@ class LambdaLoader:
         return getattr(self.data_loader, attr)
 
     def __next__(self):
+        """Return the next transformed (image, label) pair."""
         try:
             im, targ = next(self.loader)
-        except StopIteration as e:
+        except StopIteration:
             self.loader = iter(self.data_loader)
-            raise StopIteration
+            raise StopIteration from None
 
         return self.func(im, targ)
 
-    def __getattr__(self, attr):
-        return getattr(self.data_loader, attr)
 
-
-def TransformedLoader(loader, func, transforms, workers=None,
-        batch_size=None, do_tqdm=False, augment=False, fraction=1.0,
-        shuffle=True):
-    '''
+def transformed_loader(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    loader,
+    func,
+    loader_transforms,
+    workers=None,
+    batch_size=None,
+    do_tqdm=False,
+    augment=False,
+    fraction=1.0,
+    shuffle=True,
+):
+    """
     This is a function that allows one to apply any given (fixed)
     transformation to the output from the loader *once*.
     For instance, you could use for applications such as assigning
     random labels to all the images (before training).
-    The TransformedLoader also supports the application of additional
+    The transformed_loader also supports the application of additional
     transformations (such as standard data augmentation) after the fixed
     function.
     For more information see :ref:`our detailed walkthrough <using-custom-loaders>`
@@ -121,7 +134,7 @@ def TransformedLoader(loader, func, transforms, workers=None,
         in (images, labels) and returns (images, labels) with the same shape
         in every dimension except for the first, i.e., batch dimension
         (which can be any length).
-        transforms (torchvision.transforms) : transforms to apply
+        loader_transforms (torchvision.transforms) : transforms to apply
             to the training images from the dataset (after func) (*required*).
         workers (int) : number of workers for data fetching (*required*).
         batch_size (int) : batch size for the data loaders (*required*).
@@ -143,7 +156,7 @@ def TransformedLoader(loader, func, transforms, workers=None,
                                             batch_size=128)
         >>> for im, lab in output_loader:
         >>>     # Do stuff...
-    '''
+    """
 
     new_ims = []
     new_targs = []
@@ -154,12 +167,19 @@ def TransformedLoader(loader, func, transforms, workers=None,
     for i, (im, targ) in it:
         new_im, new_targ = func(im, targ)
         if augment or (i / float(total_len) > fraction):
-              new_ims.append(im.cpu())
-              new_targs.append(targ.cpu())
+            new_ims.append(im.cpu())
+            new_targs.append(targ.cpu())
         if i / float(total_len) <= fraction:
             new_ims.append(new_im.cpu())
             new_targs.append(new_targ.cpu())
 
-    dataset = folder.TensorDataset(ch.cat(new_ims, 0), ch.cat(new_targs, 0), transform=transforms)
-    return ch.utils.data.DataLoader(dataset, num_workers=workers,
-                        batch_size=batch_size, shuffle=shuffle)
+    dataset = folder.TensorDataset(
+        ch.cat(new_ims, 0), ch.cat(new_targs, 0), transform=loader_transforms
+    )
+    return ch.utils.data.DataLoader(
+        dataset, num_workers=workers, batch_size=batch_size, shuffle=shuffle
+    )
+
+
+# Keep backward-compatible alias
+TransformedLoader = transformed_loader  # pylint: disable=invalid-name
