@@ -14,7 +14,7 @@ from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
 import torch.linalg as LA
 
-from . import constants as consts
+from delphi.utils import constants as consts
 
 # CONSTANTS
 JUPYTER = "jupyter"

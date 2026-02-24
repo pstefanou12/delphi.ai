@@ -13,12 +13,12 @@ from torch.utils.data import DataLoader, TensorDataset, Subset
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import datasets
 
-from . import folder
-from .helpers import cov
-from .defaults import DATASET_DEFAULTS, check_and_fill_args
-from . import data_augmentation as da
-from .. import cifar_models
-from .. import imagenet_models
+from delphi.utils import folder
+from delphi.utils.helpers import cov
+from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
+from delphi.utils import data_augmentation as da
+from delphi import cifar_models
+from delphi import imagenet_models
 
 
 ###

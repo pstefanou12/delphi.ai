@@ -36,7 +36,7 @@ import time
 import torch as ch
 import dill
 
-from .utils.helpers import (  # pylint: disable=import-error
+from delphi.utils.helpers import (
     type_of_script,
     calc_est_grad,
     InputNormalize,
@@ -45,9 +45,9 @@ from .utils.helpers import (  # pylint: disable=import-error
     has_attr,
     ckpt_at_epoch,
 )
-from .utils import constants as consts  # pylint: disable=import-error
-from . import attack_steps  # pylint: disable=import-error
-from .delphi import delphi  # pylint: disable=import-error
+from delphi.utils import constants as consts
+from delphi import attack_steps
+from delphi.delphi import delphi
 
 # determine running environment
 SCRIPT = type_of_script()  # pylint: disable=invalid-name
