@@ -143,6 +143,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             else enumerate(loader)
         )
 
+        loss = ch.zeros(1)
         for batch_idx, batch in iterator:
             loss = (
                 self.train_step(batch) if self.model.training else self.val_step(batch)
@@ -335,7 +336,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.val_losses = (
             ch.stack(self.val_losses) if self.val_losses else ch.tensor([])
         )
-        self.param_history = ch.stack(self.param_history)
+        self.param_history = (
+            ch.stack(self.param_history) if self.param_history else ch.empty(0)
+        )
         self.grad_norms = ch.tensor(self.grad_norms)
 
         self.model.post_training_hook()
