@@ -89,6 +89,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         self.criterion = None
         self.criterion_params = []
         self.model = None
+        # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
+        self.optimizers: dict = {}
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.
@@ -411,6 +413,85 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def parameters_(self):
         """Return the model's trainable parameters."""
         return self.parameters()
+
+    def compute_loss(self, batch) -> ch.Tensor:
+        """Compute the loss for a single batch.
+
+        Override to implement custom forward and loss logic. The default
+        implementation unpacks ``batch`` as ``(inp, targ)`` and evaluates
+        ``self.criterion``.
+
+        Args:
+            batch: A single batch from the DataLoader.
+
+        Returns:
+            Loss tensor (scalar or vector; the trainer handles reduction).
+        """
+        inp, targ = batch
+        pred = self(inp)
+        pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)
+        return self.criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
+
+    def compute_val_loss(self, batch) -> ch.Tensor:
+        """Compute the validation loss for a single batch.
+
+        Defaults to ``compute_loss``. Override to use a different metric
+        during validation (e.g. NLL instead of ELBO).
+
+        Args:
+            batch: A single batch from the validation DataLoader.
+
+        Returns:
+            Loss tensor (scalar or vector; the trainer handles reduction).
+        """
+        return self.compute_loss(batch)
+
+    def train_batch(self, batch) -> dict | None:
+        """Run a full training update for one batch.
+
+        Return ``None`` (default) to let the trainer use the standard
+        ``make_closure`` → ``optimizer.step`` path. Return a metrics dict
+        to take full ownership of the update; grad-norm recording, EMA,
+        and param-history are then skipped by the trainer. The dict must
+        contain at least a ``"loss"`` key.
+
+        This hook is the right place for algorithms that require multiple
+        optimizer steps per batch (GANs, actor-critic RL) or that do not
+        use gradient-based optimizers (EM, HMC).
+
+        Args:
+            batch: A single batch from the DataLoader, or ``None`` when
+                training without a loader (e.g. environment-driven RL).
+
+        Returns:
+            ``None`` to use the default training path, or a dict with at
+            least ``"loss"``.
+        """
+        return None
+
+    def evaluate(self) -> dict:
+        """Compute validation metrics without a DataLoader.
+
+        Called by the trainer when no val_loader is provided. Return a
+        dict with at least ``"loss"`` to enable early stopping and
+        best-model tracking. The default returns an empty dict.
+
+        Returns:
+            Metrics dict, e.g. ``{"loss": tensor, "reward": float}``.
+        """
+        return {}
+
+    def should_stop(self) -> tuple[bool, str | None]:
+        """Return whether training should stop and why.
+
+        Called by the trainer's stop-criterion check in addition to the
+        standard criteria (max_iterations, grad_tol, etc.). Return
+        ``(True, reason_string)`` to halt training.
+
+        Returns:
+            Tuple of (stop, reason) where reason is a short string or None.
+        """
+        return False, None
 
 
 # Populate the built-in optimizer registry after the class is fully defined.
