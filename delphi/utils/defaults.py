@@ -89,6 +89,7 @@ TRAINER_DEFAULTS = {
     "patience": (int, float("inf"), {"min": 1}),
     "grad_tol": (float, 0, {"min": 0}),
     "log_every": (int, 50, {"min": 1}),
+    "max_grad_norm": (float, None),
 }
 
 DATASET_DEFAULTS = {

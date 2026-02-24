@@ -77,6 +77,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 reg_term = reg_term.cuda()
             loss = loss + reg_term
             loss.backward()
+            if self.args.max_grad_norm is not None:
+                ch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.args.max_grad_norm
+                )
             return loss
 
         return closure
