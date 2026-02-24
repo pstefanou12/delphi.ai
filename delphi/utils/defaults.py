@@ -60,6 +60,15 @@ ADAM_DEFAULTS = {
     "capturable": (bool, False),
 }
 
+ADAMW_DEFAULTS = {
+    "beta1": (float, 0.9, {"min": 0, "max": 1}),
+    "beta2": (float, 0.999, {"min": 0, "max": 1}),
+    "eps": (float, 1e-8, {"min": 0}),
+    "weight_decay": (float, 1e-2, {"min": 0}),
+    "amsgrad": (bool, False),
+    "capturable": (bool, False),
+}
+
 STEP_LR_DEFAULTS = {
     "step_lr": (int, 100, {"min": 1}),
     "step_lr_gamma": (float, 0.9, {"min": 0, "max": 1}),

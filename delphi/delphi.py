@@ -5,7 +5,7 @@ import random
 from typing import Callable, ClassVar, Iterable
 import torch as ch
 from cox.store import Store
-from torch.optim import SGD, LBFGS, Adam, lr_scheduler
+from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
 import numpy as np
 
 from delphi.delphi_logger import delphiLogger
@@ -15,12 +15,14 @@ from delphi.utils.defaults import (
     SGD_DEFAULTS,
     LBFGS_DEFAULTS,
     ADAM_DEFAULTS,
+    ADAMW_DEFAULTS,
 )
 from delphi.utils.helpers import Parameters
 
 # Module-level constants.
 BY_ALG = "by algorithm"  # Default parameter depends on algorithm.
 ADAM = "adam"
+ADAMW = "adamw"
 
 EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
 
@@ -213,6 +215,26 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return Adam(params, **self._remove_none_config(config))
 
+    def _create_adamw(self, params):
+        """Create an AdamW optimizer from args."""
+        check_and_fill_args(self.args, ADAMW_DEFAULTS)
+        config = {
+            "lr": getattr(self.args, "lr", 1e-3),
+            "betas": (
+                getattr(self.args, "beta1", 0.9),
+                getattr(self.args, "beta2", 0.999),
+            ),
+            "eps": getattr(self.args, "eps", 1e-8),
+            "weight_decay": getattr(self.args, "weight_decay", 1e-2),
+            "amsgrad": getattr(self.args, "amsgrad", False),
+            "maximize": getattr(self.args, "maximize", False),
+            "foreach": getattr(self.args, "foreach", None),
+            "capturable": getattr(self.args, "capturable", False),
+            "differentiable": getattr(self.args, "differentiable", False),
+            "fused": getattr(self.args, "fused", None),
+        }
+        return AdamW(params, **self._remove_none_config(config))
+
     def _create_scheduler(self):
         """Create and return the configured learning-rate scheduler, or None."""
         if getattr(self.args, "constant", False):
@@ -396,4 +418,5 @@ delphi._OPTIMIZER_REGISTRY = {
     "sgd": delphi._create_sgd,
     "lbfgs": delphi._create_lbfgs,
     ADAM: delphi._create_adam,
+    ADAMW: delphi._create_adamw,
 }
