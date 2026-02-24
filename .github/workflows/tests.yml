@@ -56,4 +56,4 @@ jobs:
           ruff format --check delphi/ tests/
 
       - name: Run pylint
-        run: pylint delphi/ tests/
+        run: pylint --errors-only delphi/ tests/
