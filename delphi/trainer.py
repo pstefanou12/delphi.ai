@@ -154,6 +154,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             # Validate periodically during a training epoch.
             if (
                 self.model.training
+                and val_loader is not None
                 and self.args.val_interval is not None
                 and self.iterations % self.args.val_interval == 0
             ):
@@ -283,7 +284,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 train_loader, val_loader
             )
 
-            if val_loader:
+            val_loss, val_prec1, val_prec5 = None, None, None
+            if val_loader is not None:
                 with ch.no_grad():
                     self.model.eval()
                     val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
@@ -298,7 +300,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-            if store is not None:
+            if store is not None and val_loader is not None:
                 store["logs"].append_row(
                     {
                         "epoch": self.epoch,
@@ -306,8 +308,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                         "train_prec1": train_prec1,
                         "train_prec5": train_prec5,
                         "val_loss": val_loss,
-                        "val_prec1": val_prec1,  # pylint: disable=possibly-used-before-assignment
-                        "val_prec5": val_prec5,  # pylint: disable=possibly-used-before-assignment
+                        "val_prec1": val_prec1,
+                        "val_prec5": val_prec5,
                     }
                 )
 
