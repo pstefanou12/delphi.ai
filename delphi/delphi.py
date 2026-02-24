@@ -12,6 +12,7 @@ from delphi.delphi_logger import delphiLogger
 from delphi.utils.defaults import (
     check_and_fill_args,
     DELPHI_DEFAULTS,
+    SGD_DEFAULTS,
     LBFGS_DEFAULTS,
     ADAM_DEFAULTS,
 )
@@ -20,9 +21,6 @@ from delphi.utils.helpers import Parameters
 # Module-level constants.
 BY_ALG = "by algorithm"  # Default parameter depends on algorithm.
 ADAM = "adam"
-CYCLIC = "cyclic"
-COSINE = "cosine"
-LINEAR = "linear"
 
 EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
 
@@ -109,7 +107,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         optimizer_creators = {
             "sgd": self._create_sgd,
             "lbfgs": self._create_lbfgs,
-            "adam": self._create_adam,
+            ADAM: self._create_adam,
         }
 
         if optimizer_type not in optimizer_creators:
@@ -127,6 +125,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_sgd(self, params):
         """Create an SGD optimizer from args."""
+        check_and_fill_args(self.args, SGD_DEFAULTS)
         config = {
             "lr": self.args.lr,
             "momentum": getattr(self.args, "momentum", 0),
