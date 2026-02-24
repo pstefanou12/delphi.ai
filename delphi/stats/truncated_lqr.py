@@ -10,7 +10,7 @@ from typing import Callable
 
 import numpy as np
 import torch as ch
-import torch.linalg as LA
+from torch import linalg as LA
 from cox.store import Store
 
 from delphi.utils.defaults import TRUNC_LQR_DEFAULTS, check_and_fill_args
