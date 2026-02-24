@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """Statistical models subpackage for delphi."""
 
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression

@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Exponential Distribution.
 """
@@ -17,9 +18,7 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
 
 
 class TruncatedExponential(TruncatedExponentialFamilyDistribution):
-    """
-    Model for truncated exponential distributions to be passed into trainer.
-    """
+    """Model for truncated exponential distributions to be passed into trainer."""
 
     def __init__(
         self,
@@ -28,9 +27,10 @@ class TruncatedExponential(TruncatedExponentialFamilyDistribution):
         alpha: float,
         dims: int,
     ):
-        """
+        """Initialize TruncatedExponential.
+
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): parameter object holding hyperparameters
             phi (Callable): truncation set oracle
             alpha (float): survival probability lower bound
             dims (int): number of dimensions
@@ -86,4 +86,5 @@ class TruncatedExponential(TruncatedExponentialFamilyDistribution):
         return self.avg_params
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated exponential distribution"

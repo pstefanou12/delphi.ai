@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Ridge Regression.
 """
@@ -23,23 +24,17 @@ from delphi.stats.truncated_linear_regression import TruncatedLinearRegression  
 
 
 class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated ridge regression class. Supports truncated ridge regression
-    with known noise, unknown noise, and confidence intervals. Module uses
-    delphi.trainer.Trainer to train truncated linear regression by performing
-    projected stochastic gradient descent on the truncated population log likelihood.
-    Module requires the user to specify an oracle from the delphi.oracle.oracle class,
-    and the survival probability.
-    """
+    """Truncated ridge regression via projected SGD on the truncated log-likelihood."""
 
     def __init__(self, args: Parameters, store: cox.store.Store = None):
-        """
+        """Initialize TruncatedRidgeRegression.
+
         Args:
-            args (Parameters) : parameter object holding hyperparameters
-            store (cox.store.Store) : cox store object for logging
+            args (Parameters): hyperparameter object
+            store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
-        # instance variables
+        # Instance variables.
         assert isinstance(args, Parameters), (
             f"args is type: {type(args)}. "
             "expecting args to be type delphi.utils.helpers.Parameters"
@@ -49,7 +44,7 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
         )
         self.store = store
         self.trunc_ridge = None
-        # algorithm hyperparameters
+        # Algorithm hyperparameters.
         trunc_ridge_defaults = {**TRUNC_REG_DEFAULTS}
         trunc_ridge_defaults.update(TRAINER_DEFAULTS)
         trunc_ridge_defaults.update(DELPHI_DEFAULTS)
@@ -92,13 +87,13 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
         else:
             self.trunc_ridge = RidgeKnownVariance(self.args, self.train_loader_)
 
-        # run PGD for parameter estimation
+        # Run PGD for parameter estimation.
         trainer = Trainer(  # pylint: disable=no-value-for-parameter
             self.trunc_ridge, self.args, store=self.store
         )
         trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
 
-        # assign results from procedure to instance variables
+        # Assign results from the procedure to instance variables.
         self.coef = self.trunc_ridge.model.weight.clone()  # pylint: disable=not-callable
         if self.args.fit_intercept:
             self.intercept = self.trunc_ridge.model.bias.clone()  # pylint: disable=not-callable
@@ -128,14 +123,13 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
 
 
 class RidgeKnownVariance(TruncatedLinearRegression):  # pylint: disable=too-few-public-methods
-    """
-    Truncated ridge regression with known noise variance model.
-    """
+    """Truncated ridge regression with known noise variance model."""
 
     def __init__(self, args, train_loader):
-        """
+        """Initialize RidgeKnownVariance.
+
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): hyperparameter object
             train_loader: training data loader
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter
@@ -154,14 +148,13 @@ class RidgeKnownVariance(TruncatedLinearRegression):  # pylint: disable=too-few-
 
 
 class RidgeUnknownVariance(TruncatedLinearRegression):  # pylint: disable=too-few-public-methods
-    """
-    Truncated ridge regression with unknown noise variance model.
-    """
+    """Truncated ridge regression with unknown noise variance model."""
 
     def __init__(self, args, train_loader):
-        """
+        """Initialize RidgeUnknownVariance.
+
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): hyperparameter object
             train_loader: training data loader
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter

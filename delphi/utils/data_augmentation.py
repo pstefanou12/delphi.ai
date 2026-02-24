@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Dataset augmentation info and default transforms for training and testing.
 """
@@ -35,7 +36,7 @@ class Lighting:  # pylint: disable=too-few-public-methods
         return img.add(rgb.view(3, 1, 1).expand_as(img))
 
 
-# CIFAR10 dataset info
+# CIFAR10 dataset info.
 CIFAR_LABELS = {
     0: "airplane",
     1: "automobile",
@@ -50,10 +51,10 @@ CIFAR_LABELS = {
 }
 
 
-# CIFAR10 dataset information
+# CIFAR10 dataset information.
 _CIFAR10_STATS = {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2023, 0.1994, 0.2010]}
 
-# IMAGENET dataset information
+# IMAGENET dataset information.
 _IMAGENET_STATS = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
 
 _IMAGENET_PCA = {
@@ -67,7 +68,7 @@ _IMAGENET_PCA = {
     ),
 }
 
-# Special transforms for ImageNet(s)
+# Special transforms for ImageNet(s).
 TRAIN_TRANSFORMS_IMAGENET = transforms.Compose(
     [
         transforms.RandomResizedCrop(224),
@@ -77,10 +78,6 @@ TRAIN_TRANSFORMS_IMAGENET = transforms.Compose(
         Lighting(0.05, _IMAGENET_PCA["eigval"], _IMAGENET_PCA["eigvec"]),
     ]
 )
-"""
-Standard training data augmentation for ImageNet-scale datasets: Random crop,
-Random flip, Color Jitter, and Lighting Transform (see https://git.io/fhBOc)
-"""
 
 TEST_TRANSFORMS_IMAGENET = transforms.Compose(
     [
@@ -91,9 +88,13 @@ TEST_TRANSFORMS_IMAGENET = transforms.Compose(
 )
 
 
-# Dataset training set augmentation defaults
+# Dataset training set augmentation defaults.
 def TRAIN_TRANSFORMS_DEFAULT(size):  # pylint: disable=invalid-name
-    """Return default training transforms for images of the given side length."""
+    """Return default training transforms for images of the given side length.
+
+    Applies random crop, horizontal flip, color jitter, and rotation.
+    Example: ``TRAIN_TRANSFORMS_DEFAULT(32)`` for CIFAR-10.
+    """
     return transforms.Compose(
         [
             transforms.RandomCrop(size, padding=4),
@@ -105,16 +106,7 @@ def TRAIN_TRANSFORMS_DEFAULT(size):  # pylint: disable=invalid-name
     )
 
 
-# Generic training data transform, given image side length does random cropping,
-# flipping, color jitter, and rotation. Called as, for example,
-# delphi.data_augmentation.TRAIN_TRANSFORMS_DEFAULT(32) for CIFAR-10.
-
-
-# Dataset test set augmentation defaults
+# Dataset test set augmentation defaults.
 def TEST_TRANSFORMS_DEFAULT(size):  # pylint: disable=invalid-name
-    """Return default test transforms (no augmentation) for the given image side length."""
+    """Return default test transforms (resize only) for the given image side length."""
     return transforms.Compose([transforms.Resize(size), transforms.ToTensor()])
-
-
-# Generic test data transform (no augmentation) to complement
-# TEST_TRANSFORMS_DEFAULT, takes in an image side length.

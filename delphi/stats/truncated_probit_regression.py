@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Probit Regression.
 """
@@ -20,10 +21,7 @@ from delphi.stats.linear_model import LinearModel
 
 
 class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated Probit Regression supports binary classification when the noise
-    distribution in the latent variable model is N(0, 1).
-    """
+    """Truncated probit regression for binary classification with N(0,1) latent noise."""
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -34,13 +32,15 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
         emp_weight: ch.Tensor = None,
         rand_seed: int = 0,
     ):
-        """
+        """Initialize TruncatedProbitRegression.
+
         Args:
-            phi (delphi.oracle.oracle) : oracle object for truncated regression model
-            alpha (float) : survival probability for truncated regression model
-            fit_intercept (bool) : whether to fit an intercept
-            emp_weight: empirical weight initialization
-            rand_seed: random seed
+            args (Parameters): hyperparameter object
+            phi (Callable): oracle object for the truncated regression model
+            alpha (float): survival probability for the truncated regression model
+            fit_intercept (bool): whether to fit an intercept term
+            emp_weight (Tensor): optional empirical weight initialization
+            rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_PROB_REG_DEFAULTS)
@@ -79,14 +79,14 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
         assert y.dim() == 2 and y.size(1) == 1, (
             f"y is size: {y.size()}. expecting y tensor with size num_samples by 1."
         )
-        # add one feature to x when fitting intercept
+        # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
 
         self.trainer = Trainer(self, self.args, self.logger)
-        # run PGD for parameter estimation
+        # Run PGD for parameter estimation.
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self
@@ -99,7 +99,7 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
         if self.emp_weight is None:
             X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
 
-            # empirical estimates for probit regression
+            # Empirical estimates for probit regression.
             self.emp_prob_reg = Probit(y.numpy(), X.numpy()).fit()
 
             self.emp_weight = ch.nn.Parameter(
@@ -112,28 +112,15 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
-        # projection set radius
+        # Projection set radius.
         self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.alpha)))
 
     def forward(self, X):  # pylint: disable=invalid-name
-        """
-        Forward pass through the model.
-
-        Args:
-            X: input features
-        """
+        """Compute linear predictions X @ weight."""
         return X @ self.weight
 
     def post_step_hook(self, i, loop_type, loss, batch):  # pylint: disable=unused-argument
-        """
-        Iteration hook for defined model. Method is called after each training update.
-
-        Args:
-            i (int) : gradient step or epoch number
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            batch: batch data
-        """
+        """No-op post-step hook; override in subclasses if needed."""
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""

@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated multivariate normal distribution with oracle access (ie. known truncation set).
 """
@@ -26,8 +27,10 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 class TruncatedMultivariateNormalKnownCovariance(
     TruncatedExponentialFamilyDistribution
 ):
-    """
-    Truncated multivariate normal distribution class with known truncation set.
+    """Truncated multivariate normal distribution with known covariance.
+
+    Attributes:
+        covariance_matrix: Known covariance matrix supplied at construction.
     """
 
     def __init__(
@@ -85,34 +88,22 @@ class TruncatedMultivariateNormalKnownCovariance(
 
     @property
     def best_loc_(self):
-        """
-        Returns the best mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Best mean vector estimate based on lowest training loss."""
         return self.best_params
 
     @property
     def final_loc_(self):
-        """
-        Returns the final mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Final mean vector estimate at the end of training."""
         return self.final_params
 
     @property
     def ema_loc_(self):
-        """
-        Returns the ema mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Exponential moving-average mean vector estimate."""
         return self.ema_params
 
     @property
     def avg_loc_(self):
-        """
-        Returns the avg mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Running-average mean vector estimate."""
         return self.avg_params
 
     def calc_suff_stat(self, S):  # pylint: disable=invalid-name,method-hidden
@@ -126,14 +117,21 @@ class TruncatedMultivariateNormalKnownCovariance(
         )
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated multivariate normal distribution known covariance"
 
 
 class TruncatedMultivariateNormalUnknownCovariance(
     TruncatedExponentialFamilyDistribution
 ):
-    """
-    Truncated multivariate normal distribution class with unknown covariance.
+    """Truncated multivariate normal distribution with unknown covariance.
+
+    Attributes:
+        eigenvalue_lower_bound: Minimum eigenvalue for covariance projection.
+        emp_canon_params: Empirical canonical parameters computed during fit.
+        emp_theta: Empirical natural parameters.
+        emp_T: Empirical precision matrix component.
+        emp_v: Empirical natural mean component.
     """
 
     def __init__(
@@ -199,10 +197,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
         return Q @ ch.diag_embed(L_clipped) @ Q.T  # pylint: disable=invalid-name
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """
-        Iteration hook called after each training update.
-        Projects parameters back into the feasible set.
-        """
+        """Project parameters back into the feasible set after each update."""
         with ch.no_grad():
             mat_t = self.T.clone().view(self.dims, self.dims)  # pylint: disable=invalid-name
             v = self.v.clone()
@@ -267,66 +262,42 @@ class TruncatedMultivariateNormalUnknownCovariance(
 
     @property
     def best_loc_(self):
-        """
-        Returns the best mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Best mean vector estimate based on lowest training loss."""
         return self.best_params[self.dims**2 :]
 
     @property
     def best_covariance_matrix_(self):
-        """
-        Returns the best covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Best covariance matrix estimate based on lowest training loss."""
         return self.best_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def final_loc_(self):
-        """
-        Returns the final mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Final mean vector estimate at the end of training."""
         return self.final_params[self.dims**2 :]
 
     @property
     def final_covariance_matrix_(self):
-        """
-        Returns the final covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Final covariance matrix estimate at the end of training."""
         self.final_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def ema_loc_(self):
-        """
-        Returns the ema mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Exponential moving-average mean vector estimate."""
         return self.ema_params[self.dims**2 :]
 
     @property
     def ema_covariance_matrix_(self):
-        """
-        Returns the ema covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Exponential moving-average covariance matrix estimate."""
         return self.ema_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def avg_loc_(self):
-        """
-        Returns the avg mean vector estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Running-average mean vector estimate."""
         return self.avg_params[self.dims**2 :]
 
     @property
     def avg_covariance_matrix_(self):
-        """
-        Returns the avg covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Running-average covariance matrix estimate."""
         return self.avg_params[: self.dims**2].view(self.dims, self.dims)
 
     def calc_suff_stat(self, S):  # pylint: disable=invalid-name,method-hidden
@@ -340,6 +311,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
         )
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated multivariate normal distribution"
 
 
@@ -356,6 +328,18 @@ def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
 
     Returns a known-covariance model if covariance_matrix is provided,
     otherwise returns an unknown-covariance model.
+
+    Args:
+        args (Parameters): hyperparameter object
+        phi (Callable): truncation set oracle
+        alpha (float): survival probability lower bound
+        dims (int): number of dimensions
+        covariance_matrix (Optional[Tensor]): known covariance; if None, it is estimated
+        sampler (Callable): optional sampler override
+
+    Returns:
+        TruncatedMultivariateNormalKnownCovariance if covariance_matrix is provided,
+        else TruncatedMultivariateNormalUnknownCovariance.
     """
     assert isinstance(args, Parameters), (
         "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"

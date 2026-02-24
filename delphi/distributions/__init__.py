@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """Distribution models subpackage for delphi."""
 
 from delphi.distributions.truncated_normal import TruncatedNormal

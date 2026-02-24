@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Boolean Product Distributions.
 """
@@ -17,14 +18,13 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_BOOL_PROD_DEFAULTS
 
 
 class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
-    """
-    Model for truncated boolean product distributions to be passed into trainer.
-    """
+    """Model for truncated boolean product distributions to be passed into trainer."""
 
     def __init__(self, args: Parameters, phi: Callable, alpha: float, dims: int):
-        """
+        """Initialize TruncatedBooleanProduct.
+
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): parameter object holding hyperparameters
             phi (Callable): truncation set oracle
             alpha (float): survival probability lower bound
             dims (int): number of dimensions
@@ -76,4 +76,5 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
         return self.avg_params
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated boolean product distribution"

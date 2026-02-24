@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Helper code (functions, classes, etc.)
 """
@@ -16,7 +17,7 @@ import torch.linalg as LA
 
 from delphi.utils import constants as consts
 
-# CONSTANTS
+# Module-level constants.
 JUPYTER = "jupyter"
 TERMINAL = "terminal"
 IPYTHON = "ipython"
@@ -25,13 +26,12 @@ COLAB = "google.colab"
 
 
 class Parameters:
-    """
-    Parameters class, just a nice way of accessing a dictionary
+    """Parameters class: a thin wrapper around a dictionary.
 
-    .. code-block:: python
+    Example::
 
         ps = Parameters({"a": 1, "b": 3})
-        ps.A # returns 1
+        ps.a  # returns 1
     """
 
     def __init__(self, params):
@@ -117,20 +117,20 @@ def cov(m, rowvar=False):
     """
     if m.dim() > 2:
         raise ValueError("m has more than 2 dimensions")
-    # clone array so that data is not manipulated in-place
+    # Clone array so that data is not manipulated in-place.
     m_ = m.clone().detach()
     if m_.dim() < 2:
         m_ = m_.view(1, -1)
     if not rowvar and m_.size(0) != 1:
         m_ = m_.t()
-    # m = m.type(torch.double)  # uncomment this line if desired
+    # m = m.type(torch.double)  # Uncomment this line if desired.
     fact = 1.0 / (m_.size(1) - 1)
     m_ -= ch.mean(m_, dim=1, keepdim=True)
     mt = m_.t()  # if complex: mt = m.t().conj()
     return fact * m_.matmul(mt)
 
 
-# For real symmetric matrices
+# For real symmetric matrices.
 def is_psd(matrix, tol=1e-8):
     """Check if a matrix is positive semi-definite."""
     try:
@@ -211,10 +211,7 @@ def ckpt_at_epoch(num):
 
 
 def setup_store_with_metadata(args, store):
-    """
-    Sets up a store for training according to the arguments object. See the
-    argparse object above for options.
-    """
+    """Set up a store for training by recording all args as metadata."""
     args_dict = args.as_dict()
     schema = cox.store.schema_from_dict(args_dict)
     store.add_table("metadata", schema)
@@ -222,7 +219,7 @@ def setup_store_with_metadata(args, store):
 
 
 def has_attr(obj, k):
-    """Checks both that obj.k exists and is not equal to None"""
+    """Check both that obj.k exists and is not equal to None."""
     try:
         return k in obj
     except KeyError:
@@ -232,21 +229,20 @@ def has_attr(obj, k):
 
 
 def accuracy(output, target, topk=(1,), exact=False):
-    """
-    Computes the top-k accuracy for the specified values of k
+    """Compute top-k accuracy for the specified values of k.
 
     Args:
-        output (ch.Tensor) : model output (N, classes) or (N, attributes)
-            for sigmoid/multitask binary classification
-        target (ch.Tensor) : correct labels (N,) [multiclass] or (N,
-            attributes) [multitask binary]
-        topk (tuple) : for each item "k" in this tuple, this method
-            will return the top-k accuracy
-        exact (bool) : whether to return aggregate statistics (if
-            False) or per-example correctness (if True)
+        output (Tensor): model output of shape (N, classes) or (N, attributes)
+            for sigmoid/multitask binary classification.
+        target (Tensor): correct labels of shape (N,) for multiclass or
+            (N, attributes) for multitask binary classification.
+        topk (tuple): for each item ``k`` in this tuple, return the top-k
+            accuracy.
+        exact (bool): if False return aggregate statistics; if True return
+            per-example correctness.
 
     Returns:
-        A list of top-k accuracies.
+        A list of top-k accuracies (or per-example correctness if exact=True).
     """
     with ch.no_grad():
         # Binary Classification
@@ -278,7 +274,7 @@ def accuracy(output, target, topk=(1,), exact=False):
 
 
 class AverageMeter:
-    """Computes and stores the average and current value"""
+    """Computes and stores the average and current value."""
 
     def __init__(self):
         """Initialize and reset the meter."""
@@ -390,7 +386,7 @@ class DataPrefetcher:
                 break
 
 
-# logistic distribution
+# Logistic distribution.
 base_distribution = Uniform(0, 1)
 transforms_ = [SigmoidTransform().inv]
 logistic = TransformedDistribution(base_distribution, transforms_)
@@ -419,7 +415,6 @@ def calc_spectral_norm(A):  # pylint: disable=invalid-name
     return s.max()
 
 
-# Return the thickness of a positive semi-definite matrix
 def calc_thickness(X):  # pylint: disable=invalid-name
     """Return the thickness (minimum real eigenvalue) of a PSD matrix X."""
     return LA.eig(X).eigenvalues.real.min()  # pylint: disable=not-callable

@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Helper functions for dealing with model.
 """
@@ -37,7 +38,8 @@ def make_and_restore_model(  # pylint: disable=too-many-arguments,too-many-posit
     add_custom_forward=False,
 ):
     """
-    Makes a model and (optionally) restores it from a checkpoint.
+    Make a model and optionally restore it from a checkpoint.
+
     Args:
         arch (str|nn.Module): Model architecture identifier or otherwise a
             torch.nn.Module instance with the classifier
@@ -66,7 +68,7 @@ def make_and_restore_model(  # pylint: disable=too-many-arguments,too-many-posit
         dataset.get_model(arch, pytorch_pretrained) if isinstance(arch, str) else arch
     )
 
-    # optionally resume from a checkpoint
+    # Optionally resume from a checkpoint.
     checkpoint = None
     if resume_path and os.path.isfile(resume_path):
         print(f"=> loading checkpoint '{resume_path}'")

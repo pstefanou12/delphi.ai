@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated normal distribution with oracle access (ie. known truncation set).
 """
@@ -17,8 +18,7 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedNormalKnownCovariance(TruncatedMultivariateNormalKnownCovariance):
-    """
-    Truncated normal distribution class with known covariance.
+    """Truncated normal distribution with known covariance.
 
     Inherits all constructor arguments from
     TruncatedMultivariateNormalKnownCovariance:
@@ -31,12 +31,12 @@ class TruncatedNormalKnownCovariance(TruncatedMultivariateNormalKnownCovariance)
     """
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated normal distribution known covariance"
 
 
 class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovariance):
-    """
-    Truncated normal distribution class with unknown variance.
+    """Truncated normal distribution with unknown variance.
 
     Inherits all constructor arguments from
     TruncatedMultivariateNormalUnknownCovariance:
@@ -49,37 +49,26 @@ class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovarianc
 
     @property
     def best_variance_(self):
-        """
-        Returns the best covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Best variance estimate based on lowest training loss."""
         return self.best_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def final_variance_(self):
-        """
-        Returns the final covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Final variance estimate at the end of training."""
         self.final_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def ema_variance_(self):
-        """
-        Returns the ema covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Exponential moving-average variance estimate."""
         return self.ema_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def avg_variance_(self):
-        """
-        Returns the avg covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Running-average variance estimate."""
         return self.avg_params[: self.dims**2].view(self.dims, self.dims)
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated normal distribution"
 
 
@@ -96,6 +85,18 @@ def TruncatedNormal(  # pylint: disable=invalid-name
 
     Returns a known-variance model if variance is provided,
     otherwise returns an unknown-variance model.
+
+    Args:
+        args (Parameters): hyperparameter object
+        phi (Callable): truncation set oracle
+        alpha (float): survival probability lower bound
+        dims (int): number of dimensions
+        variance (Optional[Tensor]): known variance; if None, variance is estimated
+        sampler (Callable): optional sampler override
+
+    Returns:
+        TruncatedNormalKnownCovariance if variance is provided, else
+        TruncatedNormalUnknownVariance.
     """
     assert isinstance(args, Parameters), (
         "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"

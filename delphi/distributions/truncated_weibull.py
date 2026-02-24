@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Weibull Distribution.
 """
@@ -19,15 +20,19 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_WEIBULL_DEFAULTS
 
 class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
     """
-    Model for truncated exponential distributions to be passed into trainer.
+    Model for truncated Weibull distributions to be passed into trainer.
+
+    Attributes:
+        k (int): Weibull shape parameter.
     """
 
     def __init__(
         self, args: Parameters, phi: Callable, alpha: float, dims: int, k: int
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """
+        """Initialize TruncatedWeibull.
+
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): parameter object holding hyperparameters
             phi (Callable): truncation set oracle
             alpha (float): survival probability lower bound
             dims (int): number of dimensions
@@ -85,4 +90,5 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
         return self.avg_params
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated weibull distribution"

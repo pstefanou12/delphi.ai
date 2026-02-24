@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Multinomial logistic regression that uses gumbel max loss function.
 """
@@ -10,20 +11,18 @@ from delphi.grad import GumbelCE
 from delphi.utils.helpers import accuracy
 from delphi.stats.linear_model import LinearModel
 
-# CONSTANT
+# Module-level constants.
 mse_loss = MSELoss()
 G = Gumbel(0, 1)
 
 
 class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
-    """
-    Truncated logistic regression model to pass into trainer framework.
-    """
+    """Multinomial logistic regression using Gumbel max loss, for the trainer framework."""
 
     def __init__(self, args, d, k):  # pylint: disable=invalid-name
         """
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): parameter object holding hyperparameters
             d (int): input dimension
             k (int): number of classes
         """
@@ -43,15 +42,19 @@ class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
 
     def __call__(self, batch):
         """
-        Training step for defined model.
+        Training step for the model.
+
         Args:
-            batch (Iterable) : iterable of inputs that
+            batch (Iterable): iterable of (inputs, targets) pairs
+
+        Returns:
+            Tuple of (loss, prec1, prec5).
         """
         inp, targ = batch
         z = inp @ self.model
         loss = GumbelCE.apply(z, targ)
 
-        # calculate precision accuracies
+        # Calculate precision accuracies.
         prec1, prec5 = None, None
         if z.size(1) >= 5:
             prec1, prec5 = accuracy(z, targ, topk=(1, 5))
