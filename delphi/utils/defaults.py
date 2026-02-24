@@ -19,6 +19,7 @@ OPTIMIZER_DEFAULTS = {
             [
                 "cyclic",  # noqa: F821
                 "cosine",  # noqa: F821
+                "linear",  # noqa: F821
                 "step",  # noqa: F821
                 "multi_step",  # noqa: F821
                 "exponential",  # noqa: F821
