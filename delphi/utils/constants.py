@@ -8,14 +8,12 @@ IPYTHON = "ipython"
 
 LOGS_SCHEMA = {
     "epoch": int,
-    "val_prec1": float,
     "val_loss": float,
-    "train_prec1": float,
     "train_loss": float,
     "time": float,
 }
 
-EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
+EVAL_LOGS_SCHEMA = {"test_loss": float, "time": float}
 
 # Scheduler constants.
 CYCLIC = "cyclic"

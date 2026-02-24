@@ -502,6 +502,19 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """
         return False, None
 
+    def batch_metrics(self) -> dict:
+        """Return per-batch metrics for the trainer to track.
+
+        Called by the trainer after each train and val step. Return a dict
+        of metric names to scalar values; the trainer accumulates running
+        averages across the epoch. Override for classification accuracy,
+        reward signals, ELBO components, etc.
+
+        Returns:
+            Dict mapping metric names to scalar or float values.
+        """
+        return {}
+
 
 # Populate the built-in optimizer registry after the class is fully defined.
 delphi._OPTIMIZER_REGISTRY = {
