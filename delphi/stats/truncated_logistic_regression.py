@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Logistic Regression.
 """
@@ -19,7 +20,7 @@ from delphi.utils.helpers import Parameters
 from delphi.stats.linear_model import LinearModel
 
 
-# CONSTANTS
+# Module-level constants.
 softmax = Softmax(dim=-1)
 sig = Sigmoid()
 OVR = "ovr"
@@ -28,10 +29,7 @@ CLASSIFICATION_PROCEDURES = [OVR, MULTI]
 
 
 class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated Logistic Regression supports both binary cross entropy classification
-    and truncated cross entropy classification.
-    """
+    """Truncated logistic regression supporting binary and multinomial classification."""
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -43,13 +41,17 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
         emp_weight: ch.Tensor = None,
         rand_seed: int = 0,
     ):
-        """
-        Initialize TruncatedLogisticRegression.
+        """Initialize TruncatedLogisticRegression.
 
         Args:
-            phi (delphi.oracle.oracle) : oracle object for truncated regression model
-            alpha (float) : survival probability for truncated regression model
-            fit_intercept (bool) : boolean indicating whether to fit a intercept or not
+            args (Parameters): hyperparameter object
+            phi (Callable): oracle object for the truncated regression model
+            alpha (float): survival probability for the truncated regression model
+            fit_intercept (bool): whether to fit an intercept term
+            multi_class (str): ``"ovr"`` for binary or ``"multinomial"`` for
+                multi-class classification
+            emp_weight (Tensor): optional empirical weight initialization
+            rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
@@ -108,7 +110,7 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
         elif self.multi_class == MULTI:
             self.K = unique_classes  # pylint: disable=invalid-name,attribute-defined-outside-init
 
-        # add one feature to x when fitting intercept
+        # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
         self.D = X.size(1)  # pylint: disable=invalid-name,attribute-defined-outside-init
@@ -140,29 +142,16 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
         SkLearn sets up multinomial classification differently. So when doing
         multinomial classification, we initialize with random estimates.
         """
-        # calculate empirical estimates for truncated linear model
+        # Calculate empirical estimates for the truncated linear model.
         self._calc_emp_model()
         self.radius = self.args.r * self.base_radius  # pylint: disable=attribute-defined-outside-init
 
     def forward(self, X):  # pylint: disable=invalid-name
-        """
-        Training step for defined model.
-
-        Args:
-            X: input features
-        """
+        """Compute logit predictions for input features X."""
         return X @ self.weight.T
 
     def post_step_hook(self, i, loop_type, loss, batch):
-        """
-        Iteration hook for defined model. Method is called after each training update.
-
-        Args:
-            i (int) : gradient step or epoch number
-            loop_type (str) : 'train' or 'val'; indicating type of loop
-            loss (ch.Tensor) : loss for that iteration
-            batch: batch data
-        """
+        """No-op post-step hook; override in subclasses if needed."""
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""

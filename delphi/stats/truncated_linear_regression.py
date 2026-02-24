@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Linear Regression.
 """
@@ -27,13 +28,10 @@ from delphi.stats.linear_model import LinearModel
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     LinearModel
 ):
-    """
-    Truncated linear regression class. Supports truncated linear regression
-    with known noise, unknown noise, and confidence intervals. Module uses
-    delphi.trainer.Trainer to train truncated linear regression by performing
-    projected stochastic gradient descent on the truncated population log likelihood.
-    Module requires the user to specify an oracle from the delphi.oracle.oracle class,
-    and the survival probability.
+    """Truncated linear regression via projected SGD on the truncated log-likelihood.
+
+    Supports known noise variance, unknown noise variance, and temporal
+    dependence. Requires a truncation oracle and survival probability alpha.
     """
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -47,30 +45,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         emp_weight: ch.Tensor = None,
         rand_seed=0,
     ):
-        """
-        Initialize TruncatedLinearRegression.
+        """Initialize TruncatedLinearRegression.
 
         Args:
-            phi (delphi.oracle.oracle) : oracle object for truncated regression model
-            alpha (float) : survival probability for truncated regression model
-            fit_intercept (bool) : boolean indicating whether to fit a intercept or not
-            val (int) : number of samples to use for validation set
-            tol (float) : gradient tolerance threshold
-            workers (int) : number of workers to spawn
-            r (float) : size for projection set radius
-            rate (float): rate at which to increase the size of the projection set
-            num_samples (int) : number of samples to sample in gradient
-            batch_size (int) : batch size
-            lr (float) : initial learning rate for regression weight parameters
-            var_lr (float) : initial learning rate for variance parameter
-            step_lr (int) : number of gradient steps before decaying learning rate
-            custom_lr_multiplier (str) : "cosine", "adam" - different lr schedulers
-            lr_interpolation (str) : "linear" linear interpolation
-            step_lr_gamma (float) : amount to decay learning rate for step lr
-            momentum (float) : momentum for SGD optimizer
-            eps (float) : epsilon value for gradient to prevent zero in denominator
-            dependent (bool) : whether dataset is dependent (run SwitchGrad)
-            store (cox.store.Store) : cox store object for logging
+            args (Parameters): hyperparameter object
+            phi (Callable): oracle object for the truncated regression model
+            alpha (float): survival probability for the truncated regression model
+            fit_intercept (bool): whether to fit an intercept term
+            noise_var (Tensor): known noise variance; if None, it is estimated
+            dependent (bool): whether the dataset has temporal dependence
+            emp_weight (Tensor): optional empirical weight initialization
+            rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
         if dependent:
@@ -105,7 +90,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 self.args.eps,
             ]
 
-        # property instance variables
+        # Property instance variables.
         self.coef, self.intercept = None, None
 
     def fit(  # pylint: disable=attribute-defined-outside-init
@@ -141,7 +126,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 "expecting noise_var.size(0) == y.size(1)"
             )
 
-        # add number of samples to args
+        # Add number of samples to args.
         setattr(self.args, "T", X.size(0))
         if self.dependent:
             self.criterion_params = [
@@ -155,13 +140,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             ]
 
         k = X.size(1)
-        # Normalization factor: B * sqrt(k)
-        # Compute B = maximum L-inf norm across all samples
+        # Normalization factor: B * sqrt(k).
+        # Compute B as the maximum L-inf norm across all samples.
         B = X.norm(dim=1, p=float("inf")).max()  # pylint: disable=invalid-name
         self.beta = B * (k**0.5)
         X = X / self.beta  # pylint: disable=invalid-name
 
-        # add one feature to x when fitting intercept
+        # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
@@ -175,10 +160,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
-        # use OLS as empirical estimate to define projection set
+        # Use OLS as an empirical estimate to define the projection set.
         self.radius = self.args.r * self.base_radius
-        # empirical estimates for projection set
-        # generate noise variance radius bounds if unknown
+        # Empirical estimates for the projection set.
+        # Generate noise variance radius bounds when variance is unknown.
         if self.noise_var is None:
             lower_bound = self.emp_noise_var / (8 * (5 + 2 * math.log(1 / self.alpha)))
             self.var_bounds = Bounds(lower_bound, self.emp_noise_var + self.radius)
@@ -234,7 +219,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         final_params = self.trainer.final_params
         if self.args.r is not None:
             self.args.r *= self.args.rate
-        # remove model from computation graph
+        # Remove model from the computation graph.
         if self.noise_var is None:
             v = self.v.data
             lambda_ = self.lambda_.data
@@ -261,7 +246,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 self.final_coef = (final_params[:-1] * self.final_variance) / self.beta
                 self.emp_weight /= self.beta
 
-        # assign results from procedure to instance variables
+        # Assign results from the procedure to instance variables.
         else:
             if self.fit_intercept:
                 self.best_coef = best_params[:-1] / self.beta
@@ -400,7 +385,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def step_post_hook(self, optimizer, args, kwargs):
         """Post-step hook for parameter projection."""
         if self.noise_var is None:
-            # project model parameters back to domain
+            # Project model parameters back to the feasible domain.
             var = 1.0 / self.lambda_
             self.lambda_.data = 1.0 / ch.clamp(
                 var, self.var_bounds.lower, self.var_bounds.upper

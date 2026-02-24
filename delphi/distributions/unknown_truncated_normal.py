@@ -1,5 +1,6 @@
+# Author: pstefanou12@
 """
-Truncated normal distribution without oracle access (ie. unknown truncation set)
+Truncated normal distribution without oracle access (ie. unknown truncation set).
 """
 
 # pylint: disable=duplicate-code
@@ -18,8 +19,7 @@ from delphi.utils.helpers import Parameters
 class UnknownTruncationNormalKnownVariance(
     UnknownTruncationMultivariateNormalKnownCovariance
 ):
-    """
-    Truncated normal distribution class with known variance and unknown truncation set.
+    """Truncated normal distribution with known variance and unknown truncation.
 
     Inherits all constructor arguments from
     UnknownTruncationMultivariateNormalKnownCovariance:
@@ -31,6 +31,7 @@ class UnknownTruncationNormalKnownVariance(
     """
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return (
             "truncated normal distribution with unknown truncation and known variance"
         )
@@ -39,8 +40,7 @@ class UnknownTruncationNormalKnownVariance(
 class UnknownTruncatedNormalUnknownVariance(
     UnknownTruncationMultivariateNormalUnknownCovariance
 ):
-    """
-    Truncated normal distribution class with unknown variance and unknown truncation set.
+    """Truncated normal distribution with unknown variance and unknown truncation.
 
     Inherits all constructor arguments from
     UnknownTruncationMultivariateNormalUnknownCovariance:
@@ -52,37 +52,26 @@ class UnknownTruncatedNormalUnknownVariance(
 
     @property
     def best_variance_(self):
-        """
-        Returns the best covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Best variance estimate based on lowest training loss."""
         return self.best_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def final_variance_(self):
-        """
-        Returns the final covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Final variance estimate at the end of training."""
         self.final_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def ema_variance_(self):
-        """
-        Returns the ema covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Exponential moving-average variance estimate."""
         return self.ema_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def avg_variance_(self):
-        """
-        Returns the avg covariance matrix estimate for the multivariate normal
-        distribution based off of the loss function.
-        """
+        """Running-average variance estimate."""
         return self.avg_params[: self.dims**2].view(self.dims, self.dims)
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated normal distribution with unknown truncation"
 
 
@@ -98,6 +87,17 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
 
     Returns a known-variance model if variance is provided,
     otherwise returns an unknown-variance model.
+
+    Args:
+        args (Parameters): hyperparameter object
+        k (int): number of nearest neighbours for the oracle
+        alpha (float): survival probability lower bound
+        dims (int): number of dimensions
+        variance (Optional[Tensor]): known variance; if None, variance is estimated
+
+    Returns:
+        UnknownTruncationNormalKnownVariance if variance is provided, else
+        UnknownTruncatedNormalUnknownVariance.
     """
     assert isinstance(args, Parameters), (
         "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"

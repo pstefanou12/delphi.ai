@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Lasso Regression.
 """
@@ -21,13 +22,10 @@ from delphi.stats.linear_model import LinearModel
 
 
 class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated LASSO regression class. Supports truncated LASSO regression
-    with known noise, unknown noise, and confidence intervals. Module uses
-    delphi.trainer.Trainer to train truncated linear regression by performing
-    projected stochastic gradient descent on the truncated population log likelihood.
-    Module requires the user to specify an oracle from the delphi.oracle.oracle class,
-    and the survival probability.
+    """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
+
+    Supports known noise variance. Requires a truncation oracle and survival
+    probability alpha.
     """
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -41,31 +39,17 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
         emp_weight: ch.Tensor = None,
         rand_seed: int = 0,
     ):
-        """
-        Initialize TruncatedLassoRegression.
+        """Initialize TruncatedLassoRegression.
 
         Args:
-            phi (delphi.oracle.oracle) : oracle object for truncated regression model
-            alpha (float) : survival probability for truncated regression model
-            fit_intercept (bool) : boolean indicating whether to fit a intercept or not
-            steps (int) : number of gradient steps to take
-            val (int) : number of samples to use for validation set
-            tol (float) : gradient tolerance threshold
-            workers (int) : number of workers to spawn
-            r (float) : size for projection set radius
-            rate (float): rate at which to increase the size of the projection set
-            num_samples (int) : number of samples to sample in gradient
-            batch_size (int) : batch size
-            lr (float) : initial learning rate for regression parameters
-            var_lr (float) : initial learning rate for variance parameter
-            step_lr (int) : number of gradient steps before decaying learning rate
-            custom_lr_multiplier (str) : "cosine", "adam" - different lr schedulers
-            lr_interpolation (str) : "linear" linear interpolation
-            step_lr_gamma (float) : amount to decay learning rate for step lr
-            momentum (float) : momentum for SGD optimizer
-            l1 (float) : weight decay for SGD optimizer
-            eps (float) : epsilon value for gradient to prevent zero in denominator
-            store (cox.store.Store) : cox store object for logging
+            args (Parameters): hyperparameter object
+            phi (Callable): oracle object for the truncated regression model
+            alpha (float): survival probability for the truncated regression model
+            l1 (float): L1 regularization coefficient
+            fit_intercept (bool): whether to fit an intercept term
+            noise_var (float): known noise variance
+            emp_weight (Tensor): optional empirical weight initialization
+            rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
         args = check_and_fill_args(args, TRUNC_LASSO_DEFAULTS)
@@ -113,7 +97,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
         assert y.dim() == 2 and y.size(1) == 1, (
             f"y is size: {y.size()}. expecting y tensor with size num_samples by 1."
         )
-        # add one feature to x when fitting intercept
+        # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
 
@@ -122,12 +106,12 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
         else:
             k = X.size(1)
 
-        # Normalization factor: B * sqrt(k)
-        # Compute B = maximum L-inf norm across all samples
+        # Normalization factor: B * sqrt(k).
+        # Compute B as the maximum L-inf norm across all samples.
         B = X.norm(dim=1, p=float("inf")).max()  # pylint: disable=invalid-name
         self.beta = B * (k**0.5)
 
-        # Normalize all features except intercept column
+        # Normalize all features except the intercept column.
         if self.fit_intercept:
             X_normalized = X[:, :-1] / self.beta  # pylint: disable=invalid-name
             X = ch.cat([X_normalized, X[:, -1:]], dim=1)  # pylint: disable=invalid-name
@@ -145,7 +129,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
     def pretrain_hook(self):
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
-        # use OLS as empirical estimate to define projection set
+        # Use OLS as an empirical estimate to define the projection set.
         self.radius = self.args.r * self.base_radius
         self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
@@ -168,7 +152,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
 
     def pre_step_hook(self, inp: ch.Tensor) -> None:
         """Pre-step hook to apply L1 regularization gradient."""
-        # only regularize the weight coefficients and not intercept
+        # Only regularize the weight coefficients and not the intercept.
         if self.fit_intercept:
             self.weight.grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
         else:

@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Default parameters for running algorithms in delphi.ai.
 """
@@ -8,7 +9,7 @@ import torch as ch
 
 from delphi.utils.helpers import has_attr
 
-# CONSTANTS
+# Module-level constants.
 REQ = "required"
 
 OPTIMIZER_DEFAULTS = {
@@ -239,11 +240,22 @@ TRUNC_LQR_DEFAULTS = {
 
 def check_and_fill_args(args, defaults):  # pylint: disable=too-many-branches
     """
-    Enhanced argument validation with rich type checking and constraints.
+    Validate and fill in missing arguments from defaults.
+
+    Args:
+        args (Parameters): parameter object to validate and fill
+        defaults (dict): mapping of argument names to (type_spec, default) or
+            (type_spec, default, constraints) tuples
+
+    Returns:
+        The updated args object with missing values filled from defaults.
+
+    Raises:
+        ValueError: if an argument has an invalid type or fails a constraint.
     """
 
     def is_valid_value(value, type_spec):
-        """Check if value matches type specification"""
+        """Check if value matches type specification."""
         if isinstance(type_spec, (list, tuple)) and not isinstance(type_spec, type):
             return value in type_spec
 
@@ -265,7 +277,7 @@ def check_and_fill_args(args, defaults):  # pylint: disable=too-many-branches
         return False
 
     def validate_constraints(value, constraints):
-        """Validate value against constraints"""
+        """Validate value against constraints."""
         if not constraints:
             return True
 

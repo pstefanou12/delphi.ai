@@ -1,6 +1,7 @@
+# Author: pstefanou12@
 """Constants used throughout the delphi library."""
 
-# CONSTANTS
+# Module-level constants.
 JUPYTER = "jupyter"
 TERMINAL = "terminal"
 IPYTHON = "ipython"
@@ -16,7 +17,7 @@ LOGS_SCHEMA = {
 
 EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
 
-# scheduler constants
+# Scheduler constants.
 CYCLIC = "cyclic"
 COSINE = "cosine"
 LINEAR = "linear"

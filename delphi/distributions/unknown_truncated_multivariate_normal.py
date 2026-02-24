@@ -1,5 +1,6 @@
+# Author: pstefanou12@
 """
-Truncated multivariate normal distribution without oracle access (ie. unknown truncation set)
+Truncated multivariate normal distribution without oracle access (ie. unknown truncation set).
 """
 
 # pylint: disable=duplicate-code
@@ -29,9 +30,11 @@ from delphi.utils.defaults import check_and_fill_args, UNKNOWN_TRUNC_MULTI_NORM_
 class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too-many-instance-attributes
     TruncatedMultivariateNormalKnownCovariance
 ):
-    """
-    Truncated multivariate normal distribution class with known covariance
-    and unknown truncation set.
+    """Truncated multivariate normal with known covariance and unknown truncation.
+
+    Attributes:
+        k (int): Number of nearest neighbours used by the oracle.
+        exp_h: Exponential h helper object, set during fit.
     """
 
     def __init__(
@@ -55,7 +58,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         assert isinstance(args, Parameters), (
             f"args is type {type(args)}. expecting type delphi.utils.helper.Parameters."
         )
-        # algorithm hyperparameters
+        # Algorithm hyperparameters.
         self.k = k
         self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
         super().__init__(
@@ -69,7 +72,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.emp_loc, self.emp_covariance_matrix = None, None
         self.criterion = UnknownTruncationMultivariateNormalNLL.apply
 
-        # Attributes initialized during fit
+        # Attributes initialized during fit.
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h = None
@@ -99,7 +102,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             self.args, S, UnknownTruncationNormalDataset
         )
 
-        # verify that the S is whitened to N(0, I)
+        # Verify that S is whitened to N(0, I).
         emp_loc = S.mean(0)
         emp_cov = cov(S)
         if (
@@ -181,9 +184,11 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
 class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=too-many-instance-attributes
     TruncatedMultivariateNormalUnknownCovariance
 ):
-    """
-    Truncated multivariate normal distribution class with unknown covariance
-    and unknown truncation set.
+    """Truncated multivariate normal with unknown covariance and unknown truncation.
+
+    Attributes:
+        k (int): Number of nearest neighbours used by the oracle.
+        exp_h: Exponential h helper object, set during fit.
     """
 
     def __init__(self, args: Parameters, k: int, alpha: float, dims: int):
@@ -199,7 +204,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         assert isinstance(args, Parameters), (
             f"args is type {type(args)}. expecting type delphi.utils.helper.Parameters."
         )
-        # algorithm hyperparameters
+        # Algorithm hyperparameters.
         self.k = k
         self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
         super().__init__(args, partial(UnknownGaussian, k), alpha, dims)
@@ -207,7 +212,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.emp_loc, self.emp_covariance_matrix = None, None
         self.criterion = UnknownTruncationMultivariateNormalNLL.apply
 
-        # Attributes initialized during fit
+        # Attributes initialized during fit.
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h = None
@@ -239,7 +244,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             self.args, S, UnknownTruncationNormalDataset
         )
 
-        # verify that the S is whitened to N(0, I)
+        # Verify that S is whitened to N(0, I).
         emp_loc = S.mean(0)
         emp_cov = cov(S)
         if (
@@ -333,10 +338,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         return Q @ ch.diag_embed(L_clipped) @ Q.T  # pylint: disable=invalid-name
 
     def step_post_hook(self, optimizer, args, kwargs):
-        """
-        Iteration hook called after each training update.
-        Projects parameters back into the feasible set.
-        """
+        """Project parameters back into the feasible set after each update."""
         with ch.no_grad():
             mat_t = self.T.clone().view(self.dims, self.dims)  # pylint: disable=invalid-name
             v = self.v.clone()
@@ -388,6 +390,17 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
 
     Returns a known-covariance model if covariance_matrix is provided,
     otherwise returns an unknown-covariance model.
+
+    Args:
+        args (Parameters): hyperparameter object
+        k (int): number of nearest neighbours for the oracle
+        alpha (float): survival probability lower bound
+        dims (int): number of dimensions
+        covariance_matrix (Optional[Tensor]): known covariance; if None, it is estimated
+
+    Returns:
+        UnknownTruncationMultivariateNormalKnownCovariance if covariance_matrix is
+        provided, else UnknownTruncationMultivariateNormalUnknownCovariance.
     """
     assert isinstance(args, Parameters), (
         "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
@@ -401,9 +414,16 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     return UnknownTruncationMultivariateNormalUnknownCovariance(args, k, alpha, dims)
 
 
-# HELPER FUNCTIONS
+# Helper functions.
 class ExpH:  # pylint: disable=too-few-public-methods
-    """Helper class computing the exponential h function for unknown truncation."""
+    """
+    Helper class computing the exponential h function for unknown truncation.
+
+    Attributes:
+        emp_loc: Empirical mean vector.
+        emp_cov: Empirical covariance matrix.
+        pi_const: Pre-computed log-normalisation constant.
+    """
 
     def __init__(self, emp_loc, emp_cov):
         """

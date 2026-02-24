@@ -1,8 +1,7 @@
+# Author: pstefanou12@
 """
 Multinomial logistic regression that uses softmax loss function.
 """
-
-# distribution tests
 
 import warnings
 
@@ -15,21 +14,20 @@ from delphi.utils.helpers import Parameters
 from delphi.utils.datasets import make_train_and_val
 from delphi.stats.linear_model import LinearModel
 
-# CONSTANT
+# Module-level constants.
 softmax = Softmax(dim=1)
 ce = CrossEntropyLoss()
 
 
 class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attributes,abstract-method
-    """
-    Truncated logistic regression model to pass into trainer framework.
+    """Softmax regression using cross-entropy loss, for the trainer framework.
+
+    Attributes:
+        fit_intercept (bool): Whether to fit an intercept term.
+        criterion: Cross-entropy loss function.
     """
 
     def __init__(self, args: Parameters, fit_intercept: bool = True):
-        """
-        Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
-        """
         super().__init__(args, dependent=False)  # pylint: disable=no-value-for-parameter
         self.fit_intercept = fit_intercept
         del self.criterion
@@ -39,11 +37,11 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
         self.d, self.k = None, None  # pylint: disable=invalid-name
 
     def fit(self, X, y):  # pylint: disable=invalid-name,attribute-defined-outside-init
-        """
-        Trains model on given data.
+        """Train the softmax regression model on labeled data.
+
         Args:
-            X (Tensor) : input data
-            y (Tensor) : target data
+            X (Tensor): input feature matrix of shape (n, d)
+            y (Tensor): target class labels of shape (n, 1)
         """
         assert isinstance(X, Tensor), (
             f"X is type: {type(X)}. expected type torch.Tensor."
@@ -69,7 +67,7 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
             "y contains only 1 unique class. 2+ uniques classes are required for classification procedures"
         )
 
-        # add one feature to x when fitting intercept
+        # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
@@ -82,6 +80,7 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
         return self
 
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
+        """Set up model weight parameter before training."""
         weight = ch.nn.Parameter(ch.randn(self.k, self.d))
         self.register_parameter("weight", weight)
 
@@ -92,9 +91,14 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
 
     def __call__(self, X, y):
         """
-        Training step for defined model.
+        Compute logit predictions for a batch.
+
         Args:
-            batch (Iterable) : iterable of inputs that
+            X (Tensor): input features
+            y (Tensor): target class labels (unused; present for API consistency)
+
+        Returns:
+            Logit predictions of shape (num_samples, k).
         """
         return X @ self.weight.T
 
@@ -141,9 +145,7 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
 
     @property
     def coef_(self):
-        """
-        Regression weight.
-        """
+        """Regression weight."""
         return self.best_coef
 
     @property

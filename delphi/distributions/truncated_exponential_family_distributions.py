@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Parent class for truncated exponential distribution model classes.
 """
@@ -23,7 +24,26 @@ from delphi.utils.helpers import Parameters
 
 
 class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=too-many-instance-attributes
-    """Base class for truncated exponential family distribution models."""
+    """Base class for truncated exponential family distribution models.
+
+    Attributes:
+        phi (Callable): Truncation set oracle.
+        alpha (float): Survival probability lower bound.
+        dims (int): Number of dimensions.
+        dist (ExponentialFamily): Exponential family distribution class.
+        calc_suff_stat (Callable): Sufficient statistic calculator.
+        criterion: NLL loss function applied during training.
+        criterion_params (list): Extra parameters passed to criterion.
+        best_params: Best canonical parameters found across all training phases.
+        best_loss: Loss value at best parameters.
+        final_params: Canonical parameters at the end of the last phase.
+        final_loss: Loss value at final parameters.
+        ema_params: Exponential moving-average canonical parameters.
+        avg_params: Running-average canonical parameters.
+        train_loader_: Training data loader, set during fit.
+        val_loader_: Validation data loader, set during fit.
+        radius (float): Current projection ball radius.
+    """
 
     def __init__(
         self,
@@ -164,8 +184,12 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
 
     def _check_convergence(self):
         """
-        Determines if the entire procedure should stop.
-        Returns: (should_stop: bool, reason: str)
+        Determine if the entire training procedure should stop.
+
+        Returns:
+            Tuple of (should_stop, reason) where should_stop is a bool and
+            reason is a string label for the convergence criterion, or None
+            if convergence has not been reached.
         """
         current_loss = self.trainer.best_loss
 
@@ -202,10 +226,10 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.register_parameter("theta", nn.Parameter(self.emp_theta))
 
     def forward(self, x):  # pylint: disable=unused-argument
-        """
-        Training step for defined model.
+        """Return the current theta parameter (input is unused).
+
         Args:
-            x: input data (unused, returns current theta parameter)
+            x: input data (unused)
         """
         return self.theta
 
@@ -214,10 +238,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         return theta
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """
-        Iteration hook for defined model. Method is called after each
-        training update.
-        """
+        """Project theta back onto the L2 ball after each training update."""
         with ch.no_grad():
             proj_theta = self.emp_theta
             theta_diff = (self.theta - self.emp_theta)[..., None].norm()

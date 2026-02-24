@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Linear Quadratic Regulator (LQR) algorithm.
 
@@ -22,10 +23,7 @@ logger.setLevel(logging.INFO)
 
 
 class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated LQR algorithm. Three phase algorithm that removes bias from the
-    case when there is truncation bias in a LQR dynamical system.
-    """
+    """Three-phase algorithm that removes truncation bias in a LQR dynamical system."""
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -35,14 +33,14 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         m: int,  # pylint: disable=invalid-name
         rand_seed: int = 0,
     ):
-        """
-        Initialize TruncatedLQR.
+        """Initialize TruncatedLQR.
 
         Args:
-          args: (Parameters)
-          gen_data: (Callable) - callable that takes () as inputs, and returns ()
-          d: (int) - dimension of matrix A
-          m: (int) - second dimension for matrix B (m >= d)
+            args (Parameters): hyperparameter object
+            gen_data (Callable): data-generating function for the dynamical system
+            d (int): state dimension of matrix A
+            m (int): input dimension of matrix B; must satisfy m >= d
+            rand_seed (int): random seed for reproducibility
         """
         self.args = check_and_fill_args(args, TRUNC_LQR_DEFAULTS)
         assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
@@ -288,7 +286,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         index = 0
         id_ = ch.eye(self.d)
 
-        # break based off of the number of samples collected or number of trajectories
+        # Break based on the number of samples collected or number of trajectories.
         while (
             traj < self.args.num_traj_gen_samples_A
             and X.size(0) < self.args.T_gen_samples_A
@@ -296,7 +294,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         ):
             xt = ch.zeros(1, self.d)
             traj += 1
-            # while the system is responsive
+            # While the system is responsive.
             responsive = True
             while responsive:
                 ut = self.calculate_u_t_two(

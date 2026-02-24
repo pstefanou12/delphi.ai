@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Data loader wrappers providing per-epoch recomputation and real-time transformations.
 """
@@ -8,7 +9,7 @@ from delphi.utils import folder
 from delphi.utils.helpers import type_of_script
 from delphi.utils import constants as consts
 
-# determine running environment
+# Determine running environment.
 SCRIPT = type_of_script()
 if SCRIPT == consts.JUPYTER:
     from tqdm.autonotebook import tqdm
@@ -16,7 +17,7 @@ else:
     from tqdm import tqdm
 
 
-## loader wrapper (for adding custom functions to dataloader)
+# Loader wrapper (for adding custom functions to dataloader).
 class PerEpochLoader:
     """
     A blend between TransformedLoader and LambdaLoader: stores the whole loader
@@ -76,13 +77,13 @@ class LambdaLoader:
     """
 
     def __init__(self, loader, func):
-        """
+        """Initialize with a loader and a real-time transformation function.
+
         Args:
-            loader (PyTorch dataloader) : loader for dataset (*required*).
-            func (function) : fixed transformation to be applied to
-                every batch in real-time (*required*). It takes in
-                (images, labels) and returns (images, labels) of the
-                same shape.
+            loader: PyTorch DataLoader for the dataset.
+            func (Callable): fixed transformation applied to every batch
+                in real-time. Takes ``(images, labels)`` and returns
+                ``(images, labels)`` of the same shape.
         """
         self.data_loader = loader
         self.loader = iter(self.data_loader)
@@ -119,43 +120,28 @@ def transformed_loader(  # pylint: disable=too-many-arguments,too-many-positiona
     fraction=1.0,
     shuffle=True,
 ):
-    """
-    This is a function that allows one to apply any given (fixed)
-    transformation to the output from the loader *once*.
-    For instance, you could use for applications such as assigning
-    random labels to all the images (before training).
-    The transformed_loader also supports the application of additional
-    transformations (such as standard data augmentation) after the fixed
-    function.
-    For more information see :ref:`our detailed walkthrough <using-custom-loaders>`
+    """Apply a fixed transformation to all loader outputs once and return a new loader.
+
+    Unlike LambdaLoader (which applies the transform at iteration time),
+    this materialises the entire transformed dataset in memory before returning.
+
     Args:
-        loader (PyTorch dataloader) : loader for dataset
-        func (function) : fixed transformation to be applied once. It takes
-        in (images, labels) and returns (images, labels) with the same shape
-        in every dimension except for the first, i.e., batch dimension
-        (which can be any length).
-        loader_transforms (torchvision.transforms) : transforms to apply
-            to the training images from the dataset (after func) (*required*).
-        workers (int) : number of workers for data fetching (*required*).
-        batch_size (int) : batch size for the data loaders (*required*).
-        do_tqdm (bool) : if True, show a tqdm progress bar for the attack.
-        augment (bool) : if True,  the output loader contains both the original
-            (untransformed), and new transformed image-label pairs.
-        fraction (float): fraction of image-label pairs in the output loader
-            which are transformed. The remainder is just original image-label
-            pairs from loader.
-        shuffle (bool) : whether or not the resulting loader should shuffle every
-            epoch (defaults to True)
+        loader: PyTorch DataLoader for the source dataset.
+        func (Callable): fixed transformation applied once to every batch.
+            Takes ``(images, labels)`` and returns ``(images, labels)`` that
+            may differ in the batch dimension but not in other dimensions.
+        loader_transforms: torchvision transforms applied after ``func``.
+        workers (int): number of workers for data fetching.
+        batch_size (int): batch size for the returned loader.
+        do_tqdm (bool): if True, show a tqdm progress bar while transforming.
+        augment (bool): if True, the output contains both original and
+            transformed image-label pairs.
+        fraction (float): fraction of pairs that are transformed; the
+            remainder are original pairs from ``loader``.
+        shuffle (bool): whether the returned loader shuffles each epoch.
+
     Returns:
-        A loader and validation loader according to the
-        parameters given. These are standard PyTorch data loaders, and
-        thus can just be used via:
-        >>> output_loader = ds.make_loaders(loader,
-                                            assign_random_labels,
-                                            workers=8,
-                                            batch_size=128)
-        >>> for im, lab in output_loader:
-        >>>     # Do stuff...
+        A standard PyTorch DataLoader over the transformed dataset.
     """
 
     new_ims = []

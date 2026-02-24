@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Truncated Elastic Net Regression.
 """
@@ -21,30 +22,22 @@ from delphi.utils.helpers import Parameters
 from delphi.stats.stats import stats
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
 
-# Elastic net uses the same default parameter set as lasso regression
+# Elastic net uses the same default parameter set as lasso regression.
 TRUNC_ELASTIC_NET_DEFAULTS = {**TRUNC_LASSO_DEFAULTS}
 
 
 class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance-attributes
-    """
-    Truncated elastic net regression class. Supports truncated elastic net regression
-    with known noise, unknown noise, and confidence intervals. Module uses
-    delphi.trainer.Trainer to train truncated linear regression by performing
-    projected stochastic gradient descent on the truncated population log likelihood.
-    Module requires the user to specify an oracle from the delphi.oracle.oracle class,
-    and the survival probability.
-    """
+    """Truncated elastic net regression via projected SGD on the truncated log-likelihood."""
 
     def __init__(self, args: Parameters, store: cox.store.Store = None):
-        """
-        Initialize TruncatedElasticNetRegression.
+        """Initialize TruncatedElasticNetRegression.
 
         Args:
-            args (Parameters) : parameter object holding hyperparameters
-            store (cox.store.Store) : cox store object for logging
+            args (Parameters): hyperparameter object
+            store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
-        # instance variables
+        # Instance variables.
         assert isinstance(args, Parameters), (
             f"args is type: {type(args)}. expecting args to be type "
             "delphi.utils.helpers.Parameters"
@@ -54,7 +47,7 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
         )
         self.store = store
         self.trunc_ridge = None
-        # algorithm hyperparameters
+        # Algorithm hyperparameters.
         TRUNC_ELASTIC_NET_DEFAULTS.update(TRAINER_DEFAULTS)
         TRUNC_ELASTIC_NET_DEFAULTS.update(DELPHI_DEFAULTS)
         self.args = check_and_fill_args(args, TRUNC_ELASTIC_NET_DEFAULTS)
@@ -96,13 +89,13 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
                 self.args, self.train_loader_
             )
 
-        # run PGD for parameter estimation
+        # Run PGD for parameter estimation.
         trainer = Trainer(  # pylint: disable=no-value-for-parameter
             self.trunc_elastic_net, self.args, store=self.store
         )
         trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
 
-        # assign results from procedure to instance variables
+        # Assign results from the procedure to instance variables.
         self.coef = self.trunc_elastic_net.model.weight.clone()  # pylint: disable=attribute-defined-outside-init,not-callable
         if self.args.fit_intercept:
             self.intercept = self.trunc_elastic_net.model.bias.clone()  # pylint: disable=attribute-defined-outside-init,not-callable
@@ -135,11 +128,10 @@ class ElasticNetKnownVariance(TruncatedLinearRegression):  # pylint: disable=too
     """Truncated elastic net regression with known noise variance model."""
 
     def __init__(self, args, train_loader):
-        """
-        Initialize ElasticNetKnownVariance.
+        """Initialize ElasticNetKnownVariance.
 
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): hyperparameter object
             train_loader: data loader for training data
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter
@@ -163,11 +155,10 @@ class ElasticNetUnknownVariance(TruncatedLinearRegression):  # pylint: disable=t
     """Truncated elastic net regression with unknown noise variance model."""
 
     def __init__(self, args, train_loader):
-        """
-        Initialize ElasticNetUnknownVariance.
+        """Initialize ElasticNetUnknownVariance.
 
         Args:
-            args (cox.utils.Parameters) : parameter object holding hyperparameters
+            args (Parameters): hyperparameter object
             train_loader: data loader for training data
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter
