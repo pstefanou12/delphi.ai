@@ -1,6 +1,5 @@
-"""
-Module used for training models.
-"""
+# Author: pstefanou12@
+"""Module used for training models."""
 
 from time import time
 from typing import Iterable
@@ -30,13 +29,21 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self, model: delphi, args: Parameters, logger: delphiLogger, store=None
     ):
+        """Initialize the Trainer.
+
+        Args:
+            model: The delphi model to train.
+            args: Hyperparameter object; see TRAINER_DEFAULTS for supported keys.
+            logger: Logger instance for training diagnostics.
+            store: Optional cox store for experiment logging.
+        """
         self.model = model
         self.args = check_and_fill_args(args, TRAINER_DEFAULTS)
         self.logger = logger
         self.store = store
 
         self.epoch, self.iterations = 0, 0
-        # store procedure history within lists because of torch.cat performance overhead
+        # Store procedure history in lists to avoid torch.cat overhead.
         self.train_losses = []
         self.val_losses = []
         self.param_history = []
@@ -115,8 +122,16 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.val_param_history_indices.append(len(self.param_history) - 1)
         return loss
 
-    def run_epoch(self, loader: DataLoader, val_loader: DataLoader = None):
-        """Run one full epoch over the loader, returning (avg_loss, avg_prec1, avg_prec5)."""
+    def run_epoch(self, loader: DataLoader, val_loader: DataLoader | None = None):
+        """Run one full epoch over loader and return (avg_loss, avg_prec1, avg_prec5).
+
+        Args:
+            loader: DataLoader for the current epoch (train or val).
+            val_loader: Optional DataLoader used for mid-epoch validation.
+
+        Returns:
+            Tuple of (avg_loss, avg_prec1, avg_prec5) AverageMeter averages.
+        """
         mode = "train" if self.model.training else "val"
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
         iterator = (
@@ -130,23 +145,21 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.train_step(batch) if self.model.training else self.val_step(batch)
             )
             loss_.update(loss.item())
-            # OPTIONAL: calculate precision metrics (prec1, prec5) here if your model supports it
-            # if not, you'll need to define what these mean for your model and loss.
 
             stop, reason = self.should_stop()
             if stop:
                 self.stop_reason = reason
                 break
 
-            # check on validation set periodically during the training epoch
+            # Validate periodically during a training epoch.
             if (
                 self.model.training
                 and self.args.val_interval is not None
                 and self.iterations % self.args.val_interval == 0
             ):
                 self.model.eval()
-                for batch in val_loader:
-                    val_loss = self.val_step(batch)
+                for val_batch in val_loader:
+                    val_loss = self.val_step(val_batch)
                     self.update_best(val_loss)
                 self.model.train()
 
@@ -161,48 +174,50 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                     f"[{mode}] epoch={self.epoch} step={self.iterations} "
                     f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
                 )
+
+        grad_norm_str = (
+            f" grad_norm={self.grad_norms[-1]:.3e}" if self.grad_norms else ""
+        )
         self.logger.info(
             f"[{mode}] epoch={self.epoch} step={self.iterations} "
-            f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
+            f"loss={loss_.avg:.4f}{grad_norm_str}"
         )
 
         self.model.post_epoch_hook(self.epoch, self.model.training, loss)
         return loss_.avg, prec1_.avg, prec5_.avg
 
     def should_stop(self):
-        """Return (stop: bool, reason: str) based on current training state."""
-        # max iterations
+        """Return (stop, reason) based on current training state.
+
+        Returns:
+            Tuple of (bool, str | None) where the string is the stop reason.
+        """
         if self.args.iterations is not None and self.iterations >= self.args.iterations:
             return True, "max_iterations"
 
         if self.args.early_stopping:
-            # gradient norm small
             if (
                 self.args.grad_tol is not None
                 and len(self.grad_norms) > 1
-                and (self.grad_norms[-1]) < self.args.grad_tol
+                and self.grad_norms[-1] < self.args.grad_tol
             ):
                 return True, "grad_tol"
 
-            # loss change small
             if self.args.loss_tol is not None and len(self.train_losses) > 1:
-                if (
-                    abs(self.train_losses[-1] - self.train_losses[-2])
-                    < self.args.loss_tol
-                ):
+                delta = abs(self.train_losses[-1].item() - self.train_losses[-2].item())
+                if delta < self.args.loss_tol:
                     return True, "loss_tol"
 
-            # early stopping on val loss
             if len(self.val_losses) > self.args.patience:
                 recent = self.val_losses[-self.args.patience :]
-                if recent[-1] > min(recent[:-1]):
+                if recent[-1].item() > min(r.item() for r in recent[:-1]):
                     return True, "early_stop"
 
         return False, None
 
     def update_best(self, loss: ch.Tensor):
-        """Update the best loss index if the given loss is a new minimum."""
-        if self.best_loss is None or loss < self.best_loss:
+        """Update the best-loss index if loss is a new minimum."""
+        if self.best_loss is None or loss.item() < self.best_loss.item():
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
 
@@ -214,15 +229,20 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         store: Store = None,
         checkpoint=None,
     ):
-        """
-        Train model.
+        """Train the model until a stop condition is met.
+
         Args:
-            loaders (Iterable) : iterable with the train and validation set DataLoaders
-        Returns:
-            Tuple(best_params, best)
+            train_loader: DataLoader for the training set.
+            val_loader: DataLoader for the validation set.
+            rand_seed: Random seed for reproducibility.
+            store: Optional cox store for logging epoch metrics.
+            checkpoint: Optional checkpoint dict to resume from.
+
+        Raises:
+            ValueError: If train_loader contains no samples.
         """
         if len(train_loader.dataset) == 0:
-            raise ValueError("No Datapoints in Train Loader")
+            raise ValueError("No datapoints in train loader.")
 
         if store is not None:
             store.add_table(
@@ -239,7 +259,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             )
             setup_store_with_metadata(self.args, store)
 
-        # stores model estimates after each gradient step
         ch.manual_seed(rand_seed)
         self.t_start = time()
         self.model.pretrain_hook()
@@ -254,7 +273,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             _ = (  # pylint: disable=unused-variable
                 checkpoint["prec1"]
                 if "prec1" in checkpoint
-                else self.run_epoch(val_loader, False)[0]
+                else self.run_epoch(val_loader)[0]
             )
 
         while True:
@@ -274,8 +293,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
                 self.logger.info(
-                    f"stopped due to {self.stop_reason} after {self.iterations} iterations. "
-                    f"total time: {self.procedure_duration:.2f} seconds"
+                    f"stopped due to {self.stop_reason} after {self.iterations} "
+                    f"iterations. total time: {self.procedure_duration:.2f} seconds"
                 )
                 break
 
@@ -302,38 +321,41 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-        # convert training loss&param history to tensors
-        self.train_losses = ch.tensor(self.train_losses)
-        self.val_losses = ch.tensor(self.val_losses)
+        self.train_losses = (
+            ch.stack(self.train_losses) if self.train_losses else ch.tensor([])
+        )
+        self.val_losses = (
+            ch.stack(self.val_losses) if self.val_losses else ch.tensor([])
+        )
         self.param_history = ch.stack(self.param_history)
-        self.grad_norms = ch.Tensor(self.grad_norms)
+        self.grad_norms = ch.tensor(self.grad_norms)
 
         self.model.post_training_hook()
 
     def eval_model(self, loader: DataLoader, store: Store = None):
-        """
-        Evaluate a model for standard (and optionally adversarial) accuracy.
+        """Evaluate the model on a held-out set and return metrics.
+
         Args:
-            loader (Iterable) : a dataloader serving batches from the test set
-            store (cox.Store) : store for saving results in (via tensorboardX)
+            loader: DataLoader for the evaluation set.
+            store: Optional cox store for saving results.
+
         Returns:
-            schema with model performance metrics
+            Dict with keys 'test_prec1', 'test_loss', and 'time'.
         """
-        start_time = time.time()
+        start_time = time()
 
         if store is not None:
             store.add_table("eval", consts.EVAL_LOGS_SCHEMA)
 
-        _ = store.tensorboard if store else None  # pylint: disable=unused-variable
         self.model.eval()
-        test_prec1, test_loss = self.run_epoch(loader)  # pylint: disable=unbalanced-tuple-unpacking
+        test_loss, test_prec1, _ = self.run_epoch(loader)
 
+        log_info = {
+            "test_prec1": test_prec1,
+            "test_loss": test_loss,
+            "time": time() - start_time,
+        }
         if store:
-            log_info = {
-                "test_prec1": test_prec1,
-                "test_loss": test_loss,
-                "time": time.time() - start_time,
-            }
             store["eval"].append_row(log_info)
         return log_info
 
