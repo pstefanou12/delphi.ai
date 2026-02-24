@@ -116,7 +116,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         loss = self.model.criterion(
             *ensure_tuple(pred), targ, *self.model.criterion_params
         )
-        if len(loss.shape) > 0:
+        if loss.ndim > 0:
             loss = loss.sum(0)
         self.val_losses.append(loss)
         self.val_param_history_indices.append(len(self.param_history) - 1)
