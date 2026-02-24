@@ -11,13 +11,13 @@ from torch import nn
 from sklearn.linear_model import LassoCV
 from torch import Tensor
 
-from ..delphi_logger import delphiLogger
-from ..grad import TruncatedMSE
-from ..trainer import Trainer
-from ..utils.datasets import make_train_and_val
-from ..utils.defaults import TRUNC_LASSO_DEFAULTS, check_and_fill_args
-from ..utils.helpers import Parameters
-from .linear_model import LinearModel
+from delphi.delphi_logger import delphiLogger
+from delphi.grad import TruncatedMSE
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
+from delphi.utils.defaults import TRUNC_LASSO_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import Parameters
+from delphi.stats.linear_model import LinearModel
 
 
 class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instance-attributes

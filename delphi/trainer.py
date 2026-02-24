@@ -9,11 +9,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from cox.store import Store
 
-from .delphi import delphi
-from .delphi_logger import delphiLogger
-from .utils import constants as consts
-from .utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
-from .utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
+from delphi.delphi import delphi
+from delphi.delphi_logger import delphiLogger
+from delphi.utils import constants as consts
+from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
+from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
 
 STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_iterations", "max_epochs"]

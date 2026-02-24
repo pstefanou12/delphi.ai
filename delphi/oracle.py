@@ -10,8 +10,8 @@ from torch.distributions.multivariate_normal import (
     _batch_mahalanobis,
 )
 
-from .utils.helpers import Bounds, cov
-from .polynomials import NormalizedProbabilistHermitePolynomial
+from delphi.utils.helpers import Bounds, cov
+from delphi.polynomials import NormalizedProbabilistHermitePolynomial
 
 
 class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods

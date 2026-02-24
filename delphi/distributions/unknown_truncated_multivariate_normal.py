@@ -11,16 +11,19 @@ import torch as ch
 from torch import Tensor
 from torch import nn
 
-from .truncated_multivariate_normal import (
+from delphi.distributions.truncated_multivariate_normal import (
     TruncatedMultivariateNormalUnknownCovariance,
     TruncatedMultivariateNormalKnownCovariance,
 )
-from ..oracle import UnknownGaussian
-from ..trainer import Trainer
-from ..grad import UnknownTruncationMultivariateNormalNLL
-from ..utils.datasets import UnknownTruncationNormalDataset, make_train_and_val_distr
-from ..utils.helpers import Parameters, cov
-from ..utils.defaults import check_and_fill_args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
+from delphi.oracle import UnknownGaussian
+from delphi.trainer import Trainer
+from delphi.grad import UnknownTruncationMultivariateNormalNLL
+from delphi.utils.datasets import (
+    UnknownTruncationNormalDataset,
+    make_train_and_val_distr,
+)
+from delphi.utils.helpers import Parameters, cov
+from delphi.utils.defaults import check_and_fill_args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
 
 
 class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too-many-instance-attributes

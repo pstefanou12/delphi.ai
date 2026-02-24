@@ -8,11 +8,11 @@ from typing import Optional
 
 import torch as ch
 
-from .unknown_truncated_multivariate_normal import (
+from delphi.distributions.unknown_truncated_multivariate_normal import (
     UnknownTruncationMultivariateNormalUnknownCovariance,
     UnknownTruncationMultivariateNormalKnownCovariance,
 )
-from ..utils.helpers import Parameters
+from delphi.utils.helpers import Parameters
 
 
 class UnknownTruncationNormalKnownVariance(

@@ -9,17 +9,17 @@ import torch as ch
 from sklearn.linear_model import Ridge
 from torch import Tensor
 
-from ..trainer import Trainer
-from ..utils.datasets import make_train_and_val
-from ..utils.defaults import (
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
+from delphi.utils.defaults import (
     DELPHI_DEFAULTS,
     TRAINER_DEFAULTS,
     TRUNC_REG_DEFAULTS,
     check_and_fill_args,
 )
-from ..utils.helpers import Parameters
-from .stats import stats
-from .truncated_linear_regression import TruncatedLinearRegression  # pylint: disable=unused-import
+from delphi.utils.helpers import Parameters
+from delphi.stats.stats import stats
+from delphi.stats.truncated_linear_regression import TruncatedLinearRegression  # pylint: disable=unused-import
 
 
 class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attributes

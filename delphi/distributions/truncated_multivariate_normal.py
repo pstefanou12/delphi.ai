@@ -9,18 +9,18 @@ from typing import Callable, Optional
 import torch as ch
 from torch import nn
 
-from .truncated_exponential_family_distributions import (
+from delphi.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
 )
-from ..delphi_logger import delphiLogger
-from ..grad import (
+from delphi.delphi_logger import delphiLogger
+from delphi.grad import (
     ExponentialFamilyMultivariateNormal,
     ExponentialFamilyMultivariateNormalKnownCovariance,
     calc_multi_norm_suff_stat_known_cov,
     calc_multi_norm_suff_stat,
 )
-from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
+from delphi.utils.helpers import Parameters
+from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedMultivariateNormalKnownCovariance(

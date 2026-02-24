@@ -11,15 +11,15 @@ from torch import Tensor
 from torch.distributions.exp_family import ExponentialFamily
 from torch import nn
 
-from .distributions import distributions
-from ..delphi_logger import delphiLogger
-from ..utils.datasets import (
+from delphi.distributions.distributions import distributions
+from delphi.delphi_logger import delphiLogger
+from delphi.utils.datasets import (
     TruncatedExponentialDistributionDataset,
     make_train_and_val_distr,
 )
-from ..grad import TruncatedExponentialFamilyDistributionNLL
-from ..trainer import Trainer
-from ..utils.helpers import Parameters
+from delphi.grad import TruncatedExponentialFamilyDistributionNLL
+from delphi.trainer import Trainer
+from delphi.utils.helpers import Parameters
 
 
 class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=too-many-instance-attributes
