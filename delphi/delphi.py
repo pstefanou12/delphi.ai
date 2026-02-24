@@ -185,6 +185,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         scheduler_creators = {
             "cyclic": self._create_cyclic_scheduler,
             "cosine": self._create_cosine_scheduler,
+            "linear": self._create_linear_scheduler,
             "step": self._create_step_scheduler,
             "multi_step": self._create_multi_step_scheduler,
             "exponential": self._create_exponential_scheduler,
@@ -221,6 +222,15 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         return lr_scheduler.CosineAnnealingLR(
             self.optimizer, **self._remove_none_config(config)
         )
+
+    def _create_linear_scheduler(self):
+        """Create a linear LR decay scheduler."""
+        config = {
+            "start_factor": getattr(self.args, "linear_start_factor", 1.0),
+            "end_factor": getattr(self.args, "linear_end_factor", 0.0),
+            "total_iters": getattr(self.args, "epochs", 100),
+        }
+        return lr_scheduler.LinearLR(self.optimizer, **self._remove_none_config(config))
 
     def _create_step_scheduler(self):
         """Create a step LR scheduler."""
