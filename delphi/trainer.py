@@ -4,6 +4,7 @@
 from time import time
 from typing import Iterable
 import torch as ch
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from cox.store import Store
@@ -83,7 +84,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def train_step(self, batch: Iterable) -> ch.Tensor:
         """Run a single training step on the given batch and return the loss."""
         loss = self.model.optimizer.step(self.make_closure(batch))
-        if self.model.schedule is not None:
+        if self.model.schedule is not None and not isinstance(
+            self.model.schedule, ReduceLROnPlateau
+        ):
             self.model.schedule.step()
 
         self.train_losses.append(loss.detach())
@@ -288,6 +291,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                     self.model.eval()
                     val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
                     self.update_best(val_loss)
+
+                if isinstance(self.model.schedule, ReduceLROnPlateau):
+                    self.model.schedule.step(val_loss)
 
             if self.stop_reason in STOP_REASONS:
                 self.t_end = time()
