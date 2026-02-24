@@ -1,3 +1,4 @@
+# pylint: disable=anomalous-backslash-in-string
 """
 **For most use cases, this can just be considered an internal class and
 ignored.**
@@ -23,45 +24,54 @@ called directly---instead, these arguments are passed along from
 Cite: code for attacker model shamelessly taken from:
 @misc{robustness,
    title={Robustness (Python Library)},
-   author={Logan Engstrom and Andrew Ilyas and Hadi Salman and Shibani Santurkar and Dimitris Tsipras},
+   author={Logan Engstrom and Andrew Ilyas and Hadi Salman
+       and Shibani Santurkar and Dimitris Tsipras},
    year={2019},
    url={https://github.com/MadryLab/robustness}
 }
 """
 
-import torch as ch
 import os
-import dill
 import time
+import torch as ch
+import dill
 
-from .utils.helpers import type_of_script, calc_est_grad, InputNormalize, accuracy, AverageMeter, has_attr, ckpt_at_epoch
-from .utils import constants as consts
-from . import attack_steps
-from .delphi import delphi
+from .utils.helpers import (  # pylint: disable=import-error
+    type_of_script,
+    calc_est_grad,
+    InputNormalize,
+    accuracy,
+    AverageMeter,
+    has_attr,
+    ckpt_at_epoch,
+)
+from .utils import constants as consts  # pylint: disable=import-error
+from . import attack_steps  # pylint: disable=import-error
+from .delphi import delphi  # pylint: disable=import-error
 
 # determine running environment
-script = type_of_script()
-if script == consts.JUPYTER:
-    from tqdm.autonotebook import tqdm as tqdm
+SCRIPT = type_of_script()  # pylint: disable=invalid-name
+if SCRIPT == consts.JUPYTER:
+    from tqdm.autonotebook import tqdm  # pylint: disable=import-outside-toplevel
 else:
-    from tqdm import tqdm
+    from tqdm import tqdm  # pylint: disable=import-outside-toplevel
 
 STEPS = {
-    'inf': attack_steps.LinfStep,
-    '2': attack_steps.L2Step,
-    'unconstrained': attack_steps.UnconstrainedStep,
-    'fourier': attack_steps.FourierStep,
-    'random_smooth': attack_steps.RandomStep
+    "inf": attack_steps.LinfStep,
+    "2": attack_steps.L2Step,
+    "unconstrained": attack_steps.UnconstrainedStep,
+    "fourier": attack_steps.FourierStep,
+    "random_smooth": attack_steps.RandomStep,
 }
-LOGS = 'logs'
+LOGS = "logs"
 LOGS_SCHEMA = {
-                'epoch': int,
-                'val_prec1': float,
-                'val_loss': float,
-                'train_prec1': float,
-                'train_loss': float,
-                'time': float,
-            }
+    "epoch": int,
+    "val_prec1": float,
+    "val_loss": float,
+    "train_prec1": float,
+    "train_loss": float,
+    "time": float,
+}
 
 
 class Attacker(ch.nn.Module):
@@ -73,22 +83,40 @@ class Attacker(ch.nn.Module):
     However, the :meth:`delphi.Attacker.forward` function below
     documents the arguments supported for adversarial attacks specifically.
     """
+
     def __init__(self, model, dataset):
         """
         Initialize the Attacker
         Args:
             nn.Module model : the PyTorch model to attack
-            Dataset dataset : dataset the model is trained on, only used to get mean and std for normalization
+            Dataset dataset : dataset the model is trained on, only used to get
+            mean and std for normalization
         """
-        super(Attacker, self).__init__()
+        super().__init__()
         self.normalize = InputNormalize(dataset.mean, dataset.std)
         self.model = model
 
-    def forward(self, x, target, *_, constraint, eps, step_size, iterations,
-                random_start=False, random_restarts=False, do_tqdm=False,
-                targeted=False, custom_loss=None, should_normalize=True,
-                orig_input=None, use_best=True, return_image=True,
-                est_grad=None, mixed_precision=False):
+    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-statements
+        self,
+        x,
+        target,
+        *_,
+        constraint,
+        eps,
+        step_size,
+        iterations,
+        random_start=False,
+        random_restarts=False,
+        do_tqdm=False,
+        targeted=False,
+        custom_loss=None,
+        should_normalize=True,
+        orig_input=None,
+        use_best=True,
+        return_image=True,
+        est_grad=None,
+        mixed_precision=False,
+    ):
         """
         Implementation of forward (finds adversarial examples). Note that
         this does **not** perform inference and should not be called
@@ -147,25 +175,26 @@ class Attacker(ch.nn.Module):
         """
         # Can provide a different input to make the feasible set around
         # instead of the initial point
-        if orig_input is None: orig_input = x.detach()
+        if orig_input is None:
+            orig_input = x.detach()
         orig_input = orig_input.cuda()
 
         # Multiplier for gradient ascent [untargeted] or descent [targeted]
         m = -1 if targeted else 1
 
         # Initialize step class and attacker criterion
-        criterion = ch.nn.CrossEntropyLoss(reduction='none')
+        criterion = ch.nn.CrossEntropyLoss(reduction="none")
         step_class = STEPS[constraint] if isinstance(constraint, str) else constraint
         step = step_class(eps=eps, orig_input=orig_input, step_size=step_size)
 
         def calc_loss(inp, target):
-            '''
+            """
             Calculates the loss of an input with respect to target labels
             Uses custom loss (if provided) otherwise the criterion
-            '''
+            """
             if should_normalize:
                 inp = self.normalize(inp.cuda())
-            
+
             output = self.model(inp.cuda())
             if custom_loss:
                 return custom_loss(self.model, inp.cuda(), target.cuda())
@@ -179,7 +208,8 @@ class Attacker(ch.nn.Module):
                 x = step.random_perturb(x)
 
             iterator = range(iterations)
-            if do_tqdm: iterator = tqdm(iterator)
+            if do_tqdm:
+                iterator = tqdm(iterator)
 
             # Keep track of the "best" (worst-case) loss and its
             # corresponding input
@@ -192,7 +222,6 @@ class Attacker(ch.nn.Module):
                     bx = x.clone().detach()
                     bloss = loss.clone().detach()
                 else:
-                    if x.is_cuda: import pdb; pdb.set_trace()
                     replace = m * bloss < m * loss
                     bx[replace] = x[replace].clone().detach()
                     bloss[replace] = loss[replace]
@@ -202,23 +231,27 @@ class Attacker(ch.nn.Module):
             # PGD iterates
             for _ in iterator:
                 x = x.clone().detach().requires_grad_(True)
-                losses, out = calc_loss(step.to_image(x), target)
-                assert losses.shape[0] == x.shape[0], \
-                        'Shape of losses must match input!'
+                losses, _ = calc_loss(step.to_image(x), target)
+                assert losses.shape[0] == x.shape[0], (
+                    "Shape of losses must match input!"
+                )
 
                 loss = ch.mean(losses)
 
                 if step.use_grad:
                     if (est_grad is None) and mixed_precision:
-                        with amp.scale_loss(loss, []) as sl:
+                        with amp.scale_loss(loss, []) as sl:  # pylint: disable=undefined-variable  # noqa: F821
                             sl.backward()
                         grad = x.grad.detach()
                         x.grad.zero_()
-                    elif (est_grad is None):
-                        grad, = ch.autograd.grad(m * loss, [x])
+                    elif est_grad is None:
+                        (grad,) = ch.autograd.grad(m * loss, [x])
                     else:
-                        f = lambda _x, _y: m * calc_loss(step.to_image(_x), _y)[0]
-                        grad = calc_est_grad(f, x, target, *est_grad)
+
+                        def _est_grad_fn(_x, _y):
+                            return m * calc_loss(step.to_image(_x), _y)[0]
+
+                        grad = calc_est_grad(_est_grad_fn, x, target, *est_grad)
                 else:
                     grad = None
 
@@ -228,7 +261,8 @@ class Attacker(ch.nn.Module):
 
                     x = step.step(x, grad)
                     x = step.project(x)
-                    if do_tqdm: iterator.set_description("Current loss: {l}".format(l=loss))
+                    if do_tqdm:
+                        iterator.set_description(f"Current loss: {loss}")
 
             # Save computation (don't compute last loss) if not use_best
             if not use_best:
@@ -253,7 +287,7 @@ class Attacker(ch.nn.Module):
                     to_ret = adv.detach()
 
                 _, output = calc_loss(adv, target)
-                corr, = accuracy(output.cpu(), target, topk=(1,), exact=True)
+                (corr,) = accuracy(output.cpu(), target, topk=(1,), exact=True)
                 corr = corr.byte()
                 misclass = ~corr
                 to_ret[misclass] = adv[misclass]
@@ -265,7 +299,7 @@ class Attacker(ch.nn.Module):
         return adv_ret
 
 
-class AttackerModel(delphi):
+class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too-many-public-methods,abstract-method
     """
     Wrapper class for adversarial attacks on models. Given any normal
     model (a ``ch.nn.Module`` instance), wrapping it in AttackerModel allows
@@ -281,11 +315,23 @@ class AttackerModel(delphi):
     For a more comprehensive overview of this class, see
     :doc:`our detailed walkthrough <../example_usage/input_space_manipulation>`.
     """
-    def __init__(self, args, model, dataset, checkpoint = None, store=None, parallel=False, dp_device_ids=None, update_params=None):
-        super().__init__(args)
+
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        args,
+        model,
+        dataset,
+        checkpoint=None,
+        store=None,  # pylint: disable=unused-argument
+        parallel=False,
+        dp_device_ids=None,
+        update_params=None,
+    ):
+        """Initialize AttackerModel with model, dataset, and optional checkpoint/parallel args."""
+        super().__init__(args)  # pylint: disable=no-value-for-parameter
         self._model = model
         self.checkpoint = checkpoint
-        self.parallel = parallel 
+        self.parallel = parallel
         self.dp_device_ids = dp_device_ids
         self.update_params = update_params
         self.normalizer = InputNormalize(dataset.mean, dataset.std)
@@ -294,18 +340,26 @@ class AttackerModel(delphi):
         self.best_prec1 = 0.0
         # training and validation set metric counters
         self.reset_metrics()
-        
-        if checkpoint is not None: 
-            sd = self.checkpoint[state_dict_path]
+
+        if checkpoint is not None:
+            sd = self.checkpoint["state_dict"]  # pylint: disable=undefined-variable
             self.model.load_state_dict(sd)
- 
+
         # run model in parallel model
         assert not hasattr(self.model, "module"), "model is already in DataParallel."
         if self.parallel and next(self.model.parameters()).is_cuda:
             self._model = ch.nn.DataParallel(self.model, device_ids=self.dp_device_ids)
 
-    def __call__(self, inp, target, with_latent=False,
-                fake_relu=False, no_relu=False, with_image=True, **attacker_kwargs):
+    def __call__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        inp,
+        target,
+        with_latent=False,
+        fake_relu=False,
+        no_relu=False,
+        with_image=True,
+        **attacker_kwargs,
+    ):
         """
         Main function for running inference and generating adversarial
         examples for a model.
@@ -336,17 +390,17 @@ class AttackerModel(delphi):
         """
         if self.args.adv:
             attacker_kwargs = {
-                'constraint': self.args.constraint,
-                'eps': self.args.eps,
-                'step_size': self.args.attack_lr,
-                'iterations': self.args.attack_steps,
-                'random_start': self.args.random_start,
-#                'custom_loss': self.adv_criterion,
-                'random_restarts': self.args.random_restarts,
-                'use_best': bool(self.args.use_best)
+                "constraint": self.args.constraint,
+                "eps": self.args.eps,
+                "step_size": self.args.attack_lr,
+                "iterations": self.args.attack_steps,
+                "random_start": self.args.random_start,
+                #                'custom_loss': self.adv_criterion,
+                "random_restarts": self.args.random_restarts,
+                "use_best": bool(self.args.use_best),
             }
             assert target is not None
-            # TODO: find a better way to do this --> inheritance weird here
+            # TODO: find a better way to do this --> inheritance weird here  # pylint: disable=fixme
             prev_training = bool(self.model.training)
             self.model.eval()
             adv = self.attacker(inp, target, **attacker_kwargs)
@@ -362,37 +416,49 @@ class AttackerModel(delphi):
         if no_relu and fake_relu:
             raise ValueError("Options 'no_relu' and 'fake_relu' are exclusive")
 
-        output = self.model(normalized_inp, with_latent=with_latent,
-                                fake_relu=fake_relu, no_relu=no_relu)
+        output = self.model(  # pylint: disable=not-callable
+            normalized_inp,
+            with_latent=with_latent,
+            fake_relu=fake_relu,
+            no_relu=no_relu,
+        )
         if with_image:
             return (output, inp)
         return output
 
     def reset_metrics(self):
-        '''
-        *INTERNAL FUNCTION* resets meters that keep track of model's 
+        """
+        *INTERNAL FUNCTION* resets meters that keep track of model's
         performance over training and validation loops.
-        '''
+        """
         # training and validation set metric counters
-        self.train_losses, self.train_top1, self.train_top5 =  AverageMeter(), AverageMeter(), AverageMeter()
-        self.val_losses, self.val_top1, self.val_top5 =  AverageMeter(), AverageMeter(), AverageMeter()
+        self.train_losses, self.train_top1, self.train_top5 = (
+            AverageMeter(),
+            AverageMeter(),
+            AverageMeter(),
+        )
+        self.val_losses, self.val_top1, self.val_top5 = (
+            AverageMeter(),
+            AverageMeter(),
+            AverageMeter(),
+        )
 
-    def step(self, batch, losses, top1, top5, is_train=False): 
-        '''
-        *INTERNAL FUNCTION* used for both train 
-        '''
+    def step(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self, batch, losses, top1, top5, is_train=False
+    ):
+        """*INTERNAL FUNCTION* used for both train and validation steps."""
         # unpack input and target
-        inp, targ = inp.cuda(), targ.cuda()
-        model_logits = self.model(inp)
+        inp, targ = inp.cuda(), targ.cuda()  # pylint: disable=used-before-assignment  # noqa: F821
+        model_logits = self.model(inp)  # pylint: disable=not-callable
 
         # AttackerModel returns both output and final input
         if isinstance(model_logits, tuple):
             model_logits, _ = model_logits
 
-        # regularizer 
-        self.reg_term = 0.0
+        # regularizer
+        self.reg_term = 0.0  # pylint: disable=attribute-defined-outside-init
         if has_attr(self.args, "regularizer") and isinstance(self.model, ch.nn.Module):
-            self.reg_term = self.args.regularizer(self.model, inp, targ)
+            self.reg_term = self.args.regularizer(self.model, inp, targ)  # pylint: disable=attribute-defined-outside-init
 
         # calculate loss and regularize
         loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
@@ -410,80 +476,88 @@ class AttackerModel(delphi):
         # calculate accuracy metrics
         maxk = min(5, model_logits.shape[-1])
         if has_attr(self.args, "custom_accuracy"):
-            prec1, prec5 = self.args.custom_accuracy(model_logits, targ)
+            prec1, prec5 = self.args.custom_accuracy(model_logits, targ)  # pylint: disable=unsubscriptable-object
         else:
             prec1, prec5 = accuracy(model_logits, targ, topk=(1, maxk))
-            prec1, prec5 = prec1[0], prec5[0]
+            prec1, prec5 = prec1[0], prec5[0]  # pylint: disable=unsubscriptable-object
         # udpate model metric meters
         losses.update(loss.item(), batch[0].size(0))
         top1.update(prec1, batch[0].size(0))
         top5.update(prec5, batch[0].size(0))
 
-    def pretrain_hook(self): 
-        self.reset_metrics() 
-    
+    def pretrain_hook(self):
+        """Reset metrics before training starts."""
+        self.reset_metrics()
+
     def train_step(self, batch):
-        self.step(batch, self.train_losses, self.train_top1, self.train_top5, is_train=True)
-        
+        """Run one training step."""
+        self.step(
+            batch, self.train_losses, self.train_top1, self.train_top5, is_train=True
+        )
+
     def val_step(self, batch):
-        self.step(batch, self.val_losses, self.val_top1, self.val_top5, is_train=False) 
+        """Run one validation step."""
+        self.step(batch, self.val_losses, self.val_top1, self.val_top5, is_train=False)
 
-    def post_step_hook(self, epoch, i, loop_type, batch): 
-        pass 
+    def post_step_hook(self, epoch, i, loop_type, batch):  # pylint: disable=unused-argument
+        """Hook called after each step; no-op by default."""
 
-    def description(self, epoch, i, loop_msg):
-        if loop_msg == 'Train': 
+    def description(self, epoch, i, loop_msg):  # pylint: disable=unused-argument,arguments-differ
+        """Return a description string for the current training/validation step."""
+        if loop_msg == "Train":
             losses, top1, top5 = self.train_losses, self.train_top1, self.train_top5
-        else: 
+        else:
             losses, top1, top5 = self.val_losses, self.val_top1, self.val_top5
 
-        return ('Epoch: {0} | Loss {loss.avg:.4f} | '
-                    '{1}1 {top1_acc.avg:.3f} | {1}5 {top5_acc.avg:.3f} | '
-                    'Reg term: {reg} ||'.format(epoch, loop_msg,
-                                                loss=losses, top1_acc=top1, top5_acc=top5, reg=self.reg_term))
-  
-    def post_epoch_hook(self, epoch, loop_type): 
+        return (
+            f"Epoch: {epoch} | Loss {losses.avg:.4f} | "
+            f"{loop_msg}1 {top1.avg:.3f} | {loop_msg}5 {top5.avg:.3f} | "
+            f"Reg term: {self.reg_term} ||"
+        )
+
+    def post_epoch_hook(self, epoch, loop_type):  # pylint: disable=too-many-locals,too-many-branches,arguments-differ
+        """Hook called after each epoch; handles LR scheduling, checkpointing, and logging."""
         # update learning rate
-        if self.schedule: 
+        if self.schedule:
             self.schedule.step()
-        if loop_type == 'Train': 
+        if loop_type == "Train":
             losses, top1, top5 = self.train_losses, self.train_top1, self.train_top5
-        else: 
+        else:
             losses, top1, top5 = self.val_losses, self.val_top1, self.val_top5
 
         # write to Tensorboard
         if self.writer is not None:
-            descs = ['loss', 'top1', 'top5']
+            descs = ["loss", "top1", "top5"]
             vals = [losses, top1, top5]
             for d, v in zip(descs, vals):
-                self.writer.add_scalar('_'.join([loop_type, d]), v.avg, epoch)
+                self.writer.add_scalar("_".join([loop_type, d]), v.avg, epoch)
 
         # check for logging/checkpoint
-        last_epoch = (epoch == (self.args.epochs - 1))
-        should_save_ckpt = (epoch % self.args.save_ckpt_iters == 0 or last_epoch) 
-        should_log = (epoch % self.args.log_iters == 0 or last_epoch)
+        last_epoch = epoch == (self.args.epochs - 1)
+        should_save_ckpt = epoch % self.args.save_ckpt_iters == 0 or last_epoch
+        should_log = epoch % self.args.log_iters == 0 or last_epoch
 
         # logging
-        if should_log or should_save_ckpt: 
+        if should_log or should_save_ckpt:
             # remember best prec_1 and save checkpoint
             is_best = self.val_top1.avg > self.best_prec1
             self.best_prec1 = max(self.val_top1.avg, self.best_prec1)
 
         # CHECKPOINT -- checkpoint epoch of better DNN performance
-        if self.store is not None and (should_save_ckpt or is_best):
+        if self.store is not None and (should_save_ckpt or is_best):  # pylint: disable=possibly-used-before-assignment
             sd_info = {
-                'model': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'schedule': (self.schedule and self.schedule.state_dict()),
-                'epoch': epoch + 1,
-                'amp': amp.state_dict() if self.args.mixed_precision else None,
-                'prec1': self.val_top1.avg
+                "model": self.model.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "schedule": (self.schedule and self.schedule.state_dict()),
+                "epoch": epoch + 1,
+                "amp": amp.state_dict() if self.args.mixed_precision else None,  # pylint: disable=undefined-variable  # noqa: F821
+                "prec1": self.val_top1.avg,
             }
-            
+
             def save_checkpoint(store, filename):
                 """
                 Saves model checkpoint at store path with filename.
-                Args: 
+                Args:
                     filename (str) name of file for saving model
                 """
                 ckpt_save_path = os.path.join(store.path, filename)
@@ -492,7 +566,7 @@ class AttackerModel(delphi):
             # update the latest and best checkpoints (overrides old one)
             if is_best:
                 save_checkpoint(self.store, consts.CKPT_NAME_BEST)
-            if should_save_ckpt: 
+            if should_save_ckpt:
                 # if we are at a saving epoch (or the last epoch), save a checkpoint
                 save_checkpoint(self.store, ckpt_at_epoch(epoch))
                 save_checkpoint(self.store, consts.CKPT_NAME_LATEST)
@@ -500,20 +574,22 @@ class AttackerModel(delphi):
         # LOG
         if should_log and self.store:
             log_info = {
-                'epoch': epoch + 1,
-                'val_prec1': self.val_top1.avg,
-                'val_loss': self.val_losses.avg,
-                'train_prec1': self.train_top1.avg,
-                'train_loss': self.train_losses.avg,
-                'time': time.time()
+                "epoch": epoch + 1,
+                "val_prec1": self.val_top1.avg,
+                "val_loss": self.val_losses.avg,
+                "train_prec1": self.train_top1.avg,
+                "train_loss": self.train_losses.avg,
+                "time": time.time(),
             }
-            self.store['logs'].append_row(log_info)
+            self.store["logs"].append_row(log_info)
 
         # reset model performance meters for next epoch
         self.reset_metrics()
 
     def post_train_hook(self):
-        pass
+        """Hook called after training completes; no-op by default."""
 
     @property
-    def parameters(self): self.model.parameters
+    def parameters(self):  # pylint: disable=arguments-differ,invalid-overridden-method
+        """Return the model's parameters."""
+        return self.model.parameters

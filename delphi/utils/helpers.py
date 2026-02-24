@@ -2,38 +2,40 @@
 Helper code (functions, classes, etc.)
 """
 
+import pprint
+from typing import NamedTuple
 
+import cox
 import torch as ch
 from torch import Tensor
+from torch import nn
 from torch.distributions import Uniform
 from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
-import torch.nn as nn
 import torch.linalg as LA
-import cox
-from typing import NamedTuple
-import pprint
 
 from . import constants as consts
 
 # CONSTANTS
-JUPYTER = 'jupyter'
-TERMINAL = 'terminal'
-IPYTHON = 'ipython'
-ZMQ='zmqshell'
-COLAB='google.colab'
+JUPYTER = "jupyter"
+TERMINAL = "terminal"
+IPYTHON = "ipython"
+ZMQ = "zmqshell"
+COLAB = "google.colab"
 
-class Parameters():
-    '''
+
+class Parameters:
+    """
     Parameters class, just a nice way of accessing a dictionary
 
     .. code-block:: python
 
         ps = Parameters({"a": 1, "b": 3})
         ps.A # returns 1
-    '''
+    """
+
     def __init__(self, params):
-        super().__setattr__('params', params)
+        super().__setattr__("params", params)
 
         # ensure no overlapping (in case) params
         collisions = set()
@@ -43,6 +45,7 @@ class Parameters():
         assert len(collisions) == len(self.params.keys())
 
     def as_dict(self):
+        """Return the underlying params dictionary."""
         return self.params
 
     def __getattr__(self, x):
@@ -56,7 +59,7 @@ class Parameters():
 
     def __setattr__(self, x, v):
         # Fix for some back-compatibility with some pickling bugs
-        if x == 'params':
+        if x == "params":
             super().__setattr__(x, v)
             return
 
@@ -65,13 +68,13 @@ class Parameters():
 
         self.params[x] = v
 
-    def __delattr__ (self, key):
+    def __delattr__(self, key):
         del self.params[key]
 
-    def __iter__ (self):
+    def __iter__(self):
         return iter(self.params)
 
-    def __len__ (self):
+    def __len__(self):
         return len(self.params)
 
     def __str__(self):
@@ -88,11 +91,11 @@ class Parameters():
         return x in self.params
 
     def __setstate__(self, x):
-        self.params = x
+        super().__setattr__("params", x)  # pylint: disable=attribute-defined-outside-init
 
 
 def cov(m, rowvar=False):
-    '''
+    """
     Estimate a covariance matrix given data.
 
     Covariance indicates the level to which two variables vary together.
@@ -111,9 +114,9 @@ def cov(m, rowvar=False):
 
     Returns:
         The covariance matrix of the variables.
-    '''
+    """
     if m.dim() > 2:
-        raise ValueError('m has more than 2 dimensions')
+        raise ValueError("m has more than 2 dimensions")
     # clone array so that data is not manipulated in-place
     m_ = m.clone().detach()
     if m_.dim() < 2:
@@ -129,10 +132,13 @@ def cov(m, rowvar=False):
 
 # For real symmetric matrices
 def is_psd(matrix, tol=1e-8):
+    """Check if a matrix is positive semi-definite."""
     try:
-        eig_vals = ch.linalg.eigvalsh(matrix)  # More stable for symmetric
+        eig_vals = ch.linalg.eigvalsh(  # pylint: disable=not-callable
+            matrix
+        )  # More stable for symmetric
         return (eig_vals >= -tol).all()
-    except:
+    except Exception:  # pylint: disable=broad-except
         return False
 
 
@@ -141,44 +147,51 @@ def type_of_script():
     Check the program's running environment.
     """
     try:
-        ipy_str = str(type(get_ipython()))
+        ipy_str = str(type(get_ipython()))  # pylint: disable=undefined-variable  # noqa: F821
         if ZMQ in ipy_str:
             return JUPYTER
-        if TERMINEL in ipy_str:
+        if TERMINAL in ipy_str:
             return IPYTHON
-        if COLAB in ipy_str: 
+        if COLAB in ipy_str:
             return COLAB
-    except:
+        return IPYTHON
+    except Exception:  # pylint: disable=broad-except
         return TERMINAL
 
 
-
 def calc_est_grad(func, x, y, rad, num_samples):
-    B, *_ = x.shape
-    Q = num_samples//2
-    N = len(x.shape) - 1
+    """Calculate estimated gradient using random sampling."""
+    B, *_ = x.shape  # pylint: disable=invalid-name
+    Q = num_samples // 2  # pylint: disable=invalid-name
+    N = len(x.shape) - 1  # pylint: disable=invalid-name
     with ch.no_grad():
         # Q * B * C * H * W
-        extender = [1]*N
+        extender = [1] * N
         queries = x.repeat(Q, *extender)
         noise = ch.randn_like(queries)
-        norm = noise.view(B*Q, -1).norm(dim=-1).view(B*Q, *extender)
+        norm = noise.view(B * Q, -1).norm(dim=-1).view(B * Q, *extender)
         noise = noise / norm
         noise = ch.cat([-noise, noise])
         queries = ch.cat([queries, queries])
         y_shape = [1] * (len(y.shape) - 1)
-        l = func(queries + rad * noise, y.repeat(2*Q, *y_shape)).view(-1, *extender)
-        grad = (l.view(2*Q, B, *extender) * noise.view(2*Q, B, *noise.shape[1:])).mean(dim=0)
+        loss_vals = func(queries + rad * noise, y.repeat(2 * Q, *y_shape)).view(
+            -1, *extender
+        )
+        grad = (
+            loss_vals.view(2 * Q, B, *extender) * noise.view(2 * Q, B, *noise.shape[1:])
+        ).mean(dim=0)
     return grad
 
 
 class InputNormalize(ch.nn.Module):
-    '''
+    """
     A module (custom layer) for normalizing the input to have a fixed
     mean and standard deviation (user-specified).
-    '''
+    """
+
     def __init__(self, new_mean, new_std):
-        super(InputNormalize, self).__init__()
+        """Initialize InputNormalize with mean and standard deviation."""
+        super().__init__()
         new_std = new_std[..., None, None]
         new_mean = new_mean[..., None, None]
 
@@ -186,59 +199,65 @@ class InputNormalize(ch.nn.Module):
         self.register_buffer("new_std", new_std)
 
     def forward(self, x):
+        """Normalize x by clamping to [0,1] and applying stored mean/std."""
         x = ch.clamp(x, 0, 1)
-        x_normalized = (x - self.new_mean)/self.new_std
+        x_normalized = (x - self.new_mean) / self.new_std
         return x_normalized
 
 
 def ckpt_at_epoch(num):
-    return '%s_%s' % (num, consts.CKPT_NAME)
+    """Return checkpoint filename for a given epoch number."""
+    return f"{num}_{consts.CKPT_NAME}"
 
 
 def setup_store_with_metadata(args, store):
-    '''
+    """
     Sets up a store for training according to the arguments object. See the
     argparse object above for options.
-    '''
+    """
     args_dict = args.as_dict()
     schema = cox.store.schema_from_dict(args_dict)
-    store.add_table('metadata', schema)
-    store['metadata'].append_row(args_dict)
+    store.add_table("metadata", schema)
+    store["metadata"].append_row(args_dict)
 
 
 def has_attr(obj, k):
     """Checks both that obj.k exists and is not equal to None"""
     try:
         return k in obj
-    except KeyError as e:
+    except KeyError:
         return False
-    except AttributeError as e:
+    except AttributeError:
         return False
 
 
 def accuracy(output, target, topk=(1,), exact=False):
     """
-        Computes the top-k accuracy for the specified values of k
+    Computes the top-k accuracy for the specified values of k
 
-        Args:
-            output (ch.Tensor) : model output (N, classes) or (N, attributes) 
-                for sigmoid/multitask binary classification
-            target (ch.Tensor) : correct labels (N,) [multiclass] or (N,
-                attributes) [multitask binary]
-            topk (tuple) : for each item "k" in this tuple, this method
-                will return the top-k accuracy
-            exact (bool) : whether to return aggregate statistics (if
-                False) or per-example correctness (if True)
+    Args:
+        output (ch.Tensor) : model output (N, classes) or (N, attributes)
+            for sigmoid/multitask binary classification
+        target (ch.Tensor) : correct labels (N,) [multiclass] or (N,
+            attributes) [multitask binary]
+        topk (tuple) : for each item "k" in this tuple, this method
+            will return the top-k accuracy
+        exact (bool) : whether to return aggregate statistics (if
+            False) or per-example correctness (if True)
 
-        Returns:
-            A list of top-k accuracies.
+    Returns:
+        A list of top-k accuracies.
     """
     with ch.no_grad():
         # Binary Classification
         if len(target.shape) > 1:
-            assert output.shape == target.shape, \
+            assert output.shape == target.shape, (
                 "Detected binary classification but output shape != target shape"
-            return [ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean(), -1.0] 
+            )
+            return [
+                ch.round(ch.sigmoid(output)).eq(ch.round(target)).float().mean(),
+                -1.0,
+            ]
         maxk = max(topk)
         batch_size = target.size(0)
 
@@ -255,73 +274,97 @@ def accuracy(output, target, topk=(1,), exact=False):
             res_exact.append(correct_k)
         if not exact:
             return res
-        else:
-            return res_exact
+        return res_exact
 
 
-class AverageMeter(object):
+class AverageMeter:
     """Computes and stores the average and current value"""
+
     def __init__(self):
+        """Initialize and reset the meter."""
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
         self.reset()
 
     def reset(self):
+        """Reset all tracked values to zero."""
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
 
     def update(self, val, n=1):
+        """Update meter with a new value and optional count."""
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
 
 
-class Bounds(NamedTuple): 
+class Bounds(NamedTuple):
+    """Named tuple holding lower and upper bounds as Tensors."""
+
     lower: Tensor
     upper: Tensor
 
 
-class FakeReLU(ch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        return input.clamp(min=0)
+class FakeReLU(ch.autograd.Function):  # pylint: disable=abstract-method
+    """Custom autograd function implementing a fake ReLU (identity backward)."""
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def forward(ctx, inp):  # pylint: disable=arguments-differ,unused-argument
+        """Forward pass: clamp input to be non-negative."""
+        return inp.clamp(min=0)
+
+    @staticmethod
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ,unused-argument
+        """Backward pass: pass gradient through unchanged."""
         return grad_output
 
 
 class FakeReLUM(nn.Module):
+    """Module wrapper around FakeReLU autograd function."""
+
     def forward(self, x):
+        """Apply FakeReLU to x."""
         return FakeReLU.apply(x)
 
 
 class SequentialWithArgs(ch.nn.Sequential):
-    def forward(self, input, *args, **kwargs):
+    """Sequential module that passes extra args/kwargs to the last layer."""
+
+    def forward(self, inp, *args, **kwargs):  # pylint: disable=arguments-differ
+        """Forward pass, passing args and kwargs to the final module only."""
         vs = list(self._modules.values())
-        l = len(vs)
-        for i in range(l):
-            if i == l-1:
-                input = vs[i](input, *args, **kwargs)
+        num_layers = len(vs)
+        for i in range(num_layers):
+            if i == num_layers - 1:
+                inp = vs[i](inp, *args, **kwargs)
             else:
-                input = vs[i](input)
-        return input
+                inp = vs[i](inp)
+        return inp
 
 
-class DataPrefetcher():
+class DataPrefetcher:
+    """Prefetches data onto the GPU asynchronously for faster training."""
+
     def __init__(self, loader, stop_after=None):
+        """Initialize the prefetcher with a data loader."""
         self.loader = loader
         self.dataset = loader.dataset
         self.stream = ch.cuda.Stream()
         self.stop_after = stop_after
         self.next_input = None
         self.next_target = None
+        self.loaditer = None
 
     def __len__(self):
         return len(self.loader)
 
     def preload(self):
+        """Preload the next batch onto the GPU stream."""
         try:
             self.next_input, self.next_target = next(self.loaditer)
         except StopIteration:
@@ -338,12 +381,12 @@ class DataPrefetcher():
         self.preload()
         while self.next_input is not None:
             ch.cuda.current_stream().wait_stream(self.stream)
-            input = self.next_input
+            inp = self.next_input
             target = self.next_target
             self.preload()
             count += 1
-            yield input, target
-            if type(self.stop_after) is int and (count > self.stop_after):
+            yield inp, target
+            if isinstance(self.stop_after, int) and (count > self.stop_after):
                 break
 
 
@@ -353,24 +396,30 @@ transforms_ = [SigmoidTransform().inv]
 logistic = TransformedDistribution(base_distribution, transforms_)
 
 
-class ProcedureComplete(Exception): 
-    def __init__(self, message='procedure complete'): 
-        super(ProcedureComplete, self).__init__(message)
+class ProcedureComplete(Exception):
+    """Exception raised when a procedure has completed."""
+
+    def __init__(self, message="procedure complete"):
+        """Initialize with a completion message."""
+        super().__init__(message)
 
 
-class PSDError(Exception): 
-    def __init__(self, message='psd error'): 
-        super(PSDError, self).__init__(message)
+class PSDError(Exception):
+    """Exception raised when a matrix is not positive semi-definite."""
+
+    def __init__(self, message="psd error"):
+        """Initialize with a PSD error message."""
+        super().__init__(message)
         self.message = message
 
 
-def calc_spectral_norm(A):
-    u, s, v = LA.svd(A)
+def calc_spectral_norm(A):  # pylint: disable=invalid-name
+    """Calculate the spectral norm (largest singular value) of matrix A."""
+    _, s, _ = LA.svd(A)  # pylint: disable=not-callable
     return s.max()
 
+
 # Return the thickness of a positive semi-definite matrix
-def calc_thickness(X):
-  return LA.eig(X).eigenvalues.real.min()
-
-
-
+def calc_thickness(X):  # pylint: disable=invalid-name
+    """Return the thickness (minimum real eigenvalue) of a PSD matrix X."""
+    return LA.eig(X).eigenvalues.real.min()  # pylint: disable=not-callable

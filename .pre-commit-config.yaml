@@ -1,0 +1,22 @@
+default_language_version:
+  python: python3.12
+
+default_stages: [pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint
+        entry: pylint
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [--errors-only, delphi/, tests/]

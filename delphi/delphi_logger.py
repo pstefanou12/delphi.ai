@@ -1,16 +1,25 @@
+"""Structured logger for delphi and Trainer systems with JSONL experiment tracking."""
+
 import logging
 import json
 import time
 from pathlib import Path
 
 
-class delphiLogger:
+class delphiLogger:  # pylint: disable=invalid-name
     """
     Structured logger for delphi and Trainer systems.
     Uses Python's logging infrastructure for console/file logging,
     and keeps JSONL records for experiment reproducibility.
     """
+
     def __init__(self, save_dir=None, run_name=None, level=logging.INFO):
+        """
+        Args:
+            save_dir: directory to save log files, or None for console-only logging
+            run_name: name for this run; defaults to a timestamp string
+            level: logging level (default logging.INFO)
+        """
         self.save_dir = save_dir
         self.run_name = run_name or time.strftime("%Y%m%d-%H%M%S")
 
@@ -52,7 +61,7 @@ class delphiLogger:
     def log(self, level=20, **data):
         """
         Log a dict of experiment data (to console, text file, and JSONL).
-        level 20 is the int code for logging.INFO. Full list of logging levels here: 
+        level 20 is the int code for logging.INFO. Full list of logging levels here:
         https://docs.python.org/3/library/logging.html#logging-levels
         """
         # Write structured data to JSONL
@@ -60,7 +69,7 @@ class delphiLogger:
         self._history.append(record)
 
         if self.save_dir is not None:
-            with open(self.jsonl_path, "a") as f:
+            with open(self.jsonl_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
 
         # Human-readable logging via Python logging
@@ -68,27 +77,31 @@ class delphiLogger:
         self.logger.log(level, pretty)
 
     def info(self, msg):
+        """Log an informational message."""
         self.logger.info(msg)
 
     def debug(self, msg):
+        """Log a debug message."""
         self.logger.debug(msg)
 
     def warning(self, msg):
+        """Log a warning message."""
         self.logger.warning(msg)
 
     def log_training_step(self, epoch, loss):
-        data = {
-                'epoch': epoch, 
-                'loss': float(loss)
-            }
+        """Log training step data including epoch and loss."""
+        data = {"epoch": epoch, "loss": float(loss)}
         self.log(data=data)
 
     def log_metrics(self, **metrics):
+        """Log arbitrary named metrics."""
         self.log(data=metrics)
 
     def log_model(self, model):
+        """Log the total number of parameters in the given model."""
         params = sum(p.numel() for p in model.parameters())
         self.log(data=params)
 
-    def get_history(self): 
+    def get_history(self):
+        """Return the full list of logged records."""
         return self._history

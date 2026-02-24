@@ -1,18 +1,20 @@
 """
 Module containing all the supported datasets, which are subclasses of the
-abstract class :class:`robustness.datasets.DataSet`. 
+abstract class :class:`robustness.datasets.DataSet`.
 Currently supported datasets:
 - CIFAR-10 (:class:`delphi.datasets.CIFAR`)
 """
 
+import numpy as np
+
 import torch as ch
 import torch.linalg as LA
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Subset
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torchvision import datasets
 
+from . import folder
 from .helpers import cov
-from ..grad import calc_multi_norm_suff_stat 
 from .defaults import DATASET_DEFAULTS, check_and_fill_args
 from . import data_augmentation as da
 from .. import cifar_models
@@ -27,21 +29,35 @@ from .. import imagenet_models
 ###
 
 # required and optional arguments for datasets
-CNN_REQUIRED_ARGS = ['num_classes', 'mean', 'std',
-                         'transform_train', 'transform_test']
-CNN_OPTIONAL_ARGS = ['custom_class', 'label_mapping', 'custom_class_args']
+CNN_REQUIRED_ARGS = ["num_classes", "mean", "std", "transform_train", "transform_test"]
+CNN_OPTIONAL_ARGS = ["custom_class", "label_mapping", "custom_class_args"]
 
 
-CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
-TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS, TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
-TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS = ['custom_class', 'custom_class_args'], ['label_mapping', 'transform_train', 'transform_test']
+(
+    CENSORED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
+    CENSORED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS,
+) = (
+    ["custom_class", "custom_class_args"],
+    ["label_mapping", "transform_train", "transform_test"],
+)
+(
+    TRUNCATED_MULTIVARIATE_NORMAL_REQUIRED_ARGS,
+    TRUNCATED_MULTIVARIATE_NORMAL_OPTIONAL_ARGS,
+) = (
+    ["custom_class", "custom_class_args"],
+    ["label_mapping", "transform_train", "transform_test"],
+)
+TENSOR_REQUIRED_ARGS, TENSOR_OPTIONAL_ARGS = (
+    ["custom_class", "custom_class_args"],
+    ["label_mapping", "transform_train", "transform_test"],
+)
 
 
-class DataSet(object):
-    '''
+class DataSet:
+    """
     Base class for representing a dataset. Meant to be subclassed, with
     subclasses implementing the `get_model` function.
-    '''
+    """
 
     def __init__(self, ds_name, required_args, optional_args, data_path=None, **kwargs):
         """
@@ -72,11 +88,11 @@ class DataSet(object):
         """
         missing_args = set(required_args) - set(kwargs.keys())
         if len(missing_args) > 0:
-            raise ValueError("Missing required args %s" % missing_args)
+            raise ValueError(f"Missing required args {missing_args}")
 
         extra_args = set(kwargs.keys()) - set(required_args + optional_args)
         if len(extra_args) > 0:
-            raise ValueError("Got unrecognized args %s" % extra_args)
+            raise ValueError(f"Got unrecognized args {extra_args}")
         final_kwargs = {k: kwargs.get(k, None) for k in required_args + optional_args}
 
         self.ds_name = ds_name
@@ -84,11 +100,12 @@ class DataSet(object):
         self.__dict__.update(final_kwargs)
 
     def override_args(self, default_args, kwargs):
-        '''
+        """
         Convenience method for overriding arguments. (Internal)
-        '''
+        """
         for k in kwargs:
-            if not (k in default_args): continue
+            if k not in default_args:
+                continue
             req_type = type(default_args[k])
             no_nones = (default_args[k] is not None) and (kwargs[k] is not None)
             if no_nones and (not isinstance(kwargs[k], req_type)):
@@ -96,7 +113,7 @@ class DataSet(object):
         return {**default_args, **kwargs}
 
     def get_model(self, arch, pretrained):
-        '''
+        """
         Should be overriden by subclasses. Also, you will probably never
         need to call this function, and should instead by using
         `model_utils.make_and_restore_model </source/delphi.utils.model_utils.html>`_.
@@ -107,14 +124,25 @@ class DataSet(object):
         Returns:
             A model with the given architecture that works for each
             dataset (e.g. with the right input/output dimensions).
-        '''
+        """
         raise NotImplementedError
 
-    def make_loaders(self, workers, batch_size, data_aug=True,
-                    subset=None, subset_type='rand', subset_start=0, val_batch_size=None,
-                    train=True, val=True, shuffle=True, seed=1,
-                    verbose=True):
-        '''
+    def make_loaders(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-branches
+        self,
+        workers,
+        batch_size,
+        data_aug=True,
+        subset=None,
+        subset_type="rand",
+        subset_start=0,
+        val_batch_size=None,
+        train=True,
+        val=True,
+        shuffle=True,
+        seed=1,
+        verbose=True,  # pylint: disable=unused-argument
+    ):
+        """
         Args:
             workers (int) : number of workers for data fetching (*required*).
                 batch_size (int) : batch size for the data loaders (*required*).
@@ -143,7 +171,7 @@ class DataSet(object):
             >>> train_loader, val_loader = ds.make_loaders(workers=8, batch_size=128)
             >>> for im, lab in train_loader:
             >>>     # Do stuff...
-        '''
+        """
         # check that at least a train loader or validation loader specified to be created
         if not train and not val:
             raise ValueError("Neither training loader nor validation loader specified")
@@ -154,48 +182,92 @@ class DataSet(object):
         if not val_batch_size:
             val_batch_size = batch_size
 
-        if not self.custom_class:
-            if train:
-                train_set = folder.ImageFolder(root=self.data_path, transform=self.transform_train if data_aug else self.transform_test,
-                                            label_mapping=self.label_mapping)
-            if val:
-                test_set = folder.ImageFolder(root=self.data_path, transform=self.transform_test,
-                                            label_mapping=self.label_mapping)
+        custom_class = self.__dict__.get("custom_class")
+        transform_train = self.__dict__.get("transform_train")
+        transform_test = self.__dict__.get("transform_test")
+        label_mapping = self.__dict__.get("label_mapping")
 
+        if not custom_class:
+            if train:
+                train_set = folder.ImageFolder(
+                    root=self.data_path,
+                    transform=transform_train if data_aug else transform_test,
+                    label_mapping=label_mapping,
+                )
+            if val:
+                test_set = folder.ImageFolder(
+                    root=self.data_path,
+                    transform=transform_test,
+                    label_mapping=label_mapping,
+                )
+
+            train_sample_count = 0
             if train:
                 attrs = ["samples", "train_data", "data"]
                 vals = {attr: hasattr(train_set, attr) for attr in attrs}
                 assert any(vals.values()), f"dataset must expose one of {attrs}"
-                train_sample_count = len(getattr(train_set, [k for k in vals if vals[k]][0]))
+                train_sample_count = len(
+                    getattr(train_set, [k for k in vals if vals[k]][0])
+                )
 
-            if (train and not val) and (subset is not None) and (subset <= train_sample_count):
+            if (
+                (train and not val)
+                and (subset is not None)
+                and (subset <= train_sample_count)
+            ):
                 assert train and not val
-                if subset_type == 'rand':
-                    rng = np.random.RandomState(seed)
-                    subset = rng.choice(list(range(train_sample_count)), size=subset + subset_start, replace=False)
+                if subset_type == "rand":
+                    rng = np.random.RandomState(seed)  # pylint: disable=no-member
+                    subset = rng.choice(
+                        list(range(train_sample_count)),
+                        size=subset + subset_start,
+                        replace=False,
+                    )
                     subset = subset[subset_start:]
-                elif subset_type == 'first':
+                elif subset_type == "first":
                     subset = np.arange(subset_start, subset_start + subset)
                 else:
                     subset = np.arange(train_sample_count - subset, train_sample_count)
 
                 train_set = Subset(train_set, subset)
         else:
-            if self.custom_class_args is None: self.custom_class_args = {}
+            custom_class_args = self.__dict__.get("custom_class_args")
+            if custom_class_args is None:
+                custom_class_args = {}
+                self.__dict__["custom_class_args"] = custom_class_args
             if self.data_path is not None:
                 if train:
-                    train_set = self.custom_class(root=self.data_path, train=True, download=True,
-                                        transform=self.transform_train, **self.custom_class_args)
+                    train_set = custom_class(
+                        root=self.data_path,
+                        train=True,
+                        download=True,
+                        transform=transform_train,
+                        **custom_class_args,
+                    )
                 if val:
-                    test_set = self.custom_class(root=self.data_path, train=False, download=True,
-                                        transform=self.transform_test, **self.custom_class_args)
+                    test_set = custom_class(
+                        root=self.data_path,
+                        train=False,
+                        download=True,
+                        transform=transform_test,
+                        **custom_class_args,
+                    )
         if train_set is not None:
-            train_loader = DataLoader(train_set, batch_size=batch_size,
-                shuffle=shuffle, num_workers=workers, pin_memory=True)
+            train_loader = DataLoader(
+                train_set,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=workers,
+                pin_memory=True,
+            )
 
         if test_set is not None:
-            test_loader = DataLoader(test_set, batch_size=val_batch_size, 
-                                    num_workers=workers, pin_memory=True)
+            test_loader = DataLoader(
+                test_set,
+                batch_size=val_batch_size,
+                num_workers=workers,
+                pin_memory=True,
+            )
 
         return train_loader, test_loader
 
@@ -218,59 +290,70 @@ class CIFAR(DataSet):
     .. [Kri09] Krizhevsky, A (2009). Learning Multiple Layers of Features
         from Tiny Images. Technical Report.
     """
-    def __init__(self, data_path='/tmp/', **kwargs):
-        """
-        """
+
+    def __init__(self, data_path="/tmp/", **kwargs):
+        """Initialize CIFAR-10 dataset with default transforms and settings."""
         ds_kwargs = {
             # 'data_path': data_path,
-            'num_classes': 10,
-            'mean': ch.tensor([0.4914, 0.4822, 0.4465]),
-            'std': ch.tensor([0.2023, 0.1994, 0.2010]),
-            'custom_class': datasets.CIFAR10,
-            'label_mapping': None,
-            'transform_train': da.TRAIN_TRANSFORMS_DEFAULT(32),
-            'transform_test': da.TEST_TRANSFORMS_DEFAULT(32),
+            "num_classes": 10,
+            "mean": ch.tensor([0.4914, 0.4822, 0.4465]),
+            "std": ch.tensor([0.2023, 0.1994, 0.2010]),
+            "custom_class": datasets.CIFAR10,
+            "label_mapping": None,
+            "transform_train": da.TRAIN_TRANSFORMS_DEFAULT(32),
+            "transform_test": da.TEST_TRANSFORMS_DEFAULT(32),
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(CIFAR, self).__init__('cifar', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path=data_path, **ds_kwargs)
+        super().__init__(
+            "cifar",
+            CNN_REQUIRED_ARGS,
+            CNN_OPTIONAL_ARGS,
+            data_path=data_path,
+            **ds_kwargs,
+        )
 
-    def get_model(self, arch, pretrained, args):
-        """
-        """
+    def get_model(self, arch, pretrained, args=None):  # pylint: disable=arguments-differ,unused-argument
+        """Return a CIFAR model for the given architecture."""
         if pretrained:
-            raise ValueError('CIFAR does not support pytorch_pretrained=True')
-        return cifar_models.__dict__[arch](num_classes=self.num_classes)
+            raise ValueError("CIFAR does not support pytorch_pretrained=True")
+        num_classes = self.__dict__.get("num_classes")
+        return cifar_models.__dict__[arch](num_classes=num_classes)
 
 
 class ImageNet(DataSet):
-    '''
+    """
     ImageNet Dataset [DDS+09]_.
-    Requires ImageNet in ImageFolder-readable format. 
+    Requires ImageNet in ImageFolder-readable format.
     ImageNet can be downloaded from http://www.image-net.org. See
-    `here <https://pytorch.org/docs/master/torchvision/datasets.html#torchvision.datasets.ImageFolder>`_
-    for more information about the format.
-    .. [DDS+09] Deng, J., Dong, W., Socher, R., Li, L., Li, K., & Fei-Fei, L. (2009). ImageNet: A large-scale hierarchical image database. 2009 IEEE Conference on Computer Vision and Pattern Recognition, 248-255.
-    '''
+    `here <https://pytorch.org/docs/master/torchvision/datasets.html
+    #torchvision.datasets.ImageFolder>`_ for more information about the format.
+    .. [DDS+09] Deng, J., Dong, W., Socher, R., Li, L., Li, K., & Fei-Fei, L. (2009).
+        ImageNet: A large-scale hierarchical image database. 2009 IEEE Conference on
+        Computer Vision and Pattern Recognition, 248-255.
+    """
+
     def __init__(self, data_path, **kwargs):
-        """
-        """
+        """Initialize ImageNet dataset with default transforms and settings."""
         ds_kwargs = {
-            'num_classes': 1000,
-            'mean': ch.tensor([0.485, 0.456, 0.406]),
-            'std': ch.tensor([0.229, 0.224, 0.225]),
-            'custom_class': None,
-            'label_mapping': None,
-            'transform_train': da.TRAIN_TRANSFORMS_IMAGENET,
-            'transform_test': da.TEST_TRANSFORMS_IMAGENET
+            "num_classes": 1000,
+            "mean": ch.tensor([0.485, 0.456, 0.406]),
+            "std": ch.tensor([0.229, 0.224, 0.225]),
+            "custom_class": None,
+            "label_mapping": None,
+            "transform_train": da.TRAIN_TRANSFORMS_IMAGENET,
+            "transform_test": da.TEST_TRANSFORMS_IMAGENET,
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(ImageNet, self).__init__('imagenet', CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path, **ds_kwargs)
+        super().__init__(
+            "imagenet", CNN_REQUIRED_ARGS, CNN_OPTIONAL_ARGS, data_path, **ds_kwargs
+        )
 
     def get_model(self, arch, pretrained):
-        """
-        """
-        return imagenet_models.__dict__[arch](num_classes=self.num_classes, 
-                                        pretrained=pretrained)
+        """Return an ImageNet model for the given architecture."""
+        num_classes = self.__dict__.get("num_classes")
+        return imagenet_models.__dict__[arch](
+            num_classes=num_classes, pretrained=pretrained
+        )
 
 
 class Normalize:
@@ -280,70 +363,82 @@ class Normalize:
     """
 
     def __init__(self):
-        '''
+        """
         Args:
-            X (torch.Tensor): regression input features; shape expected to be n (number of samples) by d (number of dimensions)
-        '''
-        super(Normalize).__init__()
+            X (torch.Tensor): regression input features; shape expected to be
+                n (number of samples) by d (number of dimensions)
+        """
+        super().__init__()
         self._l_inf, self._beta = None, None
 
-    def fit_transform(self, X):
-        '''
+    def fit_transform(self, X):  # pylint: disable=invalid-name
+        """
         Normalize input features truncated regression
-        '''
+        """
         # normalize input features
-        self._l_inf = LA.norm(X, dim=-1, ord=float('inf')).max()
-        self._beta = self._l_inf * (X.size(1) ** .5)
+        self._l_inf = LA.norm(X, dim=-1, ord=float("inf")).max()  # pylint: disable=not-callable
+        self._beta = self._l_inf * (X.size(1) ** 0.5)
         return self
 
-    def transform(self, X):      
+    def transform(self, X):  # pylint: disable=invalid-name
+        """Apply the stored normalization to X."""
         return X / self._beta
 
     @property
     def beta(self):
+        """Return the normalization factor beta."""
         return self._beta
 
     @property
-    def l_inf(self):
+    def l_inf(self):  # pylint: disable=invalid-name
+        """Return the L-infinity norm used for normalization."""
         return self._l_inf
 
 
-def make_train_and_val(args, X, y): 
+def make_train_and_val(args, X, y):  # pylint: disable=invalid-name
+    """Create training and validation DataLoaders from tensors X and y."""
     # check arguments are correct
     args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     val = int(args.val * X.size(0))
-    
-    X_train,y_train = X[val:], y[val:]
-    X_val, y_val = X[:val], y[:val]
+
+    x_train, y_train = X[val:], y[val:]  # pylint: disable=invalid-name
+    x_val, y_val = X[:val], y[:val]  # pylint: disable=invalid-name
     # normalize input covariates
     if args.normalize:
-        train_norm = Normalize().fit_transform(X_train)
-        X_train = train_norm.transform(X_train)
-        val_norm = Normalize().fit_transform(X_val)
-        X_val = val_norm.transform(X_val)
+        train_norm = Normalize().fit_transform(x_train)
+        x_train = train_norm.transform(x_train)
+        val_norm = Normalize().fit_transform(x_val)
+        x_val = val_norm.transform(x_val)
 
-    train_ds = TensorDataset(X_train, y_train)
-    val_ds = TensorDataset(X_val, y_val)
+    train_ds = TensorDataset(x_train, y_train)
+    val_ds = TensorDataset(x_val, y_val)
 
     batch_size = len(train_ds) if args.batch_size == -1 else args.batch_size
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, num_workers=args.workers, shuffle=args.shuffle)
-    val_loader = DataLoader(val_ds, batch_size=len(val_ds), num_workers=args.workers, shuffle=args.shuffle)
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, num_workers=args.workers, shuffle=args.shuffle
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=len(val_ds), num_workers=args.workers, shuffle=args.shuffle
+    )
 
     return train_loader, val_loader
 
 
-def make_train_and_val_distr(args, S, ds, kwargs={}): 
+def make_train_and_val_distr(args, S, ds, kwargs=None):  # pylint: disable=invalid-name
+    """Create training and validation DataLoaders from a distribution dataset S."""
+    if kwargs is None:
+        kwargs = {}
     # check arguments are correct
     args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     rand_indices = ch.randperm(S.size(0))
     val = int(args.val * S.size(0))
     train_indices, val_indices = rand_indices[val:], rand_indices[:val]
-    X_train, X_val = S[train_indices], S[val_indices]
-    train_ds = ds(X_train, **kwargs)
-    val_ds = ds(X_val, **kwargs)
+    x_train, x_val = S[train_indices], S[val_indices]  # pylint: disable=invalid-name
+    train_ds = ds(x_train, **kwargs)
+    val_ds = ds(x_val, **kwargs)
     batch_size = len(train_ds) if args.batch_size == -1 else args.batch_size
     train_loader = DataLoader(train_ds, batch_size=batch_size)
     val_loader = DataLoader(val_ds, batch_size=len(val_ds))
@@ -352,42 +447,58 @@ def make_train_and_val_distr(args, S, ds, kwargs={}):
 
 
 class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
-    def __init__(self, 
-                 S, 
-                 calc_suff_stat):
-        self.S = S 
+    """Dataset for truncated exponential distribution samples and sufficient statistics."""
+
+    def __init__(self, S, calc_suff_stat):  # pylint: disable=invalid-name
+        """Initialize with samples S and a sufficient statistic function."""
+        self.S = S  # pylint: disable=invalid-name
         self.calc_suff_stat = calc_suff_stat
         # precalculate dataset score, so that it doesn't need to be computed within gradient
-        self.S_grad = self.calc_suff_stat(S)
+        self.S_grad = self.calc_suff_stat(S)  # pylint: disable=invalid-name
         self.data = self.S
         self.data = ch.cat([self.S, self.S_grad], dim=1)
 
-    def __len__(self): 
+    def __len__(self):
         return self.S.size(0)
-    
+
     def __getitem__(self, idx):
-        return [ch.empty([]), self.data[idx],]
+        """Return a (dummy, data) pair for sample at idx."""
+        return [
+            ch.empty([]),
+            self.data[idx],
+        ]
 
 
 class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
-    def __init__(self, S):
-        self.S = S
-        # samples 
+    """Dataset for normal distribution samples with unknown truncation."""
+
+    def __init__(self, S):  # pylint: disable=invalid-name
+        """Initialize with samples S, computing gradients for loc and covariance."""
+        self.S = S  # pylint: disable=invalid-name
+        # samples
         self._loc = self.S.mean(0)
         self._covariance_matrix = cov(self.S)
         # compute gradients
         # M = MultivariateNormal(self._loc, self._covariance_matrix)
-        self.pdf = ch.exp(MultivariateNormal(ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))).log_prob(self.S))[...,None]
+        self.pdf = ch.exp(
+            MultivariateNormal(
+                ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))
+            ).log_prob(self.S)
+        )[..., None]
         # self.pdf = ch.exp(M.log_prob(self.S))[...,None]
 
-        self.loc_grad =  self._loc - self.S
-        self.cov_grad = .5 * (ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1)) - self._covariance_matrix - self._loc[...,None] @ self._loc[None,...]).flatten(1)
+        self.loc_grad = self._loc - self.S
+        self.cov_grad = 0.5 * (
+            ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1))
+            - self._covariance_matrix
+            - self._loc[..., None] @ self._loc[None, ...]
+        ).flatten(1)
 
         self.data = ch.cat([self.S, self.pdf, self.loc_grad, self.cov_grad], dim=1)
-        
-    def __len__(self): 
+
+    def __len__(self):
         return self.S.size(0)
-    
+
     def __getitem__(self, idx):
         """
         :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
@@ -395,16 +506,18 @@ class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
         return [ch.empty([]), self.data[idx]]
 
     @property
-    def loc(self): 
+    def loc(self):
+        """Return a clone of the location (mean) parameter."""
         return self._loc.clone()
-    
+
     @property
-    def covariance_matrix(self): 
+    def covariance_matrix(self):
+        """Return a clone of the covariance matrix."""
         return self._covariance_matrix.clone()
 
 
 DATASETS = {
-    'imagenet': ImageNet, 
-    'cifar': CIFAR,
-    'tensor': TensorDataset, 
+    "imagenet": ImageNet,
+    "cifar": CIFAR,
+    "tensor": TensorDataset,
 }
