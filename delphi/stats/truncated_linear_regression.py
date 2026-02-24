@@ -11,17 +11,17 @@ from torch import nn
 from scipy.linalg import lstsq
 from torch import Tensor
 
-from ..delphi_logger import delphiLogger
-from ..grad import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
-from ..trainer import Trainer
-from ..utils.datasets import make_train_and_val
-from ..utils.defaults import (
+from delphi.delphi_logger import delphiLogger
+from delphi.grad import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
+from delphi.utils.defaults import (
     TRUNC_LDS_DEFAULTS,
     TRUNC_REG_DEFAULTS,
     check_and_fill_args,
 )
-from ..utils.helpers import Bounds, Parameters
-from .linear_model import LinearModel
+from delphi.utils.helpers import Bounds, Parameters
+from delphi.stats.linear_model import LinearModel
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods

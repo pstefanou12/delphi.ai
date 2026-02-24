@@ -13,9 +13,9 @@ import torch as ch
 import torch.linalg as LA
 from cox.store import Store
 
-from ..utils.defaults import TRUNC_LQR_DEFAULTS, check_and_fill_args
-from ..utils.helpers import Parameters, calc_spectral_norm, calc_thickness
-from .truncated_linear_regression import TruncatedLinearRegression
+from delphi.utils.defaults import TRUNC_LQR_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import Parameters, calc_spectral_norm, calc_thickness
+from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
 
 logger = logging.getLogger("truncated-lqr")
 logger.setLevel(logging.INFO)

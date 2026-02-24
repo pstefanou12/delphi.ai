@@ -10,7 +10,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from ..utils.helpers import SequentialWithArgs, FakeReLU
+from delphi.utils.helpers import SequentialWithArgs, FakeReLU
 
 
 class BasicBlock(nn.Module):

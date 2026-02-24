@@ -6,7 +6,7 @@ from typing import Optional, Union, get_origin, get_args
 
 import torch as ch
 
-from .helpers import has_attr
+from delphi.utils.helpers import has_attr
 
 # CONSTANTS
 REQ = "required"

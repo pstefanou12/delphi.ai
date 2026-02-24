@@ -8,7 +8,7 @@ Reference:
 
 from torch import nn
 from torch.hub import load_state_dict_from_url
-from ..utils.helpers import FakeReLUM
+from delphi.utils.helpers import FakeReLUM
 
 __all__ = [
     "VGG",

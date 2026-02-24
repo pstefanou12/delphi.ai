@@ -1,8 +1,8 @@
 """Parent class for all distribution models."""
 
-from ..delphi import delphi
-from ..delphi_logger import delphiLogger
-from ..utils.helpers import Parameters
+from delphi.delphi import delphi
+from delphi.delphi_logger import delphiLogger
+from delphi.utils.helpers import Parameters
 
 
 class distributions(delphi):  # pylint: disable=invalid-name,abstract-method

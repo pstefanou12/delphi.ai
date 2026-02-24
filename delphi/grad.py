@@ -17,7 +17,7 @@ from torch.distributions import (
     Weibull,
 )
 
-from .utils.helpers import logistic  # pylint: disable=import-error
+from delphi.utils.helpers import logistic
 
 softmax = Softmax(dim=1)
 gumbel = Gumbel(0, 1)

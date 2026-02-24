@@ -10,13 +10,13 @@ from sklearn.linear_model import LogisticRegression
 from torch import Tensor
 from torch.nn import Sigmoid, Softmax
 
-from ..delphi_logger import delphiLogger
-from ..grad import TruncatedBCE, TruncatedCE
-from ..trainer import Trainer
-from ..utils.datasets import make_train_and_val
-from ..utils.defaults import TRUNC_LOG_REG_DEFAULTS, check_and_fill_args
-from ..utils.helpers import Parameters
-from .linear_model import LinearModel
+from delphi.delphi_logger import delphiLogger
+from delphi.grad import TruncatedBCE, TruncatedCE
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
+from delphi.utils.defaults import TRUNC_LOG_REG_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import Parameters
+from delphi.stats.linear_model import LinearModel
 
 
 # CONSTANTS

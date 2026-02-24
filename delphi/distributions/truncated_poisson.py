@@ -7,13 +7,13 @@ from typing import Callable
 
 import torch as ch
 
-from .truncated_exponential_family_distributions import (
+from delphi.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
 )
-from ..delphi_logger import delphiLogger
-from ..grad import ExponentialFamilyPoisson, calc_poiss_suff_stat
-from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_POISS_DEFAULTS
+from delphi.delphi_logger import delphiLogger
+from delphi.grad import ExponentialFamilyPoisson, calc_poiss_suff_stat
+from delphi.utils.helpers import Parameters
+from delphi.utils.defaults import check_and_fill_args, TRUNC_POISS_DEFAULTS
 
 
 class TruncatedPoisson(TruncatedExponentialFamilyDistribution):

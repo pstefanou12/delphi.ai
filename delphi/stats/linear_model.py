@@ -5,9 +5,9 @@ Linear model class for delphi.
 import torch as ch
 from torch import Tensor
 
-from ..delphi import delphi
-from ..delphi_logger import delphiLogger
-from ..utils.helpers import Parameters
+from delphi.delphi import delphi
+from delphi.delphi_logger import delphiLogger
+from delphi.utils.helpers import Parameters
 
 
 class LinearModel(delphi):  # pylint: disable=abstract-method

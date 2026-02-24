@@ -8,12 +8,12 @@ from typing import Callable, Optional
 
 import torch as ch
 
-from .truncated_multivariate_normal import (
+from delphi.distributions.truncated_multivariate_normal import (
     TruncatedMultivariateNormalKnownCovariance,
     TruncatedMultivariateNormalUnknownCovariance,
 )
-from ..utils.helpers import Parameters
-from ..utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
+from delphi.utils.helpers import Parameters
+from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
 
 
 class TruncatedNormalKnownCovariance(TruncatedMultivariateNormalKnownCovariance):

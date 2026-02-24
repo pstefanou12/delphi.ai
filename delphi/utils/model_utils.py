@@ -7,7 +7,7 @@ import dill
 import torch as ch
 from torch import nn
 
-from ..attacker import AttackerModel
+from delphi.attacker import AttackerModel
 
 
 class DummyModel(nn.Module):

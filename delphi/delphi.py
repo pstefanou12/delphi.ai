@@ -10,14 +10,14 @@ from cox.store import Store
 from torch.optim import SGD, LBFGS, Adam, lr_scheduler
 import numpy as np
 
-from .delphi_logger import delphiLogger
-from .utils.defaults import (
+from delphi.delphi_logger import delphiLogger
+from delphi.utils.defaults import (
     check_and_fill_args,
     DELPHI_DEFAULTS,
     LBFGS_DEFAULTS,
     ADAM_DEFAULTS,
 )
-from .utils.helpers import Parameters
+from delphi.utils.helpers import Parameters
 
 # CONSTANTS
 BY_ALG = "by algorithm"  # default parameter depends on algorithm
