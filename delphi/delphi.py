@@ -2,7 +2,7 @@
 """Parent class for models to train in the delphi trainer."""
 
 import random
-from typing import Iterable
+from typing import Callable, ClassVar, Iterable
 import torch as ch
 from cox.store import Store
 from torch.optim import SGD, LBFGS, Adam, lr_scheduler
@@ -26,7 +26,18 @@ EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
 
 
 class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
-    """Parent/abstract class for models to be passed into the trainer."""
+    """Parent/abstract class for models to be passed into the trainer.
+
+    Subclasses may register custom optimizers via the class-level registry::
+
+        delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.args.lr))
+
+    Note: register_optimizer writes to the class on which it is called.
+    Subclasses that want an isolated registry should shadow _OPTIMIZER_REGISTRY
+    in their own class body before registering.
+    """
+
+    _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
     def __init__(
         self,
@@ -100,20 +111,26 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
         return self.optimizer, self.schedule
 
+    @classmethod
+    def register_optimizer(cls, name: str, factory: Callable) -> None:
+        """Register a custom optimizer factory under the given name.
+
+        Args:
+            name: Lowercase optimizer name (e.g. ``"adamw"``).
+            factory: Callable with signature ``(model, params) -> Optimizer``
+                where ``model`` is the ``delphi`` instance and ``params``
+                is the iterable of parameters to optimise.
+        """
+        cls._OPTIMIZER_REGISTRY[name.lower()] = factory
+
     def _create_optimizer(self, params):
-        """Create and return the configured optimizer."""
+        """Create and return the configured optimizer via the registry."""
         optimizer_type = self._get_optimizer_type()
 
-        optimizer_creators = {
-            "sgd": self._create_sgd,
-            "lbfgs": self._create_lbfgs,
-            ADAM: self._create_adam,
-        }
-
-        if optimizer_type not in optimizer_creators:
+        if optimizer_type not in self._OPTIMIZER_REGISTRY:
             raise ValueError(f"Unsupported optimizer: {optimizer_type}")
 
-        return optimizer_creators[optimizer_type](params)
+        return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
 
     def _get_optimizer_type(self):
         """Return the lowercase optimizer type string from args."""
@@ -349,3 +366,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def parameters_(self):
         """Return the model's trainable parameters."""
         return self.parameters()
+
+
+# Populate the built-in optimizer registry after the class is fully defined.
+delphi._OPTIMIZER_REGISTRY = {
+    "sgd": delphi._create_sgd,
+    "lbfgs": delphi._create_lbfgs,
+    ADAM: delphi._create_adam,
+}

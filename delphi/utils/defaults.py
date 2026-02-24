@@ -13,7 +13,7 @@ from delphi.utils.helpers import has_attr
 REQ = "required"
 
 OPTIMIZER_DEFAULTS = {
-    "optimizer": (["sgd", "lbfgs", "adam"], "sgd"),
+    "optimizer": (str, "sgd"),
     "scheduler": (
         Optional[  # noqa: F821
             [
