@@ -88,19 +88,42 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         self.criterion_params = []
         self.model = None
 
+    def parameter_groups(self) -> list[dict]:
+        """Return optimizer parameter groups.
+
+        Override to assign different hyperparameters (e.g. learning rate or
+        weight decay) to different subsets of the model's parameters::
+
+            def parameter_groups(self):
+                return [
+                    {"params": list(self.backbone.parameters()), "lr": 1e-4},
+                    {"params": list(self.head.parameters()), "lr": 1e-3},
+                ]
+
+        Returns:
+            List of parameter-group dicts accepted by ``torch.optim.Optimizer``.
+            The default implementation wraps all trainable parameters in a
+            single group with no extra hyperparameters.
+        """
+        return [{"params": list(self.parameters())}]
+
     def make_optimizer_and_schedule(self, params: Iterable, checkpoint: dict = None):
         """Create and store the optimizer and learning-rate scheduler.
 
+        The ``params`` argument is accepted for backwards compatibility but
+        is ignored when ``parameter_groups()`` is overridden; override
+        ``parameter_groups()`` to control per-group hyperparameters.
+
         Args:
-            params: Iterable of parameters to optimize.
+            params: Ignored; kept for API compatibility.
             checkpoint: Optional dict containing optimizer/scheduler state to restore.
 
         Returns:
             Tuple of (optimizer, scheduler).
         """
-        params = list(params)
+        groups = self.parameter_groups()
 
-        self.optimizer = self._create_optimizer(params)
+        self.optimizer = self._create_optimizer(groups)
         self.optimizer.register_step_pre_hook(self.step_pre_hook)
         self.optimizer.register_step_post_hook(self.step_post_hook)
 
