@@ -325,10 +325,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def description(self, epoch, i, loss_, prec1_, prec5_, reg_term):  # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
         """Return a human-readable status string for the current iteration."""
+        reg_str = f"{float(reg_term):.4f}" if reg_term is not None else "N/A"
         return (
             f"{self.training} Epoch:{epoch} | Loss {loss_.avg:.4f} | "
             f"Prec1: {float(prec1_.avg):.3f} | Prec5: {float(prec5_.avg):.3f} | "
-            f"Reg term: {float(reg_term)} ||"
+            f"Reg term: {reg_str} ||"
         )
 
     def regularize(self, batch) -> ch.Tensor:  # pylint: disable=unused-argument
