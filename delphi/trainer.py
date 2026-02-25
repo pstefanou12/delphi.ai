@@ -106,16 +106,25 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         return loss + self.model.regularize(batch)
 
     def _record_step(self, loss: ch.Tensor) -> None:
-        """Record grad norm, param vector, and EMA after a gradient step."""
+        """Record the scalar loss and, when enabled, grad norm and param vector.
+
+        Gradient and parameter vector recording is skipped when
+        ``record_params_every == 0`` (the default) to avoid materialising
+        full-size tensors for large models. Enable it for small statistical
+        models or distributions where parameter history is needed.
+        """
         self.train_losses.append(loss.detach())
+
+        # Skip vector operations for large models when recording is disabled.
+        if self.args.record_params_every == 0:
+            return
 
         grad_norm = ch.nn.utils.parameters_to_vector(
             [p.grad.contiguous() for p in self.model.parameters() if p.requires_grad]
         ).norm()
         self.grad_norms.append(grad_norm.item())
 
-        record = self.args.record_params_every
-        if record > 0 and self.iterations % record == 0:
+        if self.iterations % self.args.record_params_every == 0:
             param_vec = ch.nn.utils.parameters_to_vector(
                 [p.contiguous() for p in self.model.parameters() if p.requires_grad]
             ).detach()
@@ -478,6 +487,17 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.logger.info(
             f"training: {self.model} with the following config:\n {self.args}"
         )
+
+        if (
+            self.args.early_stopping
+            and self.args.grad_tol > 0
+            and self.args.record_params_every == 0
+        ):
+            self.logger.warning(
+                "grad_tol is set but record_params_every=0: grad norms are not "
+                "tracked, so the grad_tol stop criterion will never fire. "
+                "Set record_params_every > 0 to enable gradient norm tracking."
+            )
 
         if checkpoint:
             self.epoch = checkpoint["epoch"]
