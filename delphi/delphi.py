@@ -9,6 +9,12 @@ from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
 import numpy as np
 
 from delphi.delphi_logger import delphiLogger
+from delphi.utils.constants import (
+    CheckpointKey,
+    OptimizerType,
+    RandomStateKey,
+    SchedulerType,
+)
 from delphi.utils.defaults import (
     check_and_fill_args,
     DELPHI_DEFAULTS,
@@ -21,10 +27,6 @@ from delphi.utils.helpers import Parameters
 
 # Module-level constants.
 BY_ALG = "by algorithm"  # Default parameter depends on algorithm.
-ADAM = "adam"
-ADAMW = "adamw"
-
-EVAL_LOGS_SCHEMA = {"test_prec1": float, "test_loss": float, "time": float}
 
 
 class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
@@ -252,13 +254,13 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             return None
 
         scheduler_creators = {
-            "cyclic": self._create_cyclic_scheduler,
-            "cosine": self._create_cosine_scheduler,
-            "linear": self._create_linear_scheduler,
-            "step": self._create_step_scheduler,
-            "multi_step": self._create_multi_step_scheduler,
-            "exponential": self._create_exponential_scheduler,
-            "reduce_on_plateau": self._create_plateau_scheduler,
+            SchedulerType.CYCLIC: self._create_cyclic_scheduler,
+            SchedulerType.COSINE: self._create_cosine_scheduler,
+            SchedulerType.LINEAR: self._create_linear_scheduler,
+            SchedulerType.STEP: self._create_step_scheduler,
+            SchedulerType.MULTI_STEP: self._create_multi_step_scheduler,
+            SchedulerType.EXPONENTIAL: self._create_exponential_scheduler,
+            SchedulerType.REDUCE_ON_PLATEAU: self._create_plateau_scheduler,
         }
 
         if scheduler_type not in scheduler_creators:
@@ -376,51 +378,51 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _load_checkpoint(self, checkpoint):
         """Restore model weights, optimizer, scheduler, and random states from checkpoint."""
-        if "model" in checkpoint:
-            self.load_state_dict(checkpoint["model"])
+        if CheckpointKey.MODEL in checkpoint:
+            self.load_state_dict(checkpoint[CheckpointKey.MODEL])
             self.logger.info("Loaded model weights from checkpoint.")
 
-        if "optimizer" in checkpoint and hasattr(self, "optimizer"):
-            self.optimizer.load_state_dict(checkpoint["optimizer"])
+        if CheckpointKey.OPTIMIZER in checkpoint and hasattr(self, "optimizer"):
+            self.optimizer.load_state_dict(checkpoint[CheckpointKey.OPTIMIZER])
             self.logger.info("Loaded optimizer state from checkpoint.")
 
         if (
-            "scheduler" in checkpoint
+            CheckpointKey.SCHEDULER in checkpoint
             and hasattr(self, "schedule")
             and self.schedule is not None
         ):
-            self.schedule.load_state_dict(checkpoint["scheduler"])
+            self.schedule.load_state_dict(checkpoint[CheckpointKey.SCHEDULER])
             self.logger.info("Loaded scheduler state from checkpoint.")
 
             # Advance the scheduler to match the saved training position.
-            current_epoch = checkpoint.get("epoch", 0)
+            current_epoch = checkpoint.get(CheckpointKey.EPOCH, 0)
             for _ in range(current_epoch):
                 self.schedule.step()
             self.logger.info(f"Advanced scheduler to epoch {current_epoch}.")
 
-        if "random_states" in checkpoint:
-            self._load_random_states(checkpoint["random_states"])
+        if CheckpointKey.RANDOM_STATES in checkpoint:
+            self._load_random_states(checkpoint[CheckpointKey.RANDOM_STATES])
 
-        if "training_state" in checkpoint:
-            self._load_training_state(checkpoint["training_state"])
+        if CheckpointKey.TRAINING_STATE in checkpoint:
+            self._load_training_state(checkpoint[CheckpointKey.TRAINING_STATE])
 
     def _load_random_states(self, random_states):
         """Restore Python, NumPy, and PyTorch random number generator states."""
-        if "python" in random_states:
-            random.setstate(random_states["python"])
+        if RandomStateKey.PYTHON in random_states:
+            random.setstate(random_states[RandomStateKey.PYTHON])
 
-        if "numpy" in random_states:
-            np.random.set_state(random_states["numpy"])
+        if RandomStateKey.NUMPY in random_states:
+            np.random.set_state(random_states[RandomStateKey.NUMPY])
 
-        if "pytorch" in random_states:
-            ch.set_rng_state(random_states["pytorch"])
+        if RandomStateKey.PYTORCH in random_states:
+            ch.set_rng_state(random_states[RandomStateKey.PYTORCH])
 
         self.logger.info("Restored random number generator states.")
 
     def _load_training_state(self, training_state):
         """Restore epoch counter and best loss from a training state dict."""
-        self.start_epoch = training_state.get("epoch", 0)
-        self.best_loss = training_state.get("best_loss", float("inf"))
+        self.start_epoch = training_state.get(CheckpointKey.EPOCH, 0)
+        self.best_loss = training_state.get(CheckpointKey.BEST_LOSS, float("inf"))
         self.logger.info(f"Resuming from epoch {self.start_epoch}.")
 
     def pretrain_hook(self) -> None:
@@ -552,8 +554,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
 # Populate the built-in optimizer registry after the class is fully defined.
 delphi._OPTIMIZER_REGISTRY = {
-    "sgd": delphi._create_sgd,
-    "lbfgs": delphi._create_lbfgs,
-    ADAM: delphi._create_adam,
-    ADAMW: delphi._create_adamw,
+    OptimizerType.SGD: delphi._create_sgd,
+    OptimizerType.LBFGS: delphi._create_lbfgs,
+    OptimizerType.ADAM: delphi._create_adam,
+    OptimizerType.ADAMW: delphi._create_adamw,
 }

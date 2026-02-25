@@ -15,18 +15,9 @@ from cox.store import Store
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
+from delphi.utils.constants import StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
-
-
-STOP_REASONS = [
-    "grad_tol",
-    "loss_tol",
-    "early_stop",
-    "max_iterations",
-    "max_epochs",
-    "model_stop",
-]
 
 
 def ensure_tuple(x):
@@ -69,7 +60,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
         self._best_model_state = None
-        self.stop_reason = None
+        self.stop_reason: StopReason | None = None
         # Size of the training dataset; set by train_model for ELBO scaling etc.
         self.dataset_size: int | None = None
 
@@ -348,21 +339,22 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         criteria (e.g. reward threshold in RL).
 
         Returns:
-            Tuple of (bool, str | None) where the string is the stop reason.
+            Tuple of (bool, StopReason | None) where the second element
+            is the stop reason.
         """
         if self.args.iterations is not None and self.iterations >= self.args.iterations:
-            return True, "max_iterations"
+            return True, StopReason.MAX_ITERATIONS
 
         if self.args.early_stopping and self.args.grad_tol > 0:
             window = max(1, self.args.grad_tol_window)
             if len(self.grad_norms) >= window:
                 smoothed = sum(self.grad_norms[-window:]) / window
                 if smoothed < self.args.grad_tol:
-                    return True, "grad_tol"
+                    return True, StopReason.GRAD_TOL
 
         model_stop, _ = self.model.should_stop()
         if model_stop:
-            return True, "model_stop"
+            return True, StopReason.MODEL_STOP
 
         return False, None
 
@@ -381,14 +373,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if self.args.loss_tol is not None and len(self.epoch_train_losses) > 1:
             delta = abs(self.epoch_train_losses[-1] - self.epoch_train_losses[-2])
             if delta < self.args.loss_tol:
-                self.stop_reason = "loss_tol"
+                self.stop_reason = StopReason.LOSS_TOL
                 return True
 
         patience = self.args.patience
         if patience is not None and len(self.epoch_val_losses) > patience:
             recent = self.epoch_val_losses[-patience - 1 :]
             if recent[-1] > min(recent[:-1]):
-                self.stop_reason = "early_stop"
+                self.stop_reason = StopReason.EARLY_STOP
                 return True
 
         return False
@@ -445,7 +437,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         if store is not None:
             store.add_table(
-                "logs",
+                consts.LOGS_TABLE,
                 {"epoch": int, "train_loss": float, "val_loss": float},
             )
             setup_store_with_metadata(self.args, store)
@@ -527,10 +519,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             if not self.stop_reason:
                 self._check_epoch_stop()
 
-            if self.stop_reason in STOP_REASONS:
+            if self.stop_reason is not None:
                 # Log the final epoch before breaking.
                 if store is not None:
-                    store["logs"].append_row(
+                    store[consts.LOGS_TABLE].append_row(
                         {
                             "epoch": self.epoch,
                             "train_loss": train_loss,
@@ -546,7 +538,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 break
 
             if store is not None:
-                store["logs"].append_row(
+                store[consts.LOGS_TABLE].append_row(
                     {
                         "epoch": self.epoch,
                         "train_loss": train_loss,
@@ -555,7 +547,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
 
             if self.args.epochs is not None and self.epoch == self.args.epochs:
-                self.stop_reason = "max_epochs"
+                self.stop_reason = StopReason.MAX_EPOCHS
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
                 self.logger.info(
@@ -591,14 +583,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         start_time = time()
 
         if store is not None:
-            store.add_table("eval", consts.EVAL_LOGS_SCHEMA)
+            store.add_table(consts.EVAL_LOGS_TABLE, consts.EVAL_LOGS_SCHEMA)
 
         self.model.eval()
         test_loss, test_metrics = self.run_epoch(loader)
 
         log_info = {"test_loss": test_loss, "time": time() - start_time, **test_metrics}
         if store:
-            store["eval"].append_row(log_info)
+            store[consts.EVAL_LOGS_TABLE].append_row(log_info)
         return log_info
 
     @property
