@@ -55,6 +55,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         # Store procedure history in lists to avoid torch.cat overhead.
         self.train_losses = []
         self.val_losses = []
+        # Epoch-level averages for loss_tol and patience stop criteria.
+        self.epoch_train_losses: list[float] = []
+        self.epoch_val_losses: list[float] = []
         self.param_history = []
         self.val_param_history_indices = []
         self.grad_norms = []
@@ -265,8 +268,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def should_stop(self):
         """Return (stop, reason) based on current training state.
 
-        Also delegates to ``model.should_stop()`` so algorithms can inject
-        custom stopping criteria (e.g. reward threshold in RL).
+        Called per step for iteration- and grad-norm-based criteria.
+        Epoch-level criteria (loss_tol, patience) are checked in
+        ``_check_epoch_stop`` after each full epoch.
 
         Returns:
             Tuple of (bool, str | None) where the string is the stop reason.
@@ -274,29 +278,41 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if self.args.iterations is not None and self.iterations >= self.args.iterations:
             return True, "max_iterations"
 
-        if self.args.early_stopping:
-            if (
-                self.args.grad_tol is not None
-                and len(self.grad_norms) > 1
-                and self.grad_norms[-1] < self.args.grad_tol
-            ):
-                return True, "grad_tol"
-
-            if self.args.loss_tol is not None and len(self.train_losses) > 1:
-                delta = abs(self.train_losses[-1].item() - self.train_losses[-2].item())
-                if delta < self.args.loss_tol:
-                    return True, "loss_tol"
-
-            if len(self.val_losses) > self.args.patience:
-                recent = self.val_losses[-self.args.patience :]
-                if recent[-1].item() > min(r.item() for r in recent[:-1]):
-                    return True, "early_stop"
-
-        model_stop, model_reason = self.model.should_stop()
-        if model_stop:
-            return True, model_reason or "model_stop"
+        if self.args.early_stopping and self.args.grad_tol > 0:
+            window = max(1, self.args.grad_tol_window)
+            if len(self.grad_norms) >= window:
+                smoothed = sum(self.grad_norms[-window:]) / window
+                if smoothed < self.args.grad_tol:
+                    return True, "grad_tol"
 
         return False, None
+
+    def _check_epoch_stop(self) -> bool:
+        """Check epoch-level stop criteria and set stop_reason if triggered.
+
+        Compares consecutive epoch-level train losses for loss_tol and
+        counts epochs (not batches) for patience-based early stopping.
+
+        Returns:
+            True if a stop criterion was met.
+        """
+        if not self.args.early_stopping:
+            return False
+
+        if self.args.loss_tol is not None and len(self.epoch_train_losses) > 1:
+            delta = abs(self.epoch_train_losses[-1] - self.epoch_train_losses[-2])
+            if delta < self.args.loss_tol:
+                self.stop_reason = "loss_tol"
+                return True
+
+        patience = self.args.patience
+        if patience is not None and len(self.epoch_val_losses) > patience:
+            recent = self.epoch_val_losses[-patience - 1 :]
+            if recent[-1] > min(recent[:-1]):
+                self.stop_reason = "early_stop"
+                return True
+
+        return False
 
     def update_best(self, loss: ch.Tensor):
         """Update the best-loss index if loss is a new minimum."""
@@ -377,6 +393,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             train_loss, train_prec1, train_prec5 = self.run_epoch(
                 train_loader, val_loader
             )
+            self.epoch_train_losses.append(train_loss)
 
             val_loss, val_prec1, val_prec5 = None, None, None
             if val_loader is not None:
@@ -406,7 +423,29 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                         if isinstance(self.model.schedule, ReduceLROnPlateau):
                             self.model.schedule.step(val_loss)
 
+            if val_loss is not None:
+                self.epoch_val_losses.append(
+                    val_loss if isinstance(val_loss, float) else float(val_loss)
+                )
+
+            # Check epoch-level stop criteria before per-step stop_reason.
+            if not self.stop_reason:
+                self._check_epoch_stop()
+
             if self.stop_reason in STOP_REASONS:
+                # Log the final epoch before breaking.
+                if store is not None:
+                    store["logs"].append_row(
+                        {
+                            "epoch": self.epoch,
+                            "train_loss": train_loss,
+                            "train_prec1": train_prec1,
+                            "train_prec5": train_prec5,
+                            "val_loss": val_loss,
+                            "val_prec1": val_prec1,
+                            "val_prec5": val_prec5,
+                        }
+                    )
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
                 self.logger.info(
