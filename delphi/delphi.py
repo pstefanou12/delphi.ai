@@ -167,6 +167,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """Return a copy of config with None values removed."""
         return {k: v for k, v in config.items() if v is not None}
 
+    def _get_arg(self, name, default):
+        """Return args.name if set and not None, else default."""
+        val = getattr(self.args, name, None)
+        return val if val is not None else default
+
     def _create_sgd(self, params):
         """Create an SGD optimizer from args."""
         check_and_fill_args(self.args, SGD_DEFAULTS)
@@ -270,7 +275,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_cyclic_scheduler(self):
         """Create a cyclic learning-rate scheduler."""
-        epochs = getattr(self.args, "epochs", 100)
+        epochs = self._get_arg("epochs", 100)
 
         def lr_func(t):
             return np.interp([t], [0, epochs * 4 // 15, epochs], [0, 1, 0])[0]
@@ -280,8 +285,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def _create_cosine_scheduler(self):
         """Create a cosine annealing scheduler."""
         config = {
-            "T_max": getattr(self.args, "epochs", 100),
-            "eta_min": getattr(self.args, "min_lr", 0),
+            "T_max": self._get_arg("epochs", 100),
+            "eta_min": self._get_arg("min_lr", 0),
         }
         return lr_scheduler.CosineAnnealingLR(
             self.optimizer, **self._remove_none_config(config)
@@ -290,9 +295,9 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def _create_linear_scheduler(self):
         """Create a linear LR decay scheduler."""
         config = {
-            "start_factor": getattr(self.args, "linear_start_factor", 1.0),
-            "end_factor": getattr(self.args, "linear_end_factor", 0.0),
-            "total_iters": getattr(self.args, "epochs", 100),
+            "start_factor": self._get_arg("linear_start_factor", 1.0),
+            "end_factor": self._get_arg("linear_end_factor", 0.0),
+            "total_iters": self._get_arg("epochs", 100),
         }
         return lr_scheduler.LinearLR(self.optimizer, **self._remove_none_config(config))
 
@@ -338,7 +343,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         )
 
     def _load_checkpoint(self, checkpoint):
-        """Restore optimizer, scheduler, and random states from a checkpoint dict."""
+        """Restore model weights, optimizer, scheduler, and random states from checkpoint."""
+        if "model" in checkpoint:
+            self.load_state_dict(checkpoint["model"])
+            self.logger.info("Loaded model weights from checkpoint.")
+
         if "optimizer" in checkpoint and hasattr(self, "optimizer"):
             self.optimizer.load_state_dict(checkpoint["optimizer"])
             self.logger.info("Loaded optimizer state from checkpoint.")

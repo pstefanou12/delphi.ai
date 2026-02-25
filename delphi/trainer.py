@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
+import copy
 from time import time
 from typing import Iterable
 import torch as ch
@@ -62,6 +63,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.t_start, self.t_end = None, None
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
+        self._best_model_state = None
         self.stop_reason = None
 
     def make_closure(self, batch):
@@ -303,6 +305,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if best_val is None or loss_val < best_val:
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
+            self._best_model_state = copy.deepcopy(self.model.state_dict())
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -502,7 +505,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     @property
     def final_loss(self):
         """Return the loss at the final validation step."""
-        return self.val_param_history[-1]
+        if len(self.val_losses) == 0:
+            return None
+        return self.val_losses[-1]
+
+    @property
+    def best_model_state(self):
+        """Return the saved state dict from the best validation loss step."""
+        return self._best_model_state
 
     @property
     def ema_params(self):
