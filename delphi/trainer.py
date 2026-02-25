@@ -2,6 +2,7 @@
 """Module used for training models."""
 
 import copy
+import os
 import random
 from time import time
 from typing import Iterable
@@ -15,14 +16,9 @@ from cox.store import Store
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
-from delphi.utils.constants import StopReason
+from delphi.utils.constants import CheckpointKey, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
-
-
-def ensure_tuple(x):
-    """Wrap x in a tuple if it is not already a tuple or list."""
-    return x if isinstance(x, (tuple, list)) else (x,)
 
 
 class Trainer:  # pylint: disable=too-many-instance-attributes
@@ -59,8 +55,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.t_start, self.t_end = None, None
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
-        self._best_model_state = None
+        # Either a state_dict (in-memory) or a filesystem path (disk) to the
+        # best checkpoint; None when neither saving mode is active.
+        self._best_model_state: dict | str | None = None
         self.stop_reason: StopReason | None = None
+        # Tracks whether the cox logs table has been created for this run.
+        self._store_logs_ready: bool = False
         # Size of the training dataset; set by train_model for ELBO scaling etc.
         self.dataset_size: int | None = None
 
@@ -394,23 +394,160 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         return False
 
-    def update_best(self, loss: ch.Tensor):
-        """Update the best-loss index and save model weights if loss is a new minimum."""
+    def _resolve_checkpoint_dir(self) -> str | None:
+        """Return the directory for on-disk checkpoints, or None.
+
+        Prefers the explicitly configured ``checkpoint_dir`` arg; falls back
+        to ``store.path`` when a cox store is attached to the trainer.
+        The caller is responsible for ensuring the directory exists.
+        """
+        configured = getattr(self.args, "checkpoint_dir", None)
+        if configured is not None:
+            return configured
+        if self.store is not None and hasattr(self.store, "path"):
+            return self.store.path
+        return None
+
+    def _save_best_model_state(self) -> None:
+        """Persist the current model weights as the best checkpoint.
+
+        Writes to disk when a checkpoint directory is available (via
+        ``checkpoint_dir`` or an attached cox store).  Falls back to an
+        in-memory ``state_dict`` copy when ``record_params_every > 0``
+        and no disk target is configured.  When neither condition holds the
+        method is a no-op and only the loss/param indices are tracked.
+        """
+        ckpt_dir = self._resolve_checkpoint_dir()
+        if ckpt_dir is not None:
+            ckpt_path = os.path.join(ckpt_dir, consts.CKPT_NAME_BEST)
+            ch.save(self.model.state_dict(), ckpt_path)
+            self._best_model_state = ckpt_path
+            return
+
+        if self.args.record_params_every > 0:
+            self._best_model_state = copy.deepcopy(self.model.state_dict())
+            return
+
+        # Neither disk nor in-memory saving is active; track indices only.
+        self._best_model_state = None
+
+    def _save_periodic_checkpoint(self) -> None:
+        """Write a full training checkpoint to disk for resumability.
+
+        Saves model weights, optimizer state, scheduler state, epoch
+        counter, and RNG states.  Written to ``checkpoint_dir`` (or
+        ``store.path``) as ``CKPT_NAME_LATEST``.
+        """
+        ckpt_dir = self._resolve_checkpoint_dir()
+        if ckpt_dir is None:
+            return
+
+        checkpoint = {
+            CheckpointKey.EPOCH: self.epoch,
+            CheckpointKey.MODEL: self.model.state_dict(),
+            CheckpointKey.OPTIMIZER: (
+                self.model.optimizer.state_dict()
+                if self.model.optimizer is not None
+                else None
+            ),
+            CheckpointKey.SCHEDULER: (
+                self.model.schedule.state_dict()
+                if self.model.schedule is not None
+                else None
+            ),
+            CheckpointKey.RANDOM_STATES: {
+                "python": random.getstate(),
+                "numpy": np.random.get_state(),
+                "pytorch": ch.get_rng_state(),
+            },
+        }
+        ckpt_path = os.path.join(ckpt_dir, consts.CKPT_NAME_LATEST)
+        ch.save(checkpoint, ckpt_path)
+        self.logger.info(f"Saved checkpoint at epoch {self.epoch} to {ckpt_path}.")
+
+    def _init_logs_table(
+        self,
+        store: Store,
+        train_metrics: dict,
+        val_metrics: dict,
+    ) -> None:
+        """Create the training logs table with model-specific metric columns.
+
+        Called lazily before the first row is inserted so that the full
+        set of metric keys is known.  No-op if the table already exists.
+
+        Args:
+            store: Cox store for experiment logging.
+            train_metrics: Metrics dict from the current training epoch.
+            val_metrics: Metrics dict from the current validation epoch.
+        """
+        if self._store_logs_ready:
+            return
+        schema = {
+            "epoch": int,
+            "train_loss": float,
+            "val_loss": float,
+            "time": float,
+        }
+        schema.update({f"train_{k}": float for k in train_metrics})
+        schema.update({f"val_{k}": float for k in val_metrics})
+        store.add_table(consts.LOGS_TABLE, schema)
+        self._store_logs_ready = True
+
+    def _log_epoch(
+        self,
+        store: Store,
+        train_loss: float,
+        val_loss: float | None,
+        train_metrics: dict,
+        val_metrics: dict,
+    ) -> None:
+        """Build and append one training-log row to the cox store.
+
+        Lazily initialises the logs table on the first call so that
+        model-specific metric columns are included in the schema.
+
+        Args:
+            store: Cox store for experiment logging.
+            train_loss: Average training loss for the epoch.
+            val_loss: Average validation loss, or None if unavailable.
+            train_metrics: Model-reported train metrics for this epoch.
+            val_metrics: Model-reported validation metrics for this epoch.
+        """
+        self._init_logs_table(store, train_metrics, val_metrics)
+        row: dict = {
+            "epoch": self.epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "time": time() - self.t_start,
+        }
+        row.update({f"train_{k}": float(v) for k, v in train_metrics.items()})
+        row.update({f"val_{k}": float(v) for k, v in val_metrics.items()})
+        store[consts.LOGS_TABLE].append_row(row)
+
+    def update_best(self, loss: ch.Tensor) -> None:
+        """Update the best-loss index and save model weights if loss is new minimum."""
         loss_val = loss.item() if isinstance(loss, ch.Tensor) else float(loss)
         best_val = self.best_loss.item() if self.best_loss is not None else None
         if best_val is None or loss_val < best_val:
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
-            self._best_model_state = copy.deepcopy(self.model.state_dict())
+            self._save_best_model_state()
 
     def restore_best_weights(self) -> None:
         """Restore model weights from the best validation loss checkpoint.
 
-        No-op if no validation has been performed.
+        Handles both in-memory state dicts and filesystem paths produced
+        by disk-based checkpointing.  No-op if no checkpoint is available.
         """
-        if self._best_model_state is not None:
+        if self._best_model_state is None:
+            return
+        if isinstance(self._best_model_state, str):
+            state = ch.load(self._best_model_state, weights_only=True)
+            self.model.load_state_dict(state)
+        else:
             self.model.load_state_dict(self._best_model_state)
-            self.logger.info("Restored model weights from best checkpoint.")
+        self.logger.info("Restored model weights from best checkpoint.")
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -445,10 +582,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 pass  # IterableDataset does not support len().
 
         if store is not None:
-            store.add_table(
-                consts.LOGS_TABLE,
-                {"epoch": int, "train_loss": float, "val_loss": float},
-            )
+            # Metadata table captures hyperparameter config; the logs table
+            # is created lazily in _log_epoch after the first epoch so its
+            # schema can include model-specific metric columns.
             setup_store_with_metadata(self.args, store)
 
         # Seed all RNGs for full reproducibility.
@@ -539,16 +675,16 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             if not self.stop_reason:
                 self._check_epoch_stop()
 
+            if store is not None:
+                self._log_epoch(store, train_loss, val_loss, train_metrics, val_metrics)
+
+            if (
+                self.args.checkpoint_every > 0
+                and self.epoch % self.args.checkpoint_every == 0
+            ):
+                self._save_periodic_checkpoint()
+
             if self.stop_reason is not None:
-                # Log the final epoch before breaking.
-                if store is not None:
-                    store[consts.LOGS_TABLE].append_row(
-                        {
-                            "epoch": self.epoch,
-                            "train_loss": train_loss,
-                            "val_loss": val_loss,
-                        }
-                    )
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
                 self.logger.info(
@@ -556,15 +692,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                     f"iterations. total time: {self.procedure_duration:.2f} seconds"
                 )
                 break
-
-            if store is not None:
-                store[consts.LOGS_TABLE].append_row(
-                    {
-                        "epoch": self.epoch,
-                        "train_loss": train_loss,
-                        "val_loss": val_loss,
-                    }
-                )
 
             if self.args.epochs is not None and self.epoch == self.args.epochs:
                 self.stop_reason = StopReason.MAX_EPOCHS
