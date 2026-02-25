@@ -28,6 +28,13 @@ CKPT_NAME_LATEST = CKPT_NAME + ".latest"
 CKPT_NAME_BEST = CKPT_NAME + BEST_APPEND
 
 
+class ProcedureStage(str, Enum):
+    """Training procedure stage identifiers."""
+
+    TRAIN = "train"
+    VAL = "val"
+
+
 class StopReason(str, Enum):
     """Stop reasons recorded by the Trainer when a stop criterion fires."""
 

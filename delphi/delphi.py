@@ -23,10 +23,7 @@ from delphi.utils.defaults import (
     ADAM_DEFAULTS,
     ADAMW_DEFAULTS,
 )
-from delphi.utils.helpers import Parameters
-
-# Module-level constants.
-BY_ALG = "by algorithm"  # Default parameter depends on algorithm.
+from delphi.utils.helpers import AverageMeter, Parameters
 
 
 class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
@@ -440,14 +437,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def post_training_hook(self) -> None:
         """Hook called after the full training procedure completes."""
 
-    def description(self, epoch, i, loss_, prec1_, prec5_, reg_term):  # pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
-        """Return a human-readable status string for the current iteration."""
-        reg_str = f"{float(reg_term):.4f}" if reg_term is not None else "N/A"
-        return (
-            f"{self.training} Epoch:{epoch} | Loss {loss_.avg:.4f} | "
-            f"Prec1: {float(prec1_.avg):.3f} | Prec5: {float(prec5_.avg):.3f} | "
-            f"Reg term: {reg_str} ||"
-        )
+    def description(
+        self, stage: str, epoch: int, step: int, loss_: AverageMeter
+    ) -> str:
+        """Return a human-readable tqdm progress string for the current step."""
+        return f"[{stage}] Epoch {epoch} | Step {step} | Loss {loss_.avg:.4f}"
 
     def regularize(self, batch) -> ch.Tensor:  # pylint: disable=unused-argument
         """Return the regularization term to add to the loss. Defaults to zero."""

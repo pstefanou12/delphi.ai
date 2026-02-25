@@ -16,7 +16,7 @@ from cox.store import Store
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
-from delphi.utils.constants import CheckpointKey, StopReason
+from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
 from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
@@ -235,7 +235,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             Tuple of (avg_loss, metrics_dict) where metrics_dict maps each
             metric name to its epoch-averaged value.
         """
-        mode = "train" if self.model.training else "val"
+        mode = ProcedureStage.TRAIN if self.model.training else ProcedureStage.VAL
         loss_ = AverageMeter()
         metric_meters: dict[str, AverageMeter] = {}
 
@@ -312,10 +312,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.model.train()
 
             if self.args.tqdm:
-                desc = self.model.description(
-                    self.epoch, batch_idx, loss_, {}, {}, None
+                iterator.set_description(
+                    self.model.description(mode, self.epoch, batch_idx, loss_)
                 )
-                iterator.set_description(desc)
 
             if self.model.training and (self.iterations % self.args.log_every == 0):
                 grad_str = (
@@ -628,9 +627,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             )
 
         if checkpoint:
-            self.epoch = checkpoint["epoch"]
-            if "prec1" not in checkpoint and val_loader is not None:
-                self.run_epoch(val_loader)
+            self.epoch = checkpoint.get(CheckpointKey.EPOCH, 0)
+            if val_loader is not None:
+                with ch.no_grad():
+                    self.model.eval()
+                    self.run_epoch(val_loader)
+                self.model.train()
 
         while True:
             self.epoch += 1
