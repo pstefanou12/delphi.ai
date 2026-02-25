@@ -141,6 +141,13 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         else:
             self.model.optimizer.step()
 
+    def _schedule_step(self) -> None:
+        """Step the LR scheduler after each optimizer update.
+
+        Skips ``ReduceLROnPlateau`` schedulers, which require a validation
+        metric and are stepped separately in ``train_model`` after each
+        validation epoch.
+        """
         if self.model.schedule is not None and not isinstance(
             self.model.schedule, ReduceLROnPlateau
         ):
@@ -183,6 +190,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self._accum_step += 1
             if self._accum_step >= accum:
                 self._optimizer_step(loss)
+                self._schedule_step()
                 self._accum_step = 0
                 self._record_step(loss)
 
@@ -191,10 +199,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         # --- Standard path (closure, LBFGS-compatible) ---
         loss = self.model.optimizer.step(self.make_closure(batch))
-        if self.model.schedule is not None and not isinstance(
-            self.model.schedule, ReduceLROnPlateau
-        ):
-            self.model.schedule.step()
+        self._schedule_step()
         self._record_step(loss)
         self.iterations += 1
         return loss
