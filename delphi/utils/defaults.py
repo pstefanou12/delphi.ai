@@ -103,6 +103,9 @@ TRAINER_DEFAULTS = {
     "max_grad_norm": (float, None),
     "tqdm": (bool, False),
     "device": (str, "cpu"),
+    "use_amp": (bool, False),
+    "accumulate_grad_batches": (int, 1, {"min": 1}),
+    "record_params_every": (int, 0, {"min": 0}),
 }
 
 DATASET_DEFAULTS = {

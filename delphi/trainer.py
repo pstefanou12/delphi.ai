@@ -2,8 +2,10 @@
 """Module used for training models."""
 
 import copy
+import random
 from time import time
 from typing import Iterable
+import numpy as np
 import torch as ch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
@@ -71,22 +73,22 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         # Size of the training dataset; set by train_model for ELBO scaling etc.
         self.dataset_size: int | None = None
 
+        # Gradient accumulation counter.
+        self._accum_step: int = 0
+        # GradScaler for mixed precision; set by train_model.
+        self.scaler = None
+
     def make_closure(self, batch):
         """Create an optimizer closure for the given batch.
 
-        Calls ``model.compute_loss(batch)`` so subclasses can override
-        only the loss computation without touching optimizer bookkeeping.
+        Used by the standard (non-AMP, non-accumulation) training path.
+        Calls ``model.compute_loss(batch)`` so subclasses can override only
+        the loss computation without touching optimizer bookkeeping.
         """
 
         def closure():
             self.model.optimizer.zero_grad()
-            loss = self.model.compute_loss(batch)
-
-            if loss.ndim > 0:
-                loss = loss.sum()
-
-            reg_term = self.model.regularize(batch)
-            loss = loss + reg_term
+            loss = self._forward_loss(batch)
             loss.backward()
             if self.args.max_grad_norm is not None:
                 ch.nn.utils.clip_grad_norm_(
@@ -95,6 +97,13 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             return loss
 
         return closure
+
+    def _forward_loss(self, batch) -> ch.Tensor:
+        """Compute forward pass + regularization and return the scalar loss."""
+        loss = self.model.compute_loss(batch)
+        if loss.ndim > 0:
+            loss = loss.sum()
+        return loss + self.model.regularize(batch)
 
     def _record_step(self, loss: ch.Tensor) -> None:
         """Record grad norm, param vector, and EMA after a gradient step."""
@@ -105,45 +114,89 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         ).norm()
         self.grad_norms.append(grad_norm.item())
 
-        param_vec = ch.nn.utils.parameters_to_vector(
-            [p.contiguous() for p in self.model.parameters() if p.requires_grad]
-        ).detach()
-        self.param_history.append(param_vec)
-        if self._ema_params is None:
-            self._ema_params = param_vec
+        record = self.args.record_params_every
+        if record > 0 and self.iterations % record == 0:
+            param_vec = ch.nn.utils.parameters_to_vector(
+                [p.contiguous() for p in self.model.parameters() if p.requires_grad]
+            ).detach()
+            self.param_history.append(param_vec)
+            if self._ema_params is None:
+                self._ema_params = param_vec
+            else:
+                self._ema_params = (
+                    self.args.ema_decay * self._ema_params
+                    + (1 - self.args.ema_decay) * param_vec
+                )
+
+    def _optimizer_step(self, loss: ch.Tensor | None = None) -> None:
+        """Perform the optimizer step, handling AMP and grad clipping."""
+        if self.args.use_amp and self.scaler is not None:
+            if self.args.max_grad_norm is not None:
+                self.scaler.unscale_(self.model.optimizer)
+                ch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.args.max_grad_norm
+                )
+            self.scaler.step(self.model.optimizer)
+            self.scaler.update()
         else:
-            self._ema_params = (
-                self.args.ema_decay * self._ema_params
-                + (1 - self.args.ema_decay) * param_vec
-            )
+            self.model.optimizer.step()
+
+        if self.model.schedule is not None and not isinstance(
+            self.model.schedule, ReduceLROnPlateau
+        ):
+            self.model.schedule.step()
 
     def train_step(self, batch: Iterable) -> ch.Tensor:
         """Run a single training step on the given batch and return the loss.
 
-        If ``model.train_batch(batch)`` returns a non-None dict the model owns
-        the entire update (multi-optimizer, EM, RL, etc.) and this method skips
-        grad-norm recording, EMA, and param-history. Otherwise the standard
-        ``make_closure`` → ``optimizer.step`` path is used.
+        Supports three paths:
+        1. Custom: ``model.train_batch(batch)`` returns a dict — model owns the
+           entire update; trainer skips grad-norm/EMA/param-history recording.
+        2. AMP or gradient accumulation: inline forward-backward-step without
+           the make_closure pattern (incompatible with LBFGS).
+        3. Standard: ``optimizer.step(make_closure)`` for LBFGS compatibility.
         """
+        # --- Custom path ---
         custom = self.model.train_batch(batch)
         if custom is not None:
-            # Custom path: model owns the update.
             raw = custom.get("loss", ch.zeros(1))
             loss = raw if isinstance(raw, ch.Tensor) else ch.tensor(float(raw))
             self.train_losses.append(loss.detach())
             self.iterations += 1
             return loss
 
-        # Standard gradient-based path.
+        accum = self.args.accumulate_grad_batches
+
+        # --- AMP / accumulation path ---
+        if self.args.use_amp or accum > 1:
+            if self._accum_step == 0:
+                self.model.optimizer.zero_grad()
+
+            if self.args.use_amp and self.scaler is not None:
+                with ch.autocast(device_type=self.args.device):
+                    loss = self._forward_loss(batch)
+                self.scaler.scale(loss / accum).backward()
+            else:
+                loss = self._forward_loss(batch)
+                (loss / accum).backward()
+
+            self._accum_step += 1
+            if self._accum_step >= accum:
+                self._optimizer_step(loss)
+                self._accum_step = 0
+                self._record_step(loss)
+
+            self.iterations += 1
+            return loss
+
+        # --- Standard path (closure, LBFGS-compatible) ---
         loss = self.model.optimizer.step(self.make_closure(batch))
         if self.model.schedule is not None and not isinstance(
             self.model.schedule, ReduceLROnPlateau
         ):
             self.model.schedule.step()
-
         self._record_step(loss)
         self.iterations += 1
-
         return loss
 
     def val_step(self, batch: Iterable) -> ch.Tensor:
@@ -265,9 +318,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 iterator.set_description(desc)
 
             if self.model.training and (self.iterations % self.args.log_every == 0):
+                grad_str = (
+                    f" grad_norm={self.grad_norms[-1]:.3e}" if self.grad_norms else ""
+                )
                 self.logger.info(
                     f"[{mode}] epoch={self.epoch} step={self.iterations} "
-                    f"loss={loss_.avg:.4f} grad_norm={self.grad_norms[-1]:.3e}"
+                    f"loss={loss_.avg:.4f}{grad_str}"
                 )
 
         grad_norm_str = (
@@ -332,13 +388,22 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         return False
 
     def update_best(self, loss: ch.Tensor):
-        """Update the best-loss index if loss is a new minimum."""
+        """Update the best-loss index and save model weights if loss is a new minimum."""
         loss_val = loss.item() if isinstance(loss, ch.Tensor) else float(loss)
         best_val = self.best_loss.item() if self.best_loss is not None else None
         if best_val is None or loss_val < best_val:
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
             self._best_model_state = copy.deepcopy(self.model.state_dict())
+
+    def restore_best_weights(self) -> None:
+        """Restore model weights from the best validation loss checkpoint.
+
+        No-op if no validation has been performed.
+        """
+        if self._best_model_state is not None:
+            self.model.load_state_dict(self._best_model_state)
+            self.logger.info("Restored model weights from best checkpoint.")
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -379,7 +444,20 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             )
             setup_store_with_metadata(self.args, store)
 
+        # Seed all RNGs for full reproducibility.
+        random.seed(rand_seed)
+        np.random.seed(rand_seed)
         ch.manual_seed(rand_seed)
+        if ch.cuda.is_available():
+            ch.cuda.manual_seed_all(rand_seed)
+
+        # Move model to the configured device.
+        self.model.to(self.args.device)
+
+        # Initialise mixed-precision scaler.
+        if self.args.use_amp:
+            self.scaler = ch.cuda.amp.GradScaler()
+
         self.t_start = time()
         self.model.pretrain_hook()
 
