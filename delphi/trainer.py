@@ -68,6 +68,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self._accum_step: int = 0
         # GradScaler for mixed precision; set by train_model.
         self.scaler = None
+        # Most recent global gradient L2 norm; set every step regardless of
+        # record_params_every so it is always available for logging.
+        self._last_grad_norm: float | None = None
 
     def make_closure(self, batch):
         """Create an optimizer closure for the given batch.
@@ -96,24 +99,39 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             loss = loss.sum()
         return loss + self.model.regularize(batch)
 
-    def _record_step(self, loss: ch.Tensor) -> None:
-        """Record the scalar loss and, when enabled, grad norm and param vector.
+    def _compute_grad_norm(self) -> float:
+        """Compute the global L2 gradient norm without materialising the parameter vector.
 
-        Gradient and parameter vector recording is skipped when
-        ``record_params_every == 0`` (the default) to avoid materialising
-        full-size tensors for large models. Enable it for small statistical
-        models or distributions where parameter history is needed.
+        Iterates over per-parameter gradient norms and combines them into a
+        single scalar, avoiding the memory cost of concatenating all gradients.
+
+        Returns:
+            Global L2 gradient norm, or 0.0 if no parameters have gradients.
+        """
+        norms = [
+            p.grad.detach().norm()
+            for p in self.model.parameters()
+            if p.requires_grad and p.grad is not None
+        ]
+        return ch.stack(norms).norm().item() if norms else 0.0
+
+    def _record_step(self, loss: ch.Tensor) -> None:
+        """Record the scalar loss, grad norm, and (when enabled) param vector.
+
+        The gradient norm is computed and stored in ``_last_grad_norm`` every
+        step so it is always available for logging. Parameter vector recording
+        is skipped when ``record_params_every == 0`` (the default) to avoid
+        materialising full-size tensors for large models.
         """
         self.train_losses.append(loss.detach())
 
-        # Skip vector operations for large models when recording is disabled.
+        self._last_grad_norm = self._compute_grad_norm()
+
+        # Skip full parameter-vector operations for large models.
         if self.args.record_params_every == 0:
             return
 
-        grad_norm = ch.nn.utils.parameters_to_vector(
-            [p.grad.contiguous() for p in self.model.parameters() if p.requires_grad]
-        ).norm()
-        self.grad_norms.append(grad_norm.item())
+        self.grad_norms.append(self._last_grad_norm)
 
         if self.iterations % self.args.record_params_every == 0:
             param_vec = ch.nn.utils.parameters_to_vector(
@@ -323,7 +341,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
             if self.model.training and (self.iterations % self.args.log_every == 0):
                 grad_str = (
-                    f" grad_norm={self.grad_norms[-1]:.3e}" if self.grad_norms else ""
+                    f" grad_norm={self._last_grad_norm:.3e}"
+                    if self._last_grad_norm is not None
+                    else ""
                 )
                 self.logger.info(
                     f"[{mode}] epoch={self.epoch} step={self.iterations} "
@@ -331,7 +351,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
 
         grad_norm_str = (
-            f" grad_norm={self.grad_norms[-1]:.3e}" if self.grad_norms else ""
+            f" grad_norm={self._last_grad_norm:.3e}"
+            if self._last_grad_norm is not None
+            else ""
         )
         metrics_str = "".join(f" {k}={m.avg:.4f}" for k, m in metric_meters.items())
         self.logger.info(
