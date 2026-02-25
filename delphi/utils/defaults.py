@@ -75,6 +75,14 @@ STEP_LR_DEFAULTS = {
     "min_lr": (float, 0.0, {"min": 0}),
     "milestones": (list, [30, 60, 90]),
     "gamma": (float, 0.1, {"min": 0, "max": 1}),
+    "warmup_steps": (int, 0, {"min": 0}),
+}
+
+CYCLIC_LR_DEFAULTS = {
+    "cyclic_base_lr": (float, 0.0, {"min": 0}),
+    "cyclic_step_size_up": (int, 2000, {"min": 1}),
+    "cyclic_mode": (["triangular", "triangular2", "exp_range"], "triangular2"),
+    "cyclic_gamma": (float, 1.0, {"min": 0}),
 }
 
 PLATEAU_SCHEDULER_DEFAULTS = {
