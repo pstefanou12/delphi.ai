@@ -10,4 +10,5 @@ class distributions(delphi):  # pylint: disable=invalid-name,abstract-method
     """Parent class for distribution models."""
 
     def __init__(self, args: Parameters, logger: delphiLogger):
-        super().__init__(args, logger)
+        super().__init__(args)
+        self.logger = logger

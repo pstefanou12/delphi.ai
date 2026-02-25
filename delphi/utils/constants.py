@@ -79,7 +79,7 @@ class CheckpointKey(str, Enum):
     BEST_LOSS = "best_loss"
 
 
-class RandomStateKey(str, Enum):
+class PythonFrameworks(str, Enum):
     """Keys for the random-state sub-dict stored in checkpoints."""
 
     PYTHON = "python"

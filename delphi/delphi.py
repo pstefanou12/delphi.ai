@@ -2,17 +2,17 @@
 """Parent class for models to train in the delphi trainer."""
 
 import random
-from typing import Callable, ClassVar, Iterable
-import torch as ch
-from cox.store import Store
-from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
-import numpy as np
+from collections.abc import Callable
+from typing import ClassVar
 
-from delphi.delphi_logger import delphiLogger
+import numpy as np
+import torch as ch
+from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
+
 from delphi.utils.constants import (
     CheckpointKey,
     OptimizerType,
-    RandomStateKey,
+    PythonFrameworks,
     SchedulerType,
 )
 from delphi.utils.defaults import (
@@ -40,25 +40,14 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
-    def __init__(
-        self,
-        args: Parameters,
-        logger: delphiLogger,
-        store: Store = None,
-        checkpoint=None,
-    ):
+    def __init__(self, args: Parameters):
         """Initialize the delphi model.
 
         Args:
             args: Hyperparameter object; see DELPHI_DEFAULTS for supported keys.
-            logger: Logger instance for training diagnostics.
-            store: Optional cox store for experiment logging.
-            checkpoint: Optional checkpoint dict to resume from.
 
         Raises:
             TypeError: If args is not a Parameters instance.
-            TypeError: If store is not a cox.store.Store instance or None.
-            TypeError: If checkpoint is not a dict or None.
         """
         super().__init__()
         if not isinstance(args, Parameters):
@@ -66,30 +55,16 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
                 f"args is type {type(args).__name__}; "
                 "expected delphi.utils.helpers.Parameters"
             )
-        self.args = check_and_fill_args(args, DELPHI_DEFAULTS)
-        self.logger = logger
+        self.args: Parameters = check_and_fill_args(args, DELPHI_DEFAULTS)
 
-        self.best_loss, self.best_model = None, None
-        self.optimizer, self.schedule = None, None
-        self.start_epoch = 0
+        self.optimizer: ch.optim.Optimizer | None = None
+        self.schedule: lr_scheduler.LRScheduler | None = None
 
-        if store is not None and not isinstance(store, Store):
-            raise TypeError(
-                f"store is type {type(store).__name__}; expected cox.store.Store"
-            )
-        self.store = store
-
-        if checkpoint is not None and not isinstance(checkpoint, dict):
-            raise TypeError(
-                f"checkpoint is type {type(checkpoint).__name__}; expected dict"
-            )
-        self.checkpoint = checkpoint
-
-        self.criterion = None
-        self.criterion_params = []
-        self.model = None
+        self.criterion: Callable | None = None
+        self.criterion_params: list = []
+        self.model: ch.nn.Module | None = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
-        self.optimizers: dict = {}
+        self.optimizers: dict[str, ch.optim.Optimizer] = {}
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.
@@ -110,15 +85,16 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """
         return [{"params": list(self.parameters())}]
 
-    def make_optimizer_and_schedule(self, params: Iterable, checkpoint: dict = None):
+    def make_optimizer_and_schedule(
+        self, checkpoint: dict | None = None
+    ) -> tuple[ch.optim.Optimizer, lr_scheduler.LRScheduler | None]:
         """Create and store the optimizer and learning-rate scheduler.
 
-        The ``params`` argument is accepted for backwards compatibility but
-        is ignored when ``parameter_groups()`` is overridden; override
-        ``parameter_groups()`` to control per-group hyperparameters.
+        Parameter groups are sourced from ``parameter_groups()``.  Override
+        that method to assign different hyperparameters to different parameter
+        subsets.
 
         Args:
-            params: Ignored; kept for API compatibility.
             checkpoint: Optional dict containing optimizer/scheduler state to restore.
 
         Returns:
@@ -149,7 +125,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """
         cls._OPTIMIZER_REGISTRY[name.lower()] = factory
 
-    def _create_optimizer(self, params):
+    def _create_optimizer(self, params: list[dict]) -> ch.optim.Optimizer:
         """Create and return the configured optimizer via the registry."""
         optimizer_type = self._get_optimizer_type()
 
@@ -158,20 +134,20 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
         return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
 
-    def _get_optimizer_type(self):
+    def _get_optimizer_type(self) -> str:
         """Return the lowercase optimizer type string from args."""
         return self.args.optimizer.lower()
 
-    def _get_arg(self, name, default):
-        """Return args.name if set and not None, else default."""
+    def _get_arg(self, name: str, default: object) -> object:
+        """Return the attribute ``name`` from ``self.args`` if present and not ``None``, else ``default``."""
         val = getattr(self.args, name, None)
         return val if val is not None else default
 
-    def _remove_none_config(self, config):
+    def _remove_none_config(self, config: dict) -> dict:
         """Return a copy of config with None values removed."""
         return {k: v for k, v in config.items() if v is not None}
 
-    def _create_sgd(self, params):
+    def _create_sgd(self, params: list[dict]) -> SGD:
         """Create an SGD optimizer from args."""
         check_and_fill_args(self.args, SGD_DEFAULTS)
         config = {
@@ -187,7 +163,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return SGD(params, **self._remove_none_config(config))
 
-    def _create_lbfgs(self, params):
+    def _create_lbfgs(self, params: list[dict]) -> LBFGS:
         """Create an L-BFGS optimizer from args."""
         check_and_fill_args(self.args, LBFGS_DEFAULTS)
         config = {
@@ -201,7 +177,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return LBFGS(params, **self._remove_none_config(config))
 
-    def _create_adam(self, params):
+    def _create_adam(self, params: list[dict]) -> Adam:
         """Create an Adam optimizer from args."""
         check_and_fill_args(self.args, ADAM_DEFAULTS)
         config = {
@@ -221,7 +197,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return Adam(params, **self._remove_none_config(config))
 
-    def _create_adamw(self, params):
+    def _create_adamw(self, params: list[dict]) -> AdamW:
         """Create an AdamW optimizer from args."""
         check_and_fill_args(self.args, ADAMW_DEFAULTS)
         config = {
@@ -241,7 +217,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return AdamW(params, **self._remove_none_config(config))
 
-    def _create_scheduler(self):
+    def _create_scheduler(self) -> lr_scheduler.LRScheduler | None:
         """Create and return the configured learning-rate scheduler, or None."""
         if getattr(self.args, "constant", False):
             return None
@@ -283,14 +259,14 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
         return base_schedule
 
-    def _get_scheduler_type(self):
+    def _get_scheduler_type(self) -> str | None:
         """Return the lowercase scheduler type string from args, or None."""
         # Explicit scheduler arg takes priority over legacy step_lr.
         if hasattr(self.args, "scheduler") and self.args.scheduler:
             return self.args.scheduler.lower()
         return None
 
-    def _create_cyclic_scheduler(self):
+    def _create_cyclic_scheduler(self) -> lr_scheduler.CyclicLR:
         """Create a cyclic LR scheduler using CyclicLR.
 
         Configurable via args:
@@ -313,7 +289,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return lr_scheduler.CyclicLR(self.optimizer, **self._remove_none_config(config))
 
-    def _create_cosine_scheduler(self):
+    def _create_cosine_scheduler(self) -> lr_scheduler.CosineAnnealingLR:
         """Create a cosine annealing scheduler."""
         config = {
             "T_max": self._get_arg("epochs", 100),
@@ -323,7 +299,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             self.optimizer, **self._remove_none_config(config)
         )
 
-    def _create_linear_scheduler(self):
+    def _create_linear_scheduler(self) -> lr_scheduler.LinearLR:
         """Create a linear LR decay scheduler."""
         config = {
             "start_factor": self._get_arg("linear_start_factor", 1.0),
@@ -332,7 +308,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return lr_scheduler.LinearLR(self.optimizer, **self._remove_none_config(config))
 
-    def _create_step_scheduler(self):
+    def _create_step_scheduler(self) -> lr_scheduler.StepLR:
         """Create a step LR scheduler."""
         config = {
             "step_size": getattr(self.args, "step_lr", 100),
@@ -340,7 +316,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         }
         return lr_scheduler.StepLR(self.optimizer, **self._remove_none_config(config))
 
-    def _create_multi_step_scheduler(self):
+    def _create_multi_step_scheduler(self) -> lr_scheduler.MultiStepLR:
         """Create a multi-step LR scheduler."""
         config = {
             "milestones": getattr(self.args, "milestones", [30, 60, 90]),
@@ -350,14 +326,14 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             self.optimizer, **self._remove_none_config(config)
         )
 
-    def _create_exponential_scheduler(self):
+    def _create_exponential_scheduler(self) -> lr_scheduler.ExponentialLR:
         """Create an exponential LR scheduler."""
         config = {
             "gamma": getattr(self.args, "gamma", 0.95),
         }
         return lr_scheduler.ExponentialLR(self.optimizer, **config)
 
-    def _create_plateau_scheduler(self):
+    def _create_plateau_scheduler(self) -> lr_scheduler.ReduceLROnPlateau:
         """Create a reduce-on-plateau scheduler."""
         config = {
             "mode": getattr(self.args, "plateau_mode", "min"),
@@ -373,83 +349,59 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             self.optimizer, **self._remove_none_config(config)
         )
 
-    def _load_checkpoint(self, checkpoint):
+    def _load_checkpoint(self, checkpoint: dict) -> None:
         """Restore model weights, optimizer, scheduler, and random states from checkpoint."""
         if CheckpointKey.MODEL in checkpoint:
             self.load_state_dict(checkpoint[CheckpointKey.MODEL])
-            self.logger.info("Loaded model weights from checkpoint.")
 
-        if CheckpointKey.OPTIMIZER in checkpoint and hasattr(self, "optimizer"):
+        if CheckpointKey.OPTIMIZER in checkpoint and self.optimizer is not None:
             self.optimizer.load_state_dict(checkpoint[CheckpointKey.OPTIMIZER])
-            self.logger.info("Loaded optimizer state from checkpoint.")
 
-        if (
-            CheckpointKey.SCHEDULER in checkpoint
-            and hasattr(self, "schedule")
-            and self.schedule is not None
-        ):
+        if CheckpointKey.SCHEDULER in checkpoint and self.schedule is not None:
             self.schedule.load_state_dict(checkpoint[CheckpointKey.SCHEDULER])
-            self.logger.info("Loaded scheduler state from checkpoint.")
-
-            # Advance the scheduler to match the saved training position.
-            current_epoch = checkpoint.get(CheckpointKey.EPOCH, 0)
-            for _ in range(current_epoch):
-                self.schedule.step()
-            self.logger.info(f"Advanced scheduler to epoch {current_epoch}.")
 
         if CheckpointKey.RANDOM_STATES in checkpoint:
             self._load_random_states(checkpoint[CheckpointKey.RANDOM_STATES])
 
-        if CheckpointKey.TRAINING_STATE in checkpoint:
-            self._load_training_state(checkpoint[CheckpointKey.TRAINING_STATE])
-
-    def _load_random_states(self, random_states):
+    def _load_random_states(self, random_states: dict) -> None:
         """Restore Python, NumPy, and PyTorch random number generator states."""
-        if RandomStateKey.PYTHON in random_states:
-            random.setstate(random_states[RandomStateKey.PYTHON])
+        if PythonFrameworks.PYTHON in random_states:
+            random.setstate(random_states[PythonFrameworks.PYTHON])
 
-        if RandomStateKey.NUMPY in random_states:
-            np.random.set_state(random_states[RandomStateKey.NUMPY])
+        if PythonFrameworks.NUMPY in random_states:
+            np.random.set_state(random_states[PythonFrameworks.NUMPY])
 
-        if RandomStateKey.PYTORCH in random_states:
-            ch.set_rng_state(random_states[RandomStateKey.PYTORCH])
-
-        self.logger.info("Restored random number generator states.")
-
-    def _load_training_state(self, training_state):
-        """Restore epoch counter and best loss from a training state dict."""
-        self.start_epoch = training_state.get(CheckpointKey.EPOCH, 0)
-        self.best_loss = training_state.get(CheckpointKey.BEST_LOSS, float("inf"))
-        self.logger.info(f"Resuming from epoch {self.start_epoch}.")
+        if PythonFrameworks.PYTORCH in random_states:
+            ch.set_rng_state(random_states[PythonFrameworks.PYTORCH])
 
     def pretrain_hook(self) -> None:
         """Hook called before the training procedure begins."""
 
-    def step_pre_hook(self, optimizer, args, kwargs) -> None:  # pylint: disable=unused-argument
+    def step_pre_hook(
+        self, optimizer: ch.optim.Optimizer, args: tuple, kwargs: dict
+    ) -> None:  # pylint: disable=unused-argument
         """Hook called after .backward() but before the optimizer step."""
 
-    def step_post_hook(self, optimizer, args, kwargs) -> None:  # pylint: disable=unused-argument
+    def step_post_hook(
+        self, optimizer: ch.optim.Optimizer, args: tuple, kwargs: dict
+    ) -> None:  # pylint: disable=unused-argument
         """Hook called after each optimizer step."""
 
-    def post_epoch_hook(self, i, is_train, loss) -> None:  # pylint: disable=unused-argument
+    def post_epoch_hook(self, epoch: int, is_train: bool, loss: ch.Tensor) -> None:  # pylint: disable=unused-argument
         """Hook called after each complete pass through the dataset."""
 
     def post_training_hook(self) -> None:
         """Hook called after the full training procedure completes."""
 
     def description(
-        self, stage: str, epoch: int, step: int, loss_: AverageMeter
+        self, stage: str, epoch: int, step: int, loss_meter: AverageMeter
     ) -> str:
         """Return a human-readable tqdm progress string for the current step."""
-        return f"[{stage}] Epoch {epoch} | Step {step} | Loss {loss_.avg:.4f}"
+        return f"[{stage}] Epoch {epoch} | Step {step} | Loss {loss_meter.avg:.4f}"
 
     def regularize(self, batch) -> ch.Tensor:  # pylint: disable=unused-argument
         """Return the regularization term to add to the loss. Defaults to zero."""
-        return ch.zeros(1, 1)
-
-    def parameters_(self):
-        """Return the model's trainable parameters."""
-        return self.parameters()
+        return ch.tensor(0.0)
 
     def compute_loss(self, batch) -> ch.Tensor:
         """Compute the loss for a single batch.
@@ -546,10 +498,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         return {}
 
 
-# Populate the built-in optimizer registry after the class is fully defined.
-delphi._OPTIMIZER_REGISTRY = {
-    OptimizerType.SGD: delphi._create_sgd,
-    OptimizerType.LBFGS: delphi._create_lbfgs,
-    OptimizerType.ADAM: delphi._create_adam,
-    OptimizerType.ADAMW: delphi._create_adamw,
-}
+# Register built-in optimizers after the class is fully defined.
+delphi.register_optimizer(OptimizerType.SGD, delphi._create_sgd)
+delphi.register_optimizer(OptimizerType.LBFGS, delphi._create_lbfgs)
+delphi.register_optimizer(OptimizerType.ADAM, delphi._create_adam)
+delphi.register_optimizer(OptimizerType.ADAMW, delphi._create_adamw)

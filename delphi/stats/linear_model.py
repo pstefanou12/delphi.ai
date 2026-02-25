@@ -1,7 +1,5 @@
 # Author: pstefanou12@
-"""
-Linear model class for delphi.
-"""
+"""Linear model class for delphi."""
 
 import torch as ch
 from torch import Tensor
@@ -26,7 +24,8 @@ class LinearModel(delphi):  # pylint: disable=abstract-method
     def __init__(
         self, args: Parameters, dependent: bool, logger: delphiLogger, emp_weight=None
     ):
-        super().__init__(args, logger)
+        super().__init__(args)
+        self.logger = logger
         self.emp_weight = emp_weight
 
         self.d, self.k = None, None  # pylint: disable=invalid-name
