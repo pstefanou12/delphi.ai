@@ -360,9 +360,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 if smoothed < self.args.grad_tol:
                     return True, "grad_tol"
 
-        model_stop, model_reason = self.model.should_stop()
+        model_stop, _ = self.model.should_stop()
         if model_stop:
-            return True, model_reason or "model_stop"
+            return True, "model_stop"
 
         return False, None
 
