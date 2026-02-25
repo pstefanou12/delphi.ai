@@ -343,7 +343,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         Called per step for iteration- and grad-norm-based criteria.
         Epoch-level criteria (loss_tol, patience) are checked in
-        ``_check_epoch_stop`` after each full epoch.
+        ``_check_epoch_stop`` after each full epoch. Also delegates to
+        ``model.should_stop()`` so algorithms can inject custom stopping
+        criteria (e.g. reward threshold in RL).
 
         Returns:
             Tuple of (bool, str | None) where the string is the stop reason.
@@ -357,6 +359,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 smoothed = sum(self.grad_norms[-window:]) / window
                 if smoothed < self.args.grad_tol:
                     return True, "grad_tol"
+
+        model_stop, model_reason = self.model.should_stop()
+        if model_stop:
+            return True, model_reason or "model_stop"
 
         return False, None
 
