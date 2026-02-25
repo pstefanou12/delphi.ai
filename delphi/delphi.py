@@ -527,7 +527,9 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
         Called by the trainer's stop-criterion check in addition to the
         standard criteria (max_iterations, grad_tol, etc.). Return
-        ``(True, reason_string)`` to halt training.
+        ``(True, reason_string)`` to halt training. The trainer records
+        the stop reason as ``"model_stop"`` regardless of the returned
+        string; log any detail from within this method before returning.
 
         Returns:
             Tuple of (stop, reason) where reason is a short string or None.
