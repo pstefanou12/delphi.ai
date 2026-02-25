@@ -68,6 +68,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self._best_loss_index, self._best_param_index = None, None
         self._best_model_state = None
         self.stop_reason = None
+        # Size of the training dataset; set by train_model for ELBO scaling etc.
+        self.dataset_size: int | None = None
 
     def make_closure(self, batch):
         """Create an optimizer closure for the given batch.
@@ -160,7 +162,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def run_epoch(
         self, loader: DataLoader | None, val_loader: DataLoader | None = None
     ):
-        """Run one full epoch over loader and return (avg_loss, avg_prec1, avg_prec5).
+        """Run one full epoch over loader and return (avg_loss, metrics_dict).
+
+        Replaces the hardwired prec1/prec5 tracking with a flexible
+        ``model.batch_metrics()`` hook so any algorithm can report its own
+        per-step signals (accuracy, reward, ELBO components, etc.).
 
         When ``loader`` is ``None`` the trainer calls ``model.train_batch(None)``
         once (training) or ``model.evaluate()`` (validation), allowing
@@ -173,10 +179,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             val_loader: Optional DataLoader used for mid-epoch validation.
 
         Returns:
-            Tuple of (avg_loss, avg_prec1, avg_prec5) AverageMeter averages.
+            Tuple of (avg_loss, metrics_dict) where metrics_dict maps each
+            metric name to its epoch-averaged value.
         """
         mode = "train" if self.model.training else "val"
-        loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
+        loss_ = AverageMeter()
+        metric_meters: dict[str, AverageMeter] = {}
 
         if loader is None:
             # Loader-free path: model generates its own data.
@@ -208,7 +216,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 f"loss={loss_.avg:.4f}"
             )
             self.model.post_epoch_hook(self.epoch, self.model.training, loss)
-            return loss_.avg, prec1_.avg, prec5_.avg
+            return loss_.avg, {}
 
         # Standard DataLoader path.
         iterator = (
@@ -223,6 +231,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.train_step(batch) if self.model.training else self.val_step(batch)
             )
             loss_.update(loss.item())
+
+            # Accumulate model-defined metrics.
+            for name, val in self.model.batch_metrics().items():
+                if name not in metric_meters:
+                    metric_meters[name] = AverageMeter()
+                metric_meters[name].update(
+                    val.item() if isinstance(val, ch.Tensor) else float(val)
+                )
 
             stop, reason = self.should_stop()
             if stop:
@@ -244,7 +260,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
             if self.args.tqdm:
                 desc = self.model.description(
-                    self.epoch, batch_idx, loss_, prec1_, prec5_, None
+                    self.epoch, batch_idx, loss_, {}, {}, None
                 )
                 iterator.set_description(desc)
 
@@ -257,13 +273,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         grad_norm_str = (
             f" grad_norm={self.grad_norms[-1]:.3e}" if self.grad_norms else ""
         )
+        metrics_str = "".join(f" {k}={m.avg:.4f}" for k, m in metric_meters.items())
         self.logger.info(
             f"[{mode}] epoch={self.epoch} step={self.iterations} "
-            f"loss={loss_.avg:.4f}{grad_norm_str}"
+            f"loss={loss_.avg:.4f}{metrics_str}{grad_norm_str}"
         )
 
         self.model.post_epoch_hook(self.epoch, self.model.training, loss)
-        return loss_.avg, prec1_.avg, prec5_.avg
+        return loss_.avg, {k: m.avg for k, m in metric_meters.items()}
 
     def should_stop(self):
         """Return (stop, reason) based on current training state.
@@ -358,21 +375,20 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if store is not None:
             store.add_table(
                 "logs",
-                {
-                    "epoch": int,
-                    "train_loss": float,
-                    "train_prec1": float,
-                    "train_prec5": float,
-                    "val_loss": float,
-                    "val_prec1": float,
-                    "val_prec5": float,
-                },
+                {"epoch": int, "train_loss": float, "val_loss": float},
             )
             setup_store_with_metadata(self.args, store)
 
         ch.manual_seed(rand_seed)
         self.t_start = time()
         self.model.pretrain_hook()
+
+        # Record dataset size for algorithms that need it (e.g. mini-batch ELBO).
+        if train_loader is not None:
+            try:
+                self.dataset_size = len(train_loader.dataset)
+            except TypeError:
+                self.dataset_size = None  # IterableDataset has no len().
 
         self.model.make_optimizer_and_schedule(self.model.parameters_())
         self.logger.info(
@@ -381,26 +397,21 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         if checkpoint:
             self.epoch = checkpoint["epoch"]
-            _ = (  # pylint: disable=unused-variable
-                checkpoint["prec1"]
-                if "prec1" in checkpoint
-                else self.run_epoch(val_loader)[0]
-            )
+            if "prec1" not in checkpoint and val_loader is not None:
+                self.run_epoch(val_loader)
 
         while True:
             self.epoch += 1
             self.model.train()
-            train_loss, train_prec1, train_prec5 = self.run_epoch(
-                train_loader, val_loader
-            )
+            train_loss, train_metrics = self.run_epoch(train_loader, val_loader)
             self.epoch_train_losses.append(train_loss)
 
-            val_loss, val_prec1, val_prec5 = None, None, None
+            val_loss, val_metrics = None, {}
             if val_loader is not None:
                 with ch.no_grad():
                     self.model.eval()
-                    val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
-                    self.update_best(ch.tensor(val_loss))
+                    val_loss, val_metrics = self.run_epoch(val_loader)
+                    self.update_best(val_loss)
 
                 if isinstance(self.model.schedule, ReduceLROnPlateau):
                     self.model.schedule.step(val_loss)
@@ -439,11 +450,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                         {
                             "epoch": self.epoch,
                             "train_loss": train_loss,
-                            "train_prec1": train_prec1,
-                            "train_prec5": train_prec5,
                             "val_loss": val_loss,
-                            "val_prec1": val_prec1,
-                            "val_prec5": val_prec5,
                         }
                     )
                 self.t_end = time()
@@ -454,16 +461,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-            if store is not None and val_loader is not None:
+            if store is not None:
                 store["logs"].append_row(
                     {
                         "epoch": self.epoch,
                         "train_loss": train_loss,
-                        "train_prec1": train_prec1,
-                        "train_prec5": train_prec5,
                         "val_loss": val_loss,
-                        "val_prec1": val_prec1,
-                        "val_prec5": val_prec5,
                     }
                 )
 
@@ -498,7 +501,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             store: Optional cox store for saving results.
 
         Returns:
-            Dict with keys 'test_prec1', 'test_loss', and 'time'.
+            Dict with keys 'test_loss' and 'time', plus any keys from
+            ``model.batch_metrics()``.
         """
         start_time = time()
 
@@ -506,13 +510,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             store.add_table("eval", consts.EVAL_LOGS_SCHEMA)
 
         self.model.eval()
-        test_loss, test_prec1, _ = self.run_epoch(loader)
+        test_loss, test_metrics = self.run_epoch(loader)
 
-        log_info = {
-            "test_prec1": test_prec1,
-            "test_loss": test_loss,
-            "time": time() - start_time,
-        }
+        log_info = {"test_loss": test_loss, "time": time() - start_time, **test_metrics}
         if store:
             store["eval"].append_row(log_info)
         return log_info
