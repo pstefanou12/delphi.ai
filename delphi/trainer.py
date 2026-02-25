@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
+import copy
 from time import time
 from typing import Iterable
 import torch as ch
@@ -55,6 +56,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.t_start, self.t_end = None, None
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
+        self._best_model_state = None
         self.stop_reason = None
 
     def make_closure(self, batch):
@@ -72,9 +74,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 loss = loss.sum()
 
             reg_term = self.model.regularize(batch)
-
-            if self.args.cuda:
-                reg_term = reg_term.cuda()
             loss = loss + reg_term
             loss.backward()
             if self.args.max_grad_norm is not None:
@@ -225,10 +224,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         return False, None
 
     def update_best(self, loss: ch.Tensor):
-        """Update the best-loss index if loss is a new minimum."""
+        """Update the best-loss index and save model weights if loss is a new minimum."""
         if self.best_loss is None or loss.item() < self.best_loss.item():
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
+            self._best_model_state = copy.deepcopy(self.model.state_dict())
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -401,7 +401,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     @property
     def final_loss(self):
         """Return the loss at the final validation step."""
-        return self.val_param_history[-1]
+        if len(self.val_losses) == 0:
+            return None
+        return self.val_losses[-1]
+
+    @property
+    def best_model_state(self):
+        """Return the saved state dict from the best validation loss step."""
+        return self._best_model_state
 
     @property
     def ema_params(self):

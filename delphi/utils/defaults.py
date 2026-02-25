@@ -96,9 +96,13 @@ TRAINER_DEFAULTS = {
     "disable_no_grad": (bool, False),
     "val_interval": (int, None, {"min": 1}),
     "patience": (int, float("inf"), {"min": 1}),
-    "grad_tol": (float, 0, {"min": 0}),
+    "grad_tol": (float, 0.0, {"min": 0}),
+    "grad_tol_window": (int, 1, {"min": 1}),
+    "loss_tol": (float, None),
     "log_every": (int, 50, {"min": 1}),
     "max_grad_norm": (float, None),
+    "tqdm": (bool, False),
+    "device": (str, "cpu"),
 }
 
 DATASET_DEFAULTS = {
