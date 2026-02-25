@@ -163,14 +163,14 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """Return the lowercase optimizer type string from args."""
         return self.args.optimizer.lower()
 
-    def _remove_none_config(self, config):
-        """Return a copy of config with None values removed."""
-        return {k: v for k, v in config.items() if v is not None}
-
     def _get_arg(self, name, default):
         """Return args.name if set and not None, else default."""
         val = getattr(self.args, name, None)
         return val if val is not None else default
+
+    def _remove_none_config(self, config):
+        """Return a copy of config with None values removed."""
+        return {k: v for k, v in config.items() if v is not None}
 
     def _create_sgd(self, params):
         """Create an SGD optimizer from args."""
@@ -264,7 +264,25 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         if scheduler_type not in scheduler_creators:
             raise ValueError(f"Unsupported scheduler: {scheduler_type}")
 
-        return scheduler_creators[scheduler_type]()
+        base_schedule = scheduler_creators[scheduler_type]()
+
+        # Optionally prepend a linear warmup phase.
+        warmup_steps = self._get_arg("warmup_steps", 0)
+        is_plateau = isinstance(base_schedule, lr_scheduler.ReduceLROnPlateau)
+        if warmup_steps > 0 and not is_plateau:
+            warmup = lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=1e-8,
+                end_factor=1.0,
+                total_iters=warmup_steps,
+            )
+            return lr_scheduler.SequentialLR(
+                self.optimizer,
+                schedulers=[warmup, base_schedule],
+                milestones=[warmup_steps],
+            )
+
+        return base_schedule
 
     def _get_scheduler_type(self):
         """Return the lowercase scheduler type string from args, or None."""
@@ -274,13 +292,27 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         return None
 
     def _create_cyclic_scheduler(self):
-        """Create a cyclic learning-rate scheduler."""
-        epochs = self._get_arg("epochs", 100)
+        """Create a cyclic LR scheduler using CyclicLR.
 
-        def lr_func(t):
-            return np.interp([t], [0, epochs * 4 // 15, epochs], [0, 1, 0])[0]
-
-        return lr_scheduler.LambdaLR(self.optimizer, lr_func)
+        Configurable via args:
+            cyclic_base_lr (float): Lower LR bound (default 0.0).
+            cyclic_max_lr (float): Upper LR bound (default: optimizer's lr).
+            cyclic_step_size_up (int): Steps in ascending half-cycle (default 2000).
+            cyclic_step_size_down (int): Steps in descending half-cycle (default: same).
+            cyclic_mode (str): 'triangular', 'triangular2', or 'exp_range'.
+            cyclic_gamma (float): Multiplicative factor for 'exp_range' mode.
+        """
+        max_lr = self._get_arg("cyclic_max_lr", self.optimizer.param_groups[0]["lr"])
+        config = {
+            "base_lr": self._get_arg("cyclic_base_lr", 0.0),
+            "max_lr": max_lr,
+            "step_size_up": self._get_arg("cyclic_step_size_up", 2000),
+            "step_size_down": self._get_arg("cyclic_step_size_down", None),
+            "mode": self._get_arg("cyclic_mode", "triangular2"),
+            "gamma": self._get_arg("cyclic_gamma", 1.0),
+            "cycle_momentum": False,  # Kept False for Adam/AdamW compatibility.
+        }
+        return lr_scheduler.CyclicLR(self.optimizer, **self._remove_none_config(config))
 
     def _create_cosine_scheduler(self):
         """Create a cosine annealing scheduler."""
