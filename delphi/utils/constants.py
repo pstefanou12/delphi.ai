@@ -8,10 +8,12 @@ JUPYTER = "jupyter"
 TERMINAL = "terminal"
 IPYTHON = "ipython"
 
+# Base schema for the training logs table.  Model-specific metric columns
+# (prefixed with "train_" or "val_") are appended dynamically at runtime.
 LOGS_SCHEMA = {
     "epoch": int,
-    "val_loss": float,
     "train_loss": float,
+    "val_loss": float,
     "time": float,
 }
 

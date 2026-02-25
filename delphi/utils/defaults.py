@@ -113,7 +113,19 @@ TRAINER_DEFAULTS = {
     "device": (str, "cpu"),
     "use_amp": (bool, False),
     "accumulate_grad_batches": (int, 1, {"min": 1}),
+    # When 0 (default) no in-memory parameter vectors are recorded; suitable
+    # for large DNNs.  Set to a positive integer to record parameter vectors
+    # at that step frequency (e.g. for SGD iterate-averaging or EMA).
     "record_params_every": (int, 0, {"min": 0}),
+    # Directory for on-disk checkpoints.  When set (or when a cox store is
+    # provided at training time), the trainer writes the best state dict to
+    # disk.  Falls back to in-memory saving only when record_params_every > 0
+    # and no disk target is configured.
+    "checkpoint_dir": (Optional[str], None),
+    # Save a full checkpoint (model, optimizer, scheduler, epoch) to disk
+    # every this many epochs so that training can be resumed after failure.
+    # 0 disables periodic checkpointing.
+    "checkpoint_every": (int, 0, {"min": 0}),
 }
 
 DATASET_DEFAULTS = {
