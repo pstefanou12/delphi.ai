@@ -89,6 +89,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         self.criterion = None
         self.criterion_params = []
         self.model = None
+        # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
+        self.optimizers: dict = {}
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.
@@ -164,6 +166,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def _remove_none_config(self, config):
         """Return a copy of config with None values removed."""
         return {k: v for k, v in config.items() if v is not None}
+
+    def _get_arg(self, name, default):
+        """Return args.name if set and not None, else default."""
+        val = getattr(self.args, name, None)
+        return val if val is not None else default
 
     def _create_sgd(self, params):
         """Create an SGD optimizer from args."""
@@ -268,7 +275,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_cyclic_scheduler(self):
         """Create a cyclic learning-rate scheduler."""
-        epochs = getattr(self.args, "epochs", 100)
+        epochs = self._get_arg("epochs", 100)
 
         def lr_func(t):
             return np.interp([t], [0, epochs * 4 // 15, epochs], [0, 1, 0])[0]
@@ -278,8 +285,8 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def _create_cosine_scheduler(self):
         """Create a cosine annealing scheduler."""
         config = {
-            "T_max": getattr(self.args, "epochs", 100),
-            "eta_min": getattr(self.args, "min_lr", 0),
+            "T_max": self._get_arg("epochs", 100),
+            "eta_min": self._get_arg("min_lr", 0),
         }
         return lr_scheduler.CosineAnnealingLR(
             self.optimizer, **self._remove_none_config(config)
@@ -288,9 +295,9 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def _create_linear_scheduler(self):
         """Create a linear LR decay scheduler."""
         config = {
-            "start_factor": getattr(self.args, "linear_start_factor", 1.0),
-            "end_factor": getattr(self.args, "linear_end_factor", 0.0),
-            "total_iters": getattr(self.args, "epochs", 100),
+            "start_factor": self._get_arg("linear_start_factor", 1.0),
+            "end_factor": self._get_arg("linear_end_factor", 0.0),
+            "total_iters": self._get_arg("epochs", 100),
         }
         return lr_scheduler.LinearLR(self.optimizer, **self._remove_none_config(config))
 
@@ -336,7 +343,11 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         )
 
     def _load_checkpoint(self, checkpoint):
-        """Restore optimizer, scheduler, and random states from a checkpoint dict."""
+        """Restore model weights, optimizer, scheduler, and random states from checkpoint."""
+        if "model" in checkpoint:
+            self.load_state_dict(checkpoint["model"])
+            self.logger.info("Loaded model weights from checkpoint.")
+
         if "optimizer" in checkpoint and hasattr(self, "optimizer"):
             self.optimizer.load_state_dict(checkpoint["optimizer"])
             self.logger.info("Loaded optimizer state from checkpoint.")
@@ -411,6 +422,85 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     def parameters_(self):
         """Return the model's trainable parameters."""
         return self.parameters()
+
+    def compute_loss(self, batch) -> ch.Tensor:
+        """Compute the loss for a single batch.
+
+        Override to implement custom forward and loss logic. The default
+        implementation unpacks ``batch`` as ``(inp, targ)`` and evaluates
+        ``self.criterion``.
+
+        Args:
+            batch: A single batch from the DataLoader.
+
+        Returns:
+            Loss tensor (scalar or vector; the trainer handles reduction).
+        """
+        inp, targ = batch
+        pred = self(inp)
+        pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)
+        return self.criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
+
+    def compute_val_loss(self, batch) -> ch.Tensor:
+        """Compute the validation loss for a single batch.
+
+        Defaults to ``compute_loss``. Override to use a different metric
+        during validation (e.g. NLL instead of ELBO).
+
+        Args:
+            batch: A single batch from the validation DataLoader.
+
+        Returns:
+            Loss tensor (scalar or vector; the trainer handles reduction).
+        """
+        return self.compute_loss(batch)
+
+    def train_batch(self, batch) -> dict | None:
+        """Run a full training update for one batch.
+
+        Return ``None`` (default) to let the trainer use the standard
+        ``make_closure`` → ``optimizer.step`` path. Return a metrics dict
+        to take full ownership of the update; grad-norm recording, EMA,
+        and param-history are then skipped by the trainer. The dict must
+        contain at least a ``"loss"`` key.
+
+        This hook is the right place for algorithms that require multiple
+        optimizer steps per batch (GANs, actor-critic RL) or that do not
+        use gradient-based optimizers (EM, HMC).
+
+        Args:
+            batch: A single batch from the DataLoader, or ``None`` when
+                training without a loader (e.g. environment-driven RL).
+
+        Returns:
+            ``None`` to use the default training path, or a dict with at
+            least ``"loss"``.
+        """
+        return None
+
+    def evaluate(self) -> dict:
+        """Compute validation metrics without a DataLoader.
+
+        Called by the trainer when no val_loader is provided. Return a
+        dict with at least ``"loss"`` to enable early stopping and
+        best-model tracking. The default returns an empty dict.
+
+        Returns:
+            Metrics dict, e.g. ``{"loss": tensor, "reward": float}``.
+        """
+        return {}
+
+    def should_stop(self) -> tuple[bool, str | None]:
+        """Return whether training should stop and why.
+
+        Called by the trainer's stop-criterion check in addition to the
+        standard criteria (max_iterations, grad_tol, etc.). Return
+        ``(True, reason_string)`` to halt training.
+
+        Returns:
+            Tuple of (stop, reason) where reason is a short string or None.
+        """
+        return False, None
 
 
 # Populate the built-in optimizer registry after the class is fully defined.

@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
+import copy
 from time import time
 from typing import Iterable
 import torch as ch
@@ -16,7 +17,14 @@ from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parame
 from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
 
 
-STOP_REASONS = ["grad_tol", "loss_tol", "early_stop", "max_iterations", "max_epochs"]
+STOP_REASONS = [
+    "grad_tol",
+    "loss_tol",
+    "early_stop",
+    "max_iterations",
+    "max_epochs",
+    "model_stop",
+]
 
 
 def ensure_tuple(x):
@@ -58,26 +66,24 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.t_start, self.t_end = None, None
         self.procedure_duration = None
         self._best_loss_index, self._best_param_index = None, None
+        self._best_model_state = None
         self.stop_reason = None
 
     def make_closure(self, batch):
-        """Create an optimizer closure for the given batch."""
-        inp, targ = batch
+        """Create an optimizer closure for the given batch.
+
+        Calls ``model.compute_loss(batch)`` so subclasses can override
+        only the loss computation without touching optimizer bookkeeping.
+        """
 
         def closure():
             self.model.optimizer.zero_grad()
-            pred = self.model(inp)
-            loss = self.model.criterion(
-                *ensure_tuple(pred), targ, *self.model.criterion_params
-            )
+            loss = self.model.compute_loss(batch)
 
             if loss.ndim > 0:
                 loss = loss.sum()
 
             reg_term = self.model.regularize(batch)
-
-            if self.args.cuda:
-                reg_term = reg_term.cuda()
             loss = loss + reg_term
             loss.backward()
             if self.args.max_grad_norm is not None:
@@ -88,14 +94,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         return closure
 
-    def train_step(self, batch: Iterable) -> ch.Tensor:
-        """Run a single training step on the given batch and return the loss."""
-        loss = self.model.optimizer.step(self.make_closure(batch))
-        if self.model.schedule is not None and not isinstance(
-            self.model.schedule, ReduceLROnPlateau
-        ):
-            self.model.schedule.step()
-
+    def _record_step(self, loss: ch.Tensor) -> None:
+        """Record grad norm, param vector, and EMA after a gradient step."""
         self.train_losses.append(loss.detach())
 
         grad_norm = ch.nn.utils.parameters_to_vector(
@@ -115,28 +115,61 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 + (1 - self.args.ema_decay) * param_vec
             )
 
+    def train_step(self, batch: Iterable) -> ch.Tensor:
+        """Run a single training step on the given batch and return the loss.
+
+        If ``model.train_batch(batch)`` returns a non-None dict the model owns
+        the entire update (multi-optimizer, EM, RL, etc.) and this method skips
+        grad-norm recording, EMA, and param-history. Otherwise the standard
+        ``make_closure`` → ``optimizer.step`` path is used.
+        """
+        custom = self.model.train_batch(batch)
+        if custom is not None:
+            # Custom path: model owns the update.
+            raw = custom.get("loss", ch.zeros(1))
+            loss = raw if isinstance(raw, ch.Tensor) else ch.tensor(float(raw))
+            self.train_losses.append(loss.detach())
+            self.iterations += 1
+            return loss
+
+        # Standard gradient-based path.
+        loss = self.model.optimizer.step(self.make_closure(batch))
+        if self.model.schedule is not None and not isinstance(
+            self.model.schedule, ReduceLROnPlateau
+        ):
+            self.model.schedule.step()
+
+        self._record_step(loss)
         self.iterations += 1
 
         return loss
 
     def val_step(self, batch: Iterable) -> ch.Tensor:
-        """Run a single validation step on the given batch and return the loss."""
-        inp, targ = batch
-        pred = self.model(inp)
-        loss = self.model.criterion(
-            *ensure_tuple(pred), targ, *self.model.criterion_params
-        )
+        """Run a single validation step on the given batch and return the loss.
+
+        Delegates to ``model.compute_val_loss(batch)`` so subclasses can
+        override train and val loss separately.
+        """
+        loss = self.model.compute_val_loss(batch)
         if loss.ndim > 0:
             loss = loss.sum(0)
         self.val_losses.append(loss)
         self.val_param_history_indices.append(len(self.param_history) - 1)
         return loss
 
-    def run_epoch(self, loader: DataLoader, val_loader: DataLoader | None = None):
+    def run_epoch(
+        self, loader: DataLoader | None, val_loader: DataLoader | None = None
+    ):
         """Run one full epoch over loader and return (avg_loss, avg_prec1, avg_prec5).
 
+        When ``loader`` is ``None`` the trainer calls ``model.train_batch(None)``
+        once (training) or ``model.evaluate()`` (validation), allowing
+        environment-driven algorithms (RL, online EM) that generate their own
+        data.
+
         Args:
-            loader: DataLoader for the current epoch (train or val).
+            loader: DataLoader for the current epoch, or ``None`` for
+                loader-free training / evaluation.
             val_loader: Optional DataLoader used for mid-epoch validation.
 
         Returns:
@@ -144,6 +177,40 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
         mode = "train" if self.model.training else "val"
         loss_, prec1_, prec5_ = AverageMeter(), AverageMeter(), AverageMeter()
+
+        if loader is None:
+            # Loader-free path: model generates its own data.
+            if self.model.training:
+                custom = self.model.train_batch(None)
+                if custom is None:
+                    raise ValueError(
+                        "train_loader is None but model.train_batch returned None. "
+                        "Override train_batch to generate batches internally."
+                    )
+                raw = custom.get("loss", ch.zeros(1))
+                loss = raw if isinstance(raw, ch.Tensor) else ch.tensor(float(raw))
+                self.train_losses.append(loss.detach())
+                self.iterations += 1
+                loss_.update(loss.item())
+                stop, reason = self.should_stop()
+                if stop:
+                    self.stop_reason = reason
+            else:
+                eval_metrics = self.model.evaluate()
+                raw = eval_metrics.get("loss", ch.zeros(1))
+                loss = raw if isinstance(raw, ch.Tensor) else ch.tensor(float(raw))
+                self.val_losses.append(loss)
+                self.val_param_history_indices.append(len(self.param_history) - 1)
+                loss_.update(loss.item())
+
+            self.logger.info(
+                f"[{mode}] epoch={self.epoch} step={self.iterations} "
+                f"loss={loss_.avg:.4f}"
+            )
+            self.model.post_epoch_hook(self.epoch, self.model.training, loss)
+            return loss_.avg, prec1_.avg, prec5_.avg
+
+        # Standard DataLoader path.
         iterator = (
             tqdm(enumerate(loader), total=len(loader), leave=False)
             if self.args.tqdm
@@ -249,32 +316,44 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def update_best(self, loss: ch.Tensor):
         """Update the best-loss index if loss is a new minimum."""
-        if self.best_loss is None or loss.item() < self.best_loss.item():
+        loss_val = loss.item() if isinstance(loss, ch.Tensor) else float(loss)
+        best_val = self.best_loss.item() if self.best_loss is not None else None
+        if best_val is None or loss_val < best_val:
             self._best_loss_index = len(self.val_losses) - 1
             self._best_param_index = len(self.param_history) - 1
+            self._best_model_state = copy.deepcopy(self.model.state_dict())
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
+        train_loader: DataLoader | None,
+        val_loader: DataLoader | None,
         rand_seed: int = 0,
         store: Store = None,
         checkpoint=None,
     ):
         """Train the model until a stop condition is met.
 
+        Pass ``train_loader=None`` for environment-driven algorithms (RL,
+        online EM) where the model's ``train_batch(None)`` generates data
+        internally. Pass ``val_loader=None`` to use ``model.evaluate()``
+        for validation.
+
         Args:
-            train_loader: DataLoader for the training set.
-            val_loader: DataLoader for the validation set.
+            train_loader: DataLoader for the training set, or ``None``.
+            val_loader: DataLoader for the validation set, or ``None``.
             rand_seed: Random seed for reproducibility.
             store: Optional cox store for logging epoch metrics.
             checkpoint: Optional checkpoint dict to resume from.
 
         Raises:
-            ValueError: If train_loader contains no samples.
+            ValueError: If train_loader has no samples (mapped datasets only).
         """
-        if len(train_loader.dataset) == 0:
-            raise ValueError("No datapoints in train loader.")
+        if train_loader is not None:
+            try:
+                if len(train_loader.dataset) == 0:
+                    raise ValueError("No datapoints in train loader.")
+            except TypeError:
+                pass  # IterableDataset does not support len().
 
         if store is not None:
             store.add_table(
@@ -321,10 +400,28 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 with ch.no_grad():
                     self.model.eval()
                     val_loss, val_prec1, val_prec5 = self.run_epoch(val_loader)
-                    self.update_best(val_loss)
+                    self.update_best(ch.tensor(val_loss))
 
                 if isinstance(self.model.schedule, ReduceLROnPlateau):
                     self.model.schedule.step(val_loss)
+            else:
+                # No val loader: use model.evaluate() if it returns a loss.
+                with ch.no_grad():
+                    self.model.eval()
+                    eval_metrics = self.model.evaluate()
+                    if "loss" in eval_metrics:
+                        raw = eval_metrics["loss"]
+                        val_loss_t = (
+                            raw if isinstance(raw, ch.Tensor) else ch.tensor(float(raw))
+                        )
+                        self.val_losses.append(val_loss_t)
+                        self.val_param_history_indices.append(
+                            len(self.param_history) - 1
+                        )
+                        self.update_best(val_loss_t)
+                        val_loss = val_loss_t.item()
+                        if isinstance(self.model.schedule, ReduceLROnPlateau):
+                            self.model.schedule.step(val_loss)
 
             if val_loss is not None:
                 self.epoch_val_losses.append(
@@ -447,7 +544,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     @property
     def final_loss(self):
         """Return the loss at the final validation step."""
-        return self.val_param_history[-1]
+        if len(self.val_losses) == 0:
+            return None
+        return self.val_losses[-1]
+
+    @property
+    def best_model_state(self):
+        """Return the saved state dict from the best validation loss step."""
+        return self._best_model_state
 
     @property
     def ema_params(self):
