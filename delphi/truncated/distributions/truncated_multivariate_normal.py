@@ -105,16 +105,6 @@ class TruncatedMultivariateNormalKnownCovariance(
         """Running-average mean vector estimate."""
         return self.avg_params
 
-    def calc_suff_stat(self, S):  # pylint: disable=invalid-name,method-hidden
-        """Compute sufficient statistics for the known-covariance case."""
-        return calc_multi_norm_suff_stat_known_cov(S)
-
-    def calculate_loss(self, S):  # pylint: disable=invalid-name
-        """Compute the loss given a batch of samples S."""
-        return self.criterion(
-            self.theta, self.calc_suff_stat(S), *self.criterion_params
-        )
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated multivariate normal distribution known covariance"
@@ -189,6 +179,8 @@ class TruncatedMultivariateNormalUnknownCovariance(
         self.emp_v = self.emp_theta[self.dims**2 :]
         self.register_parameter("T", nn.Parameter(self.emp_T))
         self.register_parameter("v", nn.Parameter(self.emp_v))
+        with ch.no_grad():
+            self.nll_init = self._compute_nll(self.emp_theta)
 
     def project_to_neg_definite(self, M, eps=1e-6):  # pylint: disable=invalid-name
         """Projects a symmetric matrix M onto the Positive Semi-Definite (PSD) cone."""
@@ -197,47 +189,45 @@ class TruncatedMultivariateNormalUnknownCovariance(
         return Q @ ch.diag_embed(L_clipped) @ Q.T  # pylint: disable=invalid-name
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Project parameters back into the feasible set after each update."""
+        """Project parameters onto the feasible set after each update.
+
+        Projects T onto the negative-definite cone first (so that the NLL is
+        well-defined), then projects the combined (T, v) onto the NLL sublevel
+        set via the base-class bisection method.  When args.project is False
+        only the cone projection is applied.
+        """
         with ch.no_grad():
+            # Project T onto the negative-definite cone so that the NLL is
+            # computable before calling the sublevel-set projection.
             mat_t = self.T.clone().view(self.dims, self.dims)  # pylint: disable=invalid-name
-            v = self.v.clone()
-
-            # --- 1) Project mean into L2 ball ---
-            loc_diff = self.emp_v - v
-            dist = ch.norm(loc_diff)
-
-            if dist > self.radius:
-                v = self.emp_v - loc_diff / dist * self.radius
-
-            # --- 2) Frobenius ball projection for T ---
-            cov_diff = mat_t - self.emp_T
-            frob_norm = ch.linalg.norm(cov_diff, ord="fro")  # pylint: disable=not-callable
-
-            if frob_norm > self.radius:
-                mat_t = self.emp_T + cov_diff * (self.radius / frob_norm)
-
-            # Symmetrize after projection (important!)
             mat_t = 0.5 * (mat_t + mat_t.T)
-            # --- 3) Final PSD projection ---
             mat_t = self.project_to_neg_definite(mat_t, eps=self.eigenvalue_lower_bound)
-            # Symmetrize again after PSD projection
             mat_t = 0.5 * (mat_t + mat_t.T)
 
-            self.T.copy_(mat_t)
-            self.v.copy_(v)
+            if not self.args.project:
+                self.T.copy_(mat_t)
+                return
+
+            theta_psd = ch.cat([mat_t.flatten(), self.v.clone()])
+            theta_proj = self._project_onto_sublevel_set(theta_psd)
+
+            mat_t_proj = theta_proj[: self.dims**2].view(self.dims, self.dims)
+            mat_t_proj = 0.5 * (mat_t_proj + mat_t_proj.T)
+            self.T.copy_(mat_t_proj)
+            self.v.copy_(theta_proj[self.dims**2 :])
 
     def parameter_groups(self):
         """Return parameter groups, optionally with separate LR for covariance."""
         if self.args.covariance_matrix_lr is not None:
             return [
-                {"params": self.T, "lr": self.args.covariance_matrix_lr},
-                {"params": self.v, "lr": self.args.lr},
+                {"params": [self.T], "lr": self.args.covariance_matrix_lr},
+                {"params": [self.v], "lr": self.args.lr},
             ]
         return self.parameters()
 
     def _reparameterize_nat_form(self, theta):
         """Convert canonical parameters to natural form."""
-        cov_matrix = theta[: self.dims**2].resize(self.dims, self.dims)
+        cov_matrix = theta[: self.dims**2].view(self.dims, self.dims)
         loc = theta[self.dims**2 :]
 
         mat_t = cov_matrix.inverse()  # pylint: disable=invalid-name
@@ -247,7 +237,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
 
     def _reparameterize_canon_form(self, theta):
         """Convert natural parameters to canonical form."""
-        mat_t = theta[: self.dims**2].resize(self.dims, self.dims)  # pylint: disable=invalid-name
+        mat_t = theta[: self.dims**2].view(self.dims, self.dims)  # pylint: disable=invalid-name
         v = theta[self.dims**2 :]
 
         covariance_matrix = (-2 * mat_t).inverse()
@@ -278,7 +268,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
     @property
     def final_covariance_matrix_(self):
         """Final covariance matrix estimate at the end of training."""
-        self.final_params[: self.dims**2].view(self.dims, self.dims)
+        return self.final_params[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def ema_loc_(self):
@@ -299,16 +289,6 @@ class TruncatedMultivariateNormalUnknownCovariance(
     def avg_covariance_matrix_(self):
         """Running-average covariance matrix estimate."""
         return self.avg_params[: self.dims**2].view(self.dims, self.dims)
-
-    def calc_suff_stat(self, S):  # pylint: disable=invalid-name,method-hidden
-        """Compute sufficient statistics for the unknown-covariance case."""
-        return calc_multi_norm_suff_stat(S)
-
-    def calculate_loss(self, S):  # pylint: disable=invalid-name
-        """Compute the loss given a batch of samples S."""
-        return self.criterion(
-            self.theta, self.calc_suff_stat(S), *self.criterion_params
-        )
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

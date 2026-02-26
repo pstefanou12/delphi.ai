@@ -40,7 +40,9 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         avg_params: Running-average canonical parameters.
         train_loader_: Training data loader, set during fit.
         val_loader_: Validation data loader, set during fit.
-        radius (float): Current projection ball radius.
+        nll_init: Non-truncated NLL at the empirical initialization theta_0.
+        radius (float): Current NLL budget above nll_init for the sublevel-set
+            projection (Karatapanis et al., Algorithm 2).
     """
 
     def __init__(
@@ -97,6 +99,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.prev_loss = None
         self.emp_canon_params = None
         self.emp_theta = None
+        self.nll_init = None
 
     def fit(self, S: Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.
@@ -215,12 +218,61 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
 
         return False, None
 
+    @property
+    def nll_threshold(self) -> float:
+        """NLL budget: non-truncated NLL upper bound for the projection set."""
+        return self.nll_init + self.radius
+
     def _calc_emp_model(self):
         """Calculate empirical model parameters from training data."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
         self.emp_canon_params = self.calc_suff_stat(dataset_s).mean(0)
         self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
         self.register_parameter("theta", nn.Parameter(self.emp_theta))
+        with ch.no_grad():
+            self.nll_init = self._compute_nll(self.emp_theta)
+
+    def _compute_nll(self, theta: Tensor) -> float:
+        """Compute non-truncated NLL of training samples under theta.
+
+        Args:
+            theta: Natural parameters to evaluate.
+
+        Returns:
+            Mean negative log-likelihood over training samples.
+        """
+        S = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+        D = self.dist(theta.detach(), self.dims)  # pylint: disable=invalid-name
+        return -D.log_prob(S).mean().item()
+
+    def _project_onto_sublevel_set(self, theta: Tensor) -> Tensor:
+        """Project theta onto {θ : L(θ) ≤ nll_threshold} via bisection.
+
+        Performs binary search on the interpolation weight λ ∈ [0, 1] along
+        the segment θ(λ) = (1−λ)·emp_theta + λ·theta.  At λ=0 the point is
+        emp_theta, which always satisfies the constraint.  At λ=1 the point is
+        theta, which may violate it.  The search finds the largest feasible λ,
+        giving the boundary point closest to theta along this segment.
+
+        Args:
+            theta: Current parameter vector to project.
+
+        Returns:
+            Projected parameter vector satisfying the NLL constraint.
+        """
+        if self._compute_nll(theta) <= self.nll_threshold:
+            return theta
+
+        emp = self.emp_theta.detach()
+        lambda_lo, lambda_hi = 0.0, 1.0
+        for _ in range(50):  # 50 iterations → ~2^{-50} precision on λ
+            lambda_mid = (lambda_lo + lambda_hi) / 2.0
+            theta_mid = (1.0 - lambda_mid) * emp + lambda_mid * theta.detach()
+            if self._compute_nll(theta_mid) <= self.nll_threshold:
+                lambda_lo = lambda_mid
+            else:
+                lambda_hi = lambda_mid
+        return (1.0 - lambda_lo) * emp + lambda_lo * theta.detach()
 
     def forward(self, x):  # pylint: disable=unused-argument
         """Return the current theta parameter (input is unused).
@@ -235,16 +287,17 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         return theta
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Project theta back onto the L2 ball after each training update."""
-        with ch.no_grad():
-            proj_theta = self.emp_theta
-            theta_diff = (self.theta - self.emp_theta)[..., None].norm()
-            if theta_diff > self.radius:
-                theta_diff = theta_diff.renorm(
-                    p=2, dim=0, maxnorm=self.radius
-                ).flatten()
-                proj_theta = self.emp_theta + theta_diff
+        """Optionally project theta onto the NLL sublevel set after each update.
 
+        When args.project is True, implements the per-step projection from
+        Karatapanis et al. (2025), Algorithm 2:
+            θ ← Π_D(θ),  D = {θ : L(θ) ≤ nll_threshold}.
+        When args.project is False, the step is a no-op.
+        """
+        if not self.args.project:
+            return
+        with ch.no_grad():
+            proj_theta = self._project_onto_sublevel_set(self.theta)
             self.theta.copy_(self._constraints(proj_theta))
 
     def _reparameterize_nat_form(self, theta):
