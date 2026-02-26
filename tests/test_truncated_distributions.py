@@ -1,4 +1,5 @@
-# distribution tests
+# Author: pstefanou12@
+"""Tests for truncated exponential family distributions."""
 
 import torch as ch
 from torch import Tensor
@@ -34,16 +35,26 @@ from delphi.utils.helpers import Parameters, cov
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def generate_truncated_dataset(dist, phi, num_samples):
+def generate_truncated_dataset(dist, phi, num_samples: int):
+    """Draw samples from dist that satisfy phi.
+
+    Repeatedly draws batches from dist, keeps samples where phi returns
+    True, and stops once num_samples accepted samples have been collected.
+
+    Args:
+        dist: Source distribution with a .sample() method.
+        phi: Truncation oracle; returns a boolean mask over a batch.
+        num_samples: Number of accepted samples to return.
+
+    Returns:
+        Tuple of (S, alpha) where S is a tensor of shape (num_samples, ...)
+        and alpha is the empirical acceptance rate.
+    """
     num_accepted, num_sampled = 0, 0
 
     S = []
     while num_accepted < num_samples:
-        samples = dist.sample(
-            [
-                num_samples,
-            ]
-        )
+        samples = dist.sample([num_samples])
         indices = phi(samples).nonzero()[:, 0]
         S.append(samples[indices])
         num_accepted += indices.size(0)
@@ -54,8 +65,8 @@ def generate_truncated_dataset(dist, phi, num_samples):
     return S, alpha
 
 
-# right truncated normal distribution with known truncation and known variance
 def test_truncated_normal_known_variance():
+    """Right-truncated 1D normal with known variance converges to true mean."""
     M = MultivariateNormal(ch.zeros(1), ch.eye(1))
     phi = oracle.Left_Distribution(Tensor([0.0]))
     num_samples = 1000
@@ -93,12 +104,13 @@ def test_truncated_normal_known_variance():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
-# right truncated normal distribution with known truncation
 def test_truncated_normal():
+    """Right-truncated 1D normal with unknown variance converges to true params."""
     M = MultivariateNormal(ch.zeros(1), ch.eye(1))
 
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -154,8 +166,9 @@ def test_truncated_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
@@ -213,8 +226,9 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_2_dim_multivariate_normal():
@@ -234,9 +248,8 @@ def test_truncated_2_dim_multivariate_normal():
     emp_covariance_matrix = cov(S)
     emp_var = S.var(0)
     emp_sigma_diag = ch.diag(ch.sqrt(emp_var))
-    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
-    print(f"empicial mean:\n {emp_loc.T}")
+    print(f"empirical mean:\n {emp_loc.T}")
     print(f"empirical covariance matrix:\n {emp_covariance_matrix}")
 
     def phi_std_norm(x):
@@ -291,8 +304,9 @@ def test_truncated_2_dim_multivariate_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
@@ -308,12 +322,9 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     print(f"num truncated samples: {S.size(0)}")
 
     emp_loc = S.mean(0, keepdim=True)
-    emp_covariance_matrix = cov(S)
     emp_var = M.covariance_matrix.diag()
-    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
-    print(f"empicial mean:\n {emp_loc.T}")
-    print(f"empirical covariance matrix:\n {emp_covariance_matrix}")
+    print(f"empirical mean:\n {emp_loc.T}")
 
     def phi_std_norm(x):
         return x[:, 0] > ((0 - emp_loc[0, 0]) / ch.sqrt(emp_var[0]))
@@ -362,8 +373,9 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_10_dim_multivariate_normal():
@@ -382,9 +394,8 @@ def test_truncated_10_dim_multivariate_normal():
     emp_covariance_matrix = cov(S)
     emp_var = S.var(0)
     emp_sigma_diag = ch.diag(ch.sqrt(emp_var))
-    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
-    print(f"empicial mean:\n {emp_loc.T}")
+    print(f"empirical mean:\n {emp_loc.T}")
     print(f"empirical covariance matrix:\n {emp_covariance_matrix}")
 
     def phi_std_norm(x):
@@ -441,12 +452,13 @@ def test_truncated_10_dim_multivariate_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
-# right truncated 1D normal distribution with unknown truncation and known variance
 def test_unknown_truncation_normal_known_variance():
+    """1D normal with unknown truncation and known variance recovers true mean."""
     dims = 1
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
 
@@ -504,12 +516,13 @@ def test_unknown_truncation_normal_known_variance():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
-# right truncated 1D normal distribution with unknown truncation
 def test_unknown_truncation_normal():
+    """1D normal with unknown truncation recovers true mean and variance."""
     dims = 1
     # generate ground-truth data
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
@@ -570,27 +583,20 @@ def test_unknown_truncation_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_var), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
-
-
-# 10D sphere truncated multivariate normal distribution with unknown truncation
-def test_unknown_truncation_multivariate_normal():
-    M = MultivariateNormal(ch.zeros(10), ch.eye(10))
-    samples = M.rsample(
-        [
-            5000,
-        ]
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
     )
+
+
+def test_unknown_truncation_multivariate_normal():
+    """10D sphere-truncated MVN with unknown truncation recovers true params."""
+    M = MultivariateNormal(ch.zeros(10), ch.eye(10))
+    samples = M.rsample([5000])
     alpha = 0.0
     while alpha < 0.5:
         # generate ground-truth data
         W = Uniform(-0.5, 0.5)
-        centroid = W.sample(
-            [
-                10,
-            ]
-        )
+        centroid = W.sample([10])
         phi = oracle.Sphere(M.covariance_matrix, centroid, 3.5)
         indices = phi(samples).nonzero(as_tuple=True)
         S = samples[indices]
@@ -607,8 +613,9 @@ def test_unknown_truncation_multivariate_normal():
 
     # check distribution parameter estimates
     kl_truncated = kl_divergence(m, M)
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_boolean_product_2_dims():
@@ -666,8 +673,9 @@ def test_truncated_boolean_product_2_dims():
     kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_boolean_product_20_dims():
@@ -746,8 +754,9 @@ def test_truncated_boolean_product_20_dims():
     kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_exponential():
@@ -805,8 +814,9 @@ def test_truncated_exponential():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_exponential_2_dims():
@@ -862,8 +872,9 @@ def test_truncated_exponential_2_dims():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_exponential_20_dims():
@@ -921,8 +932,9 @@ def test_truncated_exponential_20_dims():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_poisson():
@@ -980,8 +992,9 @@ def test_truncated_poisson():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_poisson_2_dims():
@@ -1037,8 +1050,9 @@ def test_truncated_poisson_2_dims():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_poisson_20_dims():
@@ -1096,8 +1110,9 @@ def test_truncated_poisson_20_dims():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    msg = f"kl divergence between estimated and true underlying distribution is greater than 1e-1. truncated kl divergence is {kl_truncated}"
-    assert kl_truncated <= 1e-1, msg
+    assert kl_truncated <= 1e-1, (
+        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    )
 
 
 def test_truncated_weibull():
@@ -1155,8 +1170,9 @@ def test_truncated_weibull():
     # check performance
     emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
     print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    msg = f"l2 norm between estimated and true underlying distribution is greater than 1e-1. truncated l2 norm is {best_l2_err}"
-    assert best_l2_err <= 1e-1, msg
+    assert best_l2_err <= 1e-1, (
+        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    )
 
 
 def test_truncated_weibull_2_dims():
@@ -1212,8 +1228,9 @@ def test_truncated_weibull_2_dims():
     # check performance
     emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
     print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    msg = f"l2 norm between estimated and true underlying distribution is greater than 1e-1. truncated l2 norm is {best_l2_err}"
-    assert best_l2_err <= 1e-1, msg
+    assert best_l2_err <= 1e-1, (
+        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    )
 
 
 def test_truncated_weibull_2_dims_diff_scale():
@@ -1269,8 +1286,9 @@ def test_truncated_weibull_2_dims_diff_scale():
     # check performance
     emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
     print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    msg = f"l2 norm between estimated and true underlying distribution is greater than 1e-1. truncated l2 norm is {best_l2_err}"
-    assert best_l2_err <= 1e-1, msg
+    assert best_l2_err <= 1e-1, (
+        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    )
 
 
 def test_truncated_weibull_20_dims_diff_scale():
@@ -1326,5 +1344,6 @@ def test_truncated_weibull_20_dims_diff_scale():
     # check performance
     emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
     print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    msg = f"l2 norm between estimated and true underlying distribution is greater than 1e-1. truncated l2 norm is {best_l2_err}"
-    assert best_l2_err <= 1e-1, msg
+    assert best_l2_err <= 1e-1, (
+        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    )
