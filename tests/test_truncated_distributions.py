@@ -397,7 +397,7 @@ def test_truncated_10_dim_multivariate_normal():
         {
             "iterations": 5000,
             "trials": 1,
-            "batch_size": 1,
+            "batch_size": 10,
             "num_samples": 1000,
             "verbose": True,
             "optimizer": "sgd",

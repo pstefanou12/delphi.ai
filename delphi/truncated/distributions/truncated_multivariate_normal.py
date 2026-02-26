@@ -171,14 +171,22 @@ class TruncatedMultivariateNormalUnknownCovariance(
     def _calc_emp_model(self):
         """Calculate empirical model parameters and register T and v as nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_canon_params = self.calc_suff_stat(dataset_s).mean(0)
+        suff_stats = self.calc_suff_stat(dataset_s).mean(0)
+        second_moment = suff_stats[: self.dims**2].view(self.dims, self.dims)
+        loc = suff_stats[self.dims**2 :]
+        # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
+        cov_matrix = second_moment - ch.outer(loc, loc)
+        self.emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
         self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
         self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
             self.dims, self.dims
         )
         self.emp_v = self.emp_theta[self.dims**2 :]
-        self.register_parameter("T", nn.Parameter(self.emp_T))
-        self.register_parameter("v", nn.Parameter(self.emp_v))
+        # Clone so that SGD in-place updates to T and v do not corrupt
+        # emp_theta, which is used as the fixed anchor in the sublevel-set
+        # projection bisection.
+        self.register_parameter("T", nn.Parameter(self.emp_T.clone()))
+        self.register_parameter("v", nn.Parameter(self.emp_v.clone()))
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 

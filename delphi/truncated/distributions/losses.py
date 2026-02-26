@@ -63,9 +63,11 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         """Compute gradients of truncated NLL w.r.t. theta."""
         s, S_suff_stat = ctx.saved_tensors  # pylint: disable=invalid-name
         trunc_const_suff_stat = ctx.calc_suff_stat(s).mean(0)
-        grad = -S_suff_stat + trunc_const_suff_stat
+        # Average over the batch dimension so the returned gradient has the
+        # same shape as theta (the first input), regardless of batch size.
+        grad = (-S_suff_stat + trunc_const_suff_stat).mean(0)
         return (
-            grad / S_suff_stat.size(0),
+            grad,
             None,
             None,
             None,

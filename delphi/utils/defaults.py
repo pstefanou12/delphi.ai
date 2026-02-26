@@ -360,6 +360,12 @@ def check_and_fill_args(  # pylint: disable=too-many-branches
         constraints = spec[2] if len(spec) == 3 else {}
 
         if not has_attr(args, arg_name):
+            # Don't auto-fill epochs if iterations is already set, and vice
+            # versa — only one training-duration parameter should be active.
+            if arg_name == "epochs" and has_attr(args, "iterations"):
+                continue
+            if arg_name == "iterations" and has_attr(args, "epochs"):
+                continue
             if default == REQ:
                 raise ValueError(f"Required argument '{arg_name}' is missing.")
             setattr(args, arg_name, default)
@@ -367,8 +373,8 @@ def check_and_fill_args(  # pylint: disable=too-many-branches
 
         value = getattr(args, arg_name)
 
-        # Allow explicit None overrides without type-checking.
-        if value is None and default is not None:
+        # None is always a valid "not provided" sentinel; skip type-checking.
+        if value is None:
             continue
 
         if not is_valid_value(value, type_spec):
