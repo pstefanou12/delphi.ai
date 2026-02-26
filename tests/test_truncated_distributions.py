@@ -12,8 +12,23 @@ from torch.distributions import (
 )
 from torch.distributions.kl import kl_divergence
 
-from delphi import distributions
 from delphi import oracle
+from delphi.truncated.distributions.truncated_normal import TruncatedNormal
+from delphi.truncated.distributions.truncated_multivariate_normal import (
+    TruncatedMultivariateNormal,
+)
+from delphi.truncated.distributions.unknown_truncated_normal import (
+    UnknownTruncationNormal,
+)
+from delphi.truncated.distributions.unknown_truncated_multivariate_normal import (
+    UnknownTruncationMultivariateNormal,
+)
+from delphi.truncated.distributions.truncated_boolean_product import (
+    TruncatedBooleanProduct,
+)
+from delphi.truncated.distributions.truncated_exponential import TruncatedExponential
+from delphi.truncated.distributions.truncated_poisson import TruncatedPoisson
+from delphi.truncated.distributions.truncated_weibull import TruncatedWeibull
 from delphi.utils.helpers import Parameters, cov
 
 ch.set_printoptions(precision=4, sci_mode=False)
@@ -66,9 +81,7 @@ def test_truncated_normal_known_variance():
             "iterations": 1500,
         }
     )
-    truncated = distributions.TruncatedNormal(
-        args, phi_std_norm, alpha, 1, variance=ch.eye(1)
-    )
+    truncated = TruncatedNormal(args, phi_std_norm, alpha, 1, variance=ch.eye(1))
     truncated.fit(S_std_norm)
     # rescale distribution
     rescale_loc = truncated.best_loc_ + emp_loc
@@ -118,7 +131,7 @@ def test_truncated_normal():
             "val_interval": 100,
         }
     )
-    truncated = distributions.TruncatedNormal(args, phi_std_norm, alpha, 1)
+    truncated = TruncatedNormal(args, phi_std_norm, alpha, 1)
     truncated.fit(S_std_norm)
     # rescale distribution
     rescale_best_loc = truncated.best_loc_ * emp_scale + emp_loc
@@ -174,7 +187,7 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
             "lr": 1e-2,
         }
     )
-    truncated = distributions.TruncatedMultivariateNormal(
+    truncated = TruncatedMultivariateNormal(
         args, phi, alpha, dims, covariance_matrix=M.covariance_matrix
     )
 
@@ -243,9 +256,7 @@ def test_truncated_2_dim_multivariate_normal():
             "covariance_matrix_lr": 1e-2,
         }
     )
-    truncated = distributions.TruncatedMultivariateNormal(
-        args, phi_std_norm, alpha, dims
-    )
+    truncated = TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     best_covariance_matrix = (
@@ -326,7 +337,7 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
         * M.covariance_matrix
         * ch.diag(ch.sqrt(emp_var)).inverse()
     )
-    truncated = distributions.TruncatedMultivariateNormal(
+    truncated = TruncatedMultivariateNormal(
         args, phi_std_norm, alpha, dims, covariance_matrix=scaled_cov
     )
     truncated.fit(S_std_norm)
@@ -394,9 +405,7 @@ def test_truncated_10_dim_multivariate_normal():
             "covariance_matrix_lr": 1e-2,
         }
     )
-    truncated = distributions.TruncatedMultivariateNormal(
-        args, phi_std_norm, alpha, dims
-    )
+    truncated = TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
     truncated.fit(S_std_norm)
     # rescale distribution
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -472,9 +481,7 @@ def test_unknown_truncation_normal_known_variance():
             "verbose": True,
         }
     )
-    truncated = distributions.UnknownTruncationNormal(
-        args, k, alpha, dims, variance=true_cov_std
-    )
+    truncated = UnknownTruncationNormal(args, k, alpha, dims, variance=true_cov_std)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f"best loc:\n {best_loc.T}")
@@ -533,7 +540,7 @@ def test_unknown_truncation_normal():
             "verbose": True,
         }
     )
-    truncated = distributions.UnknownTruncationNormal(args, k, alpha, dims)
+    truncated = UnknownTruncationNormal(args, k, alpha, dims)
     truncated.fit(S_std_norm)
     # rescale distribution
     best_loc = truncated.best_loc_ * emp_scale + emp_loc
@@ -591,7 +598,7 @@ def test_unknown_truncation_multivariate_normal():
 
     # train algorithm
     train_kwargs = Parameters({"alpha": alpha, "epochs": 25, "batch_size": 100})
-    truncated = distributions.UnknownTruncationMultivariateNormal(train_kwargs)  # pylint: disable=no-value-for-parameter
+    truncated = UnknownTruncationMultivariateNormal(train_kwargs)  # pylint: disable=no-value-for-parameter
     truncated.fit(S)
     # rescale distribution
     rescale_loc = truncated.loc_
@@ -635,7 +642,7 @@ def test_truncated_boolean_product_2_dims():
         }
     )
 
-    truncated = distributions.TruncatedBooleanProduct(args, phi, alpha, dims)
+    truncated = TruncatedBooleanProduct(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_p = truncated.best_p_
@@ -715,7 +722,7 @@ def test_truncated_boolean_product_20_dims():
         }
     )
 
-    truncated = distributions.TruncatedBooleanProduct(args, phi, alpha, dims)
+    truncated = TruncatedBooleanProduct(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_p = truncated.best_p_
@@ -774,7 +781,7 @@ def test_truncated_exponential():
         }
     )
 
-    truncated = distributions.TruncatedExponential(args, phi, alpha, dims)
+    truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -831,7 +838,7 @@ def test_truncated_exponential_2_dims():
         }
     )
 
-    truncated = distributions.TruncatedExponential(args, phi, alpha, dims)
+    truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -890,7 +897,7 @@ def test_truncated_exponential_20_dims():
         }
     )
 
-    truncated = distributions.TruncatedExponential(args, phi, alpha, dims)
+    truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -949,7 +956,7 @@ def test_truncated_poisson():
         }
     )
 
-    truncated = distributions.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1006,7 +1013,7 @@ def test_truncated_poisson_2_dims():
         }
     )
 
-    truncated = distributions.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1065,7 +1072,7 @@ def test_truncated_poisson_20_dims():
         }
     )
 
-    truncated = distributions.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1127,7 +1134,7 @@ def test_truncated_weibull():
         }
     )
 
-    truncated = distributions.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1184,7 +1191,7 @@ def test_truncated_weibull_2_dims():
         }
     )
 
-    truncated = distributions.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1241,7 +1248,7 @@ def test_truncated_weibull_2_dims_diff_scale():
         }
     )
 
-    truncated = distributions.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1298,7 +1305,7 @@ def test_truncated_weibull_20_dims_diff_scale():
         }
     )
 
-    truncated = distributions.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
