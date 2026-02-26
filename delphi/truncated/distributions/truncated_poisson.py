@@ -10,7 +10,10 @@ from delphi.truncated.distributions.truncated_exponential_family_distributions i
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import ExponentialFamilyPoisson, calc_poiss_suff_stat
+from delphi.distributions.poisson import (
+    ExponentialFamilyPoisson,
+    calc_poiss_suff_stat,
+)
 from delphi.utils.helpers import Parameters
 from delphi.utils.defaults import check_and_fill_args, TRUNC_POISS_DEFAULTS
 

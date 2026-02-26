@@ -10,7 +10,10 @@ from delphi.truncated.distributions.truncated_exponential_family_distributions i
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import ExponentialFamilyBooleanProduct, calc_bool_prod_suff_stat
+from delphi.distributions.boolean_product import (
+    ExponentialFamilyBooleanProduct,
+    calc_bool_prod_suff_stat,
+)
 from delphi.utils.helpers import Parameters
 from delphi.utils.defaults import check_and_fill_args, TRUNC_BOOL_PROD_DEFAULTS
 

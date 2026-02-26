@@ -12,7 +12,7 @@ from torch import Tensor
 from torch.nn import Sigmoid, Softmax
 
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import TruncatedBCE, TruncatedCE
+from delphi.stats.losses import TruncatedBCE, TruncatedCE
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.defaults import TRUNC_LOG_REG_DEFAULTS, check_and_fill_args

@@ -21,7 +21,7 @@ from delphi import stats
 from delphi import oracle
 from delphi.utils.helpers import Parameters, accuracy
 from delphi.utils.datasets import make_train_and_val
-from delphi.grad import GumbelCE
+from delphi.stats.losses import GumbelCE
 
 # CONSTANT
 mse_loss = MSELoss()

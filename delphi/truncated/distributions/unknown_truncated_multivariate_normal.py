@@ -15,7 +15,7 @@ from delphi.truncated.distributions.truncated_multivariate_normal import (
 )
 from delphi.oracle import UnknownGaussian
 from delphi.trainer import Trainer
-from delphi.grad import UnknownTruncationMultivariateNormalNLL
+from delphi.truncated.distributions.losses import UnknownTruncationMultivariateNormalNLL
 from delphi.utils.datasets import (
     UnknownTruncationNormalDataset,
     make_train_and_val_distr,

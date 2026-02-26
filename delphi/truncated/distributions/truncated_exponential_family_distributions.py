@@ -16,7 +16,9 @@ from delphi.utils.datasets import (
     TruncatedExponentialDistributionDataset,
     make_train_and_val_distr,
 )
-from delphi.grad import TruncatedExponentialFamilyDistributionNLL
+from delphi.truncated.distributions.losses import (
+    TruncatedExponentialFamilyDistributionNLL,
+)
 from delphi.trainer import Trainer
 from delphi.utils.helpers import Parameters
 

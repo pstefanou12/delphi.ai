@@ -12,7 +12,7 @@ from delphi.truncated.distributions.truncated_exponential_family_distributions i
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import (
+from delphi.distributions.multivariate_normal import (
     ExponentialFamilyMultivariateNormal,
     ExponentialFamilyMultivariateNormalKnownCovariance,
     calc_multi_norm_suff_stat_known_cov,

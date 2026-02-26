@@ -7,7 +7,7 @@ Multinomial logistic regression that uses gumbel max loss function.
 from torch.distributions import Gumbel
 from torch.nn import MSELoss
 
-from delphi.grad import GumbelCE
+from delphi.stats.losses import GumbelCE
 from delphi.utils.helpers import accuracy
 from delphi.stats.linear_model import LinearModel
 

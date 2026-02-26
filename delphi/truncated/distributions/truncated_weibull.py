@@ -11,7 +11,10 @@ from delphi.truncated.distributions.truncated_exponential_family_distributions i
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import ExponentialFamilyWeibull, calc_weibull_suff_stat
+from delphi.distributions.weibull import (
+    ExponentialFamilyWeibull,
+    calc_weibull_suff_stat,
+)
 from delphi.utils.helpers import Parameters
 from delphi.utils.defaults import check_and_fill_args, TRUNC_WEIBULL_DEFAULTS
 

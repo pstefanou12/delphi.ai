@@ -12,7 +12,7 @@ from statsmodels.discrete.discrete_model import Probit
 from torch import Tensor
 
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import TruncatedProbitMLE
+from delphi.stats.losses import TruncatedProbitMLE
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.defaults import TRUNC_PROB_REG_DEFAULTS, check_and_fill_args

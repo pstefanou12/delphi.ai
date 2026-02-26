@@ -13,7 +13,7 @@ from sklearn.linear_model import LassoCV
 from torch import Tensor
 
 from delphi.delphi_logger import delphiLogger
-from delphi.grad import TruncatedMSE
+from delphi.stats.losses import TruncatedMSE
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.defaults import TRUNC_LASSO_DEFAULTS, check_and_fill_args

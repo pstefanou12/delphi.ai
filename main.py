@@ -18,7 +18,6 @@ try:
     from delphi.utils import constants as consts
     from delphi.utils import defaults
     from delphi.utils.helpers import setup_store_with_metadata, DataPrefetcher
-    from delphi import grad
     from delphi import __version__
 except: 
     raise ValueError("Error when importing modules.")
