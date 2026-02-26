@@ -1,16 +1,14 @@
 # Author: pstefanou12@
-"""
-Truncated multivariate normal distribution with oracle access (ie. known truncation set).
-"""
+"""Truncated multivariate normal distribution with oracle access (known truncation set)."""
 
 import logging
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, Optional
 
 import torch as ch
 from torch import nn
 
-from delphi.distributions.truncated_exponential_family_distributions import (
+from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
@@ -39,23 +37,24 @@ class TruncatedMultivariateNormalKnownCovariance(
         phi: Callable,
         alpha: float,
         dims: int,
-        covariance_matrix: Optional[ch.Tensor],
+        covariance_matrix: ch.Tensor | None,
         sampler: Callable = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """
-        Initialize TruncatedMultivariateNormalKnownCovariance.
+        """Initialize TruncatedMultivariateNormalKnownCovariance.
 
         Args:
-            args (Parameters): hyperparameter object
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
-            covariance_matrix (Optional[Tensor]): known covariance matrix
-            sampler (Callable): optional sampler override
+            args: Hyperparameter object.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+            covariance_matrix: Known covariance matrix.
+            sampler: Optional sampler override.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
 
         logger = (
@@ -142,19 +141,20 @@ class TruncatedMultivariateNormalUnknownCovariance(
         dims: int,
         sampler: Callable = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """
-        Initialize TruncatedMultivariateNormalUnknownCovariance.
+        """Initialize TruncatedMultivariateNormalUnknownCovariance.
 
         Args:
-            args (Parameters): hyperparameter object
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
-            sampler (Callable): optional sampler override
+            args: Hyperparameter object.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+            sampler: Optional sampler override.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
         self.eigenvalue_lower_bound = args.eigenvalue_lower_bound
 
@@ -226,7 +226,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
             self.T.copy_(mat_t)
             self.v.copy_(v)
 
-    def parameters_(self):
+    def parameter_groups(self):
         """Return parameter groups, optionally with separate LR for covariance."""
         if self.args.covariance_matrix_lr is not None:
             return [
@@ -320,30 +320,31 @@ def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
     phi: Callable,
     alpha: float,
     dims: int,
-    covariance_matrix: Optional[ch.Tensor] = None,
+    covariance_matrix: ch.Tensor | None = None,
     sampler: Callable = None,
 ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    """
-    Factory function for truncated multivariate normal distributions.
+    """Factory function for truncated multivariate normal distributions.
 
     Returns a known-covariance model if covariance_matrix is provided,
     otherwise returns an unknown-covariance model.
 
     Args:
-        args (Parameters): hyperparameter object
-        phi (Callable): truncation set oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        covariance_matrix (Optional[Tensor]): known covariance; if None, it is estimated
-        sampler (Callable): optional sampler override
+        args: Hyperparameter object.
+        phi: Truncation set oracle.
+        alpha: Survival probability lower bound.
+        dims: Number of dimensions.
+        covariance_matrix: Known covariance; if None, it is estimated.
+        sampler: Optional sampler override.
 
     Returns:
         TruncatedMultivariateNormalKnownCovariance if covariance_matrix is provided,
         else TruncatedMultivariateNormalUnknownCovariance.
+
+    Raises:
+        TypeError: If args is not a Parameters instance.
     """
-    assert isinstance(args, Parameters), (
-        "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-    )
+    if not isinstance(args, Parameters):
+        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
     if covariance_matrix is not None:
         return TruncatedMultivariateNormalKnownCovariance(

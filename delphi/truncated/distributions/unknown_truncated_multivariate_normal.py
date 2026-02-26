@@ -1,18 +1,15 @@
 # Author: pstefanou12@
-"""
-Truncated multivariate normal distribution without oracle access (ie. unknown truncation set).
-"""
+"""Truncated multivariate normal distribution without oracle access (unknown truncation set)."""
 
 # pylint: disable=duplicate-code
 
 from functools import partial
-from typing import Optional
 
 import torch as ch
 from torch import Tensor
 from torch import nn
 
-from delphi.distributions.truncated_multivariate_normal import (
+from delphi.truncated.distributions.truncated_multivariate_normal import (
     TruncatedMultivariateNormalUnknownCovariance,
     TruncatedMultivariateNormalKnownCovariance,
 )
@@ -43,21 +40,22 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         k: int,
         alpha: float,
         dims: int,
-        covariance_matrix: Optional[ch.Tensor],
+        covariance_matrix: ch.Tensor | None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """
-        Initialize UnknownTruncationMultivariateNormalKnownCovariance.
+        """Initialize UnknownTruncationMultivariateNormalKnownCovariance.
 
         Args:
-            args (Parameters): hyperparameter object
-            k (int): number of nearest neighbors for oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
-            covariance_matrix (Optional[Tensor]): known covariance matrix
+            args: Hyperparameter object.
+            k: Number of nearest neighbors for oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+            covariance_matrix: Known covariance matrix.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            f"args is type {type(args)}. expecting type delphi.utils.helper.Parameters."
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
         self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
@@ -85,11 +83,10 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.prev_loss = None
 
     def fit(self, S: Tensor):
-        """
-        Fit the model to the observed (truncated) samples S.
+        """Fit the model to the observed (truncated) samples S.
 
         Args:
-            S (Tensor): observed samples of shape (num_samples, dims)
+            S: Observed samples of shape (num_samples, dims).
         """
         assert isinstance(S, Tensor), (
             f"S is type: {type(S)}. expected type torch.Tensor."
@@ -192,18 +189,19 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
     """
 
     def __init__(self, args: Parameters, k: int, alpha: float, dims: int):
-        """
-        Initialize UnknownTruncationMultivariateNormalUnknownCovariance.
+        """Initialize UnknownTruncationMultivariateNormalUnknownCovariance.
 
         Args:
-            args (Parameters): hyperparameter object
-            k (int): number of nearest neighbors for oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
+            args: Hyperparameter object.
+            k: Number of nearest neighbors for oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            f"args is type {type(args)}. expecting type delphi.utils.helper.Parameters."
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
         self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
@@ -227,11 +225,10 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.emp_v = None
 
     def fit(self, S: Tensor):
-        """
-        Fit the model to the observed (truncated) samples S.
+        """Fit the model to the observed (truncated) samples S.
 
         Args:
-            S (Tensor): observed samples of shape (num_samples, dims)
+            S: Observed samples of shape (num_samples, dims).
         """
         assert isinstance(S, Tensor), (
             f"S is type: {type(S)}. expected type torch.Tensor."
@@ -383,28 +380,29 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     k: int,
     alpha: float,
     dims: int,
-    covariance_matrix: Optional[ch.Tensor] = None,
+    covariance_matrix: ch.Tensor | None = None,
 ):
-    """
-    Factory function for unknown-truncation multivariate normal distributions.
+    """Factory function for unknown-truncation multivariate normal distributions.
 
     Returns a known-covariance model if covariance_matrix is provided,
     otherwise returns an unknown-covariance model.
 
     Args:
-        args (Parameters): hyperparameter object
-        k (int): number of nearest neighbours for the oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        covariance_matrix (Optional[Tensor]): known covariance; if None, it is estimated
+        args: Hyperparameter object.
+        k: Number of nearest neighbours for the oracle.
+        alpha: Survival probability lower bound.
+        dims: Number of dimensions.
+        covariance_matrix: Known covariance; if None, it is estimated.
 
     Returns:
         UnknownTruncationMultivariateNormalKnownCovariance if covariance_matrix is
         provided, else UnknownTruncationMultivariateNormalUnknownCovariance.
+
+    Raises:
+        TypeError: If args is not a Parameters instance.
     """
-    assert isinstance(args, Parameters), (
-        "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-    )
+    if not isinstance(args, Parameters):
+        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
 
     if covariance_matrix is not None:
@@ -414,10 +412,8 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     return UnknownTruncationMultivariateNormalUnknownCovariance(args, k, alpha, dims)
 
 
-# Helper functions.
 class ExpH:  # pylint: disable=too-few-public-methods
-    """
-    Helper class computing the exponential h function for unknown truncation.
+    """Helper class computing the exponential h function for unknown truncation.
 
     Attributes:
         emp_loc: Empirical mean vector.
@@ -426,12 +422,11 @@ class ExpH:  # pylint: disable=too-few-public-methods
     """
 
     def __init__(self, emp_loc, emp_cov):
-        """
-        Initialize ExpH with empirical location and covariance.
+        """Initialize ExpH with empirical location and covariance.
 
         Args:
-            emp_loc: empirical mean vector
-            emp_cov: empirical covariance matrix
+            emp_loc: Empirical mean vector.
+            emp_cov: Empirical covariance matrix.
         """
         self.emp_loc = emp_loc
         self.emp_cov = emp_cov
@@ -454,5 +449,5 @@ class ExpH:  # pylint: disable=too-few-public-methods
         return ch.exp(h).double()
 
 
-# Keep old name as alias for backwards compatibility
+# Keep old name as alias for backwards compatibility.
 Exp_h = ExpH  # pylint: disable=invalid-name

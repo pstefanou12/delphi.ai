@@ -1,14 +1,12 @@
 # Author: pstefanou12@
-"""
-Truncated Boolean Product Distributions.
-"""
+"""Truncated Boolean Product Distributions."""
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 import torch as ch
 
-from delphi.distributions.truncated_exponential_family_distributions import (
+from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
@@ -24,14 +22,16 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
         """Initialize TruncatedBooleanProduct.
 
         Args:
-            args (Parameters): parameter object holding hyperparameters
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
+            args: Parameter object holding hyperparameters.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         args = check_and_fill_args(args, TRUNC_BOOL_PROD_DEFAULTS)
 
         logger = (

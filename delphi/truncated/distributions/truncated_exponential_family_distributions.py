@@ -1,18 +1,16 @@
 # Author: pstefanou12@
-"""
-Parent class for truncated exponential distribution model classes.
-"""
+"""Parent class for truncated exponential distribution model classes."""
 
 # pylint: disable=duplicate-code
 
-from typing import Callable
+from collections.abc import Callable
 
 import torch as ch
 from torch import Tensor
 from torch.distributions.exp_family import ExponentialFamily
 from torch import nn
 
-from delphi.distributions.distributions import distributions
+from delphi.truncated.distributions.distributions import distributions
 from delphi.delphi_logger import delphiLogger
 from delphi.utils.datasets import (
     TruncatedExponentialDistributionDataset,
@@ -55,15 +53,16 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         calc_suff_stat: Callable,
         logger: delphiLogger,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """
+        """Initialize TruncatedExponentialFamilyDistribution.
+
         Args:
-            args (Parameters): parameter object holding hyperparameters
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
-            dist (ExponentialFamily): exponential family distribution class
-            calc_suff_stat (Callable): sufficient statistic calculator
-            logger (delphiLogger): logger instance
+            args: Parameter object holding hyperparameters.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+            dist: Exponential family distribution class.
+            calc_suff_stat: Sufficient statistic calculator.
+            logger: Logger instance.
         """
         super().__init__(args, logger)
         self.phi = phi
@@ -100,11 +99,10 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.emp_theta = None
 
     def fit(self, S: Tensor):  # pylint: disable=invalid-name
-        """
-        Fit the model to the observed (truncated) samples S.
+        """Fit the model to the observed (truncated) samples S.
 
         Args:
-            S (Tensor): observed samples of shape (num_samples, dims)
+            S: Observed samples of shape (num_samples, dims).
         """
         assert isinstance(S, Tensor), (
             f"S is type: {type(S)}. expected type torch.Tensor."
@@ -183,8 +181,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         return self
 
     def _check_convergence(self):
-        """
-        Determine if the entire training procedure should stop.
+        """Determine if the entire training procedure should stop.
 
         Returns:
             Tuple of (should_stop, reason) where should_stop is a bool and
@@ -229,7 +226,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         """Return the current theta parameter (input is unused).
 
         Args:
-            x: input data (unused)
+            x: Input data (unused).
         """
         return self.theta
 
@@ -259,4 +256,5 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         return theta
 
     def __str__(self):
+        """Return a human-readable name for this distribution."""
         return "truncated exponential family distribution"

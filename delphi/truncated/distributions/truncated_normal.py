@@ -1,15 +1,13 @@
 # Author: pstefanou12@
-"""
-Truncated normal distribution with oracle access (ie. known truncation set).
-"""
+"""Truncated normal distribution with oracle access (known truncation set)."""
 
 # pylint: disable=duplicate-code
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import torch as ch
 
-from delphi.distributions.truncated_multivariate_normal import (
+from delphi.truncated.distributions.truncated_multivariate_normal import (
     TruncatedMultivariateNormalKnownCovariance,
     TruncatedMultivariateNormalUnknownCovariance,
 )
@@ -77,30 +75,31 @@ def TruncatedNormal(  # pylint: disable=invalid-name
     phi: Callable,
     alpha: float,
     dims: int,
-    variance: Optional[ch.Tensor] = None,
+    variance: ch.Tensor | None = None,
     sampler: Callable = None,
 ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    """
-    Factory function for truncated normal distributions.
+    """Factory function for truncated normal distributions.
 
     Returns a known-variance model if variance is provided,
     otherwise returns an unknown-variance model.
 
     Args:
-        args (Parameters): hyperparameter object
-        phi (Callable): truncation set oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        variance (Optional[Tensor]): known variance; if None, variance is estimated
-        sampler (Callable): optional sampler override
+        args: Hyperparameter object.
+        phi: Truncation set oracle.
+        alpha: Survival probability lower bound.
+        dims: Number of dimensions.
+        variance: Known variance; if None, variance is estimated.
+        sampler: Optional sampler override.
 
     Returns:
         TruncatedNormalKnownCovariance if variance is provided, else
         TruncatedNormalUnknownVariance.
+
+    Raises:
+        TypeError: If args is not a Parameters instance.
     """
-    assert isinstance(args, Parameters), (
-        "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-    )
+    if not isinstance(args, Parameters):
+        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
     if variance is not None:
         return TruncatedNormalKnownCovariance(args, phi, alpha, dims, variance, sampler)

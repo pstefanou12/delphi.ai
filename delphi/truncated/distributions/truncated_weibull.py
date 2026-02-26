@@ -1,15 +1,13 @@
 # Author: pstefanou12@
-"""
-Truncated Weibull Distribution.
-"""
+"""Truncated Weibull Distribution."""
 
 import logging
+from collections.abc import Callable
 from functools import partial
-from typing import Callable
 
 import torch as ch
 
-from delphi.distributions.truncated_exponential_family_distributions import (
+from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
 )
 from delphi.delphi_logger import delphiLogger
@@ -19,8 +17,7 @@ from delphi.utils.defaults import check_and_fill_args, TRUNC_WEIBULL_DEFAULTS
 
 
 class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
-    """
-    Model for truncated Weibull distributions to be passed into trainer.
+    """Model for truncated Weibull distributions to be passed into trainer.
 
     Attributes:
         k (int): Weibull shape parameter.
@@ -32,15 +29,17 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
         """Initialize TruncatedWeibull.
 
         Args:
-            args (Parameters): parameter object holding hyperparameters
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
-            k (int): Weibull shape parameter
+            args: Parameter object holding hyperparameters.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+            k: Weibull shape parameter.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        )
+        if not isinstance(args, Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         args = check_and_fill_args(args, TRUNC_WEIBULL_DEFAULTS)
 
         logger = (

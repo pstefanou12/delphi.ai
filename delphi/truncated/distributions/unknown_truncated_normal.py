@@ -1,15 +1,11 @@
 # Author: pstefanou12@
-"""
-Truncated normal distribution without oracle access (ie. unknown truncation set).
-"""
+"""Truncated normal distribution without oracle access (unknown truncation set)."""
 
 # pylint: disable=duplicate-code
 
-from typing import Optional
-
 import torch as ch
 
-from delphi.distributions.unknown_truncated_multivariate_normal import (
+from delphi.truncated.distributions.unknown_truncated_multivariate_normal import (
     UnknownTruncationMultivariateNormalUnknownCovariance,
     UnknownTruncationMultivariateNormalKnownCovariance,
 )
@@ -80,28 +76,29 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
     k: int,
     alpha: float,
     dims: int,
-    variance: Optional[ch.Tensor] = None,
+    variance: ch.Tensor | None = None,
 ):
-    """
-    Factory function for unknown-truncation normal distributions.
+    """Factory function for unknown-truncation normal distributions.
 
     Returns a known-variance model if variance is provided,
     otherwise returns an unknown-variance model.
 
     Args:
-        args (Parameters): hyperparameter object
-        k (int): number of nearest neighbours for the oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        variance (Optional[Tensor]): known variance; if None, variance is estimated
+        args: Hyperparameter object.
+        k: Number of nearest neighbours for the oracle.
+        alpha: Survival probability lower bound.
+        dims: Number of dimensions.
+        variance: Known variance; if None, variance is estimated.
 
     Returns:
         UnknownTruncationNormalKnownVariance if variance is provided, else
         UnknownTruncatedNormalUnknownVariance.
+
+    Raises:
+        TypeError: If args is not a Parameters instance.
     """
-    assert isinstance(args, Parameters), (
-        "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-    )
+    if not isinstance(args, Parameters):
+        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     if variance is not None:
         return UnknownTruncationNormalKnownVariance(args, k, alpha, dims, variance)
     return UnknownTruncatedNormalUnknownVariance(args, k, alpha, dims)
