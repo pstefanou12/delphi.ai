@@ -67,6 +67,7 @@ def generate_truncated_dataset(dist, phi, num_samples: int):
 
 def test_truncated_normal_known_variance():
     """Right-truncated 1D normal with known variance converges to true mean."""
+    ch.manual_seed(0)
     M = MultivariateNormal(ch.zeros(1), ch.eye(1))
     phi = oracle.Left_Distribution(Tensor([0.0]))
     num_samples = 1000
@@ -114,7 +115,6 @@ def test_truncated_normal_known_variance():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -125,6 +125,7 @@ def test_truncated_normal_known_variance():
 
 def test_truncated_normal():
     """Right-truncated 1D normal with unknown variance converges to true params."""
+    ch.manual_seed(0)
     M = MultivariateNormal(ch.zeros(1), ch.eye(1))
 
     phi = oracle.Left_Distribution(Tensor([0.0]))
@@ -185,7 +186,6 @@ def test_truncated_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -195,6 +195,8 @@ def test_truncated_normal():
 
 
 def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
+    """Right-truncated 2D MVN with known covariance converges to true mean."""
+    ch.manual_seed(0)
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims))
 
@@ -245,7 +247,6 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -255,6 +256,8 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
 
 
 def test_truncated_2_dim_multivariate_normal():
+    """Right-truncated 2D MVN with unknown covariance converges to true params."""
+    ch.manual_seed(0)
     dims = 2
     M = MultivariateNormal(ch.zeros(dims), 2 * ch.eye(dims))
     num_samples = 1000
@@ -325,7 +328,6 @@ def test_truncated_2_dim_multivariate_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -335,6 +337,8 @@ def test_truncated_2_dim_multivariate_normal():
 
 
 def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
+    """Right-truncated 10D MVN with known covariance converges to true mean."""
+    ch.manual_seed(0)
     dims = 10
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims))
 
@@ -347,14 +351,14 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     print(f"num truncated samples: {S.size(0)}")
 
     emp_loc = S.mean(0, keepdim=True)
-    emp_var = M.covariance_matrix.diag()
+    true_var = M.covariance_matrix.diag()
 
     print(f"empirical mean:\n {emp_loc.T}")
 
     def phi_std_norm(x):
-        return x[:, 0] > ((0 - emp_loc[0, 0]) / ch.sqrt(emp_var[0]))
+        return x[:, 0] > ((0 - emp_loc[0, 0]) / ch.sqrt(true_var[0]))
 
-    S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
+    S_std_norm = (S - emp_loc) / ch.sqrt(true_var)
 
     # train algorithm
     args = Parameters(
@@ -369,34 +373,33 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     )
 
     scaled_cov = (
-        ch.diag(ch.sqrt(emp_var)).inverse()
-        * M.covariance_matrix
-        * ch.diag(ch.sqrt(emp_var)).inverse()
+        ch.diag(ch.sqrt(true_var)).inverse()
+        @ M.covariance_matrix
+        @ ch.diag(ch.sqrt(true_var)).inverse()
     )
     truncated = TruncatedMultivariateNormal(
         args, phi_std_norm, alpha, dims, covariance_matrix=scaled_cov
     )
     truncated.fit(S_std_norm)
-    best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
+    best_loc = truncated.best_loc_ * ch.sqrt(true_var) + emp_loc
     print(f"best loc:\n {best_loc.T}")
     best_m = MultivariateNormal(best_loc, M.covariance_matrix)
     kl_truncated = kl_divergence(best_m, M)
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
-    ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
+    ema_loc = truncated.ema_loc_ * ch.sqrt(true_var) + emp_loc
     print(f"ema loc:\n {ema_loc.T}")
     ema_m = MultivariateNormal(ema_loc, M.covariance_matrix)
     ema_kl_div = kl_divergence(ema_m, M)
     print(f"ema kl divergence: {ema_kl_div}")
 
-    avg_loc = truncated.avg_loc_ * ch.sqrt(emp_var) + emp_loc
+    avg_loc = truncated.avg_loc_ * ch.sqrt(true_var) + emp_loc
     print(f"avg loc:\n {avg_loc.T}")
     avg_m = MultivariateNormal(avg_loc, M.covariance_matrix)
     avg_kl_div = kl_divergence(avg_m, M)
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -406,6 +409,8 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
 
 
 def test_truncated_10_dim_multivariate_normal():
+    """Right-truncated 10D MVN with unknown covariance converges to true params."""
+    ch.manual_seed(0)
     dims = 10
     M = MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims))
 
@@ -477,7 +482,6 @@ def test_truncated_10_dim_multivariate_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -488,6 +492,7 @@ def test_truncated_10_dim_multivariate_normal():
 
 def test_unknown_truncation_normal_known_variance():
     """1D normal with unknown truncation and known variance recovers true mean."""
+    ch.manual_seed(0)
     dims = 1
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
 
@@ -543,7 +548,6 @@ def test_unknown_truncation_normal_known_variance():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -554,6 +558,7 @@ def test_unknown_truncation_normal_known_variance():
 
 def test_unknown_truncation_normal():
     """1D normal with unknown truncation recovers true mean and variance."""
+    ch.manual_seed(0)
     dims = 1
     # generate ground-truth data
     M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
@@ -593,16 +598,16 @@ def test_unknown_truncation_normal():
     print(f"best variance:\n {best_variance}")
     best_m = MultivariateNormal(best_loc, best_variance)
 
-    ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
-    ema_variance = truncated.ema_covariance_matrix_ * emp_var
+    ema_loc = truncated.ema_loc_ * emp_scale + emp_loc
+    ema_variance = truncated.ema_variance_ * emp_var
     print(f"ema loc:\n {ema_loc.T}")
     print(f"ema variance:\n {ema_variance}")
     ema_m = MultivariateNormal(ema_loc, ema_variance)
     ema_kl_div = kl_divergence(ema_m, M)
     print(f"ema kl divergence: {ema_kl_div}")
 
-    avg_loc = truncated.avg_loc_ * ch.sqrt(emp_var) + emp_loc
-    avg_variance = truncated.avg_covariance_matrix_ * emp_var
+    avg_loc = truncated.avg_loc_ * emp_scale + emp_loc
+    avg_variance = truncated.avg_variance_ * emp_var
     print(f"avg loc:\n {avg_loc.T}")
     print(f"avg variance:\n {avg_variance}")
     avg_m = MultivariateNormal(avg_loc, avg_variance)
@@ -621,35 +626,72 @@ def test_unknown_truncation_normal():
 
 def test_unknown_truncation_multivariate_normal():
     """10D sphere-truncated MVN with unknown truncation recovers true params."""
-    M = MultivariateNormal(ch.zeros(10), ch.eye(10))
-    samples = M.rsample([5000])
-    alpha = 0.0
-    while alpha < 0.5:
-        # generate ground-truth data
-        W = Uniform(-0.5, 0.5)
-        centroid = W.sample([10])
-        phi = oracle.Sphere(M.covariance_matrix, centroid, 3.5)
-        indices = phi(samples).nonzero(as_tuple=True)
-        S = samples[indices]
-        alpha = S.size(0) / samples.size(0)
+    ch.manual_seed(0)
+    dims = 10
+    M = MultivariateNormal(ch.zeros(dims), ch.eye(dims))
 
-    # train algorithm
-    train_kwargs = Parameters({"alpha": alpha, "epochs": 25, "batch_size": 100})
-    truncated = UnknownTruncationMultivariateNormal(train_kwargs)  # pylint: disable=no-value-for-parameter
-    truncated.fit(S)
-    # rescale distribution
-    rescale_loc = truncated.loc_
-    rescale_var = truncated.covariance_matrix_
-    m = MultivariateNormal(rescale_loc, rescale_var)
+    W = Uniform(-0.5, 0.5)
+    centroid = W.sample([dims])
+    phi = oracle.Sphere(M.covariance_matrix, centroid, 3.5)
 
-    # check distribution parameter estimates
-    kl_truncated = kl_divergence(m, M)
+    num_samples = 5000
+    S, alpha = generate_truncated_dataset(M, phi, num_samples)
+    print(f"alpha: {alpha}")
+    print(f"num truncated samples: {S.size(0)}")
+
+    emp_loc = S.mean(0)
+    emp_cov = cov(S)
+    L = ch.linalg.cholesky(emp_cov)  # pylint: disable=not-callable
+    L_inv = ch.linalg.inv(L)  # pylint: disable=not-callable
+    S_white = (S - emp_loc) @ L_inv.T
+
+    k = 12
+    args = Parameters(
+        {
+            "epochs": 25,
+            "batch_size": 100,
+            "verbose": True,
+        }
+    )
+    truncated = UnknownTruncationMultivariateNormal(args, k, alpha, dims)
+    truncated.fit(S_white)
+
+    best_loc = truncated.best_loc_ @ L.T + emp_loc
+    best_covariance_matrix = L @ truncated.best_covariance_matrix_ @ L.T
+    print(f"best loc:\n {best_loc.T}")
+    print(f"best covariance matrix:\n {best_covariance_matrix}")
+    best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
+
+    ema_loc = truncated.ema_loc_ @ L.T + emp_loc
+    ema_covariance_matrix = L @ truncated.ema_covariance_matrix_ @ L.T
+    print(f"ema loc:\n {ema_loc.T}")
+    print(f"ema covariance matrix:\n {ema_covariance_matrix}")
+    ema_m = MultivariateNormal(ema_loc, ema_covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f"ema kl divergence: {ema_kl_div}")
+
+    avg_loc = truncated.avg_loc_ @ L.T + emp_loc
+    avg_covariance_matrix = L @ truncated.avg_covariance_matrix_ @ L.T
+    print(f"avg loc:\n {avg_loc.T}")
+    print(f"avg covariance matrix:\n {avg_covariance_matrix}")
+    avg_m = MultivariateNormal(avg_loc, avg_covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f"avg kl divergence: {avg_kl_div}")
+
+    # check performance
+    kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_cov), M)
+    print(f"empirical kl divergence: {kl_emp.item():.3f}")
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert kl_truncated <= 1e-1, (
         f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
     )
 
 
 def test_truncated_boolean_product_2_dims():
+    """2D truncated Bernoulli product recovers true probabilities."""
+    ch.manual_seed(0)
     dims = 2
     p = ch.Tensor([0.5, 0.75])
     print(f"true p: {p}")
@@ -710,6 +752,8 @@ def test_truncated_boolean_product_2_dims():
 
 
 def test_truncated_boolean_product_20_dims():
+    """20D truncated Bernoulli product recovers true probabilities."""
+    ch.manual_seed(0)
     dims = 20
     p = ch.Tensor(
         [
@@ -791,6 +835,8 @@ def test_truncated_boolean_product_20_dims():
 
 
 def test_truncated_exponential():
+    """1D truncated exponential recovers true rate."""
+    ch.manual_seed(0)
     dims = 1
     lambda_ = ch.Tensor([1])
     print(f"true lambda: {lambda_}")
@@ -851,6 +897,8 @@ def test_truncated_exponential():
 
 
 def test_truncated_exponential_2_dims():
+    """2D truncated exponential recovers true rates."""
+    ch.manual_seed(0)
     dims = 2
     lambda_ = ch.Tensor([1, 2.0])
     print(f"true lambda: {lambda_}")
@@ -909,6 +957,8 @@ def test_truncated_exponential_2_dims():
 
 
 def test_truncated_exponential_20_dims():
+    """20D truncated exponential recovers true rates."""
+    ch.manual_seed(0)
     dims = 20
     lambda_ = 2 * ch.ones(
         20,
@@ -969,6 +1019,8 @@ def test_truncated_exponential_20_dims():
 
 
 def test_truncated_poisson():
+    """1D truncated Poisson recovers true rate."""
+    ch.manual_seed(0)
     dims = 1
     lambda_ = ch.Tensor([1])
     print(f"true lambda: {lambda_}")
@@ -1029,6 +1081,8 @@ def test_truncated_poisson():
 
 
 def test_truncated_poisson_2_dims():
+    """2D truncated Poisson recovers true rates."""
+    ch.manual_seed(0)
     dims = 2
     lambda_ = ch.Tensor([1.0, 2.0])
     print(f"true lambda: {lambda_}")
@@ -1087,6 +1141,8 @@ def test_truncated_poisson_2_dims():
 
 
 def test_truncated_poisson_20_dims():
+    """20D truncated Poisson recovers true rates."""
+    ch.manual_seed(0)
     dims = 20
     lambda_ = 2 * ch.ones(
         20,
@@ -1147,6 +1203,8 @@ def test_truncated_poisson_20_dims():
 
 
 def test_truncated_weibull():
+    """1D truncated Weibull with known shape recovers true scale."""
+    ch.manual_seed(0)
     dims = 1
     k = ch.Tensor([2.0])
     lambda_ = ch.Tensor([1])
@@ -1207,6 +1265,8 @@ def test_truncated_weibull():
 
 
 def test_truncated_weibull_2_dims():
+    """2D truncated Weibull with uniform shape recovers true scales."""
+    ch.manual_seed(0)
     dims = 2
     k = ch.Tensor([1.0, 1.0])
     lambda_ = ch.Tensor([1.0, 2.0])
@@ -1265,6 +1325,8 @@ def test_truncated_weibull_2_dims():
 
 
 def test_truncated_weibull_2_dims_diff_scale():
+    """2D truncated Weibull with mixed shapes recovers true scales."""
+    ch.manual_seed(0)
     dims = 2
     k = ch.Tensor([2.0, 3.0])
     lambda_ = ch.Tensor([1.0, 2.0])
@@ -1323,6 +1385,8 @@ def test_truncated_weibull_2_dims_diff_scale():
 
 
 def test_truncated_weibull_20_dims_diff_scale():
+    """20D truncated Weibull with mixed shapes recovers true scales."""
+    ch.manual_seed(0)
     dims = 20
     k = ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4)
     lambda_ = ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4)
