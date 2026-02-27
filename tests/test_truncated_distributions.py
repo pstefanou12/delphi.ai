@@ -94,13 +94,27 @@ def test_truncated_normal_known_variance():
     )
     truncated = TruncatedNormal(args, phi_std_norm, alpha, 1, variance=ch.eye(1))
     truncated.fit(S_std_norm)
-    # rescale distribution
-    rescale_loc = truncated.best_loc_ + emp_loc
-    print(f"pred loc:\n {rescale_loc}")
-    m = MultivariateNormal(rescale_loc, ch.eye(1))
+
+    best_loc = truncated.best_loc_ + emp_loc
+    print(f"best loc:\n {best_loc}")
+    best_m = MultivariateNormal(best_loc, ch.eye(1))
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
+
+    ema_loc = truncated.ema_loc_ + emp_loc
+    print(f"ema loc:\n {ema_loc}")
+    ema_m = MultivariateNormal(ema_loc, ch.eye(1))
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f"ema kl divergence: {ema_kl_div}")
+
+    avg_loc = truncated.avg_loc_ + emp_loc
+    print(f"avg loc:\n {avg_loc}")
+    avg_m = MultivariateNormal(avg_loc, ch.eye(1))
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(m, M)
+    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -120,10 +134,10 @@ def test_truncated_normal():
     print(f"num_samples: {num_samples}")
 
     emp_loc = S.mean(0)
-    print(f"emp loc:\n {emp_loc}")
-    emp_var = S.var(0)[..., None]
-    print(f"emp var:\n {emp_var}")
+    emp_var = S.var(0)
     emp_scale = ch.sqrt(emp_var)
+    print(f"emp loc:\n {emp_loc}")
+    print(f"emp var:\n {emp_var}")
 
     S_std_norm = (S - emp_loc) / emp_scale
     phi_std_norm = oracle.Left_Distribution(
@@ -145,24 +159,33 @@ def test_truncated_normal():
     )
     truncated = TruncatedNormal(args, phi_std_norm, alpha, 1)
     truncated.fit(S_std_norm)
-    # rescale distribution
-    rescale_best_loc = truncated.best_loc_ * emp_scale + emp_loc
-    print(f"pred best loc:\n {rescale_best_loc}")
-    rescale_best_var = truncated.best_variance_ * emp_var
-    print(f"pred best var:\n {rescale_best_var}")
-    rescale_ema_loc = truncated.ema_loc_ * emp_scale + emp_loc
-    print(f"pred ema loc:\n {rescale_ema_loc}")
-    rescale_ema_var = truncated.ema_covariance_matrix_ * emp_var
-    print(f"pred ema var:\n {rescale_ema_var}")
-    rescale_avg_loc = truncated.avg_loc_ * emp_scale + emp_loc
-    print(f"pred avg loc:\n {rescale_avg_loc}")
-    rescale_avg_var = truncated.avg_variance_ * emp_var
-    print(f"pred avg var:\n {rescale_avg_var}")
 
-    m = MultivariateNormal(rescale_best_loc, rescale_best_var)
+    best_loc = truncated.best_loc_ * emp_scale + emp_loc
+    best_covariance_matrix = truncated.best_covariance_matrix_ * emp_var
+    print(f"best loc:\n {best_loc}")
+    print(f"best covariance matrix:\n {best_covariance_matrix}")
+    best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
+
+    ema_loc = truncated.ema_loc_ * emp_scale + emp_loc
+    ema_covariance_matrix = truncated.ema_covariance_matrix_ * emp_var
+    print(f"ema loc:\n {ema_loc}")
+    print(f"ema covariance matrix:\n {ema_covariance_matrix}")
+    ema_m = MultivariateNormal(ema_loc, ema_covariance_matrix)
+    ema_kl_div = kl_divergence(ema_m, M)
+    print(f"ema kl divergence: {ema_kl_div}")
+
+    avg_loc = truncated.avg_loc_ * emp_scale + emp_loc
+    avg_covariance_matrix = truncated.avg_covariance_matrix_ * emp_var
+    print(f"avg loc:\n {avg_loc}")
+    print(f"avg covariance matrix:\n {avg_covariance_matrix}")
+    avg_m = MultivariateNormal(avg_loc, avg_covariance_matrix)
+    avg_kl_div = kl_divergence(avg_m, M)
+    print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_truncated = kl_divergence(m, M)
+    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -180,16 +203,14 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     def phi(x):
         return x[:, 0] > 0
 
-    # generate ground-truth data
     S, alpha = generate_truncated_dataset(M, phi, num_samples)
 
     print(f"alpha: {alpha}")
-    print(f"num_samples: {num_samples}")
+    print(f"num truncated samples: {S.size(0)}")
 
     emp_loc = S.mean(0, keepdim=True)
     print(f"empirical mean:\n {emp_loc.T}")
 
-    # train algorithm
     args = Parameters(
         {
             "iterations": 2500,
@@ -203,13 +224,13 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     truncated = TruncatedMultivariateNormal(
         args, phi, alpha, dims, covariance_matrix=M.covariance_matrix
     )
-
     truncated.fit(S)
 
     best_loc = truncated.best_loc_
     print(f"best loc:\n {best_loc.T}")
     best_m = MultivariateNormal(best_loc, M.covariance_matrix)
     kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
     ema_loc = truncated.ema_loc_
     print(f"ema loc:\n {ema_loc.T}")
@@ -223,6 +244,8 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     avg_kl_div = kl_divergence(avg_m, M)
     print(f"avg kl divergence: {avg_kl_div}")
 
+    # check performance
+    kl_truncated = kl_divergence(best_m, M)
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
@@ -278,6 +301,8 @@ def test_truncated_2_dim_multivariate_normal():
     print(f"best loc:\n {best_loc.T}")
     print(f"best covariance matrix:\n {best_covariance_matrix}")
     best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
     ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
     ema_covariance_matrix = (
@@ -355,6 +380,8 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f"best loc:\n {best_loc.T}")
     best_m = MultivariateNormal(best_loc, M.covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
     ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f"ema loc:\n {ema_loc.T}")
@@ -418,7 +445,7 @@ def test_truncated_10_dim_multivariate_normal():
     )
     truncated = TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
     truncated.fit(S_std_norm)
-    # rescale distribution
+
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     best_covariance_matrix = (
         emp_sigma_diag @ truncated.best_covariance_matrix_ @ emp_sigma_diag
@@ -426,6 +453,8 @@ def test_truncated_10_dim_multivariate_normal():
     print(f"best loc:\n {best_loc.T}")
     print(f"best covariance matrix:\n {best_covariance_matrix}")
     best_m = MultivariateNormal(best_loc, best_covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
     ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
     ema_covariance_matrix = (
@@ -498,6 +527,8 @@ def test_unknown_truncation_normal_known_variance():
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f"best loc:\n {best_loc.T}")
     best_m = MultivariateNormal(best_loc, M.covariance_matrix)
+    kl_truncated = kl_divergence(best_m, M)
+    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
 
     ema_loc = truncated.ema_loc_ * ch.sqrt(emp_var) + emp_loc
     print(f"ema loc:\n {ema_loc.T}")
