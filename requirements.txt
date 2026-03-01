@@ -130,3 +130,4 @@ wcwidth==0.2.14
 websockets==15.0.1
 xmltodict==1.0.2
 yfinance==1.0
+pydantic>=2.0

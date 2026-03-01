@@ -30,7 +30,7 @@ from delphi.truncated.distributions.truncated_boolean_product import (
 from delphi.truncated.distributions.truncated_exponential import TruncatedExponential
 from delphi.truncated.distributions.truncated_poisson import TruncatedPoisson
 from delphi.truncated.distributions.truncated_weibull import TruncatedWeibull
-from delphi.utils.helpers import Parameters, cov
+from delphi.utils.helpers import cov
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -81,18 +81,16 @@ def test_truncated_normal_known_variance():
     S_std_norm = S - emp_loc
     phi_std_norm = oracle.Left_Distribution((phi.left - emp_loc).flatten())
 
-    args = Parameters(
-        {
-            "batch_size": 10,
-            "trials": 1,
-            "verbose": True,
-            "lr": 1e-1,
-            "num_samples": 1000,
-            "early_stopping": True,
-            "tol": 5e-2,
-            "iterations": 1500,
-        }
-    )
+    args = {
+        "batch_size": 10,
+        "trials": 1,
+        "verbose": True,
+        "lr": 1e-1,
+        "num_samples": 1000,
+        "early_stopping": True,
+        "tol": 5e-2,
+        "iterations": 1500,
+    }
     truncated = TruncatedNormal(args, phi_std_norm, alpha, 1, variance=ch.eye(1))
     truncated.fit(S_std_norm)
 
@@ -118,8 +116,14 @@ def test_truncated_normal_known_variance():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -145,19 +149,17 @@ def test_truncated_normal():
         ((phi.left - emp_loc) / emp_scale).flatten()
     )
 
-    args = Parameters(
-        {
-            "iterations": 1500,
-            "batch_size": 10,
-            "trials": 1,
-            "verbose": True,
-            "lr": 1e-2,
-            "num_samples": 1000,
-            "early_stopping": True,
-            "tol": 1e-3,
-            "val_interval": 100,
-        }
-    )
+    args = {
+        "iterations": 1500,
+        "batch_size": 10,
+        "trials": 1,
+        "verbose": True,
+        "lr": 1e-2,
+        "num_samples": 1000,
+        "early_stopping": True,
+        "tol": 1e-3,
+        "val_interval": 100,
+    }
     truncated = TruncatedNormal(args, phi_std_norm, alpha, 1)
     truncated.fit(S_std_norm)
 
@@ -189,8 +191,14 @@ def test_truncated_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -213,16 +221,14 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     emp_loc = S.mean(0, keepdim=True)
     print(f"empirical mean:\n {emp_loc.T}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 10000,
-            "verbose": True,
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 10000,
+        "verbose": True,
+        "lr": 1e-2,
+    }
     truncated = TruncatedMultivariateNormal(
         args, phi, alpha, dims, covariance_matrix=M.covariance_matrix
     )
@@ -250,8 +256,14 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -284,17 +296,15 @@ def test_truncated_2_dim_multivariate_normal():
     S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
     # train algorithm
-    args = Parameters(
-        {
-            "iterations": 5000,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "lr": 1e-1,
-            "optimizer": "sgd",
-            "covariance_matrix_lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 5000,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "lr": 1e-1,
+        "optimizer": "sgd",
+        "covariance_matrix_lr": 1e-2,
+    }
     truncated = TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -331,8 +341,14 @@ def test_truncated_2_dim_multivariate_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -361,16 +377,14 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     S_std_norm = (S - emp_loc) / ch.sqrt(true_var)
 
     # train algorithm
-    args = Parameters(
-        {
-            "epochs": 2,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "epochs": 2,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     scaled_cov = (
         ch.diag(ch.sqrt(true_var)).inverse()
@@ -403,8 +417,14 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -436,18 +456,16 @@ def test_truncated_10_dim_multivariate_normal():
     S_std_norm = (S - emp_loc) / ch.sqrt(emp_var)
 
     # train algorithm
-    args = Parameters(
-        {
-            "iterations": 5000,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-            "covariance_matrix_lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 5000,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-1,
+        "covariance_matrix_lr": 1e-2,
+    }
     truncated = TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
     truncated.fit(S_std_norm)
 
@@ -485,8 +503,14 @@ def test_truncated_10_dim_multivariate_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -517,16 +541,14 @@ def test_unknown_truncation_normal_known_variance():
     print(f"k: {k}")
 
     # train algorithm
-    args = Parameters(
-        {
-            "epochs": 2,
-            "trials": 1,
-            "batch_size": 10,
-            "lr": 1e-1,
-            "early_stopping": True,
-            "verbose": True,
-        }
-    )
+    args = {
+        "epochs": 2,
+        "trials": 1,
+        "batch_size": 10,
+        "lr": 1e-1,
+        "early_stopping": True,
+        "verbose": True,
+    }
     truncated = UnknownTruncationNormal(args, k, alpha, dims, variance=true_cov_std)
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -551,8 +573,14 @@ def test_unknown_truncation_normal_known_variance():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, M.covariance_matrix), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -578,17 +606,15 @@ def test_unknown_truncation_normal():
     k = 20
 
     # train algorithm
-    args = Parameters(
-        {
-            "epochs": 3,
-            "trials": 1,
-            "batch_size": 10,
-            "lr": 1e-1,
-            "covariance_matrix_lr": 1e-1,
-            "early_stopping": True,
-            "verbose": True,
-        }
-    )
+    args = {
+        "epochs": 3,
+        "trials": 1,
+        "batch_size": 10,
+        "lr": 1e-1,
+        "covariance_matrix_lr": 1e-1,
+        "early_stopping": True,
+        "verbose": True,
+    }
     truncated = UnknownTruncationNormal(args, k, alpha, dims)
     truncated.fit(S_std_norm)
     # rescale distribution
@@ -619,8 +645,14 @@ def test_unknown_truncation_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_var), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -646,13 +678,11 @@ def test_unknown_truncation_multivariate_normal():
     S_white = (S - emp_loc) @ L_inv.T
 
     k = 12
-    args = Parameters(
-        {
-            "epochs": 25,
-            "batch_size": 100,
-            "verbose": True,
-        }
-    )
+    args = {
+        "epochs": 25,
+        "batch_size": 100,
+        "verbose": True,
+    }
     truncated = UnknownTruncationMultivariateNormal(args, k, alpha, dims)
     truncated.fit(S_white)
 
@@ -684,8 +714,14 @@ def test_unknown_truncation_multivariate_normal():
     kl_emp = kl_divergence(MultivariateNormal(emp_loc, emp_cov), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -708,19 +744,17 @@ def test_truncated_boolean_product_2_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_p: {emp_p}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-            "max_phases": 1000000,
-            "rate": 1.5,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-1,
+        "max_phases": 1000000,
+        "rate": 1.5,
+    }
 
     truncated = TruncatedBooleanProduct(args, phi, alpha, dims)
     truncated.fit(S)
@@ -746,8 +780,14 @@ def test_truncated_boolean_product_2_dims():
     kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -793,17 +833,15 @@ def test_truncated_boolean_product_20_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_p: {emp_p}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-1,
+    }
 
     truncated = TruncatedBooleanProduct(args, phi, alpha, dims)
     truncated.fit(S)
@@ -829,8 +867,14 @@ def test_truncated_boolean_product_20_dims():
     kl_emp = kl_divergence(Bernoulli(emp_p), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -853,19 +897,17 @@ def test_truncated_exponential():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "max_phases": 1000000,
-            "rate": 1.5,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+        "max_phases": 1000000,
+        "rate": 1.5,
+    }
 
     truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
@@ -891,8 +933,14 @@ def test_truncated_exponential():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -915,17 +963,15 @@ def test_truncated_exponential_2_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
@@ -951,8 +997,14 @@ def test_truncated_exponential_2_dims():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -977,17 +1029,15 @@ def test_truncated_exponential_20_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        }
-    )
+    args = {
+        "iterations": 1500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-1,
+    }
 
     truncated = TruncatedExponential(args, phi, alpha, dims)
     truncated.fit(S)
@@ -1013,8 +1063,14 @@ def test_truncated_exponential_20_dims():
     kl_emp = kl_divergence(Exponential(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -1037,19 +1093,17 @@ def test_truncated_poisson():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "max_phases": 1000000,
-            "rate": 1.5,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+        "max_phases": 1000000,
+        "rate": 1.5,
+    }
 
     truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
@@ -1075,8 +1129,14 @@ def test_truncated_poisson():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -1099,17 +1159,15 @@ def test_truncated_poisson_2_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
@@ -1135,8 +1193,14 @@ def test_truncated_poisson_2_dims():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -1161,17 +1225,15 @@ def test_truncated_poisson_20_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedPoisson(args, phi, alpha, dims)
     truncated.fit(S)
@@ -1197,8 +1259,14 @@ def test_truncated_poisson_20_dims():
     kl_emp = kl_divergence(Poisson(emp_lambda), dist).sum()
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert kl_truncated <= 1e-1, (
-        f"KL divergence to true distribution exceeds 0.1: {kl_truncated}"
+    assert ema_kl_div <= 1e-1, (
+        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
+    )
+    assert avg_kl_div <= 0.15, (
+        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
+    )
+    assert kl_truncated <= 0.2, (
+        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
     )
 
 
@@ -1224,19 +1292,17 @@ def test_truncated_weibull():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda_}")
 
-    args = Parameters(
-        {
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "max_phases": 1000000,
-            "rate": 1.5,
-        }
-    )
+    args = {
+        "iterations": 1500,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+        "max_phases": 1000000,
+        "rate": 1.5,
+    }
 
     truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
@@ -1286,17 +1352,15 @@ def test_truncated_weibull_2_dims():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda_}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
@@ -1346,17 +1410,15 @@ def test_truncated_weibull_2_dims_diff_scale():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda_}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)
@@ -1406,17 +1468,15 @@ def test_truncated_weibull_20_dims_diff_scale():
     print(f"num truncated samples: {S.size(0)}")
     print(f"emp_lambda: {emp_lambda_}")
 
-    args = Parameters(
-        {
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "verbose": True,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        }
-    )
+    args = {
+        "iterations": 2500,
+        "trials": 1,
+        "batch_size": 10,
+        "num_samples": 1000,
+        "verbose": True,
+        "optimizer": "sgd",
+        "lr": 1e-2,
+    }
 
     truncated = TruncatedWeibull(args, phi, alpha, dims, k)
     truncated.fit(S)

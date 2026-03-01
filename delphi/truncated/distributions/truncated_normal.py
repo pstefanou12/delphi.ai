@@ -8,11 +8,11 @@ from collections.abc import Callable
 import torch as ch
 
 from delphi.truncated.distributions.truncated_multivariate_normal import (
+    TruncatedMultivariateNormalConfig,
     TruncatedMultivariateNormalKnownCovariance,
     TruncatedMultivariateNormalUnknownCovariance,
 )
-from delphi.utils.helpers import Parameters
-from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
+from delphi.utils.configs import make_config
 
 
 class TruncatedNormalKnownCovariance(TruncatedMultivariateNormalKnownCovariance):
@@ -48,22 +48,22 @@ class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovarianc
     @property
     def best_variance_(self):
         """Best variance estimate based on lowest training loss."""
-        return self.best_params[: self.dims**2].view(self.dims, self.dims)
+        return self.best_covariance_matrix_
 
     @property
     def final_variance_(self):
         """Final variance estimate at the end of training."""
-        self.final_params[: self.dims**2].view(self.dims, self.dims)
+        return self.final_covariance_matrix_
 
     @property
     def ema_variance_(self):
         """Exponential moving-average variance estimate."""
-        return self.ema_params[: self.dims**2].view(self.dims, self.dims)
+        return self.ema_covariance_matrix_
 
     @property
     def avg_variance_(self):
         """Running-average variance estimate."""
-        return self.avg_params[: self.dims**2].view(self.dims, self.dims)
+        return self.avg_covariance_matrix_
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
@@ -71,7 +71,7 @@ class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovarianc
 
 
 def TruncatedNormal(  # pylint: disable=invalid-name
-    args: Parameters,
+    args: dict | TruncatedMultivariateNormalConfig,
     phi: Callable,
     alpha: float,
     dims: int,
@@ -84,7 +84,7 @@ def TruncatedNormal(  # pylint: disable=invalid-name
     otherwise returns an unknown-variance model.
 
     Args:
-        args: Hyperparameter object.
+        args: Hyperparameter dict or Pydantic config.
         phi: Truncation set oracle.
         alpha: Survival probability lower bound.
         dims: Number of dimensions.
@@ -94,13 +94,8 @@ def TruncatedNormal(  # pylint: disable=invalid-name
     Returns:
         TruncatedNormalKnownCovariance if variance is provided, else
         TruncatedNormalUnknownVariance.
-
-    Raises:
-        TypeError: If args is not a Parameters instance.
     """
-    if not isinstance(args, Parameters):
-        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-    args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+    args = make_config(args, TruncatedMultivariateNormalConfig)
     if variance is not None:
         return TruncatedNormalKnownCovariance(args, phi, alpha, dims, variance, sampler)
     return TruncatedNormalUnknownVariance(args, phi, alpha, dims, sampler)

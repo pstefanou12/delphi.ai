@@ -11,33 +11,35 @@ import numpy as np
 import torch as ch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
+from pydantic import BaseModel
 from tqdm import tqdm
 from cox.store import Store
 
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
+from delphi.utils.configs import TrainerConfig
 from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
-from delphi.utils.helpers import AverageMeter, setup_store_with_metadata, Parameters
-from delphi.utils.defaults import TRAINER_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
 
 
 class Trainer:  # pylint: disable=too-many-instance-attributes
     """Trainer class for fitting delphi models using iterative optimization."""
 
     def __init__(
-        self, model: delphi, args: Parameters, logger: delphiLogger, store=None
+        self, model: delphi, args: dict | BaseModel, logger: delphiLogger, store=None
     ):
         """Initialize the Trainer.
 
         Args:
             model: The delphi model to train.
-            args: Hyperparameter object; see TRAINER_DEFAULTS for supported keys.
+            args: Hyperparameter dict or Pydantic config. A dict is converted
+                to a TrainerConfig with defaults applied.
             logger: Logger instance for training diagnostics.
             store: Optional cox store for experiment logging.
         """
         self.model: delphi = model
-        self.args: Parameters = check_and_fill_args(args, TRAINER_DEFAULTS)
+        self.args: BaseModel = TrainerConfig(**args) if isinstance(args, dict) else args
         self.logger: delphiLogger = logger
         self.store: Store | None = store
 

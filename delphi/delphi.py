@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import numpy as np
 import torch as ch
+from pydantic import BaseModel
 from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
 
 from delphi.utils.constants import (
@@ -15,15 +16,7 @@ from delphi.utils.constants import (
     PythonFrameworks,
     SchedulerType,
 )
-from delphi.utils.defaults import (
-    check_and_fill_args,
-    DELPHI_DEFAULTS,
-    SGD_DEFAULTS,
-    LBFGS_DEFAULTS,
-    ADAM_DEFAULTS,
-    ADAMW_DEFAULTS,
-)
-from delphi.utils.helpers import AverageMeter, Parameters
+from delphi.utils.helpers import AverageMeter
 
 
 class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
@@ -40,22 +33,23 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
-    def __init__(self, args: Parameters):
+    def __init__(self, args: BaseModel):
         """Initialize the delphi model.
 
         Args:
-            args: Hyperparameter object; see DELPHI_DEFAULTS for supported keys.
+            args: Fully constructed Pydantic config. Concrete subclasses are
+                responsible for converting a user-supplied dict to their
+                specific config before calling super().__init__.
 
         Raises:
-            TypeError: If args is not a Parameters instance.
+            TypeError: If args is not a Pydantic BaseModel.
         """
         super().__init__()
-        if not isinstance(args, Parameters):
+        if not isinstance(args, BaseModel):
             raise TypeError(
-                f"args is type {type(args).__name__}; "
-                "expected delphi.utils.helpers.Parameters"
+                f"args is type {type(args).__name__}; expected a pydantic.BaseModel."
             )
-        self.args: Parameters = check_and_fill_args(args, DELPHI_DEFAULTS)
+        self.args = args
 
         self.optimizer: ch.optim.Optimizer | None = None
         self.schedule: lr_scheduler.LRScheduler | None = None
@@ -149,7 +143,6 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_sgd(self, params: list[dict]) -> SGD:
         """Create an SGD optimizer from args."""
-        check_and_fill_args(self.args, SGD_DEFAULTS)
         config = {
             "lr": self.args.lr,
             "momentum": getattr(self.args, "momentum", 0),
@@ -165,7 +158,6 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_lbfgs(self, params: list[dict]) -> LBFGS:
         """Create an L-BFGS optimizer from args."""
-        check_and_fill_args(self.args, LBFGS_DEFAULTS)
         config = {
             "lr": getattr(self.args, "lr", 1.0),
             "max_iter": getattr(self.args, "max_iter", 20),
@@ -179,7 +171,6 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_adam(self, params: list[dict]) -> Adam:
         """Create an Adam optimizer from args."""
-        check_and_fill_args(self.args, ADAM_DEFAULTS)
         config = {
             "lr": getattr(self.args, "lr", 1e-1),
             "betas": (
@@ -199,7 +190,6 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def _create_adamw(self, params: list[dict]) -> AdamW:
         """Create an AdamW optimizer from args."""
-        check_and_fill_args(self.args, ADAMW_DEFAULTS)
         config = {
             "lr": getattr(self.args, "lr", 1e-3),
             "betas": (

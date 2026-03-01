@@ -6,20 +6,33 @@ from collections.abc import Callable
 from functools import partial
 
 import torch as ch
-from torch import nn
+from pydantic import Field
+from torch import nn, Tensor
 
 from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
+    TruncatedExponentialFamilyDistributionConfig,
 )
+from delphi.utils.configs import make_config
 from delphi.delphi_logger import delphiLogger
 from delphi.distributions.multivariate_normal import (
     ExponentialFamilyMultivariateNormal,
     ExponentialFamilyMultivariateNormalKnownCovariance,
-    calc_multi_norm_suff_stat_known_cov,
-    calc_multi_norm_suff_stat,
 )
-from delphi.utils.helpers import Parameters
-from delphi.utils.defaults import check_and_fill_args, TRUNC_MULTI_NORM_DEFAULTS
+
+
+class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionConfig):
+    """Configuration for truncated multivariate normal distributions.
+
+    Attributes:
+        eigenvalue_lower_bound: Minimum eigenvalue enforced during the
+            negative-definite cone projection of the precision matrix T.
+        covariance_matrix_lr: Optional separate learning rate for the
+            covariance matrix parameter; falls back to lr when None.
+    """
+
+    eigenvalue_lower_bound: float = Field(default=1e-2, gt=0.0)
+    covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
 
 
 class TruncatedMultivariateNormalKnownCovariance(
@@ -33,7 +46,7 @@ class TruncatedMultivariateNormalKnownCovariance(
 
     def __init__(
         self,
-        args: Parameters,
+        args: dict | TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -43,20 +56,14 @@ class TruncatedMultivariateNormalKnownCovariance(
         """Initialize TruncatedMultivariateNormalKnownCovariance.
 
         Args:
-            args: Hyperparameter object.
+            args: Hyperparameter dict or Pydantic config.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             covariance_matrix: Known covariance matrix.
             sampler: Optional sampler override.
-
-        Raises:
-            TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
-            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-        args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
-
+        args = make_config(args, TruncatedMultivariateNormalConfig)
         logger = (
             delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
         )
@@ -68,42 +75,54 @@ class TruncatedMultivariateNormalKnownCovariance(
             partial(
                 ExponentialFamilyMultivariateNormalKnownCovariance, covariance_matrix
             ),
-            calc_multi_norm_suff_stat_known_cov,
             logger,
         )
         self.covariance_matrix = covariance_matrix
         self._sampler = sampler
 
-    def _reparameterize_nat_form(self, theta):
-        """Convert canonical mean to natural parameters."""
-        inv_cov = self.covariance_matrix.inverse()
-        v = theta @ inv_cov  # pylint: disable=invalid-name
-        return v.flatten()
+    @staticmethod
+    def _calc_suff_stat(x: Tensor) -> Tensor:
+        """Compute sufficient statistics for multivariate normal with known covariance."""
+        return ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(x)
 
-    def _reparameterize_canon_form(self, theta):
-        """Convert natural parameters to canonical mean."""
-        loc = theta @ self.covariance_matrix
-        return loc.flatten()
+    def _calc_emp_model(self):
+        """Calculate empirical natural parameters and register theta as an nn.Parameter."""
+        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+        emp_mean = self._calc_suff_stat(dataset_s).mean(0)
+        self.emp_theta = ExponentialFamilyMultivariateNormalKnownCovariance.to_natural(
+            emp_mean, self.covariance_matrix
+        )
+        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        with ch.no_grad():
+            self.nll_init = self._compute_nll(self.emp_theta)
 
     @property
     def best_loc_(self):
         """Best mean vector estimate based on lowest training loss."""
-        return self.best_params
+        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
+            self.best_params, self.covariance_matrix
+        )
 
     @property
     def final_loc_(self):
         """Final mean vector estimate at the end of training."""
-        return self.final_params
+        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
+            self.final_params, self.covariance_matrix
+        )
 
     @property
     def ema_loc_(self):
         """Exponential moving-average mean vector estimate."""
-        return self.ema_params
+        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
+            self.ema_params, self.covariance_matrix
+        )
 
     @property
     def avg_loc_(self):
         """Running-average mean vector estimate."""
-        return self.avg_params
+        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
+            self.avg_params, self.covariance_matrix
+        )
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
@@ -117,7 +136,6 @@ class TruncatedMultivariateNormalUnknownCovariance(
 
     Attributes:
         eigenvalue_lower_bound: Minimum eigenvalue for covariance projection.
-        emp_canon_params: Empirical canonical parameters computed during fit.
         emp_theta: Empirical natural parameters.
         emp_T: Empirical precision matrix component.
         emp_v: Empirical natural mean component.
@@ -125,7 +143,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
 
     def __init__(
         self,
-        args: Parameters,
+        args: dict | TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -134,18 +152,13 @@ class TruncatedMultivariateNormalUnknownCovariance(
         """Initialize TruncatedMultivariateNormalUnknownCovariance.
 
         Args:
-            args: Hyperparameter object.
+            args: Hyperparameter dict or Pydantic config.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             sampler: Optional sampler override.
-
-        Raises:
-            TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
-            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-        args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+        args = make_config(args, TruncatedMultivariateNormalConfig)
         self.eigenvalue_lower_bound = args.eigenvalue_lower_bound
 
         logger = (
@@ -157,27 +170,32 @@ class TruncatedMultivariateNormalUnknownCovariance(
             alpha,
             dims,
             ExponentialFamilyMultivariateNormal,
-            calc_multi_norm_suff_stat,
             logger,
         )
         self._sampler = sampler
 
-        # Attributes set during _calc_emp_model
-        self.emp_canon_params = None
+        # Attributes set during _calc_emp_model.
         self.emp_theta = None
         self.emp_T = None  # pylint: disable=invalid-name
         self.emp_v = None
 
+    @staticmethod
+    def _calc_suff_stat(x: Tensor) -> Tensor:
+        """Compute sufficient statistics for multivariate normal."""
+        return ExponentialFamilyMultivariateNormal.calc_suff_stat(x)
+
     def _calc_emp_model(self):
-        """Calculate empirical model parameters and register T and v as nn.Parameters."""
+        """Calculate empirical natural parameters and register T and v as nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        suff_stats = self.calc_suff_stat(dataset_s).mean(0)
+        suff_stats = self._calc_suff_stat(dataset_s).mean(0)
         second_moment = suff_stats[: self.dims**2].view(self.dims, self.dims)
         loc = suff_stats[self.dims**2 :]
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
         cov_matrix = second_moment - ch.outer(loc, loc)
-        self.emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
-        self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
+        emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
+        self.emp_theta = ExponentialFamilyMultivariateNormal.to_natural(
+            emp_canon_params, self.dims
+        )
         self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
             self.dims, self.dims
         )
@@ -190,39 +208,37 @@ class TruncatedMultivariateNormalUnknownCovariance(
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 
-    def project_to_neg_definite(self, M, eps=1e-6):  # pylint: disable=invalid-name
-        """Projects a symmetric matrix M onto the Positive Semi-Definite (PSD) cone."""
+    def _project_to_neg_definite(self, M, eps=1e-6):  # pylint: disable=invalid-name
+        """Projects a symmetric matrix M onto the negative semi-definite cone."""
         L, Q = ch.linalg.eigh(M)  # pylint: disable=invalid-name,not-callable
         L_clipped = ch.clamp(L, max=-eps)  # pylint: disable=invalid-name
         return Q @ ch.diag_embed(L_clipped) @ Q.T  # pylint: disable=invalid-name
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Project parameters onto the feasible set after each update.
+        """Project T onto the negative-definite cone, then delegate to the base class.
 
-        Projects T onto the negative-definite cone first (so that the NLL is
-        well-defined), then projects the combined (T, v) onto the NLL sublevel
-        set via the base-class bisection method.  When args.project is False
-        only the cone projection is applied.
+        The neg-definite projection must precede the sublevel-set projection
+        because the NLL is undefined when the covariance is not positive
+        definite.  After correcting T, the base-class hook handles the
+        sublevel-set projection (when args.project is True) or returns
+        immediately (when args.project is False).
         """
         with ch.no_grad():
-            # Project T onto the negative-definite cone so that the NLL is
-            # computable before calling the sublevel-set projection.
             mat_t = self.T.clone().view(self.dims, self.dims)  # pylint: disable=invalid-name
             mat_t = 0.5 * (mat_t + mat_t.T)
-            mat_t = self.project_to_neg_definite(mat_t, eps=self.eigenvalue_lower_bound)
+            mat_t = self._project_to_neg_definite(
+                mat_t, eps=self.eigenvalue_lower_bound
+            )
             mat_t = 0.5 * (mat_t + mat_t.T)
+            self.T.copy_(mat_t)
+        super().step_post_hook(optimizer, args, kwargs)
 
-            if not self.args.project:
-                self.T.copy_(mat_t)
-                return
-
-            theta_psd = ch.cat([mat_t.flatten(), self.v.clone()])
-            theta_proj = self._project_onto_sublevel_set(theta_psd)
-
-            mat_t_proj = theta_proj[: self.dims**2].view(self.dims, self.dims)
-            mat_t_proj = 0.5 * (mat_t_proj + mat_t_proj.T)
-            self.T.copy_(mat_t_proj)
-            self.v.copy_(theta_proj[self.dims**2 :])
+    def _write_theta(self, value: Tensor) -> None:
+        """Split the projected flat theta into T and v and copy to their Parameters."""
+        mat_t = value[: self.dims**2].view(self.dims, self.dims)  # pylint: disable=invalid-name
+        mat_t = 0.5 * (mat_t + mat_t.T)
+        self.T.copy_(mat_t)
+        self.v.copy_(value[self.dims**2 :])
 
     def parameter_groups(self):
         """Return parameter groups, optionally with separate LR for covariance."""
@@ -233,26 +249,6 @@ class TruncatedMultivariateNormalUnknownCovariance(
             ]
         return self.parameters()
 
-    def _reparameterize_nat_form(self, theta):
-        """Convert canonical parameters to natural form."""
-        cov_matrix = theta[: self.dims**2].view(self.dims, self.dims)
-        loc = theta[self.dims**2 :]
-
-        mat_t = cov_matrix.inverse()  # pylint: disable=invalid-name
-        v = loc @ mat_t  # pylint: disable=invalid-name
-
-        return ch.cat([-0.5 * mat_t.flatten(), v.flatten()])
-
-    def _reparameterize_canon_form(self, theta):
-        """Convert natural parameters to canonical form."""
-        mat_t = theta[: self.dims**2].view(self.dims, self.dims)  # pylint: disable=invalid-name
-        v = theta[self.dims**2 :]
-
-        covariance_matrix = (-2 * mat_t).inverse()
-        loc = v @ covariance_matrix
-
-        return ch.cat([covariance_matrix.flatten(), loc.flatten()])
-
     @property
     def theta(self):
         """Return the current natural parameters as a flat tensor."""
@@ -261,42 +257,66 @@ class TruncatedMultivariateNormalUnknownCovariance(
     @property
     def best_loc_(self):
         """Best mean vector estimate based on lowest training loss."""
-        return self.best_params[self.dims**2 :]
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.best_params, self.dims
+        )
+        return canon[self.dims**2 :]
 
     @property
     def best_covariance_matrix_(self):
         """Best covariance matrix estimate based on lowest training loss."""
-        return self.best_params[: self.dims**2].view(self.dims, self.dims)
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.best_params, self.dims
+        )
+        return canon[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def final_loc_(self):
         """Final mean vector estimate at the end of training."""
-        return self.final_params[self.dims**2 :]
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.final_params, self.dims
+        )
+        return canon[self.dims**2 :]
 
     @property
     def final_covariance_matrix_(self):
         """Final covariance matrix estimate at the end of training."""
-        return self.final_params[: self.dims**2].view(self.dims, self.dims)
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.final_params, self.dims
+        )
+        return canon[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def ema_loc_(self):
         """Exponential moving-average mean vector estimate."""
-        return self.ema_params[self.dims**2 :]
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.ema_params, self.dims
+        )
+        return canon[self.dims**2 :]
 
     @property
     def ema_covariance_matrix_(self):
         """Exponential moving-average covariance matrix estimate."""
-        return self.ema_params[: self.dims**2].view(self.dims, self.dims)
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.ema_params, self.dims
+        )
+        return canon[: self.dims**2].view(self.dims, self.dims)
 
     @property
     def avg_loc_(self):
         """Running-average mean vector estimate."""
-        return self.avg_params[self.dims**2 :]
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.avg_params, self.dims
+        )
+        return canon[self.dims**2 :]
 
     @property
     def avg_covariance_matrix_(self):
         """Running-average covariance matrix estimate."""
-        return self.avg_params[: self.dims**2].view(self.dims, self.dims)
+        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+            self.avg_params, self.dims
+        )
+        return canon[: self.dims**2].view(self.dims, self.dims)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
@@ -304,7 +324,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
 
 
 def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
-    args: Parameters,
+    args: dict | TruncatedMultivariateNormalConfig,
     phi: Callable,
     alpha: float,
     dims: int,
@@ -317,7 +337,7 @@ def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
     otherwise returns an unknown-covariance model.
 
     Args:
-        args: Hyperparameter object.
+        args: Hyperparameter dict or Pydantic config.
         phi: Truncation set oracle.
         alpha: Survival probability lower bound.
         dims: Number of dimensions.
@@ -325,15 +345,10 @@ def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
         sampler: Optional sampler override.
 
     Returns:
-        TruncatedMultivariateNormalKnownCovariance if covariance_matrix is provided,
-        else TruncatedMultivariateNormalUnknownCovariance.
-
-    Raises:
-        TypeError: If args is not a Parameters instance.
+        TruncatedMultivariateNormalKnownCovariance if covariance_matrix is
+        provided, else TruncatedMultivariateNormalUnknownCovariance.
     """
-    if not isinstance(args, Parameters):
-        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-    args = check_and_fill_args(args, TRUNC_MULTI_NORM_DEFAULTS)
+    args = make_config(args, TruncatedMultivariateNormalConfig)
     if covariance_matrix is not None:
         return TruncatedMultivariateNormalKnownCovariance(
             args, phi, alpha, dims, covariance_matrix, sampler

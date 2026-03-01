@@ -3,15 +3,19 @@
 
 # pylint: disable=duplicate-code
 
+from __future__ import annotations
+
 from collections.abc import Callable
 
 import torch as ch
+from pydantic import ConfigDict, Field, model_validator
 from torch import Tensor
 from torch.distributions.exp_family import ExponentialFamily
 from torch import nn
 
 from delphi.truncated.distributions.distributions import distributions
 from delphi.delphi_logger import delphiLogger
+from delphi.utils.configs import OptimizerConfig, TrainerConfig
 from delphi.utils.datasets import (
     TruncatedExponentialDistributionDataset,
     make_train_and_val_distr,
@@ -20,7 +24,75 @@ from delphi.truncated.distributions.losses import (
     TruncatedExponentialFamilyDistributionNLL,
 )
 from delphi.trainer import Trainer
-from delphi.utils.helpers import Parameters
+
+
+class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfig):
+    """Configuration for truncated exponential family distribution algorithms.
+
+    Attributes:
+        val: Fraction of data held out for validation.
+        eps: Numerical stability constant for the NLL criterion.
+        min_radius: Initial NLL budget above the empirical initialization
+            for the sublevel-set projection (phase 1).
+        max_radius: Maximum NLL budget; the procedure stops when reached.
+        rate: Multiplicative budget expansion factor per phase.
+        batch_size: Mini-batch size for training.
+        num_samples: Monte Carlo samples drawn per NLL evaluation.
+        max_phases: Maximum number of radius-expansion phases.
+        loss_convergence_tol: Absolute loss improvement threshold for
+            stopping between phases.
+        relative_loss_tol: Relative loss improvement threshold between phases.
+        loss_increase_tol: Loss increase threshold for detecting overshoot.
+        project: Enable per-step sublevel-set projection.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Override parent defaults for distribution training.
+    tol: float = Field(default=1e-1, ge=0.0)
+    record_params_every: int = Field(default=1, ge=1)
+    epochs: int | None = Field(default=1, ge=1)
+
+    # Distribution-specific fields.
+    val: float = Field(default=0.2, ge=0.0, le=1.0)
+    eps: float = Field(default=1e-5, gt=0.0)
+    min_radius: float = Field(default=3.0, ge=0.0)
+    max_radius: float = Field(default=10.0, ge=0.0)
+    rate: float = Field(default=1.1, gt=1.0)
+    batch_size: int = Field(default=10, ge=1)
+    num_samples: int = Field(default=10000, ge=1)
+    max_phases: int = Field(default=1, ge=1)
+    loss_convergence_tol: float = Field(default=1e-3, ge=0.0)
+    relative_loss_tol: float = Field(default=float("inf"), ge=0.0)
+    loss_increase_tol: float = Field(default=float("inf"), ge=0.0)
+    project: bool = True
+
+    @model_validator(mode="after")
+    def check_radius(self) -> TruncatedExponentialFamilyDistributionConfig:
+        """Validate that min_radius does not exceed max_radius."""
+        if self.min_radius > self.max_radius:
+            raise ValueError(
+                f"min_radius ({self.min_radius}) must be <= "
+                f"max_radius ({self.max_radius})."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def resolve_epochs_iterations(
+        self,
+    ) -> TruncatedExponentialFamilyDistributionConfig:
+        """Clear the default epochs when iterations is explicitly provided.
+
+        The trainer uses exactly one stopping criterion.  When the user
+        supplies iterations, the per-phase epochs default is cleared so
+        the trainer stops on iterations instead.
+        """
+        if (
+            "iterations" in self.model_fields_set
+            and "epochs" not in self.model_fields_set
+        ):
+            object.__setattr__(self, "epochs", None)
+        return self
 
 
 class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=too-many-instance-attributes
@@ -31,15 +103,14 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
         dist (ExponentialFamily): Exponential family distribution class.
-        calc_suff_stat (Callable): Sufficient statistic calculator.
         criterion: NLL loss function applied during training.
         criterion_params (list): Extra parameters passed to criterion.
-        best_params: Best canonical parameters found across all training phases.
+        best_params: Best natural parameters found across all training phases.
         best_loss: Loss value at best parameters.
-        final_params: Canonical parameters at the end of the last phase.
+        final_params: Natural parameters at the end of the last phase.
         final_loss: Loss value at final parameters.
-        ema_params: Exponential moving-average canonical parameters.
-        avg_params: Running-average canonical parameters.
+        ema_params: Exponential moving-average natural parameters.
+        avg_params: Running-average natural parameters.
         train_loader_: Training data loader, set during fit.
         val_loader_: Validation data loader, set during fit.
         nll_init: Non-truncated NLL at the empirical initialization theta_0.
@@ -49,23 +120,21 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
 
     def __init__(
         self,
-        args: Parameters,
+        args: TruncatedExponentialFamilyDistributionConfig,
         phi: Callable,
         alpha: float,
         dims: int,
         dist: ExponentialFamily,
-        calc_suff_stat: Callable,
         logger: delphiLogger,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
-            args: Parameter object holding hyperparameters.
+            args: Validated configuration object.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             dist: Exponential family distribution class.
-            calc_suff_stat: Sufficient statistic calculator.
             logger: Logger instance.
         """
         super().__init__(args, logger)
@@ -73,23 +142,24 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.alpha = alpha
         self.dims = dims
         self.dist = dist
-        self.calc_suff_stat = calc_suff_stat
         self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,
             self.dims,
             self.dist,
-            self.calc_suff_stat,
+            self._calc_suff_stat,
             self.args.num_samples,
             self.args.eps,
         ]
 
+        # best_params, final_params, ema_params, and avg_params store natural
+        # parameters as returned directly by the trainer.
         self.best_params, self.best_loss = None, None
         self.final_params, self.final_loss = None, None
         self.ema_params = None
         self.avg_params = None
 
-        # Attributes initialized during fit
+        # Attributes initialized during fit.
         self.train_loader_ = None
         self.val_loader_ = None
         self.prev_best_loss = None
@@ -99,7 +169,6 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.trainer = None
         self.prev_theta = None
         self.prev_loss = None
-        self.emp_canon_params = None
         self.emp_theta = None
         self.nll_init = None
 
@@ -124,7 +193,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             self.args,
             S,
             TruncatedExponentialDistributionDataset,
-            {"calc_suff_stat": self.calc_suff_stat},
+            {"calc_suff_stat": self._calc_suff_stat},
         )
         # Initialize tracking
         self.prev_best_loss = None
@@ -150,16 +219,16 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             self.loss_history.append(current_loss)
 
             self.best_params, self.best_loss = (
-                self._reparameterize_canon_form(self.trainer.best_params),
+                self.trainer.best_params,
                 self.trainer.best_loss,
             )
             self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
             self.final_params, self.final_loss = (
-                self._reparameterize_canon_form(self.trainer.final_params),
+                self.trainer.final_params,
                 self.trainer.final_loss,
             )
-            self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
-            self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
+            self.ema_params = self.trainer.ema_params
+            self.avg_params = self.trainer.avg_params
 
             should_stop, reason = self._check_convergence()
 
@@ -226,11 +295,10 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         return self.nll_init + self.radius
 
     def _calc_emp_model(self):
-        """Calculate empirical model parameters from training data."""
+        """Calculate empirical natural parameters from training data."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_canon_params = self.calc_suff_stat(dataset_s).mean(0)
-        self.emp_theta = self._reparameterize_nat_form(self.emp_canon_params)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta))
+        self.emp_theta = self._calc_suff_stat(dataset_s).mean(0)
+        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 
@@ -300,15 +368,31 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             return
         with ch.no_grad():
             proj_theta = self._project_onto_sublevel_set(self.theta)
-            self.theta.copy_(self._constraints(proj_theta))
+            self._write_theta(self._constraints(proj_theta))
 
-    def _reparameterize_nat_form(self, theta):
-        """Convert canonical parameters to natural form. Override in subclasses."""
-        return theta
+    def _write_theta(self, value: Tensor) -> None:
+        """Write a projected theta value back to the parameter storage.
 
-    def _reparameterize_canon_form(self, theta):
-        """Convert natural parameters to canonical form. Override in subclasses."""
-        return theta
+        The default implementation copies directly into the theta Parameter.
+        Override in subclasses where theta is a computed view of separate
+        parameters (e.g. the unknown-covariance case with distinct T and v).
+
+        Args:
+            value: Projected natural parameter vector to store.
+        """
+        self.theta.copy_(value)
+
+    @staticmethod
+    def _calc_suff_stat(x: Tensor) -> Tensor:
+        """Compute sufficient statistics. Override in subclasses.
+
+        Args:
+            x: Input data tensor.
+
+        Returns:
+            Sufficient statistics tensor.
+        """
+        raise NotImplementedError
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
