@@ -5,17 +5,30 @@ import logging
 from collections.abc import Callable
 
 import torch as ch
+from pydantic import Field
 from torch import nn, Tensor
 
 from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
-)
-from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
-    TruncatedMultivariateNormalConfig,
+    TruncatedExponentialFamilyDistributionConfig,
 )
 from delphi.utils.configs import make_config
 from delphi.delphi_logger import delphiLogger
 from delphi.distributions.multivariate_normal import ExponentialFamilyMultivariateNormal
+
+
+class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionConfig):
+    """Configuration for truncated multivariate normal distributions.
+
+    Attributes:
+        eigenvalue_lower_bound: Minimum eigenvalue enforced during the
+            negative-definite cone projection of the precision matrix T.
+        covariance_matrix_lr: Optional separate learning rate for the
+            covariance matrix parameter; falls back to lr when None.
+    """
+
+    eigenvalue_lower_bound: float = Field(default=1e-2, gt=0.0)
+    covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
 
 
 class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
