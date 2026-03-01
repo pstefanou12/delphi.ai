@@ -14,6 +14,9 @@ from torch.distributions import (
 from torch.distributions.kl import kl_divergence
 
 from delphi import oracle
+from delphi.truncated.distributions.truncated_normal_known_variance import (
+    TruncatedNormalKnownVariance,
+)
 from delphi.truncated.distributions.truncated_normal import TruncatedNormal
 from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
     TruncatedMultivariateNormalKnownCovariance,
@@ -94,7 +97,7 @@ def test_truncated_normal_known_variance():
         "tol": 5e-2,
         "iterations": 1500,
     }
-    truncated = TruncatedNormal(args, phi_std_norm, alpha, 1, variance=ch.eye(1))
+    truncated = TruncatedNormalKnownVariance(args, phi_std_norm, alpha, 1, ch.eye(1))
     truncated.fit(S_std_norm)
 
     best_loc = truncated.best_loc_ + emp_loc
