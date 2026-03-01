@@ -52,9 +52,13 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
             alpha,
             dims,
             ExponentialFamilyPoisson,
-            calc_poiss_suff_stat,
             logger,
         )
+
+    @staticmethod
+    def _calc_suff_stat(x):
+        """Compute sufficient statistics for the Poisson distribution."""
+        return calc_poiss_suff_stat(x)
 
     def _reparameterize_nat_form(self, theta):
         """Convert canonical rate parameter to natural log form."""

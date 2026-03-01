@@ -54,10 +54,13 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
             alpha,
             dims,
             partial(ExponentialFamilyWeibull, k),
-            partial(calc_weibull_suff_stat, k),
             logger,
         )
         self.k = k
+
+    def _calc_suff_stat(self, x):
+        """Compute sufficient statistics for the Weibull distribution."""
+        return calc_weibull_suff_stat(self.k, x)
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""

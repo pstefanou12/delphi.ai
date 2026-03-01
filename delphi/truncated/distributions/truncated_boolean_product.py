@@ -46,9 +46,13 @@ class TruncatedBooleanProduct(TruncatedExponentialFamilyDistribution):
             alpha,
             dims,
             ExponentialFamilyBooleanProduct,
-            calc_bool_prod_suff_stat,
             logger,
         )
+
+    @staticmethod
+    def _calc_suff_stat(x):
+        """Compute sufficient statistics for the Boolean product distribution."""
+        return calc_bool_prod_suff_stat(x)
 
     def _reparameterize_nat_form(self, theta):
         """Convert canonical probability parameter to natural log-odds form."""

@@ -52,9 +52,13 @@ class TruncatedExponential(TruncatedExponentialFamilyDistribution):
             alpha,
             dims,
             ExponentialFamilyExponential,
-            calc_exp_suff_stat,
             logger,
         )
+
+    @staticmethod
+    def _calc_suff_stat(x):
+        """Compute sufficient statistics for the exponential distribution."""
+        return calc_exp_suff_stat(x)
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""
