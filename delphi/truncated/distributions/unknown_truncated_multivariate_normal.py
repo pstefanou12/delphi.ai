@@ -9,9 +9,11 @@ import torch as ch
 from torch import Tensor
 from torch import nn
 
-from delphi.truncated.distributions.truncated_multivariate_normal import (
-    TruncatedMultivariateNormalUnknownCovariance,
+from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
     TruncatedMultivariateNormalKnownCovariance,
+)
+from delphi.truncated.distributions.truncated_multivariate_normal import (
+    TruncatedMultivariateNormal,
 )
 from delphi.oracle import UnknownGaussian
 from delphi.trainer import Trainer
@@ -179,7 +181,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
 
 
 class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=too-many-instance-attributes
-    TruncatedMultivariateNormalUnknownCovariance
+    TruncatedMultivariateNormal
 ):
     """Truncated multivariate normal with unknown covariance and unknown truncation.
 

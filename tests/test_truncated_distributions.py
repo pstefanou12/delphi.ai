@@ -15,6 +15,9 @@ from torch.distributions.kl import kl_divergence
 
 from delphi import oracle
 from delphi.truncated.distributions.truncated_normal import TruncatedNormal
+from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
+    TruncatedMultivariateNormalKnownCovariance,
+)
 from delphi.truncated.distributions.truncated_multivariate_normal import (
     TruncatedMultivariateNormal,
 )
@@ -229,8 +232,8 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
         "verbose": True,
         "lr": 1e-2,
     }
-    truncated = TruncatedMultivariateNormal(
-        args, phi, alpha, dims, covariance_matrix=M.covariance_matrix
+    truncated = TruncatedMultivariateNormalKnownCovariance(
+        args, phi, alpha, dims, M.covariance_matrix
     )
     truncated.fit(S)
 
@@ -391,8 +394,8 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
         @ M.covariance_matrix
         @ ch.diag(ch.sqrt(true_var)).inverse()
     )
-    truncated = TruncatedMultivariateNormal(
-        args, phi_std_norm, alpha, dims, covariance_matrix=scaled_cov
+    truncated = TruncatedMultivariateNormalKnownCovariance(
+        args, phi_std_norm, alpha, dims, scaled_cov
     )
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(true_var) + emp_loc

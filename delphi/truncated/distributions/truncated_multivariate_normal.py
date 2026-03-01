@@ -3,135 +3,22 @@
 
 import logging
 from collections.abc import Callable
-from functools import partial
 
 import torch as ch
-from pydantic import Field
 from torch import nn, Tensor
 
 from delphi.truncated.distributions.truncated_exponential_family_distributions import (
     TruncatedExponentialFamilyDistribution,
-    TruncatedExponentialFamilyDistributionConfig,
+)
+from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
+    TruncatedMultivariateNormalConfig,
 )
 from delphi.utils.configs import make_config
 from delphi.delphi_logger import delphiLogger
-from delphi.distributions.multivariate_normal import (
-    ExponentialFamilyMultivariateNormal,
-    ExponentialFamilyMultivariateNormalKnownCovariance,
-)
+from delphi.distributions.multivariate_normal import ExponentialFamilyMultivariateNormal
 
 
-class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionConfig):
-    """Configuration for truncated multivariate normal distributions.
-
-    Attributes:
-        eigenvalue_lower_bound: Minimum eigenvalue enforced during the
-            negative-definite cone projection of the precision matrix T.
-        covariance_matrix_lr: Optional separate learning rate for the
-            covariance matrix parameter; falls back to lr when None.
-    """
-
-    eigenvalue_lower_bound: float = Field(default=1e-2, gt=0.0)
-    covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
-
-
-class TruncatedMultivariateNormalKnownCovariance(
-    TruncatedExponentialFamilyDistribution
-):
-    """Truncated multivariate normal distribution with known covariance.
-
-    Attributes:
-        covariance_matrix: Known covariance matrix supplied at construction.
-    """
-
-    def __init__(
-        self,
-        args: dict | TruncatedMultivariateNormalConfig,
-        phi: Callable,
-        alpha: float,
-        dims: int,
-        covariance_matrix: ch.Tensor | None,
-        sampler: Callable = None,
-    ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """Initialize TruncatedMultivariateNormalKnownCovariance.
-
-        Args:
-            args: Hyperparameter dict or Pydantic config.
-            phi: Truncation set oracle.
-            alpha: Survival probability lower bound.
-            dims: Number of dimensions.
-            covariance_matrix: Known covariance matrix.
-            sampler: Optional sampler override.
-        """
-        args = make_config(args, TruncatedMultivariateNormalConfig)
-        logger = (
-            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
-        )
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            partial(
-                ExponentialFamilyMultivariateNormalKnownCovariance, covariance_matrix
-            ),
-            logger,
-        )
-        self.covariance_matrix = covariance_matrix
-        self._sampler = sampler
-
-    @staticmethod
-    def _calc_suff_stat(x: Tensor) -> Tensor:
-        """Compute sufficient statistics for multivariate normal with known covariance."""
-        return ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(x)
-
-    def _calc_emp_model(self):
-        """Calculate empirical natural parameters and register theta as an nn.Parameter."""
-        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        emp_mean = self._calc_suff_stat(dataset_s).mean(0)
-        self.emp_theta = ExponentialFamilyMultivariateNormalKnownCovariance.to_natural(
-            emp_mean, self.covariance_matrix
-        )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
-        with ch.no_grad():
-            self.nll_init = self._compute_nll(self.emp_theta)
-
-    @property
-    def best_loc_(self):
-        """Best mean vector estimate based on lowest training loss."""
-        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
-            self.best_params, self.covariance_matrix
-        )
-
-    @property
-    def final_loc_(self):
-        """Final mean vector estimate at the end of training."""
-        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
-            self.final_params, self.covariance_matrix
-        )
-
-    @property
-    def ema_loc_(self):
-        """Exponential moving-average mean vector estimate."""
-        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
-            self.ema_params, self.covariance_matrix
-        )
-
-    @property
-    def avg_loc_(self):
-        """Running-average mean vector estimate."""
-        return ExponentialFamilyMultivariateNormalKnownCovariance.to_canonical(
-            self.avg_params, self.covariance_matrix
-        )
-
-    def __str__(self):
-        """Return a human-readable name for this distribution."""
-        return "truncated multivariate normal distribution known covariance"
-
-
-class TruncatedMultivariateNormalUnknownCovariance(
-    TruncatedExponentialFamilyDistribution
-):
+class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     """Truncated multivariate normal distribution with unknown covariance.
 
     Attributes:
@@ -149,7 +36,7 @@ class TruncatedMultivariateNormalUnknownCovariance(
         dims: int,
         sampler: Callable = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """Initialize TruncatedMultivariateNormalUnknownCovariance.
+        """Initialize TruncatedMultivariateNormal.
 
         Args:
             args: Hyperparameter dict or Pydantic config.
@@ -321,36 +208,3 @@ class TruncatedMultivariateNormalUnknownCovariance(
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated multivariate normal distribution"
-
-
-def TruncatedMultivariateNormal(  # pylint: disable=invalid-name
-    args: dict | TruncatedMultivariateNormalConfig,
-    phi: Callable,
-    alpha: float,
-    dims: int,
-    covariance_matrix: ch.Tensor | None = None,
-    sampler: Callable = None,
-):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    """Factory function for truncated multivariate normal distributions.
-
-    Returns a known-covariance model if covariance_matrix is provided,
-    otherwise returns an unknown-covariance model.
-
-    Args:
-        args: Hyperparameter dict or Pydantic config.
-        phi: Truncation set oracle.
-        alpha: Survival probability lower bound.
-        dims: Number of dimensions.
-        covariance_matrix: Known covariance; if None, it is estimated.
-        sampler: Optional sampler override.
-
-    Returns:
-        TruncatedMultivariateNormalKnownCovariance if covariance_matrix is
-        provided, else TruncatedMultivariateNormalUnknownCovariance.
-    """
-    args = make_config(args, TruncatedMultivariateNormalConfig)
-    if covariance_matrix is not None:
-        return TruncatedMultivariateNormalKnownCovariance(
-            args, phi, alpha, dims, covariance_matrix, sampler
-        )
-    return TruncatedMultivariateNormalUnknownCovariance(args, phi, alpha, dims, sampler)

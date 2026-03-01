@@ -7,10 +7,12 @@ from collections.abc import Callable
 
 import torch as ch
 
-from delphi.truncated.distributions.truncated_multivariate_normal import (
+from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
     TruncatedMultivariateNormalConfig,
     TruncatedMultivariateNormalKnownCovariance,
-    TruncatedMultivariateNormalUnknownCovariance,
+)
+from delphi.truncated.distributions.truncated_multivariate_normal import (
+    TruncatedMultivariateNormal,
 )
 from delphi.utils.configs import make_config
 
@@ -33,11 +35,10 @@ class TruncatedNormalKnownCovariance(TruncatedMultivariateNormalKnownCovariance)
         return "truncated normal distribution known covariance"
 
 
-class TruncatedNormalUnknownVariance(TruncatedMultivariateNormalUnknownCovariance):
+class TruncatedNormalUnknownVariance(TruncatedMultivariateNormal):
     """Truncated normal distribution with unknown variance.
 
-    Inherits all constructor arguments from
-    TruncatedMultivariateNormalUnknownCovariance:
+    Inherits all constructor arguments from TruncatedMultivariateNormal:
         args (Parameters): hyperparameter object
         phi (Callable): truncation set oracle
         alpha (float): survival probability lower bound
