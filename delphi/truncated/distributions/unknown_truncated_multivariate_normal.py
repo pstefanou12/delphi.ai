@@ -6,28 +6,19 @@
 from functools import partial
 
 import torch as ch
-from torch import Tensor
 from torch import nn
 
-from delphi.truncated.distributions.truncated_multivariate_normal_known_covariance import (
-    TruncatedMultivariateNormalKnownCovariance,
+from delphi import oracle, trainer
+from delphi.truncated.distributions import (
+    losses,
+    truncated_multivariate_normal,
+    truncated_multivariate_normal_known_covariance,
 )
-from delphi.truncated.distributions.truncated_multivariate_normal import (
-    TruncatedMultivariateNormal,
-)
-from delphi.oracle import UnknownGaussian
-from delphi.trainer import Trainer
-from delphi.truncated.distributions.losses import UnknownTruncationMultivariateNormalNLL
-from delphi.utils.datasets import (
-    UnknownTruncationNormalDataset,
-    make_train_and_val_distr,
-)
-from delphi.utils.helpers import Parameters, cov
-from delphi.utils.defaults import check_and_fill_args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
+from delphi.utils import datasets, defaults, helpers
 
 
 class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too-many-instance-attributes
-    TruncatedMultivariateNormalKnownCovariance
+    truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance
 ):
     """Truncated multivariate normal with known covariance and unknown truncation.
 
@@ -38,7 +29,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
 
     def __init__(
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         k: int,
         alpha: float,
         dims: int,
@@ -56,21 +47,25 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
+        if not isinstance(args, helpers.Parameters):
             raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
-        self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
+        self.args = defaults.check_and_fill_args(
+            args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
+        )
         super().__init__(
             args,
-            partial(UnknownGaussian, k),
+            partial(oracle.UnknownGaussian, k),
             alpha,
             dims,
             covariance_matrix=covariance_matrix,
         )
 
         self.emp_loc, self.emp_covariance_matrix = None, None
-        self.criterion = UnknownTruncationMultivariateNormalNLL.apply
+        self.criterion = (
+            losses.UnknownTruncationMultivariateNormalNLL.apply
+        )
 
         # Attributes initialized during fit.
         self.train_loader_ = None
@@ -84,26 +79,30 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.prev_theta = None
         self.prev_loss = None
 
-    def fit(self, S: Tensor):
+    def fit(self, S: ch.Tensor):
         """Fit the model to the observed (truncated) samples S.
 
         Args:
             S: Observed samples of shape (num_samples, dims).
         """
-        assert isinstance(S, Tensor), (
+        assert isinstance(S, ch.Tensor), (
             f"S is type: {type(S)}. expected type torch.Tensor."
         )
         assert S.size(0) > S.size(1), (
             "input expected to be shape num samples by dimenions, "
             f"current input is size {S.size()}."
         )
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(
-            self.args, S, UnknownTruncationNormalDataset
+        self.train_loader_, self.val_loader_ = (
+            datasets.make_train_and_val_distr(
+                self.args,
+                S,
+                datasets.UnknownTruncationNormalDataset,
+            )
         )
 
         # Verify that S is whitened to N(0, I).
         emp_loc = S.mean(0)
-        emp_cov = cov(S)
+        emp_cov = helpers.cov(S)
         if (
             ch.norm(emp_loc - ch.zeros(S.size(1))) >= 1e-3
             or ch.norm(emp_cov - ch.eye(S.size(1))) >= 1e-3
@@ -131,7 +130,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.args, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking
@@ -181,7 +180,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
 
 
 class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=too-many-instance-attributes
-    TruncatedMultivariateNormal
+    truncated_multivariate_normal.TruncatedMultivariateNormal
 ):
     """Truncated multivariate normal with unknown covariance and unknown truncation.
 
@@ -190,7 +189,13 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         exp_h: Exponential h helper object, set during fit.
     """
 
-    def __init__(self, args: Parameters, k: int, alpha: float, dims: int):
+    def __init__(
+        self,
+        args: helpers.Parameters,
+        k: int,
+        alpha: float,
+        dims: int,
+    ):
         """Initialize UnknownTruncationMultivariateNormalUnknownCovariance.
 
         Args:
@@ -202,15 +207,21 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
+        if not isinstance(args, helpers.Parameters):
             raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
-        self.args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
-        super().__init__(args, partial(UnknownGaussian, k), alpha, dims)
+        self.args = defaults.check_and_fill_args(
+            args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
+        )
+        super().__init__(
+            args, partial(oracle.UnknownGaussian, k), alpha, dims
+        )
 
         self.emp_loc, self.emp_covariance_matrix = None, None
-        self.criterion = UnknownTruncationMultivariateNormalNLL.apply
+        self.criterion = (
+            losses.UnknownTruncationMultivariateNormalNLL.apply
+        )
 
         # Attributes initialized during fit.
         self.train_loader_ = None
@@ -226,26 +237,30 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.emp_T = None  # pylint: disable=invalid-name
         self.emp_v = None
 
-    def fit(self, S: Tensor):
+    def fit(self, S: ch.Tensor):
         """Fit the model to the observed (truncated) samples S.
 
         Args:
             S: Observed samples of shape (num_samples, dims).
         """
-        assert isinstance(S, Tensor), (
+        assert isinstance(S, ch.Tensor), (
             f"S is type: {type(S)}. expected type torch.Tensor."
         )
         assert S.size(0) > S.size(1), (
             "input expected to be shape num samples by dimenions, "
             f"current input is size {S.size()}."
         )
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(
-            self.args, S, UnknownTruncationNormalDataset
+        self.train_loader_, self.val_loader_ = (
+            datasets.make_train_and_val_distr(
+                self.args,
+                S,
+                datasets.UnknownTruncationNormalDataset,
+            )
         )
 
         # Verify that S is whitened to N(0, I).
         emp_loc = S.mean(0)
-        emp_cov = cov(S)
+        emp_cov = helpers.cov(S)
         if (
             ch.norm(emp_loc - ch.zeros(S.size(1))) >= 1e-3
             or ch.norm(emp_cov - ch.eye(S.size(1))) >= 1e-3
@@ -273,7 +288,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.args, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking
@@ -321,7 +336,9 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         """Calculate empirical natural parameters and register T and v."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
 
-        self.emp_T = cov(dataset_s).inverse()  # pylint: disable=invalid-name
+        self.emp_T = (  # pylint: disable=invalid-name
+            helpers.cov(dataset_s).inverse()
+        )
         self.emp_v = self.emp_T @ dataset_s.mean(0)
         self.register_parameter("T", nn.Parameter(self.emp_T.clone()))
         self.register_parameter("v", nn.Parameter(self.emp_v.clone()))
@@ -378,7 +395,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
 
 
 def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
-    args: Parameters,
+    args: helpers.Parameters,
     k: int,
     alpha: float,
     dims: int,
@@ -403,9 +420,11 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     Raises:
         TypeError: If args is not a Parameters instance.
     """
-    if not isinstance(args, Parameters):
+    if not isinstance(args, helpers.Parameters):
         raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-    args = check_and_fill_args(args, UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS)
+    args = defaults.check_and_fill_args(
+        args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
+    )
 
     if covariance_matrix is not None:
         return UnknownTruncationMultivariateNormalKnownCovariance(

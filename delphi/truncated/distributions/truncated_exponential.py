@@ -6,24 +6,20 @@ from collections.abc import Callable
 
 import torch as ch
 
-from delphi.truncated.distributions.truncated_exponential_family_distributions import (
-    TruncatedExponentialFamilyDistribution,
-)
-from delphi.delphi_logger import delphiLogger
-from delphi.distributions.exponential import (
-    ExponentialFamilyExponential,
-    calc_exp_suff_stat,
-)
-from delphi.utils.helpers import Parameters
-from delphi.utils.defaults import check_and_fill_args, TRUNC_EXP_DEFAULTS
+from delphi import delphi_logger
+from delphi.distributions import exponential
+from delphi.truncated.distributions import truncated_exponential_family_distributions
+from delphi.utils import defaults, helpers
 
 
-class TruncatedExponential(TruncatedExponentialFamilyDistribution):
+class TruncatedExponential(
+    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
+):
     """Model for truncated exponential distributions to be passed into trainer."""
 
     def __init__(
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -39,26 +35,28 @@ class TruncatedExponential(TruncatedExponentialFamilyDistribution):
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
+        if not isinstance(args, helpers.Parameters):
             raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-        args = check_and_fill_args(args, TRUNC_EXP_DEFAULTS)
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_EXP_DEFAULTS)
 
         logger = (
-            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+            delphi_logger.delphiLogger()
+            if args.verbose
+            else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            ExponentialFamilyExponential,
+            exponential.ExponentialFamilyExponential,
             logger,
         )
 
     @staticmethod
     def _calc_suff_stat(x):
         """Compute sufficient statistics for the exponential distribution."""
-        return calc_exp_suff_stat(x)
+        return exponential.calc_exp_suff_stat(x)
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""

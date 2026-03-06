@@ -4,16 +4,16 @@ Multinomial logistic regression that uses gumbel max loss function.
 """
 # pylint: disable=duplicate-code
 
-from torch.distributions import Gumbel
-from torch.nn import MSELoss
+import torch.distributions
+import torch.nn
 
-from delphi.stats.losses import GumbelCE
-from delphi.utils.helpers import accuracy
+from delphi.stats import losses
 from delphi.stats.linear_model import LinearModel
+from delphi.utils import helpers
 
 # Module-level constants.
-mse_loss = MSELoss()
-G = Gumbel(0, 1)
+mse_loss = torch.nn.MSELoss()
+G = torch.distributions.Gumbel(0, 1)
 
 
 class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
@@ -52,14 +52,14 @@ class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
         """
         inp, targ = batch
         z = inp @ self.model
-        loss = GumbelCE.apply(z, targ)
+        loss = losses.GumbelCE.apply(z, targ)
 
         # Calculate precision accuracies.
         prec1, prec5 = None, None
         if z.size(1) >= 5:
-            prec1, prec5 = accuracy(z, targ, topk=(1, 5))
+            prec1, prec5 = helpers.accuracy(z, targ, topk=(1, 5))
         else:
-            (prec1,) = accuracy(z, targ, topk=(1,))
+            (prec1,) = helpers.accuracy(z, targ, topk=(1,))
         return loss, prec1, prec5
 
     def calc_logits(self, inp):

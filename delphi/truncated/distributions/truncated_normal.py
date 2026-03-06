@@ -1,21 +1,30 @@
 # Author: pstefanou12@
 """Truncated normal distribution with oracle access (known truncation set)."""
 
-from delphi.truncated.distributions.truncated_multivariate_normal import (
-    TruncatedMultivariateNormal,
-)
+from collections.abc import Callable
+
+from delphi.truncated.distributions import truncated_multivariate_normal
 
 
-class TruncatedNormal(TruncatedMultivariateNormal):
-    """Truncated normal distribution with unknown variance.
+class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal):
+    """Truncated normal distribution with unknown variance."""
 
-    Inherits all constructor arguments from TruncatedMultivariateNormal:
-        args (Parameters): hyperparameter object
-        phi (Callable): truncation set oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        sampler (Callable): optional sampler override
-    """
+    def __init__(
+        self,
+        args: dict | truncated_multivariate_normal.TruncatedMultivariateNormalConfig,
+        phi: Callable,
+        alpha: float,
+        sampler: Callable = None,
+    ):
+        """Initialize TruncatedNormal.
+
+        Args:
+            args: Hyperparameter dict or Pydantic config.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            sampler: Optional sampler override.
+        """
+        super().__init__(args, phi, alpha, 1, sampler)
 
     @property
     def best_variance_(self):

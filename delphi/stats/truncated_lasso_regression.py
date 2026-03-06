@@ -4,24 +4,19 @@ Truncated Lasso Regression.
 """
 
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
+from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
-from sklearn.linear_model import LassoCV
-from torch import Tensor
 
-from delphi.delphi_logger import delphiLogger
-from delphi.stats.losses import TruncatedMSE
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import TRUNC_LASSO_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import Parameters
-from delphi.stats.linear_model import LinearModel
+from delphi import delphi_logger, trainer
+from delphi.stats import linear_model, losses
+from delphi.utils import datasets, defaults, helpers
 
 
-class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
     """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
 
     Supports known noise variance. Requires a truncation oracle and survival
@@ -30,7 +25,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         phi: Callable,
         alpha: float,
         l1: float = 1.0,
@@ -51,8 +46,8 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphiLogger()
-        args = check_and_fill_args(args, TRUNC_LASSO_DEFAULTS)
+        logger = delphi_logger.delphiLogger()
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_LASSO_DEFAULTS)
         super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
@@ -63,7 +58,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
 
         del self.criterion
 
-        self.criterion = TruncatedMSE.apply
+        self.criterion = losses.TruncatedMSE.apply
         self.criterion_params = [
             self.phi,
             self.noise_var,
@@ -73,8 +68,8 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
 
     def fit(  # pylint: disable=attribute-defined-outside-init
         self,
-        X: Tensor,
-        y: Tensor,  # pylint: disable=invalid-name
+        X: ch.Tensor,
+        y: ch.Tensor,  # pylint: disable=invalid-name
     ):
         """
         Train truncated lasso regression model by running PSGD on the truncated negative
@@ -84,10 +79,10 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
             X (torch.Tensor): input feature covariates num_samples by dims
             y (torch.Tensor): dependent variable predictions num_samples by 1
         """
-        assert isinstance(X, Tensor), (
+        assert isinstance(X, ch.Tensor), (
             f"X is type: {type(X)}. expected type torch.Tensor."
         )
-        assert isinstance(y, Tensor), (
+        assert isinstance(y, ch.Tensor), (
             f"y is type: {type(y)}. expected type torch.Tensor."
         )
         assert X.size(0) > X.size(1), (
@@ -118,9 +113,9 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
         else:
             X = X / self.beta  # pylint: disable=invalid-name
 
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
+        self.train_loader, self.val_loader = datasets.make_train_and_val(self.args, X, y)
 
-        self.trainer = Trainer(self, self.args, self.logger)
+        self.trainer = trainer.Trainer(self, self.args, self.logger)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )
@@ -136,7 +131,9 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
     def calc_emp_model(self) -> None:
         """Calculate empirical lasso regression estimates using sklearn."""
         X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
-        emp_lasso = LassoCV(fit_intercept=self.fit_intercept, alphas=[self.l1])
+        emp_lasso = sklearn_linear_model.LassoCV(
+            fit_intercept=self.fit_intercept, alphas=[self.l1]
+        )
         emp_lasso.fit(X, y)
         if self.args.fit_intercept:
             lasso_coef_ = ch.from_numpy(
@@ -175,7 +172,7 @@ class TruncatedLassoRegression(LinearModel):  # pylint: disable=too-many-instanc
             self.final_coef = final_params[:] / self.beta
             self.emp_weight /= self.beta
 
-    def predict(self, X: Tensor):  # pylint: disable=invalid-name
+    def predict(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Make predictions with regression estimates."""
         assert self.coef is not None, "must fit model before using predict method"
         if self.fit_intercept:

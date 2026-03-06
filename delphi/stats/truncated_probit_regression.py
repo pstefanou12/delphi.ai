@@ -5,27 +5,22 @@ Truncated Probit Regression.
 
 import math
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
+from statsmodels.discrete import discrete_model
 import torch as ch
-from statsmodels.discrete.discrete_model import Probit
-from torch import Tensor
 
-from delphi.delphi_logger import delphiLogger
-from delphi.stats.losses import TruncatedProbitMLE
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import TRUNC_PROB_REG_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import Parameters
-from delphi.stats.linear_model import LinearModel
+from delphi import delphi_logger, trainer
+from delphi.stats import linear_model, losses
+from delphi.utils import datasets, defaults, helpers
 
 
-class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
     """Truncated probit regression for binary classification with N(0,1) latent noise."""
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         phi: Callable,
         alpha: float,
         fit_intercept: bool = True,
@@ -42,8 +37,8 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphiLogger()
-        args = check_and_fill_args(args, TRUNC_PROB_REG_DEFAULTS)
+        logger = delphi_logger.delphiLogger()
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_PROB_REG_DEFAULTS)
         super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
@@ -52,11 +47,11 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
 
         del self.criterion
         del self.criterion_params
-        self.criterion = TruncatedProbitMLE.apply
+        self.criterion = losses.TruncatedProbitMLE.apply
         self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
 
     def fit(  # pylint: disable=attribute-defined-outside-init,invalid-name
-        self, X: Tensor, y: Tensor
+        self, X: ch.Tensor, y: ch.Tensor
     ):
         """
         Train truncated probit regression model by running PSGD on the truncated negative
@@ -66,10 +61,10 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
             X (torch.Tensor): input feature covariates num_samples by dims
             y (torch.Tensor): dependent variable predictions num_samples by 1
         """
-        assert isinstance(X, Tensor), (
+        assert isinstance(X, ch.Tensor), (
             f"X is type: {type(X)}. expected type torch.Tensor."
         )
-        assert isinstance(y, Tensor), (
+        assert isinstance(y, ch.Tensor), (
             f"y is type: {type(y)}. expected type torch.Tensor."
         )
         assert X.size(0) > X.size(1), (
@@ -83,9 +78,9 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
+        self.train_loader, self.val_loader = datasets.make_train_and_val(self.args, X, y)
 
-        self.trainer = Trainer(self, self.args, self.logger)
+        self.trainer = trainer.Trainer(self, self.args, self.logger)
         # Run PGD for parameter estimation.
         self.trainer.train_model(self.train_loader, self.val_loader)
 
@@ -100,7 +95,7 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
             X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
 
             # Empirical estimates for probit regression.
-            self.emp_prob_reg = Probit(y.numpy(), X.numpy()).fit()
+            self.emp_prob_reg = discrete_model.Probit(y.numpy(), X.numpy()).fit()
 
             self.emp_weight = ch.nn.Parameter(
                 ch.from_numpy(self.emp_prob_reg.params)[..., None].float()
@@ -138,7 +133,7 @@ class TruncatedProbitRegression(LinearModel):  # pylint: disable=too-many-instan
             self.best_coef = best_params
             self.final_coef = final_params
 
-    def predict(self, X: Tensor):  # pylint: disable=invalid-name
+    def predict(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Make class predictions with regression estimates."""
         if self.fit_intercept:
             logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1) @ self.weight

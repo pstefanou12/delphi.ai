@@ -5,15 +5,12 @@
 
 import torch as ch
 
-from delphi.truncated.distributions.unknown_truncated_multivariate_normal import (
-    UnknownTruncationMultivariateNormalUnknownCovariance,
-    UnknownTruncationMultivariateNormalKnownCovariance,
-)
-from delphi.utils.helpers import Parameters
+from delphi.truncated.distributions import unknown_truncated_multivariate_normal
+from delphi.utils import helpers
 
 
 class UnknownTruncationNormalKnownVariance(
-    UnknownTruncationMultivariateNormalKnownCovariance
+    unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalKnownCovariance
 ):
     """Truncated normal distribution with known variance and unknown truncation.
 
@@ -34,7 +31,7 @@ class UnknownTruncationNormalKnownVariance(
 
 
 class UnknownTruncatedNormalUnknownVariance(
-    UnknownTruncationMultivariateNormalUnknownCovariance
+    unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalUnknownCovariance
 ):
     """Truncated normal distribution with unknown variance and unknown truncation.
 
@@ -72,7 +69,7 @@ class UnknownTruncatedNormalUnknownVariance(
 
 
 def UnknownTruncationNormal(  # pylint: disable=invalid-name
-    args: Parameters,
+    args: helpers.Parameters,
     k: int,
     alpha: float,
     dims: int,
@@ -97,7 +94,7 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
     Raises:
         TypeError: If args is not a Parameters instance.
     """
-    if not isinstance(args, Parameters):
+    if not isinstance(args, helpers.Parameters):
         raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     if variance is not None:
         return UnknownTruncationNormalKnownVariance(args, k, alpha, dims, variance)

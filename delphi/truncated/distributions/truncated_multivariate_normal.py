@@ -1,23 +1,22 @@
 # Author: pstefanou12@
 """Truncated multivariate normal distribution with oracle access (known truncation set)."""
 
-import logging
 from collections.abc import Callable
+import logging
 
-import torch as ch
 from pydantic import Field
-from torch import nn, Tensor
+import torch as ch
+from torch import nn
 
-from delphi.truncated.distributions.truncated_exponential_family_distributions import (
-    TruncatedExponentialFamilyDistribution,
-    TruncatedExponentialFamilyDistributionConfig,
-)
-from delphi.utils.configs import make_config
-from delphi.delphi_logger import delphiLogger
-from delphi.distributions.multivariate_normal import ExponentialFamilyMultivariateNormal
+from delphi import delphi_logger
+from delphi.distributions import multivariate_normal
+from delphi.truncated.distributions import truncated_exponential_family_distributions
+from delphi.utils import configs
 
 
-class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionConfig):
+class TruncatedMultivariateNormalConfig(
+    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistributionConfig
+):
     """Configuration for truncated multivariate normal distributions.
 
     Attributes:
@@ -31,7 +30,9 @@ class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionCo
     covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
 
 
-class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
+class TruncatedMultivariateNormal(
+    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
+):
     """Truncated multivariate normal distribution with unknown covariance.
 
     Attributes:
@@ -58,18 +59,20 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
             dims: Number of dimensions.
             sampler: Optional sampler override.
         """
-        args = make_config(args, TruncatedMultivariateNormalConfig)
+        args = configs.make_config(args, TruncatedMultivariateNormalConfig)
         self.eigenvalue_lower_bound = args.eigenvalue_lower_bound
 
         logger = (
-            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+            delphi_logger.delphiLogger()
+            if args.verbose
+            else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            ExponentialFamilyMultivariateNormal,
+            multivariate_normal.ExponentialFamilyMultivariateNormal,
             logger,
         )
         self._sampler = sampler
@@ -80,9 +83,9 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
         self.emp_v = None
 
     @staticmethod
-    def _calc_suff_stat(x: Tensor) -> Tensor:
+    def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Compute sufficient statistics for multivariate normal."""
-        return ExponentialFamilyMultivariateNormal.calc_suff_stat(x)
+        return multivariate_normal.ExponentialFamilyMultivariateNormal.calc_suff_stat(x)
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""
@@ -93,7 +96,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
         cov_matrix = second_moment - ch.outer(loc, loc)
         emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
-        self.emp_theta = ExponentialFamilyMultivariateNormal.to_natural(
+        self.emp_theta = multivariate_normal.ExponentialFamilyMultivariateNormal.to_natural(
             emp_canon_params, self.dims
         )
         self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
@@ -133,7 +136,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
             self.T.copy_(mat_t)
         super().step_post_hook(optimizer, args, kwargs)
 
-    def _write_theta(self, value: Tensor) -> None:
+    def _write_theta(self, value: ch.Tensor) -> None:
         """Split the projected flat theta into T and v and copy to their Parameters."""
         mat_t = value[: self.dims**2].view(self.dims, self.dims)  # pylint: disable=invalid-name
         mat_t = 0.5 * (mat_t + mat_t.T)
@@ -157,7 +160,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def best_loc_(self):
         """Best mean vector estimate based on lowest training loss."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.best_params, self.dims
         )
         return canon[self.dims**2 :]
@@ -165,7 +168,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def best_covariance_matrix_(self):
         """Best covariance matrix estimate based on lowest training loss."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.best_params, self.dims
         )
         return canon[: self.dims**2].view(self.dims, self.dims)
@@ -173,7 +176,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def final_loc_(self):
         """Final mean vector estimate at the end of training."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.final_params, self.dims
         )
         return canon[self.dims**2 :]
@@ -181,7 +184,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def final_covariance_matrix_(self):
         """Final covariance matrix estimate at the end of training."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.final_params, self.dims
         )
         return canon[: self.dims**2].view(self.dims, self.dims)
@@ -189,7 +192,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def ema_loc_(self):
         """Exponential moving-average mean vector estimate."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.ema_params, self.dims
         )
         return canon[self.dims**2 :]
@@ -197,7 +200,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def ema_covariance_matrix_(self):
         """Exponential moving-average covariance matrix estimate."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.ema_params, self.dims
         )
         return canon[: self.dims**2].view(self.dims, self.dims)
@@ -205,7 +208,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def avg_loc_(self):
         """Running-average mean vector estimate."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.avg_params, self.dims
         )
         return canon[self.dims**2 :]
@@ -213,7 +216,7 @@ class TruncatedMultivariateNormal(TruncatedExponentialFamilyDistribution):
     @property
     def avg_covariance_matrix_(self):
         """Running-average covariance matrix estimate."""
-        canon = ExponentialFamilyMultivariateNormal.to_canonical(
+        canon = multivariate_normal.ExponentialFamilyMultivariateNormal.to_canonical(
             self.avg_params, self.dims
         )
         return canon[: self.dims**2].view(self.dims, self.dims)

@@ -1,25 +1,21 @@
 # Author: pstefanou12@
 """Truncated Weibull Distribution."""
 
-import logging
 from collections.abc import Callable
 from functools import partial
+import logging
 
 import torch as ch
 
-from delphi.truncated.distributions.truncated_exponential_family_distributions import (
-    TruncatedExponentialFamilyDistribution,
-)
-from delphi.delphi_logger import delphiLogger
-from delphi.distributions.weibull import (
-    ExponentialFamilyWeibull,
-    calc_weibull_suff_stat,
-)
-from delphi.utils.helpers import Parameters
-from delphi.utils.defaults import check_and_fill_args, TRUNC_WEIBULL_DEFAULTS
+from delphi import delphi_logger
+from delphi.distributions import weibull
+from delphi.truncated.distributions import truncated_exponential_family_distributions
+from delphi.utils import defaults, helpers
 
 
-class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
+class TruncatedWeibull(
+    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
+):
     """Model for truncated Weibull distributions to be passed into trainer.
 
     Attributes:
@@ -27,7 +23,12 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
     """
 
     def __init__(
-        self, args: Parameters, phi: Callable, alpha: float, dims: int, k: int
+        self,
+        args: helpers.Parameters,
+        phi: Callable,
+        alpha: float,
+        dims: int,
+        k: int,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedWeibull.
 
@@ -41,26 +42,28 @@ class TruncatedWeibull(TruncatedExponentialFamilyDistribution):
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, Parameters):
+        if not isinstance(args, helpers.Parameters):
             raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-        args = check_and_fill_args(args, TRUNC_WEIBULL_DEFAULTS)
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_WEIBULL_DEFAULTS)
 
         logger = (
-            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+            delphi_logger.delphiLogger()
+            if args.verbose
+            else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            partial(ExponentialFamilyWeibull, k),
+            partial(weibull.ExponentialFamilyWeibull, k),
             logger,
         )
         self.k = k
 
     def _calc_suff_stat(self, x):
         """Compute sufficient statistics for the Weibull distribution."""
-        return calc_weibull_suff_stat(self.k, x)
+        return weibull.calc_weibull_suff_stat(self.k, x)
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""

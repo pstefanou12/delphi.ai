@@ -4,14 +4,14 @@
 import math
 
 import torch as ch
+import torch.distributions
+import torch.nn
 from torch import sigmoid as sig  # pylint: disable=no-name-in-module
-from torch.nn import Softmax
-from torch.distributions import Gumbel
 
-from delphi.utils.helpers import logistic
+from delphi.utils import helpers
 
-softmax = Softmax(dim=1)
-gumbel = Gumbel(0, 1)
+softmax = torch.nn.Softmax(dim=1)
+gumbel = torch.distributions.Gumbel(0, 1)
 
 
 def Test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
@@ -221,7 +221,7 @@ class TruncatedBCE(ch.autograd.Function):  # pylint: disable=abstract-method
             eps: Denominator error constant to avoid divide by zero.
         """
         stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        rand_noise = logistic.sample(stacked.size())
+        rand_noise = helpers.logistic.sample(stacked.size())
         noised = stacked + rand_noise
         noised_labs = noised >= 0
         filtered = phi(noised)
@@ -318,7 +318,7 @@ class GumbelCE(ch.autograd.Function):  # pylint: disable=abstract-method
     def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
         """Compute gradient of Gumbel CE w.r.t. pred."""
         pred, targ = ctx.saved_tensors
-        gumbel_dist = Gumbel(0, 1)  # pylint: disable=invalid-name
+        gumbel_dist = torch.distributions.Gumbel(0, 1)  # pylint: disable=invalid-name
         stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
         rand_noise = gumbel_dist.sample(stacked.size())
         noised = stacked + rand_noise

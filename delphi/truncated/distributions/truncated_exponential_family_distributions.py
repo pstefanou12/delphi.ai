@@ -4,29 +4,21 @@
 # pylint: disable=duplicate-code
 
 from __future__ import annotations
-
 from collections.abc import Callable
 
+import pydantic
 import torch as ch
-from pydantic import ConfigDict, Field, model_validator
-from torch import Tensor
-from torch.distributions.exp_family import ExponentialFamily
 from torch import nn
+from torch.distributions import exp_family
 
-from delphi.truncated.distributions.distributions import distributions
-from delphi.delphi_logger import delphiLogger
-from delphi.utils.configs import OptimizerConfig, TrainerConfig
-from delphi.utils.datasets import (
-    TruncatedExponentialDistributionDataset,
-    make_train_and_val_distr,
-)
-from delphi.truncated.distributions.losses import (
-    TruncatedExponentialFamilyDistributionNLL,
-)
-from delphi.trainer import Trainer
+from delphi import delphi_logger, trainer
+from delphi.truncated.distributions import distributions, losses
+from delphi.utils import configs, datasets
 
 
-class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfig):
+class TruncatedExponentialFamilyDistributionConfig(
+    configs.TrainerConfig, configs.OptimizerConfig
+):
     """Configuration for truncated exponential family distribution algorithms.
 
     Attributes:
@@ -46,28 +38,28 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
         project: Enable per-step sublevel-set projection.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
     # Override parent defaults for distribution training.
-    tol: float = Field(default=1e-1, ge=0.0)
-    record_params_every: int = Field(default=1, ge=1)
-    epochs: int | None = Field(default=1, ge=1)
+    tol: float = pydantic.Field(default=1e-1, ge=0.0)
+    record_params_every: int = pydantic.Field(default=1, ge=1)
+    epochs: int | None = pydantic.Field(default=1, ge=1)
 
     # Distribution-specific fields.
-    val: float = Field(default=0.2, ge=0.0, le=1.0)
-    eps: float = Field(default=1e-5, gt=0.0)
-    min_radius: float = Field(default=3.0, ge=0.0)
-    max_radius: float = Field(default=10.0, ge=0.0)
-    rate: float = Field(default=1.1, gt=1.0)
-    batch_size: int = Field(default=10, ge=1)
-    num_samples: int = Field(default=10000, ge=1)
-    max_phases: int = Field(default=1, ge=1)
-    loss_convergence_tol: float = Field(default=1e-3, ge=0.0)
-    relative_loss_tol: float = Field(default=float("inf"), ge=0.0)
-    loss_increase_tol: float = Field(default=float("inf"), ge=0.0)
+    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
+    eps: float = pydantic.Field(default=1e-5, gt=0.0)
+    min_radius: float = pydantic.Field(default=3.0, ge=0.0)
+    max_radius: float = pydantic.Field(default=10.0, ge=0.0)
+    rate: float = pydantic.Field(default=1.1, gt=1.0)
+    batch_size: int = pydantic.Field(default=10, ge=1)
+    num_samples: int = pydantic.Field(default=10000, ge=1)
+    max_phases: int = pydantic.Field(default=1, ge=1)
+    loss_convergence_tol: float = pydantic.Field(default=1e-3, ge=0.0)
+    relative_loss_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
+    loss_increase_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
     project: bool = True
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def check_radius(self) -> TruncatedExponentialFamilyDistributionConfig:
         """Validate that min_radius does not exceed max_radius."""
         if self.min_radius > self.max_radius:
@@ -77,7 +69,7 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
             )
         return self
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def resolve_epochs_iterations(
         self,
     ) -> TruncatedExponentialFamilyDistributionConfig:
@@ -95,7 +87,7 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
         return self
 
 
-class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=too-many-instance-attributes
+class TruncatedExponentialFamilyDistribution(distributions.distributions):  # pylint: disable=too-many-instance-attributes
     """Base class for truncated exponential family distribution models.
 
     Attributes:
@@ -124,8 +116,8 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         phi: Callable,
         alpha: float,
         dims: int,
-        dist: ExponentialFamily,
-        logger: delphiLogger,
+        dist: exp_family.ExponentialFamily,
+        logger: delphi_logger.delphiLogger,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
@@ -142,7 +134,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.alpha = alpha
         self.dims = dims
         self.dist = dist
-        self.criterion = TruncatedExponentialFamilyDistributionNLL.apply
+        self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,
             self.dims,
@@ -152,10 +144,10 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             self.args.eps,
         ]
 
-        # best_params, final_params, ema_params, and avg_params store natural
-        # parameters as returned directly by the trainer.
-        self.best_params, self.best_loss = None, None
-        self.final_params, self.final_loss = None, None
+        self.best_params = None
+        self.best_loss = None
+        self.final_params = None
+        self.final_loss = None
         self.ema_params = None
         self.avg_params = None
 
@@ -172,34 +164,37 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         self.emp_theta = None
         self.nll_init = None
 
-    def fit(self, S: Tensor):  # pylint: disable=invalid-name
+    def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.
 
         Args:
             S: Observed samples of shape (num_samples, dims).
         """
-        assert isinstance(S, Tensor), (
-            f"S is type: {type(S)}. expected type torch.Tensor."
-        )
-        assert S.size(0) > S.size(1), (
-            "input expected to be shape num samples by dimenions, "
-            f"current input is size {S.size()}."
-        )
-        assert self.args.batch_size <= self.args.num_samples, (
-            "batch size must be smaller than or equal to the number of samples being sampled"
-        )
+        if not isinstance(S, ch.Tensor):
+            raise TypeError(
+                f"S is type: {type(S)}. expected type torch.Tensor."
+            )
+        if S.size(0) <= S.size(1):
+            raise ValueError(
+                "input expected to be shape num samples by dimensions, "
+                f"current input is size {S.size()}."
+            )
+        if self.args.batch_size > self.args.num_samples:
+            raise ValueError(
+                f"batch size ({self.args.batch_size}) must be smaller than "
+                f"or equal to the number of samples ({self.args.num_samples})."
+            )
 
-        self.train_loader_, self.val_loader_ = make_train_and_val_distr(
+        self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.args,
             S,
-            TruncatedExponentialDistributionDataset,
+            datasets.TruncatedExponentialDistributionDataset,
             {"calc_suff_stat": self._calc_suff_stat},
         )
-        # Initialize tracking
+        
         self.prev_best_loss = None
         self.radius_history = []
         self.loss_history = []
-        # Initialize radius and parameters
         self._calc_emp_model()
         self.radius = self.args.min_radius
 
@@ -210,10 +205,9 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.args, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
-            # Update tracking
             current_loss = self.trainer.best_loss
             self.radius_history.append(self.radius)
             self.loss_history.append(current_loss)
@@ -302,7 +296,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 
-    def _compute_nll(self, theta: Tensor) -> float:
+    def _compute_nll(self, theta: ch.Tensor) -> float:
         """Compute non-truncated NLL of training samples under theta.
 
         Args:
@@ -315,7 +309,7 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
         D = self.dist(theta.detach(), self.dims)  # pylint: disable=invalid-name
         return -D.log_prob(S).mean().item()
 
-    def _project_onto_sublevel_set(self, theta: Tensor) -> Tensor:
+    def _project_onto_sublevel_set(self, theta: ch.Tensor) -> ch.Tensor:
         """Project theta onto {θ : L(θ) ≤ nll_threshold} via bisection.
 
         Performs binary search on the interpolation weight λ ∈ [0, 1] along
@@ -364,26 +358,17 @@ class TruncatedExponentialFamilyDistribution(distributions):  # pylint: disable=
             θ ← Π_D(θ),  D = {θ : L(θ) ≤ nll_threshold}.
         When args.project is False, the step is a no-op.
         """
-        if not self.args.project:
-            return
-        with ch.no_grad():
-            proj_theta = self._project_onto_sublevel_set(self.theta)
-            self._write_theta(self._constraints(proj_theta))
+        if self.args.project:
+            with ch.no_grad():
+                proj_theta = self._project_onto_sublevel_set(self.theta)
+                self._write_theta(self._constraints(proj_theta))
 
-    def _write_theta(self, value: Tensor) -> None:
-        """Write a projected theta value back to the parameter storage.
-
-        The default implementation copies directly into the theta Parameter.
-        Override in subclasses where theta is a computed view of separate
-        parameters (e.g. the unknown-covariance case with distinct T and v).
-
-        Args:
-            value: Projected natural parameter vector to store.
-        """
+    def _write_theta(self, value: ch.Tensor) -> None:
+        """Write a projected theta value back to the parameter storage."""
         self.theta.copy_(value)
 
     @staticmethod
-    def _calc_suff_stat(x: Tensor) -> Tensor:
+    def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Compute sufficient statistics. Override in subclasses.
 
         Args:
