@@ -17,7 +17,9 @@ class TruncatedBooleanProduct(
 ):
     """Model for truncated boolean product distributions to be passed into trainer."""
 
-    def __init__(self, args: helpers.Parameters, phi: Callable, alpha: float, dims: int):
+    def __init__(
+        self, args: helpers.Parameters, phi: Callable, alpha: float, dims: int
+    ):
         """Initialize TruncatedBooleanProduct.
 
         Args:
@@ -50,7 +52,7 @@ class TruncatedBooleanProduct(
     @staticmethod
     def _calc_suff_stat(x):
         """Compute sufficient statistics for the Boolean product distribution."""
-        return calc_bool_prod_suff_stat(x)
+        return boolean_product.calc_bool_prod_suff_stat(x)
 
     def _reparameterize_nat_form(self, theta):
         """Convert canonical probability parameter to natural log-odds form."""
