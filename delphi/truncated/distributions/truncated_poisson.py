@@ -1,28 +1,25 @@
 # Author: pstefanou12@
-"""
-Truncated Poisson Distribution.
-"""
+"""Truncated Poisson Distribution."""
 
+from collections.abc import Callable
 import logging
-from typing import Callable
 
 import torch as ch
 
-from delphi.distributions.truncated_exponential_family_distributions import (
-    TruncatedExponentialFamilyDistribution,
-)
-from delphi.delphi_logger import delphiLogger
-from delphi.grad import ExponentialFamilyPoisson, calc_poiss_suff_stat
-from delphi.utils.helpers import Parameters
-from delphi.utils.defaults import check_and_fill_args, TRUNC_POISS_DEFAULTS
+from delphi import delphi_logger
+from delphi.distributions import poisson
+from delphi.truncated.distributions import truncated_exponential_family_distributions
+from delphi.utils import defaults, helpers
 
 
-class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
+class TruncatedPoisson(
+    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
+):
     """Model for truncated Poisson distributions to be passed into trainer."""
 
     def __init__(
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -30,28 +27,36 @@ class TruncatedPoisson(TruncatedExponentialFamilyDistribution):
         """Initialize TruncatedPoisson.
 
         Args:
-            args (Parameters): parameter object holding hyperparameters
-            phi (Callable): truncation set oracle
-            alpha (float): survival probability lower bound
-            dims (int): number of dimensions
+            args: Parameter object holding hyperparameters.
+            phi: Truncation set oracle.
+            alpha: Survival probability lower bound.
+            dims: Number of dimensions.
+
+        Raises:
+            TypeError: If args is not a Parameters instance.
         """
-        assert isinstance(args, Parameters), (
-            "args is type: {}. expecting args to be type delphi.utils.helpers.Parameters"
-        )
-        args = check_and_fill_args(args, TRUNC_POISS_DEFAULTS)
+        if not isinstance(args, helpers.Parameters):
+            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_POISS_DEFAULTS)
 
         logger = (
-            delphiLogger() if args.verbose else delphiLogger(level=logging.CRITICAL)
+            delphi_logger.delphiLogger()
+            if args.verbose
+            else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            ExponentialFamilyPoisson,
-            calc_poiss_suff_stat,
+            poisson.ExponentialFamilyPoisson,
             logger,
         )
+
+    @staticmethod
+    def _calc_suff_stat(x):
+        """Compute sufficient statistics for the Poisson distribution."""
+        return poisson.calc_poiss_suff_stat(x)
 
     def _reparameterize_nat_form(self, theta):
         """Convert canonical rate parameter to natural log form."""

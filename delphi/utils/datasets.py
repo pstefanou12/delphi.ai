@@ -6,11 +6,10 @@ Currently supported datasets:
 """
 
 import numpy as np
-
 import torch as ch
 import torch.linalg as LA
-from torch.utils.data import DataLoader, TensorDataset, Subset
 from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.utils.data import DataLoader, TensorDataset, Subset
 from torchvision import datasets
 
 from delphi.utils import folder
@@ -430,9 +429,7 @@ def make_train_and_val_distr(args, S, ds, kwargs=None):  # pylint: disable=inval
     """Create training and validation DataLoaders from a distribution dataset S."""
     if kwargs is None:
         kwargs = {}
-    # check arguments are correct
-    args = check_and_fill_args(args, DATASET_DEFAULTS)
-    # separate into training and validation set
+    # Separate into training and validation sets.
     rand_indices = ch.randperm(S.size(0))
     val = int(args.val * S.size(0))
     train_indices, val_indices = rand_indices[val:], rand_indices[:val]

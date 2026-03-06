@@ -220,9 +220,12 @@ TRUNC_PROB_REG_DEFAULTS = {
 TRUNC_EXP_FAMILY_DISTR_DEFAULTS = {
     "val": (float, 0.2),
     "eps": (float, 1e-5),
+    # NLL budget above the empirical initialization for the Karatapanis
+    # sublevel-set projection.  min_radius is the starting budget (phase 1)
+    # and max_radius is the maximum budget (typically log(1/alpha) + 2).
     "min_radius": (float, 3.0),
     "max_radius": (float, 10.0),
-    "rate": (float, 1.1),  # Increase radius by 10% each trial.
+    "rate": (float, 1.1),  # Multiplicative budget expansion per phase.
     "batch_size": (int, 10),
     "tol": (float, 1e-1),
     "num_samples": (int, 10000),
@@ -230,6 +233,17 @@ TRUNC_EXP_FAMILY_DISTR_DEFAULTS = {
     "max_phases": (int, 1),
     "loss_convergence_tol": (float, 1e-3),
     "relative_loss_tol": (float, float("inf")),
+    # Disabled by default; set to a finite value to stop when the truncated
+    # NLL increases by more than this amount between consecutive phases.
+    "loss_increase_tol": (float, float("inf")),
+    # Set to False to skip the per-step sublevel-set projection entirely,
+    # running unconstrained gradient descent instead.
+    "project": (bool, True),
+    # Number of steps between parameter vector snapshots; must be > 0 so
+    # that fit() can read back best/final/ema/avg params after each phase.
+    "record_params_every": (int, 1, {"min": 1}),
+    # Maximum number of training epochs per phase.
+    "epochs": (int, 1, {"min": 1}),
 }
 
 TRUNC_MULTI_NORM_DEFAULTS = {
@@ -346,6 +360,12 @@ def check_and_fill_args(  # pylint: disable=too-many-branches
         constraints = spec[2] if len(spec) == 3 else {}
 
         if not has_attr(args, arg_name):
+            # Don't auto-fill epochs if iterations is already set, and vice
+            # versa — only one training-duration parameter should be active.
+            if arg_name == "epochs" and has_attr(args, "iterations"):
+                continue
+            if arg_name == "iterations" and has_attr(args, "epochs"):
+                continue
             if default == REQ:
                 raise ValueError(f"Required argument '{arg_name}' is missing.")
             setattr(args, arg_name, default)
@@ -353,8 +373,8 @@ def check_and_fill_args(  # pylint: disable=too-many-branches
 
         value = getattr(args, arg_name)
 
-        # Allow explicit None overrides without type-checking.
-        if value is None and default is not None:
+        # None is always a valid "not provided" sentinel; skip type-checking.
+        if value is None:
             continue
 
         if not is_valid_value(value, type_spec):

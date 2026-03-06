@@ -4,36 +4,31 @@ Truncated Logistic Regression.
 """
 
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
+from sklearn import linear_model as sklearn_linear_model
 import torch as ch
-from sklearn.linear_model import LogisticRegression
-from torch import Tensor
-from torch.nn import Sigmoid, Softmax
+from torch import nn
 
-from delphi.delphi_logger import delphiLogger
-from delphi.grad import TruncatedBCE, TruncatedCE
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import TRUNC_LOG_REG_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import Parameters
-from delphi.stats.linear_model import LinearModel
+from delphi import delphi_logger, trainer
+from delphi.stats import linear_model, losses
+from delphi.utils import datasets, defaults, helpers
 
 
 # Module-level constants.
-softmax = Softmax(dim=-1)
-sig = Sigmoid()
+softmax = nn.Softmax(dim=-1)
+sig = nn.Sigmoid()
 OVR = "ovr"
 MULTI = "multinomial"
 CLASSIFICATION_PROCEDURES = [OVR, MULTI]
 
 
-class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
     """Truncated logistic regression supporting binary and multinomial classification."""
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: Parameters,
+        args: helpers.Parameters,
         phi: Callable,
         alpha: float,
         fit_intercept: bool = True,
@@ -53,8 +48,8 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphiLogger()
-        args = check_and_fill_args(args, TRUNC_LOG_REG_DEFAULTS)
+        logger = delphi_logger.delphiLogger()
+        args = defaults.check_and_fill_args(args, defaults.TRUNC_LOG_REG_DEFAULTS)
         super().__init__(args, False, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
@@ -68,12 +63,12 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
         del self.criterion
         del self.criterion_params
         if self.multi_class == OVR:
-            self.criterion = TruncatedBCE.apply
+            self.criterion = losses.TruncatedBCE.apply
         else:
-            self.criterion = TruncatedCE.apply
+            self.criterion = losses.TruncatedCE.apply
         self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
 
-    def fit(self, X: Tensor, y: Tensor):  # pylint: disable=invalid-name
+    def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
         """
         Train truncated logistic regression model by running PSGD on the truncated negative
         population log likelihood.
@@ -82,10 +77,10 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
             X (torch.Tensor): input feature covariates num_samples by dims
             y (torch.Tensor): dependent variable predictions num_samples by 1
         """
-        assert isinstance(X, Tensor), (
+        assert isinstance(X, ch.Tensor), (
             f"X is type: {type(X)}. expected type torch.Tensor."
         )
-        assert isinstance(y, Tensor), (
+        assert isinstance(y, ch.Tensor), (
             f"y is type: {type(y)}. expected type torch.Tensor."
         )
         assert X.size(0) > X.size(1), (
@@ -115,9 +110,11 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
         self.D = X.size(1)  # pylint: disable=invalid-name,attribute-defined-outside-init
 
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)  # pylint: disable=attribute-defined-outside-init
+        self.train_loader, self.val_loader = datasets.make_train_and_val(
+            self.args, X, y
+        )  # pylint: disable=attribute-defined-outside-init
 
-        self.trainer = Trainer(self, self.args, self.logger)  # pylint: disable=attribute-defined-outside-init
+        self.trainer = trainer.Trainer(self, self.args, self.logger)  # pylint: disable=attribute-defined-outside-init
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self
@@ -126,7 +123,7 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
         """Calculate empirical logistic regression estimates using SKlearn module."""
         X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
         if self._emp_weight is None and self.multi_class == "ovr":  # pylint: disable=access-member-before-definition
-            log_reg = LogisticRegression(
+            log_reg = sklearn_linear_model.LogisticRegression(
                 penalty=None, fit_intercept=False, multi_class=self.multi_class
             )
             log_reg.fit(X, y.flatten())
@@ -169,7 +166,7 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
             self.best_coef = best_params
             self.final_coef = final_params
 
-    def predict_proba(self, X: Tensor):  # pylint: disable=invalid-name
+    def predict_proba(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Probability predictions for input features."""
         if self.fit_intercept:
             logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1) @ self.best_coef.T
@@ -179,7 +176,7 @@ class TruncatedLogisticRegression(LinearModel):  # pylint: disable=too-many-inst
             return softmax(logits)
         return sig(logits)
 
-    def predict(self, X: Tensor):  # pylint: disable=invalid-name
+    def predict(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Class predictions for input features."""
         prob_predictions = self.predict_proba(X)
         if prob_predictions.size(-1) > 1:
