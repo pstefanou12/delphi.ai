@@ -171,9 +171,7 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
             S: Observed samples of shape (num_samples, dims).
         """
         if not isinstance(S, ch.Tensor):
-            raise TypeError(
-                f"S is type: {type(S)}. expected type torch.Tensor."
-            )
+            raise TypeError(f"S is type: {type(S)}. expected type torch.Tensor.")
         if S.size(0) <= S.size(1):
             raise ValueError(
                 "input expected to be shape num samples by dimensions, "
@@ -191,7 +189,7 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
             datasets.TruncatedExponentialDistributionDataset,
             {"calc_suff_stat": self._calc_suff_stat},
         )
-        
+
         self.prev_best_loss = None
         self.radius_history = []
         self.loss_history = []

@@ -96,8 +96,10 @@ class TruncatedMultivariateNormal(
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
         cov_matrix = second_moment - ch.outer(loc, loc)
         emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
-        self.emp_theta = multivariate_normal.ExponentialFamilyMultivariateNormal.to_natural(
-            emp_canon_params, self.dims
+        self.emp_theta = (
+            multivariate_normal.ExponentialFamilyMultivariateNormal.to_natural(
+                emp_canon_params, self.dims
+            )
         )
         self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
             self.dims, self.dims

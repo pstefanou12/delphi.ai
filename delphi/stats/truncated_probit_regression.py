@@ -78,7 +78,9 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
-        self.train_loader, self.val_loader = datasets.make_train_and_val(self.args, X, y)
+        self.train_loader, self.val_loader = datasets.make_train_and_val(
+            self.args, X, y
+        )
 
         self.trainer = trainer.Trainer(self, self.args, self.logger)
         # Run PGD for parameter estimation.

@@ -113,7 +113,9 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         else:
             X = X / self.beta  # pylint: disable=invalid-name
 
-        self.train_loader, self.val_loader = datasets.make_train_and_val(self.args, X, y)
+        self.train_loader, self.val_loader = datasets.make_train_and_val(
+            self.args, X, y
+        )
 
         self.trainer = trainer.Trainer(self, self.args, self.logger)
         self.trainer.train_model(

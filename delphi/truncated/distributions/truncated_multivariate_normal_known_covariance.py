@@ -57,7 +57,8 @@ class TruncatedMultivariateNormalKnownCovariance(
             alpha,
             dims,
             partial(
-                multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance, covariance_matrix
+                multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance,
+                covariance_matrix,
             ),
             logger,
         )
@@ -67,7 +68,9 @@ class TruncatedMultivariateNormalKnownCovariance(
     @staticmethod
     def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Compute sufficient statistics for multivariate normal with known covariance."""
-        return multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(x)
+        return multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(
+            x
+        )
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register theta as an nn.Parameter."""

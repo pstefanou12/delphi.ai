@@ -63,9 +63,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         )
 
         self.emp_loc, self.emp_covariance_matrix = None, None
-        self.criterion = (
-            losses.UnknownTruncationMultivariateNormalNLL.apply
-        )
+        self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
 
         # Attributes initialized during fit.
         self.train_loader_ = None
@@ -92,12 +90,10 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             "input expected to be shape num samples by dimenions, "
             f"current input is size {S.size()}."
         )
-        self.train_loader_, self.val_loader_ = (
-            datasets.make_train_and_val_distr(
-                self.args,
-                S,
-                datasets.UnknownTruncationNormalDataset,
-            )
+        self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
+            self.args,
+            S,
+            datasets.UnknownTruncationNormalDataset,
         )
 
         # Verify that S is whitened to N(0, I).
@@ -214,14 +210,10 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.args = defaults.check_and_fill_args(
             args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
         )
-        super().__init__(
-            args, partial(oracle.UnknownGaussian, k), alpha, dims
-        )
+        super().__init__(args, partial(oracle.UnknownGaussian, k), alpha, dims)
 
         self.emp_loc, self.emp_covariance_matrix = None, None
-        self.criterion = (
-            losses.UnknownTruncationMultivariateNormalNLL.apply
-        )
+        self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
 
         # Attributes initialized during fit.
         self.train_loader_ = None
@@ -250,12 +242,10 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             "input expected to be shape num samples by dimenions, "
             f"current input is size {S.size()}."
         )
-        self.train_loader_, self.val_loader_ = (
-            datasets.make_train_and_val_distr(
-                self.args,
-                S,
-                datasets.UnknownTruncationNormalDataset,
-            )
+        self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
+            self.args,
+            S,
+            datasets.UnknownTruncationNormalDataset,
         )
 
         # Verify that S is whitened to N(0, I).

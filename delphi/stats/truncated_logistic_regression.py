@@ -110,7 +110,9 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
         self.D = X.size(1)  # pylint: disable=invalid-name,attribute-defined-outside-init
 
-        self.train_loader, self.val_loader = datasets.make_train_and_val(self.args, X, y)  # pylint: disable=attribute-defined-outside-init
+        self.train_loader, self.val_loader = datasets.make_train_and_val(
+            self.args, X, y
+        )  # pylint: disable=attribute-defined-outside-init
 
         self.trainer = trainer.Trainer(self, self.args, self.logger)  # pylint: disable=attribute-defined-outside-init
         self.trainer.train_model(self.train_loader, self.val_loader)
