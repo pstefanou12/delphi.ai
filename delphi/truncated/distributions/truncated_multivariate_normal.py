@@ -65,15 +65,14 @@ class TruncatedMultivariateNormal(
         self.emp_T = None  # pylint: disable=invalid-name
         self.emp_v = None
 
-    @staticmethod
-    def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
-        """Compute sufficient statistics for multivariate normal."""
-        return multivariate_normal.ExponentialFamilyMultivariateNormal.calc_suff_stat(x)
-
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        suff_stats = self._calc_suff_stat(dataset_s).mean(0)
+        suff_stats = (
+            multivariate_normal.ExponentialFamilyMultivariateNormal.calc_suff_stat(
+                dataset_s
+            ).mean(0)
+        )
         second_moment = suff_stats[: self.dims**2].view(self.dims, self.dims)
         loc = suff_stats[self.dims**2 :]
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.

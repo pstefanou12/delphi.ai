@@ -2,15 +2,10 @@
 """Boolean product distribution in natural parameterization."""
 
 import torch as ch
-from torch.distributions import Bernoulli
+import torch.distributions
 
 
-def calc_bool_prod_suff_stat(x):
-    """Return sufficient statistics for boolean product distribution."""
-    return x
-
-
-class ExponentialFamilyBooleanProduct(Bernoulli):  # pylint: disable=abstract-method
+class ExponentialFamilyBooleanProduct(ch.distributions.Bernoulli):  # pylint: disable=abstract-method
     """Boolean product distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):
@@ -18,6 +13,21 @@ class ExponentialFamilyBooleanProduct(Bernoulli):  # pylint: disable=abstract-me
         self.dims = dims
         p = ch.exp(theta) / (1 + ch.exp(theta))
         super().__init__(p)
+
+    @staticmethod
+    def calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
+        """Return sufficient statistics for boolean product distribution."""
+        return x
+
+    @staticmethod
+    def to_natural(theta: ch.Tensor) -> ch.Tensor:
+        """Convert canonical probability to natural log-odds parameter."""
+        return ch.log(theta / (1 - theta))
+
+    @staticmethod
+    def to_canonical(theta: ch.Tensor) -> ch.Tensor:
+        """Convert natural log-odds to canonical probability parameter."""
+        return ch.exp(theta) / (1 + ch.exp(theta))
 
     def log_prob(self, value):
         """Compute summed log probability over all dimensions."""

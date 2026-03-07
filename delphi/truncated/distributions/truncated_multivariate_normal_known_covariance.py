@@ -62,17 +62,12 @@ class TruncatedMultivariateNormalKnownCovariance(
         self.covariance_matrix = covariance_matrix
         self._sampler = sampler
 
-    @staticmethod
-    def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
-        """Compute sufficient statistics for multivariate normal with known covariance."""
-        return multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(
-            x
-        )
-
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register theta as an nn.Parameter."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        emp_mean = self._calc_suff_stat(dataset_s).mean(0)
+        emp_mean = multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat(
+            dataset_s
+        ).mean(0)
         self.emp_theta = multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.to_natural(
             emp_mean, self.covariance_matrix
         )

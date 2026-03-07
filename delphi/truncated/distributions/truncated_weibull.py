@@ -61,10 +61,6 @@ class TruncatedWeibull(
         )
         self.k = k
 
-    def _calc_suff_stat(self, x):
-        """Compute sufficient statistics for the Weibull distribution."""
-        return weibull.calc_weibull_suff_stat(self.k, x)
-
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""
         return ch.clamp(theta, max=-1e-6)

@@ -53,11 +53,6 @@ class TruncatedExponential(
             logger,
         )
 
-    @staticmethod
-    def _calc_suff_stat(x):
-        """Compute sufficient statistics for the exponential distribution."""
-        return exponential.calc_exp_suff_stat(x)
-
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""
         return ch.clamp(theta, max=-1e-6)

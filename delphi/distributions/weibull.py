@@ -2,15 +2,10 @@
 """Weibull distribution in natural parameterization."""
 
 import torch as ch
-from torch.distributions import Weibull
+import torch.distributions
 
 
-def calc_weibull_suff_stat(k, x):
-    """Return sufficient statistics for Weibull distribution."""
-    return x.pow(k)
-
-
-class ExponentialFamilyWeibull(Weibull):  # pylint: disable=abstract-method
+class ExponentialFamilyWeibull(ch.distributions.Weibull):  # pylint: disable=abstract-method
     """Weibull distribution parameterized by natural parameters."""
 
     def __init__(self, k: ch.Tensor, theta: ch.Tensor, dims: int):
@@ -18,6 +13,21 @@ class ExponentialFamilyWeibull(Weibull):  # pylint: disable=abstract-method
         self.dims = dims
         lambda_ = (-1 / theta).pow(1 / k)
         super().__init__(lambda_, k)
+
+    @staticmethod
+    def calc_suff_stat(k: ch.Tensor, x: ch.Tensor) -> ch.Tensor:
+        """Return sufficient statistics for Weibull distribution."""
+        return x.pow(k)
+
+    @staticmethod
+    def to_natural(k: ch.Tensor, theta: ch.Tensor) -> ch.Tensor:
+        """Convert canonical scale parameter to natural form."""
+        return -1.0 / theta.pow(k)
+
+    @staticmethod
+    def to_canonical(k: ch.Tensor, theta: ch.Tensor) -> ch.Tensor:
+        """Convert natural parameters to canonical scale parameter."""
+        return (-1 / theta).pow(1 / k)
 
     def log_prob(self, value):
         """Compute summed log probability over all dimensions."""
