@@ -4,6 +4,7 @@
 from collections.abc import Callable
 
 from delphi.truncated.distributions import truncated_multivariate_normal
+from delphi.utils import configs
 
 
 class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal):
@@ -11,7 +12,7 @@ class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal)
 
     def __init__(
         self,
-        args: dict | truncated_multivariate_normal.TruncatedMultivariateNormalConfig,
+        args: dict | configs.TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         sampler: Callable = None,

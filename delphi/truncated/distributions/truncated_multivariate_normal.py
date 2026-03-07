@@ -4,7 +4,6 @@
 from collections.abc import Callable
 import logging
 
-from pydantic import Field
 import torch as ch
 from torch import nn
 
@@ -12,22 +11,6 @@ from delphi import delphi_logger
 from delphi.distributions import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
-
-
-class TruncatedMultivariateNormalConfig(
-    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistributionConfig
-):
-    """Configuration for truncated multivariate normal distributions.
-
-    Attributes:
-        eigenvalue_lower_bound: Minimum eigenvalue enforced during the
-            negative-definite cone projection of the precision matrix T.
-        covariance_matrix_lr: Optional separate learning rate for the
-            covariance matrix parameter; falls back to lr when None.
-    """
-
-    eigenvalue_lower_bound: float = Field(default=1e-2, gt=0.0)
-    covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
 
 
 class TruncatedMultivariateNormal(
@@ -44,7 +27,7 @@ class TruncatedMultivariateNormal(
 
     def __init__(
         self,
-        args: dict | TruncatedMultivariateNormalConfig,
+        args: dict | configs.TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -59,7 +42,7 @@ class TruncatedMultivariateNormal(
             dims: Number of dimensions.
             sampler: Optional sampler override.
         """
-        args = configs.make_config(args, TruncatedMultivariateNormalConfig)
+        args = configs.make_config(args, configs.TruncatedMultivariateNormalConfig)
         self.eigenvalue_lower_bound = args.eigenvalue_lower_bound
 
         logger = (

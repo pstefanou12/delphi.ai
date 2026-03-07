@@ -11,7 +11,6 @@ from torch import nn
 from delphi import delphi_logger
 from delphi.distributions import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
-from delphi.truncated.distributions import truncated_multivariate_normal
 from delphi.utils import configs
 
 
@@ -26,7 +25,7 @@ class TruncatedMultivariateNormalKnownCovariance(
 
     def __init__(
         self,
-        args: dict | truncated_multivariate_normal.TruncatedMultivariateNormalConfig,
+        args: dict | configs.TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -43,9 +42,7 @@ class TruncatedMultivariateNormalKnownCovariance(
             covariance_matrix: Known covariance matrix.
             sampler: Optional sampler override.
         """
-        args = configs.make_config(
-            args, truncated_multivariate_normal.TruncatedMultivariateNormalConfig
-        )
+        args = configs.make_config(args, configs.TruncatedMultivariateNormalConfig)
         logger = (
             delphi_logger.delphiLogger()
             if args.verbose
