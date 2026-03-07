@@ -2,10 +2,10 @@
 """Boolean product distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions
+import torch.distributions as distributions
 
 
-class ExponentialFamilyBooleanProduct(ch.distributions.Bernoulli):  # pylint: disable=abstract-method
+class ExponentialFamilyBooleanProduct(distributions.Bernoulli):  # pylint: disable=abstract-method
     """Boolean product distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):

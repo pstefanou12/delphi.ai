@@ -17,6 +17,8 @@ class TruncatedPoisson(
 ):
     """Model for truncated Poisson distributions to be passed into trainer."""
 
+    dist = poisson.ExponentialFamilyPoisson
+
     def __init__(
         self,
         args: helpers.Parameters,
@@ -49,7 +51,6 @@ class TruncatedPoisson(
             phi,
             alpha,
             dims,
-            poisson.ExponentialFamilyPoisson,
             logger,
         )
 

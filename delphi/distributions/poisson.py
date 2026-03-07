@@ -2,10 +2,10 @@
 """Poisson distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions
+import torch.distributions as distributions
 
 
-class ExponentialFamilyPoisson(ch.distributions.Poisson):  # pylint: disable=abstract-method
+class ExponentialFamilyPoisson(distributions.Poisson):  # pylint: disable=abstract-method
     """Poisson distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):

@@ -17,6 +17,8 @@ class TruncatedExponential(
 ):
     """Model for truncated exponential distributions to be passed into trainer."""
 
+    dist = exponential.ExponentialFamilyExponential
+
     def __init__(
         self,
         args: helpers.Parameters,
@@ -49,7 +51,6 @@ class TruncatedExponential(
             phi,
             alpha,
             dims,
-            exponential.ExponentialFamilyExponential,
             logger,
         )
 

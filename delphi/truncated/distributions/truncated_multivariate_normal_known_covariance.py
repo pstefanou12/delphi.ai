@@ -48,18 +48,18 @@ class TruncatedMultivariateNormalKnownCovariance(
             if args.verbose
             else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
+        self.covariance_matrix = covariance_matrix
+        self.dist = partial(
+            multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance,
+            covariance_matrix,
+        )
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            partial(
-                multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance,
-                covariance_matrix,
-            ),
             logger,
         )
-        self.covariance_matrix = covariance_matrix
         self._sampler = sampler
 
     def _calc_emp_model(self):

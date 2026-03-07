@@ -17,6 +17,8 @@ class TruncatedBooleanProduct(
 ):
     """Model for truncated boolean product distributions to be passed into trainer."""
 
+    dist = boolean_product.ExponentialFamilyBooleanProduct
+
     def __init__(
         self, args: helpers.Parameters, phi: Callable, alpha: float, dims: int
     ):
@@ -45,7 +47,6 @@ class TruncatedBooleanProduct(
             phi,
             alpha,
             dims,
-            boolean_product.ExponentialFamilyBooleanProduct,
             logger,
         )
 

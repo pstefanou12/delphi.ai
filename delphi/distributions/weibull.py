@@ -2,10 +2,10 @@
 """Weibull distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions
+import torch.distributions as distributions
 
 
-class ExponentialFamilyWeibull(ch.distributions.Weibull):  # pylint: disable=abstract-method
+class ExponentialFamilyWeibull(distributions.Weibull):  # pylint: disable=abstract-method
     """Weibull distribution parameterized by natural parameters."""
 
     def __init__(self, k: ch.Tensor, theta: ch.Tensor, dims: int):

@@ -2,11 +2,11 @@
 """Multivariate normal distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions
+import torch.distributions as distributions
 
 
 class ExponentialFamilyMultivariateNormalKnownCovariance(  # pylint: disable=abstract-method
-    ch.distributions.MultivariateNormal
+    distributions.MultivariateNormal
 ):
     """Multivariate normal parameterized by natural parameters with known covariance."""
 

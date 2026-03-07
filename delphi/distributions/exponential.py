@@ -2,10 +2,10 @@
 """Exponential distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions
+import torch.distributions as distributions
 
 
-class ExponentialFamilyExponential(ch.distributions.Exponential):  # pylint: disable=abstract-method
+class ExponentialFamilyExponential(distributions.Exponential):  # pylint: disable=abstract-method
     """Exponential distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):

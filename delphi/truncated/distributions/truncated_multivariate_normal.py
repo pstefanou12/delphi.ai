@@ -25,6 +25,8 @@ class TruncatedMultivariateNormal(
         emp_v: Empirical natural mean component.
     """
 
+    dist = multivariate_normal.ExponentialFamilyMultivariateNormal
+
     def __init__(
         self,
         args: dict | configs.TruncatedMultivariateNormalConfig,
@@ -55,7 +57,6 @@ class TruncatedMultivariateNormal(
             phi,
             alpha,
             dims,
-            multivariate_normal.ExponentialFamilyMultivariateNormal,
             logger,
         )
         self._sampler = sampler

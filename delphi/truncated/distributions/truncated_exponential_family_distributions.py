@@ -3,26 +3,31 @@
 
 # pylint: disable=duplicate-code
 
+import abc
 import functools
 from collections.abc import Callable
 
 import torch as ch
 from torch import nn
-from torch.distributions import exp_family
 
 from delphi import delphi_logger, trainer
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import configs, datasets
 
 
-class TruncatedExponentialFamilyDistribution(distributions.distributions):  # pylint: disable=too-many-instance-attributes
+class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
+    distributions.distributions, abc.ABC
+):
     """Base class for truncated exponential family distribution models.
+
+    Concrete subclasses must define a class attribute ``dist`` pointing to
+    the exponential family distribution class (or a partial thereof).
 
     Attributes:
         phi (Callable): Truncation set oracle.
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
-        dist (ExponentialFamily): Exponential family distribution class.
+        dist: Exponential family distribution class or partial, set by subclass.
         criterion: NLL loss function applied during training.
         criterion_params (list): Extra parameters passed to criterion.
         best_params: Best natural parameters found across all training phases.
@@ -44,7 +49,6 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
         phi: Callable,
         alpha: float,
         dims: int,
-        dist: exp_family.ExponentialFamily,
         logger: delphi_logger.delphiLogger,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
@@ -54,16 +58,16 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
-            dist: Exponential family distribution class.
             logger: Logger instance.
         """
         super().__init__(args, logger)
         self.phi = phi
         self.alpha = alpha
         self.dims = dims
-        self.dist = dist
 
-        dist_cls = dist.func if isinstance(dist, functools.partial) else dist
+        dist_cls = (
+            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
+        )
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,

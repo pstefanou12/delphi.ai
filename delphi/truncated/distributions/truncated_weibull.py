@@ -51,15 +51,15 @@ class TruncatedWeibull(
             if args.verbose
             else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
+        self.k = k
+        self.dist = partial(weibull.ExponentialFamilyWeibull, k)
         super().__init__(
             args,
             phi,
             alpha,
             dims,
-            partial(weibull.ExponentialFamilyWeibull, k),
             logger,
         )
-        self.k = k
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""
