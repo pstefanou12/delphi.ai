@@ -3,7 +3,7 @@
 
 # pylint: disable=duplicate-code
 
-from __future__ import annotations
+import functools
 from collections.abc import Callable
 
 import torch as ch
@@ -62,12 +62,14 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
         self.alpha = alpha
         self.dims = dims
         self.dist = dist
+
+        dist_cls = dist.func if isinstance(dist, functools.partial) else dist
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,
             self.dims,
             self.dist,
-            self._calc_suff_stat,
+            dist_cls.calc_suff_stat,
             self.args.num_samples,
             self.args.eps,
         ]
@@ -111,11 +113,14 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
                 f"or equal to the number of samples ({self.args.num_samples})."
             )
 
+        dist_cls = (
+            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
+        )
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.args,
             S,
             datasets.TruncatedExponentialDistributionDataset,
-            {"calc_suff_stat": self._calc_suff_stat},
+            {"calc_suff_stat": dist_cls.calc_suff_stat},
         )
 
         self.prev_best_loss = None
@@ -217,7 +222,10 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
     def _calc_emp_model(self):
         """Calculate empirical natural parameters from training data."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_theta = self._calc_suff_stat(dataset_s).mean(0)
+        dist_cls = (
+            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
+        )
+        self.emp_theta = dist_cls.calc_suff_stat(dataset_s).mean(0)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
@@ -292,18 +300,6 @@ class TruncatedExponentialFamilyDistribution(distributions.distributions):  # py
     def _write_theta(self, value: ch.Tensor) -> None:
         """Write a projected theta value back to the parameter storage."""
         self.theta.copy_(value)
-
-    @staticmethod
-    def _calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
-        """Compute sufficient statistics. Override in subclasses.
-
-        Args:
-            x: Input data tensor.
-
-        Returns:
-            Sufficient statistics tensor.
-        """
-        raise NotImplementedError
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
