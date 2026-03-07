@@ -7,7 +7,7 @@ import logging
 import torch as ch
 
 from delphi import delphi_logger
-from delphi.distributions import poisson
+from delphi.exponential_family import poisson
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import defaults, helpers
 

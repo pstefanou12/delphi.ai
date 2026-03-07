@@ -4,8 +4,14 @@
 import torch as ch
 import torch.distributions as distributions
 
+from delphi.exponential_family.exponential_family_distribution import (
+    ExponentialFamilyDistribution,
+)
 
-class ExponentialFamilyExponential(distributions.Exponential):  # pylint: disable=abstract-method
+
+class ExponentialFamilyExponential(
+    ExponentialFamilyDistribution, distributions.Exponential
+):
     """Exponential distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):
@@ -29,7 +35,7 @@ class ExponentialFamilyExponential(distributions.Exponential):  # pylint: disabl
         """Convert natural parameters to canonical rate parameter."""
         return -theta
 
-    def log_prob(self, value):
+    def log_prob(self, value: ch.Tensor) -> ch.Tensor:
         """Compute summed log probability over all dimensions."""
         result = super().log_prob(value)
         return result.sum(-1)

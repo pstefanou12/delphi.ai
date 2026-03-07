@@ -1,8 +1,6 @@
 # Author: pstefanou12@
 """Parent class for truncated exponential distribution model classes."""
 
-# pylint: disable=duplicate-code
-
 import abc
 import functools
 from collections.abc import Callable

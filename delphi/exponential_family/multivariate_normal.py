@@ -4,9 +4,12 @@
 import torch as ch
 import torch.distributions as distributions
 
+import delphi.exponential_family.exponential_family_distribution as exponential_family_distribution
 
-class ExponentialFamilyMultivariateNormalKnownCovariance(  # pylint: disable=abstract-method
-    distributions.MultivariateNormal
+
+class ExponentialFamilyMultivariateNormalKnownCovariance(
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    distributions.MultivariateNormal,
 ):
     """Multivariate normal parameterized by natural parameters with known covariance."""
 
@@ -36,8 +39,9 @@ class ExponentialFamilyMultivariateNormalKnownCovariance(  # pylint: disable=abs
         return loc.flatten()
 
 
-class ExponentialFamilyMultivariateNormal(  # pylint: disable=abstract-method
-    ch.distributions.MultivariateNormal
+class ExponentialFamilyMultivariateNormal(
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    distributions.MultivariateNormal,
 ):
     """Multivariate normal parameterized by natural parameters."""
 

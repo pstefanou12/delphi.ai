@@ -9,7 +9,7 @@ import torch as ch
 from torch import nn
 
 from delphi import delphi_logger
-from delphi.distributions import multivariate_normal
+from delphi.exponential_family import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
 

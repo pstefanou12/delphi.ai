@@ -4,8 +4,12 @@
 import torch as ch
 import torch.distributions as distributions
 
+import delphi.exponential_family.exponential_family_distribution as exponential_family_distribution
 
-class ExponentialFamilyPoisson(distributions.Poisson):  # pylint: disable=abstract-method
+
+class ExponentialFamilyPoisson(
+    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Poisson
+):
     """Poisson distribution parameterized by natural parameters."""
 
     def __init__(self, theta: ch.Tensor, dims: int):
@@ -29,7 +33,7 @@ class ExponentialFamilyPoisson(distributions.Poisson):  # pylint: disable=abstra
         """Convert natural parameters to canonical rate parameter."""
         return ch.exp(theta)
 
-    def log_prob(self, value):
+    def log_prob(self, value: ch.Tensor) -> ch.Tensor:
         """Compute summed log probability over all dimensions."""
         result = super().log_prob(value)
         return result.sum(-1)

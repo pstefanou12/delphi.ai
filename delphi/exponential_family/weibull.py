@@ -4,8 +4,12 @@
 import torch as ch
 import torch.distributions as distributions
 
+import delphi.exponential_family.exponential_family_distribution as exponential_family_distribution
 
-class ExponentialFamilyWeibull(distributions.Weibull):  # pylint: disable=abstract-method
+
+class ExponentialFamilyWeibull(
+    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Weibull
+):
     """Weibull distribution parameterized by natural parameters."""
 
     def __init__(self, k: ch.Tensor, theta: ch.Tensor, dims: int):
@@ -29,7 +33,7 @@ class ExponentialFamilyWeibull(distributions.Weibull):  # pylint: disable=abstra
         """Convert natural parameters to canonical scale parameter."""
         return (-1 / theta).pow(1 / k)
 
-    def log_prob(self, value):
+    def log_prob(self, value: ch.Tensor) -> ch.Tensor:
         """Compute summed log probability over all dimensions."""
         result = super().log_prob(value)
         return result.sum(-1)

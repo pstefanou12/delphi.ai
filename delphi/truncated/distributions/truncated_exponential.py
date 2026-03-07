@@ -7,7 +7,7 @@ from collections.abc import Callable
 import torch as ch
 
 from delphi import delphi_logger
-from delphi.distributions import exponential
+from delphi.exponential_family import exponential
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import defaults, helpers
 
