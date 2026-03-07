@@ -1,12 +1,12 @@
 # Author: pstefanou12@
 """Pydantic configuration models for delphi.ai algorithms."""
 
-from __future__ import annotations
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import pydantic
 
 
-def make_config(args: dict | BaseModel, config_class: type[BaseModel]) -> BaseModel:
+def make_config(
+    args: dict | pydantic.BaseModel, config_class: type[pydantic.BaseModel]
+) -> pydantic.BaseModel:
     """Construct a Pydantic config from a dict or return an existing config.
 
     Args:
@@ -28,7 +28,7 @@ def make_config(args: dict | BaseModel, config_class: type[BaseModel]) -> BaseMo
     )
 
 
-class TrainerConfig(BaseModel):
+class TrainerConfig(pydantic.BaseModel):
     """Configuration for the Trainer.
 
     Attributes:
@@ -57,33 +57,33 @@ class TrainerConfig(BaseModel):
         checkpoint_every: Epoch frequency for periodic checkpoints; 0 disables.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
-    epochs: int | None = Field(default=None, ge=1)
-    iterations: int | None = Field(default=None, ge=1)
-    trials: int = Field(default=1, ge=1)
-    ema_decay: float = Field(default=0.99, ge=0.0, le=1.0)
-    tol: float = Field(default=1e-3, ge=0.0)
+    epochs: int | None = pydantic.Field(default=None, ge=1)
+    iterations: int | None = pydantic.Field(default=None, ge=1)
+    trials: int = pydantic.Field(default=1, ge=1)
+    ema_decay: float = pydantic.Field(default=0.99, ge=0.0, le=1.0)
+    tol: float = pydantic.Field(default=1e-3, ge=0.0)
     early_stopping: bool = False
     verbose: bool = False
     disable_no_grad: bool = False
-    val_interval: int | None = Field(default=None, ge=1)
-    patience: int | None = Field(default=None, ge=1)
-    grad_tol: float = Field(default=0.0, ge=0.0)
-    grad_tol_window: int = Field(default=1, ge=1)
+    val_interval: int | None = pydantic.Field(default=None, ge=1)
+    patience: int | None = pydantic.Field(default=None, ge=1)
+    grad_tol: float = pydantic.Field(default=0.0, ge=0.0)
+    grad_tol_window: int = pydantic.Field(default=1, ge=1)
     loss_tol: float | None = None
-    log_every: int = Field(default=50, ge=1)
+    log_every: int = pydantic.Field(default=50, ge=1)
     max_grad_norm: float | None = None
     tqdm: bool = False
     device: str = "cpu"
     use_amp: bool = False
-    accumulate_grad_batches: int = Field(default=1, ge=1)
-    record_params_every: int = Field(default=0, ge=0)
+    accumulate_grad_batches: int = pydantic.Field(default=1, ge=1)
+    record_params_every: int = pydantic.Field(default=0, ge=0)
     checkpoint_dir: str | None = None
-    checkpoint_every: int = Field(default=0, ge=0)
+    checkpoint_every: int = pydantic.Field(default=0, ge=0)
 
 
-class OptimizerConfig(BaseModel):
+class OptimizerConfig(pydantic.BaseModel):
     """Configuration for optimizers.
 
     Attributes:
@@ -100,13 +100,13 @@ class OptimizerConfig(BaseModel):
         scheduler: Learning-rate scheduler type; None disables scheduling.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
     optimizer: str = "sgd"
-    lr: float = Field(default=0.1, gt=0.0)
-    momentum: float = Field(default=0.0, ge=0.0)
-    dampening: float = Field(default=0.0, ge=0.0)
-    weight_decay: float = Field(default=0.0, ge=0.0)
+    lr: float = pydantic.Field(default=0.1, gt=0.0)
+    momentum: float = pydantic.Field(default=0.0, ge=0.0)
+    dampening: float = pydantic.Field(default=0.0, ge=0.0)
+    weight_decay: float = pydantic.Field(default=0.0, ge=0.0)
     nesterov: bool = False
     maximize: bool = False
     foreach: bool | None = None
@@ -135,29 +135,29 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
         project: Enable per-step sublevel-set projection.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
     # Override parent defaults for distribution training.
-    tol: float = Field(default=1e-1, ge=0.0)
-    record_params_every: int = Field(default=1, ge=1)
-    epochs: int | None = Field(default=1, ge=1)
+    tol: float = pydantic.Field(default=1e-1, ge=0.0)
+    record_params_every: int = pydantic.Field(default=1, ge=1)
+    epochs: int | None = pydantic.Field(default=1, ge=1)
 
     # Distribution-specific fields.
-    val: float = Field(default=0.2, ge=0.0, le=1.0)
-    eps: float = Field(default=1e-5, gt=0.0)
-    min_radius: float = Field(default=3.0, ge=0.0)
-    max_radius: float = Field(default=10.0, ge=0.0)
-    rate: float = Field(default=1.1, gt=1.0)
-    batch_size: int = Field(default=10, ge=1)
-    num_samples: int = Field(default=10000, ge=1)
-    max_phases: int = Field(default=1, ge=1)
-    loss_convergence_tol: float = Field(default=1e-3, ge=0.0)
-    relative_loss_tol: float = Field(default=float("inf"), ge=0.0)
-    loss_increase_tol: float = Field(default=float("inf"), ge=0.0)
+    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
+    eps: float = pydantic.Field(default=1e-5, gt=0.0)
+    min_radius: float = pydantic.Field(default=3.0, ge=0.0)
+    max_radius: float = pydantic.Field(default=10.0, ge=0.0)
+    rate: float = pydantic.Field(default=1.1, gt=1.0)
+    batch_size: int = pydantic.Field(default=10, ge=1)
+    num_samples: int = pydantic.Field(default=10000, ge=1)
+    max_phases: int = pydantic.Field(default=1, ge=1)
+    loss_convergence_tol: float = pydantic.Field(default=1e-3, ge=0.0)
+    relative_loss_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
+    loss_increase_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
     project: bool = True
 
-    @model_validator(mode="after")
-    def check_radius(self) -> TruncatedExponentialFamilyDistributionConfig:
+    @pydantic.model_validator(mode="after")
+    def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":
         """Validate that min_radius does not exceed max_radius."""
         if self.min_radius > self.max_radius:
             raise ValueError(
@@ -166,10 +166,10 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
             )
         return self
 
-    @model_validator(mode="after")
+    @pydantic.model_validator(mode="after")
     def resolve_epochs_iterations(
         self,
-    ) -> TruncatedExponentialFamilyDistributionConfig:
+    ) -> "TruncatedExponentialFamilyDistributionConfig":
         """Clear the default epochs when iterations is explicitly provided.
 
         The trainer uses exactly one stopping criterion. When the user
@@ -194,5 +194,5 @@ class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionCo
             covariance matrix parameter; falls back to lr when None.
     """
 
-    eigenvalue_lower_bound: float = Field(default=1e-2, gt=0.0)
-    covariance_matrix_lr: float | None = Field(default=None, gt=0.0)
+    eigenvalue_lower_bound: float = pydantic.Field(default=1e-2, gt=0.0)
+    covariance_matrix_lr: float | None = pydantic.Field(default=None, gt=0.0)
