@@ -97,7 +97,7 @@ def test_truncated_normal_known_variance():
         "tol": 5e-2,
         "iterations": 1500,
     }
-    truncated = TruncatedNormalKnownVariance(args, phi_std_norm, alpha, 1, ch.eye(1))
+    truncated = TruncatedNormalKnownVariance(args, phi_std_norm, alpha, ch.eye(1))
     truncated.fit(S_std_norm)
 
     best_loc = truncated.best_loc_ + emp_loc
@@ -760,6 +760,7 @@ def test_truncated_boolean_product_2_dims():
         "lr": 1e-1,
         "max_phases": 1000000,
         "rate": 1.5,
+        "project": False,
     }
 
     truncated = TruncatedBooleanProduct(args, phi, alpha, dims)
@@ -1419,7 +1420,7 @@ def test_truncated_weibull_2_dims_diff_scale():
     args = {
         "iterations": 2500,
         "trials": 1,
-        "batch_size": 10,
+        "batch_size": 100,
         "num_samples": 1000,
         "verbose": True,
         "optimizer": "sgd",

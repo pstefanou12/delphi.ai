@@ -6,7 +6,6 @@
 import torch as ch
 
 from delphi.truncated.distributions import unknown_truncated_multivariate_normal
-from delphi.utils import helpers
 
 
 class UnknownTruncationNormalKnownVariance(
@@ -69,7 +68,7 @@ class UnknownTruncatedNormalUnknownVariance(
 
 
 def UnknownTruncationNormal(  # pylint: disable=invalid-name
-    args: helpers.Parameters,
+    args,
     k: int,
     alpha: float,
     dims: int,
@@ -81,7 +80,7 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
     otherwise returns an unknown-variance model.
 
     Args:
-        args: Hyperparameter object.
+        args: Hyperparameter dict or Pydantic config.
         k: Number of nearest neighbours for the oracle.
         alpha: Survival probability lower bound.
         dims: Number of dimensions.
@@ -90,12 +89,7 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
     Returns:
         UnknownTruncationNormalKnownVariance if variance is provided, else
         UnknownTruncatedNormalUnknownVariance.
-
-    Raises:
-        TypeError: If args is not a Parameters instance.
     """
-    if not isinstance(args, helpers.Parameters):
-        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
     if variance is not None:
         return UnknownTruncationNormalKnownVariance(args, k, alpha, dims, variance)
     return UnknownTruncatedNormalUnknownVariance(args, k, alpha, dims)

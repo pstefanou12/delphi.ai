@@ -2,16 +2,18 @@
 """Multivariate normal distribution in natural parameterization."""
 
 import torch as ch
-from torch import Tensor
-from torch.distributions import MultivariateNormal
+import torch.distributions as distributions
+
+import delphi.exponential_family.exponential_family_distribution as exponential_family_distribution
 
 
-class ExponentialFamilyMultivariateNormalKnownCovariance(  # pylint: disable=abstract-method
-    MultivariateNormal
+class ExponentialFamilyMultivariateNormalKnownCovariance(
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    distributions.MultivariateNormal,
 ):
     """Multivariate normal parameterized by natural parameters with known covariance."""
 
-    def __init__(self, covariance_matrix: Tensor, theta: Tensor, dims: int):
+    def __init__(self, covariance_matrix: ch.Tensor, theta: ch.Tensor, dims: int):
         """Initialize with covariance matrix, natural parameter theta, and dimension."""
         self.dims = dims
         v = theta
@@ -19,28 +21,31 @@ class ExponentialFamilyMultivariateNormalKnownCovariance(  # pylint: disable=abs
         super().__init__(mu, covariance_matrix)
 
     @staticmethod
-    def calc_suff_stat(x: Tensor) -> Tensor:
+    def calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Return sufficient statistics for multivariate normal with known covariance."""
         return x
 
     @staticmethod
-    def to_natural(theta: Tensor, covariance_matrix: Tensor) -> Tensor:
+    def to_natural(theta: ch.Tensor, covariance_matrix: ch.Tensor) -> ch.Tensor:
         """Convert canonical mean to natural parameters."""
         inv_cov = covariance_matrix.inverse()
         v = theta @ inv_cov  # pylint: disable=invalid-name
         return v.flatten()
 
     @staticmethod
-    def to_canonical(theta: Tensor, covariance_matrix: Tensor) -> Tensor:
+    def to_canonical(theta: ch.Tensor, covariance_matrix: ch.Tensor) -> ch.Tensor:
         """Convert natural parameters to canonical mean."""
         loc = theta @ covariance_matrix
         return loc.flatten()
 
 
-class ExponentialFamilyMultivariateNormal(MultivariateNormal):  # pylint: disable=abstract-method
+class ExponentialFamilyMultivariateNormal(
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    distributions.MultivariateNormal,
+):
     """Multivariate normal parameterized by natural parameters."""
 
-    def __init__(self, theta: Tensor, dims: int):
+    def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""
         self.dims = dims
         T, v = theta[: self.dims**2], theta[self.dims**2 :]  # pylint: disable=invalid-name
@@ -49,12 +54,12 @@ class ExponentialFamilyMultivariateNormal(MultivariateNormal):  # pylint: disabl
         super().__init__(mu, covariance_matrix)
 
     @staticmethod
-    def calc_suff_stat(x: Tensor) -> Tensor:
+    def calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Return sufficient statistics for multivariate normal."""
         return ch.cat([ch.bmm(x.unsqueeze(2), x.unsqueeze(1)).flatten(1), x], 1)
 
     @staticmethod
-    def to_natural(theta: Tensor, dims: int) -> Tensor:
+    def to_natural(theta: ch.Tensor, dims: int) -> ch.Tensor:
         """Convert canonical parameters to natural form."""
         cov_matrix = theta[: dims**2].view(dims, dims)
         loc = theta[dims**2 :]
@@ -63,7 +68,7 @@ class ExponentialFamilyMultivariateNormal(MultivariateNormal):  # pylint: disabl
         return ch.cat([-0.5 * mat_t.flatten(), v.flatten()])
 
     @staticmethod
-    def to_canonical(theta: Tensor, dims: int) -> Tensor:
+    def to_canonical(theta: ch.Tensor, dims: int) -> ch.Tensor:
         """Convert natural parameters to canonical form."""
         mat_t = theta[: dims**2].view(dims, dims)  # pylint: disable=invalid-name
         v = theta[dims**2 :]

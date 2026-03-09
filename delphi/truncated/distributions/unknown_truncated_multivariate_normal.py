@@ -14,7 +14,7 @@ from delphi.truncated.distributions import (
     truncated_multivariate_normal,
     truncated_multivariate_normal_known_covariance,
 )
-from delphi.utils import datasets, defaults, helpers
+from delphi.utils import datasets, helpers
 
 
 class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too-many-instance-attributes
@@ -47,13 +47,8 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, helpers.Parameters):
-            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
-        self.args = defaults.check_and_fill_args(
-            args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
-        )
         super().__init__(
             args,
             partial(oracle.UnknownGaussian, k),
@@ -203,13 +198,8 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        if not isinstance(args, helpers.Parameters):
-            raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
         # Algorithm hyperparameters.
         self.k = k
-        self.args = defaults.check_and_fill_args(
-            args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
-        )
         super().__init__(args, partial(oracle.UnknownGaussian, k), alpha, dims)
 
         self.emp_loc, self.emp_covariance_matrix = None, None
@@ -410,12 +400,6 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     Raises:
         TypeError: If args is not a Parameters instance.
     """
-    if not isinstance(args, helpers.Parameters):
-        raise TypeError(f"args is type {type(args).__name__}; expected Parameters.")
-    args = defaults.check_and_fill_args(
-        args, defaults.UNKNOWN_TRUNC_MULTI_NORM_DEFAULTS
-    )
-
     if covariance_matrix is not None:
         return UnknownTruncationMultivariateNormalKnownCovariance(
             args, k, alpha, dims, covariance_matrix=covariance_matrix
