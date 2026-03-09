@@ -53,6 +53,7 @@ class TruncatedMultivariateNormalKnownCovariance(
             multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance,
             covariance_matrix,
         )
+        self.dist.calc_suff_stat = multivariate_normal.ExponentialFamilyMultivariateNormalKnownCovariance.calc_suff_stat
         super().__init__(
             args,
             phi,

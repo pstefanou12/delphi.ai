@@ -2,7 +2,6 @@
 """Parent class for truncated exponential distribution model classes."""
 
 import abc
-import functools
 from collections.abc import Callable
 
 import torch as ch
@@ -63,15 +62,12 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.alpha = alpha
         self.dims = dims
 
-        dist_cls = (
-            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
-        )
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,
             self.dims,
             self.dist,
-            dist_cls.calc_suff_stat,
+            self.dist.calc_suff_stat,
             self.args.num_samples,
             self.args.eps,
         ]
@@ -115,20 +111,18 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 f"or equal to the number of samples ({self.args.num_samples})."
             )
 
-        dist_cls = (
-            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
-        )
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.args,
             S,
             datasets.TruncatedExponentialDistributionDataset,
-            {"calc_suff_stat": dist_cls.calc_suff_stat},
+            {"calc_suff_stat": self.dist.calc_suff_stat},
         )
 
         self.prev_best_loss = None
         self.radius_history = []
         self.loss_history = []
         self._calc_emp_model()
+        self.nll_init = self._compute_nll(self.emp_theta)
         self.radius = self.args.min_radius
 
         phase = 0
@@ -224,13 +218,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def _calc_emp_model(self):
         """Calculate empirical natural parameters from training data."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        dist_cls = (
-            self.dist.func if isinstance(self.dist, functools.partial) else self.dist
-        )
-        self.emp_theta = dist_cls.calc_suff_stat(dataset_s).mean(0)
+        self.emp_theta = self.dist.calc_suff_stat(dataset_s).mean(0)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
-        with ch.no_grad():
-            self.nll_init = self._compute_nll(self.emp_theta)
 
     def _compute_nll(self, theta: ch.Tensor) -> float:
         """Compute non-truncated NLL of training samples under theta.
@@ -241,9 +230,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         Returns:
             Mean negative log-likelihood over training samples.
         """
-        S = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        D = self.dist(theta.detach(), self.dims)  # pylint: disable=invalid-name
-        return -D.log_prob(S).mean().item()
+        with ch.no_grad():
+            S = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+            D = self.dist(theta, self.dims)  # pylint: disable=invalid-name
+            return -D.log_prob(S).mean().item()
 
     def _project_onto_sublevel_set(self, theta: ch.Tensor) -> ch.Tensor:
         """Project theta onto {θ : L(θ) ≤ nll_threshold} via bisection.
@@ -296,6 +286,12 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         """
         if self.args.project:
             with ch.no_grad():
+                # Enforce constraints before projection so that _compute_nll
+                # inside _project_onto_sublevel_set always receives a theta in
+                # the valid domain (e.g. strictly negative for exponential /
+                # Weibull).  Constraints are applied again after projection to
+                # keep the final value valid as well.
+                self._write_theta(self._constraints(self.theta))
                 proj_theta = self._project_onto_sublevel_set(self.theta)
                 self._write_theta(self._constraints(proj_theta))
 
