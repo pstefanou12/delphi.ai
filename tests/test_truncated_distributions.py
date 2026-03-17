@@ -9,7 +9,9 @@ from delphi import oracle
 from delphi.truncated.distributions import truncated_boolean_product
 from delphi.truncated.distributions import truncated_exponential
 from delphi.truncated.distributions import truncated_multivariate_normal
-from delphi.truncated.distributions import truncated_multivariate_normal_known_covariance
+from delphi.truncated.distributions import (
+    truncated_multivariate_normal_known_covariance,
+)
 from delphi.truncated.distributions import truncated_normal
 from delphi.truncated.distributions import truncated_normal_known_variance
 from delphi.truncated.distributions import truncated_poisson
@@ -46,7 +48,9 @@ def test_truncated_normal_known_variance():
         "tol": 5e-2,
         "iterations": 1500,
     }
-    truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(args, phi_std_norm, alpha, ch.eye(1))
+    truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
+        args, phi_std_norm, alpha, ch.eye(1)
+    )
     truncated.fit(S_std_norm)
 
     best_loc = truncated.best_loc_ + emp_loc
@@ -68,7 +72,9 @@ def test_truncated_normal_known_variance():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -143,7 +149,9 @@ def test_truncated_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -208,7 +216,9 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -260,7 +270,9 @@ def test_truncated_2_dim_multivariate_normal():
         "optimizer": "sgd",
         "covariance_matrix_lr": 1e-2,
     }
-    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
+    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
+        args, phi_std_norm, alpha, dims
+    )
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
     best_covariance_matrix = (
@@ -293,7 +305,9 @@ def test_truncated_2_dim_multivariate_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, emp_covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, emp_covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -369,7 +383,9 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -421,7 +437,9 @@ def test_truncated_10_dim_multivariate_normal():
         "lr": 1e-1,
         "covariance_matrix_lr": 1e-2,
     }
-    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(args, phi_std_norm, alpha, dims)
+    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
+        args, phi_std_norm, alpha, dims
+    )
     truncated.fit(S_std_norm)
 
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -455,7 +473,9 @@ def test_truncated_10_dim_multivariate_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, emp_covariance_matrix), M)
+    kl_emp = kl.kl_divergence(
+        distributions.MultivariateNormal(emp_loc, emp_covariance_matrix), M
+    )
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -501,7 +521,9 @@ def test_truncated_boolean_product_2_dims():
         "project": False,
     }
 
-    truncated = truncated_boolean_product.TruncatedBooleanProduct(args, phi, alpha, dims)
+    truncated = truncated_boolean_product.TruncatedBooleanProduct(
+        args, phi, alpha, dims
+    )
     truncated.fit(S)
 
     best_p = truncated.best_p_
@@ -588,7 +610,9 @@ def test_truncated_boolean_product_20_dims():
         "lr": 1e-1,
     }
 
-    truncated = truncated_boolean_product.TruncatedBooleanProduct(args, phi, alpha, dims)
+    truncated = truncated_boolean_product.TruncatedBooleanProduct(
+        args, phi, alpha, dims
+    )
     truncated.fit(S)
 
     best_p = truncated.best_p_

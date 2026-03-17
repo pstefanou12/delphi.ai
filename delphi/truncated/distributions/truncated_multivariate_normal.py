@@ -69,20 +69,16 @@ class TruncatedMultivariateNormal(
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        suff_stats = (
-            multivariate_normal.MultivariateNormal.calc_suff_stat(
-                dataset_s
-            ).mean(0)
-        )
+        suff_stats = multivariate_normal.MultivariateNormal.calc_suff_stat(
+            dataset_s
+        ).mean(0)
         second_moment = suff_stats[: self.dims**2].view(self.dims, self.dims)
         loc = suff_stats[self.dims**2 :]
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
         cov_matrix = second_moment - ch.outer(loc, loc)
         emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
-        self.emp_theta = (
-            multivariate_normal.MultivariateNormal.to_natural(
-                emp_canon_params, self.dims
-            )
+        self.emp_theta = multivariate_normal.MultivariateNormal.to_natural(
+            emp_canon_params, self.dims
         )
         self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
             self.dims, self.dims

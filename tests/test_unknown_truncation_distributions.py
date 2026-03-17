@@ -146,9 +146,7 @@ def test_unknown_truncation_normal():
 
     # check performance
     kl_truncated = kl.kl_divergence(best_m, M)
-    kl_emp = kl.kl_divergence(
-        distributions.MultivariateNormal(emp_loc, emp_var), M
-    )
+    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, emp_var), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (
@@ -189,8 +187,10 @@ def test_unknown_truncation_multivariate_normal():
         "batch_size": 100,
         "verbose": True,
     }
-    truncated = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        args, k, alpha, dims
+    truncated = (
+        unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
+            args, k, alpha, dims
+        )
     )
     truncated.fit(S_white)
 
@@ -219,9 +219,7 @@ def test_unknown_truncation_multivariate_normal():
     print(f"avg kl divergence: {avg_kl_div}")
 
     # check performance
-    kl_emp = kl.kl_divergence(
-        distributions.MultivariateNormal(emp_loc, emp_cov), M
-    )
+    kl_emp = kl.kl_divergence(distributions.MultivariateNormal(emp_loc, emp_cov), M)
     print(f"empirical kl divergence: {kl_emp.item():.3f}")
     print(f"truncated kl divergence: {kl_truncated.item():.3f}")
     assert ema_kl_div <= 1e-1, (

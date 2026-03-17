@@ -51,9 +51,7 @@ class TruncatedWeibull(
         )
         self.k = k
         self.dist = partial(weibull.Weibull, k)
-        self.dist.calc_suff_stat = partial(
-            weibull.Weibull.calc_suff_stat, k
-        )
+        self.dist.calc_suff_stat = partial(weibull.Weibull.calc_suff_stat, k)
         super().__init__(
             args,
             phi,

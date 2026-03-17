@@ -29,6 +29,7 @@ CKPT_NAME_BEST = CKPT_NAME + BEST_APPEND
 
 
 class ProcedureStage(str, Enum):
+
     """Training procedure stage identifiers."""
 
     TRAIN = "train"
