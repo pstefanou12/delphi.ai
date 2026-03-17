@@ -18,7 +18,7 @@ class TruncatedExponential(
 ):
     """Model for truncated exponential distributions to be passed into trainer."""
 
-    dist = exponential.ExponentialFamilyExponential
+    dist = exponential.Exponential
 
     def __init__(
         self,
@@ -56,7 +56,7 @@ class TruncatedExponential(
         """Initialize theta at the natural parameter corresponding to the empirical rate."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
         emp_rate = 1.0 / dataset_s.mean(0)
-        self.emp_theta = exponential.ExponentialFamilyExponential.to_natural(emp_rate)
+        self.emp_theta = exponential.Exponential.to_natural(emp_rate)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
@@ -66,22 +66,22 @@ class TruncatedExponential(
     @property
     def best_lambda_(self):
         """Return the best rate (canonical) parameter estimate."""
-        return exponential.ExponentialFamilyExponential.to_canonical(self.best_params)
+        return exponential.Exponential.to_canonical(self.best_params)
 
     @property
     def final_lambda_(self):
         """Return the final rate (canonical) parameter estimate."""
-        return exponential.ExponentialFamilyExponential.to_canonical(self.final_params)
+        return exponential.Exponential.to_canonical(self.final_params)
 
     @property
     def ema_lambda_(self):
         """Return the EMA rate (canonical) parameter estimate."""
-        return exponential.ExponentialFamilyExponential.to_canonical(self.ema_params)
+        return exponential.Exponential.to_canonical(self.ema_params)
 
     @property
     def avg_lambda_(self):
         """Return the averaged rate (canonical) parameter estimate."""
-        return exponential.ExponentialFamilyExponential.to_canonical(self.avg_params)
+        return exponential.Exponential.to_canonical(self.avg_params)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

@@ -16,7 +16,7 @@ class TruncatedPoisson(
 ):
     """Model for truncated Poisson distributions to be passed into trainer."""
 
-    dist = poisson.ExponentialFamilyPoisson
+    dist = poisson.Poisson
 
     def __init__(
         self,
@@ -53,22 +53,22 @@ class TruncatedPoisson(
     @property
     def best_lambda_(self):
         """Return the best rate parameter estimate."""
-        return poisson.ExponentialFamilyPoisson.to_canonical(self.best_params)
+        return poisson.Poisson.to_canonical(self.best_params)
 
     @property
     def final_lambda_(self):
         """Return the final rate parameter estimate."""
-        return poisson.ExponentialFamilyPoisson.to_canonical(self.final_params)
+        return poisson.Poisson.to_canonical(self.final_params)
 
     @property
     def ema_lambda_(self):
         """Return the EMA rate parameter estimate."""
-        return poisson.ExponentialFamilyPoisson.to_canonical(self.ema_params)
+        return poisson.Poisson.to_canonical(self.ema_params)
 
     @property
     def avg_lambda_(self):
         """Return the averaged rate parameter estimate."""
-        return poisson.ExponentialFamilyPoisson.to_canonical(self.avg_params)
+        return poisson.Poisson.to_canonical(self.avg_params)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

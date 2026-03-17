@@ -16,7 +16,7 @@ class TruncatedBooleanProduct(
 ):
     """Model for truncated boolean product distributions to be passed into trainer."""
 
-    dist = boolean_product.ExponentialFamilyBooleanProduct
+    dist = boolean_product.BooleanProduct
 
     def __init__(
         self,
@@ -53,28 +53,28 @@ class TruncatedBooleanProduct(
     @property
     def best_p_(self):
         """Return the best probability parameter estimate."""
-        return boolean_product.ExponentialFamilyBooleanProduct.to_canonical(
+        return boolean_product.BooleanProduct.to_canonical(
             self.best_params
         )
 
     @property
     def final_p_(self):
         """Return the final probability parameter estimate."""
-        return boolean_product.ExponentialFamilyBooleanProduct.to_canonical(
+        return boolean_product.BooleanProduct.to_canonical(
             self.final_params
         )
 
     @property
     def ema_p_(self):
         """Return the EMA probability parameter estimate."""
-        return boolean_product.ExponentialFamilyBooleanProduct.to_canonical(
+        return boolean_product.BooleanProduct.to_canonical(
             self.ema_params
         )
 
     @property
     def avg_p_(self):
         """Return the averaged probability parameter estimate."""
-        return boolean_product.ExponentialFamilyBooleanProduct.to_canonical(
+        return boolean_product.BooleanProduct.to_canonical(
             self.avg_params
         )
 

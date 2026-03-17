@@ -2,12 +2,12 @@
 """Weibull distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions as distributions
+from torch import distributions
 
-import delphi.exponential_family.exponential_family_distribution as exponential_family_distribution
+from delphi.exponential_family import exponential_family_distribution
 
 
-class ExponentialFamilyWeibull(
+class Weibull(
     exponential_family_distribution.ExponentialFamilyDistribution, distributions.Weibull
 ):
     """Weibull distribution parameterized by natural parameters."""

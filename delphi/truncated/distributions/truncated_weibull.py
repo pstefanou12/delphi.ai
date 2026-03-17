@@ -50,9 +50,9 @@ class TruncatedWeibull(
             else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         self.k = k
-        self.dist = partial(weibull.ExponentialFamilyWeibull, k)
+        self.dist = partial(weibull.Weibull, k)
         self.dist.calc_suff_stat = partial(
-            weibull.ExponentialFamilyWeibull.calc_suff_stat, k
+            weibull.Weibull.calc_suff_stat, k
         )
         super().__init__(
             args,
@@ -67,7 +67,7 @@ class TruncatedWeibull(
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
         # MLE: λ̂^k = mean(x^k), so λ̂ = mean(x^k)^(1/k).
         emp_scale = self.dist.calc_suff_stat(dataset_s).mean(0).pow(1.0 / self.k)
-        self.emp_theta = weibull.ExponentialFamilyWeibull.to_natural(self.k, emp_scale)
+        self.emp_theta = weibull.Weibull.to_natural(self.k, emp_scale)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
@@ -77,22 +77,22 @@ class TruncatedWeibull(
     @property
     def best_lambda_(self):
         """Return the best scale parameter estimate."""
-        return weibull.ExponentialFamilyWeibull.to_canonical(self.k, self.best_params)
+        return weibull.Weibull.to_canonical(self.k, self.best_params)
 
     @property
     def final_lambda_(self):
         """Return the final scale parameter estimate."""
-        return weibull.ExponentialFamilyWeibull.to_canonical(self.k, self.final_params)
+        return weibull.Weibull.to_canonical(self.k, self.final_params)
 
     @property
     def ema_lambda_(self):
         """Return the EMA scale parameter estimate."""
-        return weibull.ExponentialFamilyWeibull.to_canonical(self.k, self.ema_params)
+        return weibull.Weibull.to_canonical(self.k, self.ema_params)
 
     @property
     def avg_lambda_(self):
         """Return the averaged scale parameter estimate."""
-        return weibull.ExponentialFamilyWeibull.to_canonical(self.k, self.avg_params)
+        return weibull.Weibull.to_canonical(self.k, self.avg_params)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

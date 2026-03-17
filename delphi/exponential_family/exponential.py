@@ -2,15 +2,14 @@
 """Exponential distribution in natural parameterization."""
 
 import torch as ch
-import torch.distributions as distributions
+from torch import distributions
 
-from delphi.exponential_family.exponential_family_distribution import (
-    ExponentialFamilyDistribution,
-)
+from delphi.exponential_family import exponential_family_distribution
 
 
-class ExponentialFamilyExponential(
-    ExponentialFamilyDistribution, distributions.Exponential
+class Exponential(
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    distributions.Exponential,
 ):
     """Exponential distribution parameterized by natural parameters."""
 
