@@ -6,9 +6,9 @@ from collections.abc import Callable
 import torch as ch
 
 from delphi.truncated.distributions import (
-    truncated_multivariate_normal,
     truncated_multivariate_normal_known_covariance,
 )
+from delphi.utils import configs
 
 
 class TruncatedNormalKnownVariance(
@@ -18,7 +18,7 @@ class TruncatedNormalKnownVariance(
 
     def __init__(
         self,
-        args: dict | truncated_multivariate_normal.TruncatedMultivariateNormalConfig,
+        args: dict | configs.TruncatedMultivariateNormalConfig,
         phi: Callable,
         alpha: float,
         covariance_matrix: ch.Tensor | None,
