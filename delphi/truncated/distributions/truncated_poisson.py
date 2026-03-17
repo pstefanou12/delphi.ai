@@ -2,10 +2,7 @@
 """Truncated Poisson Distribution."""
 
 from collections.abc import Callable
-import logging
 
-
-from delphi import delphi_logger
 from delphi.exponential_family import poisson
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
@@ -17,10 +14,11 @@ class TruncatedPoisson(
     """Model for truncated Poisson distributions to be passed into trainer."""
 
     dist = poisson.Poisson
+    defaults = configs.TruncatedExponentialFamilyDistributionConfig
 
     def __init__(
         self,
-        args: dict | configs.TruncatedExponentialFamilyDistributionConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -28,27 +26,12 @@ class TruncatedPoisson(
         """Initialize TruncatedPoisson.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        args = configs.make_config(
-            args, configs.TruncatedExponentialFamilyDistributionConfig
-        )
-
-        logger = (
-            delphi_logger.delphiLogger()
-            if args.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            logger,
-        )
+        super().__init__(hyperparameters, phi, alpha, dims)
 
     @property
     def best_lambda_(self):

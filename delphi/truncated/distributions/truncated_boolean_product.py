@@ -1,11 +1,8 @@
 # Author: pstefanou12@
 """Truncated Boolean Product Distributions."""
 
-import logging
 from collections.abc import Callable
 
-
-from delphi import delphi_logger
 from delphi.exponential_family import boolean_product
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
@@ -17,10 +14,11 @@ class TruncatedBooleanProduct(
     """Model for truncated boolean product distributions to be passed into trainer."""
 
     dist = boolean_product.BooleanProduct
+    defaults = configs.TruncatedExponentialFamilyDistributionConfig
 
     def __init__(
         self,
-        args: dict | configs.TruncatedExponentialFamilyDistributionConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -28,27 +26,12 @@ class TruncatedBooleanProduct(
         """Initialize TruncatedBooleanProduct.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        args = configs.make_config(
-            args, configs.TruncatedExponentialFamilyDistributionConfig
-        )
-
-        logger = (
-            delphi_logger.delphiLogger()
-            if args.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            logger,
-        )
+        super().__init__(hyperparameters, phi, alpha, dims)
 
     @property
     def best_p_(self):

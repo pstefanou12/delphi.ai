@@ -2,12 +2,10 @@
 """Truncated multivariate normal distribution with oracle access (known truncation set)."""
 
 from collections.abc import Callable
-import logging
 
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger
 from delphi.exponential_family import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
@@ -20,49 +18,32 @@ class TruncatedMultivariateNormal(
 
     Attributes:
         eigenvalue_lower_bound: Minimum eigenvalue for covariance projection.
-        emp_theta: Empirical natural parameters.
         emp_T: Empirical precision matrix component.
         emp_v: Empirical natural mean component.
     """
 
     dist = multivariate_normal.MultivariateNormal
+    defaults = configs.TruncatedMultivariateNormalConfig
 
     def __init__(
         self,
-        args: dict | configs.TruncatedMultivariateNormalConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
-        sampler: Callable = None,
-    ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    ):
         """Initialize TruncatedMultivariateNormal.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
-            sampler: Optional sampler override.
         """
-        args = configs.make_config(args, configs.TruncatedMultivariateNormalConfig)
-        self.eigenvalue_lower_bound = args.eigenvalue_lower_bound
-
-        logger = (
-            delphi_logger.delphiLogger()
-            if args.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            logger,
-        )
-        self._sampler = sampler
+        super().__init__(hyperparameters, phi, alpha, dims)
+        self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
 
         # Attributes set during _calc_emp_model.
-        self.emp_theta = None
         self.emp_T = None  # pylint: disable=invalid-name
         self.emp_v = None
 
@@ -126,10 +107,10 @@ class TruncatedMultivariateNormal(
 
     def parameter_groups(self):
         """Return parameter groups, optionally with separate LR for covariance."""
-        if self.args.covariance_matrix_lr is not None:
+        if self.hyperparameters.covariance_matrix_lr is not None:
             return [
-                {"params": [self.T], "lr": self.args.covariance_matrix_lr},
-                {"params": [self.v], "lr": self.args.lr},
+                {"params": [self.T], "lr": self.hyperparameters.covariance_matrix_lr},
+                {"params": [self.v], "lr": self.hyperparameters.lr},
             ]
         return self.parameters()
 

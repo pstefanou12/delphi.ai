@@ -2,7 +2,9 @@
 """Parent class for truncated exponential distribution model classes."""
 
 import abc
+import logging
 from collections.abc import Callable
+from typing import Generic
 
 import torch as ch
 from torch import nn
@@ -13,7 +15,7 @@ from delphi.utils import configs, datasets
 
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
-    distributions.distributions, abc.ABC
+    distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
 ):
     """Base class for truncated exponential family distribution models.
 
@@ -25,6 +27,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
         dist: Exponential family distribution class or partial, set by subclass.
+        calc_suff_stat (Callable): Sufficient-statistic function for ``dist``.
+            Subclasses whose ``dist`` is a ``partial`` must set this attribute
+            before calling ``super().__init__``; for plain distribution classes
+            it is derived automatically from ``dist.calc_suff_stat``.
         criterion: NLL loss function applied during training.
         criterion_params (list): Extra parameters passed to criterion.
         best_params: Best natural parameters found across all training phases.
@@ -42,34 +48,40 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     def __init__(
         self,
-        args: configs.TruncatedExponentialFamilyDistributionConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
-        logger: delphi_logger.delphiLogger,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
-            args: Validated configuration object.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
-            logger: Logger instance.
         """
-        super().__init__(args, logger)
+        super().__init__(hyperparameters)
+        self.logger = (
+            delphi_logger.delphiLogger()
+            if self.hyperparameters.verbose
+            else delphi_logger.delphiLogger(level=logging.CRITICAL)
+        )
         self.phi = phi
         self.alpha = alpha
         self.dims = dims
+
+        if not hasattr(self, "calc_suff_stat"):
+            self.calc_suff_stat = self.dist.calc_suff_stat
 
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
         self.criterion_params = [
             self.phi,
             self.dims,
             self.dist,
-            self.dist.calc_suff_stat,
-            self.args.num_samples,
-            self.args.eps,
+            self.calc_suff_stat,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
         ]
 
         self.best_params = None
@@ -105,17 +117,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 "input expected to be shape num samples by dimensions, "
                 f"current input is size {S.size()}."
             )
-        if self.args.batch_size > self.args.num_samples:
+        if self.hyperparameters.batch_size > self.hyperparameters.num_samples:
             raise ValueError(
-                f"batch size ({self.args.batch_size}) must be smaller than "
-                f"or equal to the number of samples ({self.args.num_samples})."
+                f"batch size ({self.hyperparameters.batch_size}) must be smaller than "
+                f"or equal to the number of samples ({self.hyperparameters.num_samples})."
             )
 
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
-            self.args,
+            self.hyperparameters,
             S,
             datasets.TruncatedExponentialDistributionDataset,
-            {"calc_suff_stat": self.dist.calc_suff_stat},
+            {"calc_suff_stat": self.calc_suff_stat},
         )
 
         self.prev_best_loss = None
@@ -123,16 +135,16 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.loss_history = []
         self._calc_emp_model()
         self.nll_init = self._compute_nll(self.emp_theta)
-        self.radius = self.args.min_radius
+        self.radius = self.hyperparameters.min_radius
 
         phase = 0
-        while phase < self.args.max_phases:
+        while phase < self.hyperparameters.max_phases:
             phase += 1
             self.logger.info(f"\n{'=' * 60}")
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             current_loss = self.trainer.best_loss
@@ -166,7 +178,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             # Expand radius for next phase
             self.prev_best_loss = current_loss
             old_radius = self.radius
-            self.radius = min(self.radius * self.args.rate, self.args.max_radius)
+            self.radius = min(
+                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
+            )
 
             self.logger.info(
                 f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
@@ -186,26 +200,29 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         current_loss = self.trainer.best_loss
 
         # Criterion 1: Reached maximum radius
-        if self.radius >= self.args.max_radius:
+        if self.radius >= self.hyperparameters.max_radius:
             return True, "max_radius_reached"
 
         # Criterion 2: Loss improvement is negligible
         if self.prev_best_loss is not None:
             loss_improvement = self.prev_best_loss - current_loss
 
-            if abs(loss_improvement) < self.args.loss_convergence_tol:
+            if abs(loss_improvement) < self.hyperparameters.loss_convergence_tol:
                 return True, f"loss_improvement_small (Δloss={loss_improvement:.6e})"
 
             # Relative threshold
             relative_improvement = abs(loss_improvement) / (
                 abs(self.prev_best_loss) + 1e-10
             )
-            if relative_improvement < self.args.relative_loss_tol:
+            if relative_improvement < self.hyperparameters.relative_loss_tol:
                 return True, f"relative_improvement_small ({relative_improvement:.6e})"
 
         # Criterion 3: Loss is increasing (suggests we've passed optimum)
         if self.prev_best_loss is not None and current_loss > self.prev_best_loss:
-            if current_loss - self.prev_best_loss > self.args.loss_increase_tol:
+            if (
+                current_loss - self.prev_best_loss
+                > self.hyperparameters.loss_increase_tol
+            ):
                 return True, "loss_increasing"
 
         return False, None
@@ -218,7 +235,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def _calc_emp_model(self):
         """Calculate empirical natural parameters from training data."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_theta = self.dist.calc_suff_stat(dataset_s).mean(0)
+        self.emp_theta = self.calc_suff_stat(dataset_s).mean(0)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     def _compute_nll(self, theta: ch.Tensor) -> float:
@@ -284,7 +301,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             θ ← Π_D(θ),  D = {θ : L(θ) ≤ nll_threshold}.
         When args.project is False, the step is a no-op.
         """
-        if self.args.project:
+        if self.hyperparameters.project:
             with ch.no_grad():
                 # Enforce constraints before projection so that _compute_nll
                 # inside _project_onto_sublevel_set always receives a theta in

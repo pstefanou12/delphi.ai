@@ -1,15 +1,20 @@
 # Author: pstefanou12@
 """Parent class for all distribution models."""
 
-import pydantic
+from typing import Generic
 
-from delphi import delphi_logger
 from delphi.delphi import delphi
+from delphi.utils import configs
 
 
-class distributions(delphi):  # pylint: disable=invalid-name,abstract-method
+class distributions(delphi[configs._ConfigT], Generic[configs._ConfigT]):  # pylint: disable=invalid-name,abstract-method
     """Parent class for distribution models."""
 
-    def __init__(self, args: pydantic.BaseModel, logger: delphi_logger.delphiLogger):
-        super().__init__(args)
-        self.logger = logger
+    def __init__(self, hyperparameters: dict):
+        """Initialize the distributions model.
+
+        Args:
+            hyperparameters: Hyperparameter dict, validated via the subclass
+                defaults config.
+        """
+        super().__init__(hyperparameters)

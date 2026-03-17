@@ -1,30 +1,30 @@
 # Author: pstefanou12@
 """Parent class for models to train in the delphi trainer."""
 
-import random
 from collections.abc import Callable
-from typing import ClassVar
+import random
+from typing import ClassVar, Generic
 
 import numpy as np
 import torch as ch
-from pydantic import BaseModel
-from torch.optim import SGD, LBFGS, Adam, AdamW, lr_scheduler
+import torch.optim
+import torch.optim.lr_scheduler
 
-from delphi.utils.constants import (
-    CheckpointKey,
-    OptimizerType,
-    PythonFrameworks,
-    SchedulerType,
-)
-from delphi.utils.helpers import AverageMeter
+from delphi.utils import configs, constants, helpers
 
 
-class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
+class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
     """Parent/abstract class for models to be passed into the trainer.
 
-    Subclasses may register custom optimizers via the class-level registry::
+    Concrete subclasses must define a ``defaults`` class attribute pointing to
+    their Pydantic config class::
 
-        delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.args.lr))
+        class MyModel(delphi[MyConfig]):
+            defaults = MyConfig
+
+    Subclasses may also register custom optimizers via the class-level registry::
+
+        delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.hyperparameters.lr))
 
     Note: register_optimizer writes to the class on which it is called.
     Subclasses that want an isolated registry should shadow _OPTIMIZER_REGISTRY
@@ -32,33 +32,33 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
     """
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
+    defaults: type[configs._ConfigT]
 
-    def __init__(self, args: BaseModel):
+    def __init__(self, hyperparameters: dict):
         """Initialize the delphi model.
 
         Args:
-            args: Fully constructed Pydantic config. Concrete subclasses are
-                responsible for converting a user-supplied dict to their
-                specific config before calling super().__init__.
+            hyperparameters: Hyperparameter dict, validated and stored as
+                ``self.hyperparameters`` via the subclass ``defaults`` config.
 
         Raises:
-            TypeError: If args is not a Pydantic BaseModel.
+            TypeError: If hyperparameters is not a dict.
         """
         super().__init__()
-        if not isinstance(args, BaseModel):
+        if not isinstance(hyperparameters, dict):
             raise TypeError(
-                f"args is type {type(args).__name__}; expected a pydantic.BaseModel."
+                f"hyperparameters is type {type(hyperparameters).__name__}; expected a dict."
             )
-        self.args = args
+        self.hyperparameters: configs._ConfigT = self.defaults(**hyperparameters)
 
-        self.optimizer: ch.optim.Optimizer | None = None
-        self.schedule: lr_scheduler.LRScheduler | None = None
+        self.optimizer: torch.optim.Optimizer | None = None
+        self.schedule: torch.optim.lr_scheduler.LRScheduler | None = None
 
         self.criterion: Callable | None = None
         self.criterion_params: list = []
         self.model: ch.nn.Module | None = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
-        self.optimizers: dict[str, ch.optim.Optimizer] = {}
+        self.optimizers: dict[str, torch.optim.Optimizer] = {}
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.
@@ -81,7 +81,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
     def make_optimizer_and_schedule(
         self, checkpoint: dict | None = None
-    ) -> tuple[ch.optim.Optimizer, lr_scheduler.LRScheduler | None]:
+    ) -> tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler | None]:
         """Create and store the optimizer and learning-rate scheduler.
 
         Parameter groups are sourced from ``parameter_groups()``.  Override
@@ -119,7 +119,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """
         cls._OPTIMIZER_REGISTRY[name.lower()] = factory
 
-    def _create_optimizer(self, params: list[dict]) -> ch.optim.Optimizer:
+    def _create_optimizer(self, params: list[dict]) -> torch.optim.Optimizer:
         """Create and return the configured optimizer via the registry."""
         optimizer_type = self._get_optimizer_type()
 
@@ -129,87 +129,87 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
 
     def _get_optimizer_type(self) -> str:
-        """Return the lowercase optimizer type string from args."""
-        return self.args.optimizer.lower()
+        """Return the lowercase optimizer type string from hyperparameters."""
+        return getattr(self.hyperparameters, "optimizer", "sgd").lower()
 
     def _get_arg(self, name: str, default: object) -> object:
-        """Return the attribute ``name`` from ``self.args`` if present and not ``None``, else ``default``."""
-        val = getattr(self.args, name, None)
+        """Return the attribute ``name`` from ``self.hyperparameters`` if present and not ``None``, else ``default``."""
+        val = getattr(self.hyperparameters, name, None)
         return val if val is not None else default
 
     def _remove_none_config(self, config: dict) -> dict:
         """Return a copy of config with None values removed."""
         return {k: v for k, v in config.items() if v is not None}
 
-    def _create_sgd(self, params: list[dict]) -> SGD:
-        """Create an SGD optimizer from args."""
+    def _create_sgd(self, params: list[dict]) -> torch.optim.SGD:
+        """Create an SGD optimizer from hyperparameters."""
         config = {
-            "lr": self.args.lr,
-            "momentum": getattr(self.args, "momentum", 0),
-            "dampening": getattr(self.args, "dampening", 0),
-            "weight_decay": getattr(self.args, "weight_decay", 0),
-            "nesterov": getattr(self.args, "nesterov", False),
-            "maximize": getattr(self.args, "maximize", False),
-            "foreach": getattr(self.args, "foreach", None),
-            "differentiable": getattr(self.args, "differentiable", False),
-            "fused": getattr(self.args, "fused", None),
+            "lr": getattr(self.hyperparameters, "lr", 1e-2),
+            "momentum": getattr(self.hyperparameters, "momentum", 0),
+            "dampening": getattr(self.hyperparameters, "dampening", 0),
+            "weight_decay": getattr(self.hyperparameters, "weight_decay", 0),
+            "nesterov": getattr(self.hyperparameters, "nesterov", False),
+            "maximize": getattr(self.hyperparameters, "maximize", False),
+            "foreach": getattr(self.hyperparameters, "foreach", None),
+            "differentiable": getattr(self.hyperparameters, "differentiable", False),
+            "fused": getattr(self.hyperparameters, "fused", None),
         }
-        return SGD(params, **self._remove_none_config(config))
+        return torch.optim.SGD(params, **self._remove_none_config(config))
 
-    def _create_lbfgs(self, params: list[dict]) -> LBFGS:
-        """Create an L-BFGS optimizer from args."""
+    def _create_lbfgs(self, params: list[dict]) -> torch.optim.LBFGS:
+        """Create an L-BFGS optimizer from hyperparameters."""
         config = {
-            "lr": getattr(self.args, "lr", 1.0),
-            "max_iter": getattr(self.args, "max_iter", 20),
-            "max_eval": getattr(self.args, "max_eval", None),
-            "tolerance_grad": getattr(self.args, "tolerance_grad", 1e-7),
-            "tolerance_change": getattr(self.args, "tolerance_change", 1e-9),
-            "history_size": getattr(self.args, "history_size", 100),
-            "line_search_fn": getattr(self.args, "line_search_fn", None),
+            "lr": getattr(self.hyperparameters, "lr", 1.0),
+            "max_iter": getattr(self.hyperparameters, "max_iter", 20),
+            "max_eval": getattr(self.hyperparameters, "max_eval", None),
+            "tolerance_grad": getattr(self.hyperparameters, "tolerance_grad", 1e-7),
+            "tolerance_change": getattr(self.hyperparameters, "tolerance_change", 1e-9),
+            "history_size": getattr(self.hyperparameters, "history_size", 100),
+            "line_search_fn": getattr(self.hyperparameters, "line_search_fn", None),
         }
-        return LBFGS(params, **self._remove_none_config(config))
+        return torch.optim.LBFGS(params, **self._remove_none_config(config))
 
-    def _create_adam(self, params: list[dict]) -> Adam:
-        """Create an Adam optimizer from args."""
+    def _create_adam(self, params: list[dict]) -> torch.optim.Adam:
+        """Create an Adam optimizer from hyperparameters."""
         config = {
-            "lr": getattr(self.args, "lr", 1e-1),
+            "lr": getattr(self.hyperparameters, "lr", 1e-1),
             "betas": (
-                getattr(self.args, "beta1", 0.9),
-                getattr(self.args, "beta2", 0.999),
+                getattr(self.hyperparameters, "beta1", 0.9),
+                getattr(self.hyperparameters, "beta2", 0.999),
             ),
-            "eps": getattr(self.args, "eps", 1e-8),
-            "weight_decay": getattr(self.args, "weight_decay", 0),
-            "amsgrad": getattr(self.args, "amsgrad", False),
-            "maximize": getattr(self.args, "maximize", False),
-            "foreach": getattr(self.args, "foreach", None),
-            "capturable": getattr(self.args, "capturable", False),
-            "differentiable": getattr(self.args, "differentiable", False),
-            "fused": getattr(self.args, "fused", None),
+            "eps": getattr(self.hyperparameters, "eps", 1e-8),
+            "weight_decay": getattr(self.hyperparameters, "weight_decay", 0),
+            "amsgrad": getattr(self.hyperparameters, "amsgrad", False),
+            "maximize": getattr(self.hyperparameters, "maximize", False),
+            "foreach": getattr(self.hyperparameters, "foreach", None),
+            "capturable": getattr(self.hyperparameters, "capturable", False),
+            "differentiable": getattr(self.hyperparameters, "differentiable", False),
+            "fused": getattr(self.hyperparameters, "fused", None),
         }
-        return Adam(params, **self._remove_none_config(config))
+        return torch.optim.Adam(params, **self._remove_none_config(config))
 
-    def _create_adamw(self, params: list[dict]) -> AdamW:
-        """Create an AdamW optimizer from args."""
+    def _create_adamw(self, params: list[dict]) -> torch.optim.AdamW:
+        """Create an AdamW optimizer from hyperparameters."""
         config = {
-            "lr": getattr(self.args, "lr", 1e-3),
+            "lr": getattr(self.hyperparameters, "lr", 1e-3),
             "betas": (
-                getattr(self.args, "beta1", 0.9),
-                getattr(self.args, "beta2", 0.999),
+                getattr(self.hyperparameters, "beta1", 0.9),
+                getattr(self.hyperparameters, "beta2", 0.999),
             ),
-            "eps": getattr(self.args, "eps", 1e-8),
-            "weight_decay": getattr(self.args, "weight_decay", 1e-2),
-            "amsgrad": getattr(self.args, "amsgrad", False),
-            "maximize": getattr(self.args, "maximize", False),
-            "foreach": getattr(self.args, "foreach", None),
-            "capturable": getattr(self.args, "capturable", False),
-            "differentiable": getattr(self.args, "differentiable", False),
-            "fused": getattr(self.args, "fused", None),
+            "eps": getattr(self.hyperparameters, "eps", 1e-8),
+            "weight_decay": getattr(self.hyperparameters, "weight_decay", 1e-2),
+            "amsgrad": getattr(self.hyperparameters, "amsgrad", False),
+            "maximize": getattr(self.hyperparameters, "maximize", False),
+            "foreach": getattr(self.hyperparameters, "foreach", None),
+            "capturable": getattr(self.hyperparameters, "capturable", False),
+            "differentiable": getattr(self.hyperparameters, "differentiable", False),
+            "fused": getattr(self.hyperparameters, "fused", None),
         }
-        return AdamW(params, **self._remove_none_config(config))
+        return torch.optim.AdamW(params, **self._remove_none_config(config))
 
-    def _create_scheduler(self) -> lr_scheduler.LRScheduler | None:
+    def _create_scheduler(self) -> torch.optim.lr_scheduler.LRScheduler | None:
         """Create and return the configured learning-rate scheduler, or None."""
-        if getattr(self.args, "constant", False):
+        if getattr(self.hyperparameters, "constant", False):
             return None
 
         scheduler_type = self._get_scheduler_type()
@@ -217,13 +217,13 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             return None
 
         scheduler_creators = {
-            SchedulerType.CYCLIC: self._create_cyclic_scheduler,
-            SchedulerType.COSINE: self._create_cosine_scheduler,
-            SchedulerType.LINEAR: self._create_linear_scheduler,
-            SchedulerType.STEP: self._create_step_scheduler,
-            SchedulerType.MULTI_STEP: self._create_multi_step_scheduler,
-            SchedulerType.EXPONENTIAL: self._create_exponential_scheduler,
-            SchedulerType.REDUCE_ON_PLATEAU: self._create_plateau_scheduler,
+            constants.SchedulerType.CYCLIC: self._create_cyclic_scheduler,
+            constants.SchedulerType.COSINE: self._create_cosine_scheduler,
+            constants.SchedulerType.LINEAR: self._create_linear_scheduler,
+            constants.SchedulerType.STEP: self._create_step_scheduler,
+            constants.SchedulerType.MULTI_STEP: self._create_multi_step_scheduler,
+            constants.SchedulerType.EXPONENTIAL: self._create_exponential_scheduler,
+            constants.SchedulerType.REDUCE_ON_PLATEAU: self._create_plateau_scheduler,
         }
 
         if scheduler_type not in scheduler_creators:
@@ -233,15 +233,17 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
         # Optionally prepend a linear warmup phase.
         warmup_steps = self._get_arg("warmup_steps", 0)
-        is_plateau = isinstance(base_schedule, lr_scheduler.ReduceLROnPlateau)
+        is_plateau = isinstance(
+            base_schedule, torch.optim.lr_scheduler.ReduceLROnPlateau
+        )
         if warmup_steps > 0 and not is_plateau:
-            warmup = lr_scheduler.LinearLR(
+            warmup = torch.optim.lr_scheduler.LinearLR(
                 self.optimizer,
                 start_factor=1e-8,
                 end_factor=1.0,
                 total_iters=warmup_steps,
             )
-            return lr_scheduler.SequentialLR(
+            return torch.optim.lr_scheduler.SequentialLR(
                 self.optimizer,
                 schedulers=[warmup, base_schedule],
                 milestones=[warmup_steps],
@@ -250,16 +252,18 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         return base_schedule
 
     def _get_scheduler_type(self) -> str | None:
-        """Return the lowercase scheduler type string from args, or None."""
-        # Explicit scheduler arg takes priority over legacy step_lr.
-        if hasattr(self.args, "scheduler") and self.args.scheduler:
-            return self.args.scheduler.lower()
+        """Return the lowercase scheduler type string from hyperparameters, or None."""
+        if (
+            hasattr(self.hyperparameters, "scheduler")
+            and self.hyperparameters.scheduler
+        ):
+            return self.hyperparameters.scheduler.lower()
         return None
 
-    def _create_cyclic_scheduler(self) -> lr_scheduler.CyclicLR:
-        """Create a cyclic LR scheduler using CyclicLR.
+    def _create_cyclic_scheduler(self) -> torch.optim.lr_scheduler.CyclicLR:
+        """Create a cyclic LR scheduler.
 
-        Configurable via args:
+        Configurable via hyperparameters:
             cyclic_base_lr (float): Lower LR bound (default 0.0).
             cyclic_max_lr (float): Upper LR bound (default: optimizer's lr).
             cyclic_step_size_up (int): Steps in ascending half-cycle (default 2000).
@@ -267,6 +271,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             cyclic_mode (str): 'triangular', 'triangular2', or 'exp_range'.
             cyclic_gamma (float): Multiplicative factor for 'exp_range' mode.
         """
+        assert self.optimizer is not None
         max_lr = self._get_arg("cyclic_max_lr", self.optimizer.param_groups[0]["lr"])
         config = {
             "base_lr": self._get_arg("cyclic_base_lr", 0.0),
@@ -275,105 +280,131 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
             "step_size_down": self._get_arg("cyclic_step_size_down", None),
             "mode": self._get_arg("cyclic_mode", "triangular2"),
             "gamma": self._get_arg("cyclic_gamma", 1.0),
-            "cycle_momentum": False,  # Kept False for Adam/AdamW compatibility.
+            "cycle_momentum": False,
         }
-        return lr_scheduler.CyclicLR(self.optimizer, **self._remove_none_config(config))
+        return torch.optim.lr_scheduler.CyclicLR(
+            self.optimizer, **self._remove_none_config(config)
+        )
 
-    def _create_cosine_scheduler(self) -> lr_scheduler.CosineAnnealingLR:
+    def _create_cosine_scheduler(self) -> torch.optim.lr_scheduler.CosineAnnealingLR:
         """Create a cosine annealing scheduler."""
+        assert self.optimizer is not None
         config = {
             "T_max": self._get_arg("epochs", 100),
             "eta_min": self._get_arg("min_lr", 0),
         }
-        return lr_scheduler.CosineAnnealingLR(
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, **self._remove_none_config(config)
         )
 
-    def _create_linear_scheduler(self) -> lr_scheduler.LinearLR:
+    def _create_linear_scheduler(self) -> torch.optim.lr_scheduler.LinearLR:
         """Create a linear LR decay scheduler."""
+        assert self.optimizer is not None
         config = {
             "start_factor": self._get_arg("linear_start_factor", 1.0),
             "end_factor": self._get_arg("linear_end_factor", 0.0),
             "total_iters": self._get_arg("epochs", 100),
         }
-        return lr_scheduler.LinearLR(self.optimizer, **self._remove_none_config(config))
-
-    def _create_step_scheduler(self) -> lr_scheduler.StepLR:
-        """Create a step LR scheduler."""
-        config = {
-            "step_size": getattr(self.args, "step_lr", 100),
-            "gamma": getattr(self.args, "step_lr_gamma", 0.1),
-        }
-        return lr_scheduler.StepLR(self.optimizer, **self._remove_none_config(config))
-
-    def _create_multi_step_scheduler(self) -> lr_scheduler.MultiStepLR:
-        """Create a multi-step LR scheduler."""
-        config = {
-            "milestones": getattr(self.args, "milestones", [30, 60, 90]),
-            "gamma": getattr(self.args, "gamma", 0.1),
-        }
-        return lr_scheduler.MultiStepLR(
+        return torch.optim.lr_scheduler.LinearLR(
             self.optimizer, **self._remove_none_config(config)
         )
 
-    def _create_exponential_scheduler(self) -> lr_scheduler.ExponentialLR:
-        """Create an exponential LR scheduler."""
+    def _create_step_scheduler(self) -> torch.optim.lr_scheduler.StepLR:
+        """Create a step LR scheduler."""
+        assert self.optimizer is not None
         config = {
-            "gamma": getattr(self.args, "gamma", 0.95),
+            "step_size": getattr(self.hyperparameters, "step_lr", 100),
+            "gamma": getattr(self.hyperparameters, "step_lr_gamma", 0.1),
         }
-        return lr_scheduler.ExponentialLR(self.optimizer, **config)
+        return torch.optim.lr_scheduler.StepLR(
+            self.optimizer, **self._remove_none_config(config)
+        )
 
-    def _create_plateau_scheduler(self) -> lr_scheduler.ReduceLROnPlateau:
-        """Create a reduce-on-plateau scheduler."""
+    def _create_multi_step_scheduler(self) -> torch.optim.lr_scheduler.MultiStepLR:
+        """Create a multi-step LR scheduler."""
+        assert self.optimizer is not None
         config = {
-            "mode": getattr(self.args, "plateau_mode", "min"),
-            "factor": getattr(self.args, "plateau_factor", 0.1),
-            "patience": getattr(self.args, "plateau_patience", 10),
-            "threshold": getattr(self.args, "plateau_threshold", 1e-4),
-            "threshold_mode": getattr(self.args, "plateau_threshold_mode", "rel"),
-            "cooldown": getattr(self.args, "plateau_cooldown", 0),
-            "min_lr": getattr(self.args, "min_lr", 0),
-            "eps": getattr(self.args, "plateau_eps", 1e-8),
+            "milestones": getattr(self.hyperparameters, "milestones", [30, 60, 90]),
+            "gamma": getattr(self.hyperparameters, "gamma", 0.1),
         }
-        return lr_scheduler.ReduceLROnPlateau(
+        return torch.optim.lr_scheduler.MultiStepLR(
+            self.optimizer, **self._remove_none_config(config)
+        )
+
+    def _create_exponential_scheduler(
+        self,
+    ) -> torch.optim.lr_scheduler.ExponentialLR:
+        """Create an exponential LR scheduler."""
+        assert self.optimizer is not None
+        config = {
+            "gamma": getattr(self.hyperparameters, "gamma", 0.95),
+        }
+        return torch.optim.lr_scheduler.ExponentialLR(self.optimizer, **config)
+
+    def _create_plateau_scheduler(
+        self,
+    ) -> torch.optim.lr_scheduler.ReduceLROnPlateau:
+        """Create a reduce-on-plateau scheduler."""
+        assert self.optimizer is not None
+        config = {
+            "mode": getattr(self.hyperparameters, "plateau_mode", "min"),
+            "factor": getattr(self.hyperparameters, "plateau_factor", 0.1),
+            "patience": getattr(self.hyperparameters, "plateau_patience", 10),
+            "threshold": getattr(self.hyperparameters, "plateau_threshold", 1e-4),
+            "threshold_mode": getattr(
+                self.hyperparameters, "plateau_threshold_mode", "rel"
+            ),
+            "cooldown": getattr(self.hyperparameters, "plateau_cooldown", 0),
+            "min_lr": getattr(self.hyperparameters, "min_lr", 0),
+            "eps": getattr(self.hyperparameters, "plateau_eps", 1e-8),
+        }
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, **self._remove_none_config(config)
         )
 
     def _load_checkpoint(self, checkpoint: dict) -> None:
         """Restore model weights, optimizer, scheduler, and random states from checkpoint."""
-        if CheckpointKey.MODEL in checkpoint:
-            self.load_state_dict(checkpoint[CheckpointKey.MODEL])
+        if constants.CheckpointKey.MODEL in checkpoint:
+            self.load_state_dict(checkpoint[constants.CheckpointKey.MODEL])
 
-        if CheckpointKey.OPTIMIZER in checkpoint and self.optimizer is not None:
-            self.optimizer.load_state_dict(checkpoint[CheckpointKey.OPTIMIZER])
+        if (
+            constants.CheckpointKey.OPTIMIZER in checkpoint
+            and self.optimizer is not None
+        ):
+            self.optimizer.load_state_dict(
+                checkpoint[constants.CheckpointKey.OPTIMIZER]
+            )
 
-        if CheckpointKey.SCHEDULER in checkpoint and self.schedule is not None:
-            self.schedule.load_state_dict(checkpoint[CheckpointKey.SCHEDULER])
+        if (
+            constants.CheckpointKey.SCHEDULER in checkpoint
+            and self.schedule is not None
+        ):
+            self.schedule.load_state_dict(checkpoint[constants.CheckpointKey.SCHEDULER])
 
-        if CheckpointKey.RANDOM_STATES in checkpoint:
-            self._load_random_states(checkpoint[CheckpointKey.RANDOM_STATES])
+        if constants.CheckpointKey.RANDOM_STATES in checkpoint:
+            self._load_random_states(checkpoint[constants.CheckpointKey.RANDOM_STATES])
 
     def _load_random_states(self, random_states: dict) -> None:
         """Restore Python, NumPy, and PyTorch random number generator states."""
-        if PythonFrameworks.PYTHON in random_states:
-            random.setstate(random_states[PythonFrameworks.PYTHON])
+        if constants.PythonFrameworks.PYTHON in random_states:
+            random.setstate(random_states[constants.PythonFrameworks.PYTHON])
 
-        if PythonFrameworks.NUMPY in random_states:
-            np.random.set_state(random_states[PythonFrameworks.NUMPY])
+        if constants.PythonFrameworks.NUMPY in random_states:
+            np.random.set_state(random_states[constants.PythonFrameworks.NUMPY])
 
-        if PythonFrameworks.PYTORCH in random_states:
-            ch.set_rng_state(random_states[PythonFrameworks.PYTORCH])
+        if constants.PythonFrameworks.PYTORCH in random_states:
+            ch.set_rng_state(random_states[constants.PythonFrameworks.PYTORCH])
 
     def pretrain_hook(self) -> None:
         """Hook called before the training procedure begins."""
 
     def step_pre_hook(
-        self, optimizer: ch.optim.Optimizer, args: tuple, kwargs: dict
+        self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict
     ) -> None:  # pylint: disable=unused-argument
         """Hook called after .backward() but before the optimizer step."""
 
     def step_post_hook(
-        self, optimizer: ch.optim.Optimizer, args: tuple, kwargs: dict
+        self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict
     ) -> None:  # pylint: disable=unused-argument
         """Hook called after each optimizer step."""
 
@@ -384,7 +415,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
         """Hook called after the full training procedure completes."""
 
     def description(
-        self, stage: str, epoch: int, step: int, loss_meter: AverageMeter
+        self, stage: str, epoch: int, step: int, loss_meter: helpers.AverageMeter
     ) -> str:
         """Return a human-readable tqdm progress string for the current step."""
         return f"[{stage}] Epoch {epoch} | Step {step} | Loss {loss_meter.avg:.4f}"
@@ -489,7 +520,7 @@ class delphi(ch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-at
 
 
 # Register built-in optimizers after the class is fully defined.
-delphi.register_optimizer(OptimizerType.SGD, delphi._create_sgd)
-delphi.register_optimizer(OptimizerType.LBFGS, delphi._create_lbfgs)
-delphi.register_optimizer(OptimizerType.ADAM, delphi._create_adam)
-delphi.register_optimizer(OptimizerType.ADAMW, delphi._create_adamw)
+delphi.register_optimizer(constants.OptimizerType.SGD, delphi._create_sgd)
+delphi.register_optimizer(constants.OptimizerType.LBFGS, delphi._create_lbfgs)
+delphi.register_optimizer(constants.OptimizerType.ADAM, delphi._create_adam)
+delphi.register_optimizer(constants.OptimizerType.ADAMW, delphi._create_adamw)
