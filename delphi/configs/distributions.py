@@ -5,14 +5,13 @@ from typing import Optional
 
 import pydantic
 
-from delphi.configs.base import OptimizerConfig, TrainerConfig
+from delphi.configs.base import DelphiConfig
 
 
-class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfig):
+class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     """Configuration for truncated exponential family distribution algorithms.
 
     Attributes:
-        val: Fraction of data held out for validation.
         eps: Numerical stability constant for the NLL criterion.
         min_radius: Initial NLL budget above the empirical initialization
             for the sublevel-set projection (phase 1).
@@ -31,17 +30,16 @@ class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfi
     model_config = pydantic.ConfigDict(extra="ignore")
 
     # Override parent defaults for distribution training.
+    batch_size: int = 10
     tol: float = pydantic.Field(default=1e-1, ge=0.0)
     record_params_every: int = pydantic.Field(default=1, ge=1)
     epochs: Optional[int] = pydantic.Field(default=1, ge=1)
 
     # Distribution-specific fields.
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
     eps: float = pydantic.Field(default=1e-5, gt=0.0)
     min_radius: float = pydantic.Field(default=3.0, ge=0.0)
     max_radius: float = pydantic.Field(default=10.0, ge=0.0)
     rate: float = pydantic.Field(default=1.1, gt=1.0)
-    batch_size: int = pydantic.Field(default=10, ge=1)
     num_samples: int = pydantic.Field(default=10000, ge=1)
     max_phases: int = pydantic.Field(default=1, ge=1)
     loss_convergence_tol: float = pydantic.Field(default=1e-3, ge=0.0)

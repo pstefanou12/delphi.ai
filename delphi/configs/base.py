@@ -1,13 +1,18 @@
 # Author: pstefanou12@
 """Base Pydantic configuration models shared across delphi.
 
-TrainerConfig and OptimizerConfig are mixed into every concrete config;
-LinearModelConfig is the shared base for the delphi.stats estimators.
+``DelphiConfig`` combines the trainer, optimizer/scheduler and dataset
+concerns, and is what every config the delphi model and trainer consume
+derives from. ``LinearModelConfig`` is the shared base for the delphi.stats
+estimators.
 """
 
 from typing import Optional, TypeVar
 
 import pydantic
+
+from delphi.configs.dataset import DatasetConfig
+from delphi.configs.optimizers import OptimizerConfig
 
 
 class TrainerConfig(pydantic.BaseModel):
@@ -65,45 +70,20 @@ class TrainerConfig(pydantic.BaseModel):
     checkpoint_every: int = pydantic.Field(default=0, ge=0)
 
 
-class OptimizerConfig(pydantic.BaseModel):
-    """Configuration for optimizers.
+class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
+    """Base for every config the delphi model and trainer consume.
 
-    Attributes:
-        optimizer: Optimizer type ('sgd', 'adam', 'adamw', 'lbfgs').
-        lr: Learning rate.
-        momentum: SGD momentum coefficient.
-        dampening: SGD dampening coefficient.
-        weight_decay: L2 regularization weight.
-        nesterov: Enable Nesterov momentum for SGD.
-        maximize: Maximize the objective instead of minimizing.
-        foreach: Use the foreach implementation when available.
-        differentiable: Enable differentiable optimizer mode.
-        fused: Enable fused optimizer implementation when available.
-        scheduler: Learning-rate scheduler type; None disables scheduling.
-        constant: Hold the learning rate constant, skipping scheduler
-            creation entirely. Read by delphi._create_scheduler.
+    Combining the three concerns here is what lets ``delphi`` read optimizer,
+    scheduler and dataset fields as typed attributes. While _ConfigT was bound
+    to TrainerConfig alone, those fields were untypeable from the base class
+    and every read had to go through ``getattr(..., default)``.
     """
 
-    model_config = pydantic.ConfigDict(extra="ignore")
 
-    optimizer: str = "sgd"
-    lr: float = pydantic.Field(default=0.1, gt=0.0)
-    momentum: float = pydantic.Field(default=0.0, ge=0.0)
-    dampening: float = pydantic.Field(default=0.0, ge=0.0)
-    weight_decay: float = pydantic.Field(default=0.0, ge=0.0)
-    nesterov: bool = False
-    maximize: bool = False
-    foreach: Optional[bool] = None
-    differentiable: bool = False
-    fused: Optional[bool] = None
-    scheduler: Optional[str] = None
-    constant: bool = False
+_ConfigT = TypeVar("_ConfigT", bound=DelphiConfig)
 
 
-_ConfigT = TypeVar("_ConfigT", bound=TrainerConfig)
-
-
-class LinearModelConfig(TrainerConfig, OptimizerConfig):
+class LinearModelConfig(DelphiConfig):
     """Shared configuration for the delphi.stats truncated linear models.
 
     Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in
@@ -111,10 +91,6 @@ class LinearModelConfig(TrainerConfig, OptimizerConfig):
     ``check_and_fill_args`` behaviour exactly.
 
     Attributes:
-        val: Fraction of data held out for validation.
-        workers: DataLoader worker processes.
-        shuffle: Shuffle the training DataLoader.
-        batch_size: Mini-batch size for training.
         alpha: Survival probability lower bound of the truncation set.
         c_s: Scaling constant for the dependent-data survival threshold.
         fit_intercept: Fit an intercept term.
@@ -122,19 +98,8 @@ class LinearModelConfig(TrainerConfig, OptimizerConfig):
 
     model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
-    workers: int = pydantic.Field(default=0, ge=0)
-    shuffle: bool = True
-    # -1 is a sentinel for "full batch", read by
-    # datasets.make_train_and_val as len(dataset), so this is deliberately
-    # unconstrained to match the pre-pydantic defaults.
-    batch_size: int = 50
-    # The remaining DATASET_DEFAULTS keys. Declared so that the
-    # check_and_fill_args call still in make_train_and_val is a no-op against
-    # a pydantic config instead of trying to set an undeclared field.
-    normalize: bool = False
-    pin_memory: bool = True
-    drop_last: bool = False
+    # Dataset fields (val, workers, shuffle, batch_size, normalize) come from
+    # DatasetConfig via DelphiConfig.
     alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
     c_s: float = pydantic.Field(default=10.0, gt=0.0)
     fit_intercept: bool = True
