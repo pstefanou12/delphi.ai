@@ -8,14 +8,10 @@ configs`` followed by ``configs.SomeConfig`` keeps working regardless of which
 submodule a config lives in.
 """
 
-from delphi.configs.base import (
-    DelphiConfig,
-    LinearModelConfig,
-    TrainerConfig,
-    _ConfigT,
-)
+from delphi.configs.base import DelphiConfig, TrainerConfig, _ConfigT
 from delphi.configs.classification import (
     SoftmaxRegressionConfig,
+    TruncatedClassificationConfig,
     TruncatedLogisticRegressionConfig,
     TruncatedProbitRegressionConfig,
 )
@@ -23,6 +19,10 @@ from delphi.configs.dataset import DatasetConfig
 from delphi.configs.distributions import (
     TruncatedExponentialFamilyDistributionConfig,
     TruncatedMultivariateNormalConfig,
+)
+from delphi.configs.linear import (
+    LinearModelConfig,
+    TruncatedLinearModelConfig,
 )
 from delphi.configs.lqr import TruncatedLQRConfig
 from delphi.configs.optimizers import (
@@ -67,11 +67,13 @@ __all__ = [
     "SoftmaxRegressionConfig",
     "StepLRConfig",
     "TrainerConfig",
+    "TruncatedClassificationConfig",
     "TruncatedElasticNetRegressionConfig",
     "TruncatedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",
     "TruncatedLassoRegressionConfig",
     "TruncatedLinearDynamicalSystemConfig",
+    "TruncatedLinearModelConfig",
     "TruncatedLogisticRegressionConfig",
     "TruncatedMultivariateNormalConfig",
     "TruncatedProbitRegressionConfig",

@@ -5,11 +5,15 @@ from typing import Optional
 
 import pydantic
 
-from delphi.configs.base import LinearModelConfig, TruncatedLinearModelConfig
+from delphi.configs.linear import LinearModelConfig, TruncatedLinearModelConfig
 
 
-class TruncatedLogisticRegressionConfig(TruncatedLinearModelConfig):
-    """Configuration for truncated logistic regression (TRUNC_LOG_REG_DEFAULTS).
+class TruncatedClassificationConfig(TruncatedLinearModelConfig):
+    """Fields shared by the truncated classification estimators.
+
+    Logistic and probit regression differ only in their link function, so they
+    are siblings here rather than one deriving from the other, and each
+    overrides only the defaults it needs.
 
     Attributes:
         l1: L1 regularization weight.
@@ -24,23 +28,23 @@ class TruncatedLogisticRegressionConfig(TruncatedLinearModelConfig):
     r: float = pydantic.Field(default=1.0, gt=0.0)
     rate: float = pydantic.Field(default=1.5, gt=0.0)
     num_samples: int = pydantic.Field(default=1000, ge=1)
+    batch_size: int = 10
 
-    # Override parent defaults for logistic regression.
+
+class TruncatedLogisticRegressionConfig(TruncatedClassificationConfig):
+    """Configuration for truncated logistic regression."""
+
     epochs: Optional[int] = pydantic.Field(default=1, ge=1)
-    batch_size: int = pydantic.Field(default=10, ge=1)
 
 
-class TruncatedProbitRegressionConfig(TruncatedLogisticRegressionConfig):
-    """Configuration for truncated probit regression (TRUNC_PROB_REG_DEFAULTS).
+class TruncatedProbitRegressionConfig(TruncatedClassificationConfig):
+    """Configuration for truncated probit regression.
 
     Attributes:
         tol: Convergence tolerance.
     """
 
     tol: float = pydantic.Field(default=1e-3, ge=0.0)
-
-    # The probit defaults did not override epochs.
-    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
 
 
 class SoftmaxRegressionConfig(LinearModelConfig):

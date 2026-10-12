@@ -6,7 +6,7 @@ from typing import Optional
 import pydantic
 import torch as ch
 
-from delphi.configs.base import TruncatedLinearModelConfig
+from delphi.configs.linear import TruncatedLinearModelConfig
 
 
 class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
