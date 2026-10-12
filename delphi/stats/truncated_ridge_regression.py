@@ -10,15 +10,10 @@ import torch as ch
 from sklearn.linear_model import Ridge
 from torch import Tensor
 
+from delphi import configs
+from delphi.delphi_logger import delphiLogger
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import (
-    DELPHI_DEFAULTS,
-    TRAINER_DEFAULTS,
-    TRUNC_REG_DEFAULTS,
-    check_and_fill_args,
-)
-from delphi.utils.helpers import Parameters
 from delphi.stats.stats import stats
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression  # pylint: disable=unused-import
 
@@ -26,32 +21,27 @@ from delphi.stats.truncated_linear_regression import TruncatedLinearRegression  
 class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attributes
     """Truncated ridge regression via projected SGD on the truncated log-likelihood."""
 
-    def __init__(self, args: Parameters, store: cox.store.Store = None):
+    def __init__(self, hyperparameters: dict, store: cox.store.Store = None):
         """Initialize TruncatedRidgeRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
         # Instance variables.
-        assert isinstance(args, Parameters), (
-            f"args is type: {type(args)}. "
-            "expecting args to be type delphi.utils.helpers.Parameters"
-        )
         assert store is None or isinstance(store, cox.store.Store), (
             f"store is type: {type(store)}. expecting cox.store.Store."
         )
         self.store = store
         self.trunc_ridge = None
         # Algorithm hyperparameters.
-        trunc_ridge_defaults = {**TRUNC_REG_DEFAULTS}
-        trunc_ridge_defaults.update(TRAINER_DEFAULTS)
-        trunc_ridge_defaults.update(DELPHI_DEFAULTS)
-        self.hyperparameters = check_and_fill_args(args, trunc_ridge_defaults)
-        assert self.hyperparameters.weight_decay > 0, (
-            "ridge regression requires l2 coefficient to be nonzero"
-        )
+        self.hyperparameters = configs.TruncatedRidgeRegressionConfig(**hyperparameters)
+        if self.hyperparameters.weight_decay <= 0:
+            raise ValueError(
+                "weight_decay must be nonzero for this estimator; got "
+                f"{self.hyperparameters.weight_decay}."
+            )
 
     def fit(  # pylint: disable=attribute-defined-outside-init
         self,
@@ -94,10 +84,10 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
             )
 
         # Run PGD for parameter estimation.
-        trainer = Trainer(  # pylint: disable=no-value-for-parameter
-            self.trunc_ridge, self.hyperparameters, store=self.store
+        trainer = Trainer(
+            self.trunc_ridge, self.hyperparameters, delphiLogger(), store=self.store
         )
-        trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
+        trainer.train_model(self.train_loader_, self.val_loader_)
 
         # Assign results from the procedure to instance variables.
         self.coef = self.trunc_ridge.model.weight.clone()  # pylint: disable=not-callable
@@ -135,7 +125,7 @@ class RidgeKnownVariance(TruncatedLinearRegression):  # pylint: disable=too-few-
         """Initialize RidgeKnownVariance.
 
         Args:
-            args (Parameters): hyperparameter object
+            args: validated hyperparameter config
             train_loader: training data loader
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter
@@ -161,7 +151,7 @@ class RidgeUnknownVariance(TruncatedLinearRegression):  # pylint: disable=too-fe
         """Initialize RidgeUnknownVariance.
 
         Args:
-            args (Parameters): hyperparameter object
+            args: validated hyperparameter config
             train_loader: training data loader
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter

@@ -5,39 +5,50 @@ Truncated Lasso Regression.
 
 import warnings
 from collections.abc import Callable
+from typing import Optional
 
 import numpy as np
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger, trainer
+from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
-from delphi.utils import datasets, defaults, helpers
+from delphi.utils import datasets
 
 
-class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
+    linear_model.LinearModel[configs.TruncatedLassoRegressionConfig]
+):
     """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
 
     Supports known noise variance. Requires a truncation oracle and survival
     probability alpha.
     """
 
+    # Created with register_parameter/register_buffer during fit,
+    # which mypy cannot see; declared here so attribute access is
+    # typed rather than resolved through nn.Module.__getattr__.
+    weight: nn.Parameter
+    emp_weight: ch.Tensor  # type: ignore[assignment]
+
+    defaults = configs.TruncatedLassoRegressionConfig
+
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: helpers.Parameters,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         l1: float = 1.0,
         fit_intercept: bool = True,
         noise_var: float = 1.0,
-        emp_weight: ch.Tensor = None,
+        emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
     ):
         """Initialize TruncatedLassoRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             l1 (float): L1 regularization coefficient
@@ -47,8 +58,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
             rand_seed (int): random seed for reproducibility
         """
         logger = delphi_logger.delphiLogger()
-        args = defaults.check_and_fill_args(args, defaults.TRUNC_LASSO_DEFAULTS)
-        super().__init__(args, False, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, False, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1
@@ -94,7 +104,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         )
         # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
         if self.fit_intercept:
             k = X.size(1) - 1
@@ -150,12 +160,19 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         return X @ self.weight
 
     def pre_step_hook(self, inp: ch.Tensor) -> None:
-        """Pre-step hook to apply L1 regularization gradient."""
+        """Pre-step hook to apply L1 regularization gradient.
+
+        Args:
+            inp: The batch's input covariates.
+        """
+        grad = self.weight.grad
+        if grad is None:
+            return
         # Only regularize the weight coefficients and not the intercept.
         if self.fit_intercept:
-            self.weight.grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
+            grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
         else:
-            self.weight.grad += (self.l1 * ch.sign(inp)).mean(0)[..., None]
+            grad += (self.l1 * ch.sign(inp)).mean(0)[..., None]
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""

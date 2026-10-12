@@ -130,7 +130,9 @@ def test_adam_epsilon_is_distinct_from_the_criterion_epsilon() -> None:
 
 def test_scheduler_gamma_is_distinct_from_the_lqr_gamma() -> None:
     """The LQR thickness parameter no longer shadows a scheduler decay rate."""
-    config = configs.TruncatedLQRConfig(R=3.0, U_A=1.0, U_B=1.0, delta=0.9, gamma=2.0)
+    config = configs.TruncatedLQRConfig(
+        phi=lambda x: x, R=3.0, U_A=1.0, U_B=1.0, delta=0.9, gamma=2.0
+    )
     assert config.gamma == 2.0
     assert config.multi_step_gamma == 0.1
     assert config.exponential_gamma == 0.95

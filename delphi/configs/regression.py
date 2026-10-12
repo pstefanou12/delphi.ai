@@ -4,6 +4,7 @@
 from typing import Optional
 
 import pydantic
+import torch as ch
 
 from delphi.configs.base import LinearModelConfig
 
@@ -62,6 +63,11 @@ class TruncatedElasticNetRegressionConfig(TruncatedLassoRegressionConfig):
     this adds no fields of its own; weight_decay comes from OptimizerConfig.
     """
 
+    # Read by the elastic net wrapper to choose between the known- and
+    # unknown-variance estimators. The pre-pydantic path relied on
+    # Parameters.__getattr__ returning None when the key was absent.
+    noise_var: Optional[ch.Tensor] = None
+
 
 class TruncatedRidgeRegressionConfig(TruncatedRegressionConfig):
     """Configuration for truncated ridge regression.
@@ -69,6 +75,11 @@ class TruncatedRidgeRegressionConfig(TruncatedRegressionConfig):
     The pre-pydantic code derived its defaults from TRUNC_REG_DEFAULTS, so
     this adds no fields of its own; weight_decay comes from OptimizerConfig.
     """
+
+    # Read by the ridge wrapper to choose between the known- and
+    # unknown-variance estimators. The pre-pydantic path relied on
+    # Parameters.__getattr__ returning None when the key was absent.
+    noise_var: Optional[ch.Tensor] = None
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):

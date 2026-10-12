@@ -3,6 +3,8 @@
 
 from typing import Optional
 
+from collections.abc import Callable
+
 import pydantic
 
 from delphi.configs.base import LinearModelConfig
@@ -15,6 +17,7 @@ class TruncatedLQRConfig(LinearModelConfig):
     marked REQ there and so are required here.
 
     Attributes:
+        phi: Truncation set oracle.
         target_thickness: Target thickness of the collected trajectories.
         num_traj_phase_one: Trajectory budget for phase one.
         num_traj_phase_two: Trajectory budget for phase two.
@@ -34,6 +37,7 @@ class TruncatedLQRConfig(LinearModelConfig):
         gamma: Thickness parameter.
     """
 
+    phi: Callable
     target_thickness: float = float("inf")
     num_traj_phase_one: int = pydantic.Field(default=int(1e100), ge=1)
     num_traj_phase_two: int = pydantic.Field(default=int(1e100), ge=1)

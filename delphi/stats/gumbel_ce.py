@@ -7,6 +7,7 @@ Multinomial logistic regression that uses gumbel max loss function.
 import torch.distributions
 import torch.nn
 
+from delphi import configs, delphi_logger
 from delphi.stats import losses
 from delphi.stats.linear_model import LinearModel
 from delphi.utils import helpers
@@ -16,17 +17,28 @@ mse_loss = torch.nn.MSELoss()
 G = torch.distributions.Gumbel(0, 1)
 
 
-class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
+class GumbelCEModel(  # pylint: disable=abstract-method
+    LinearModel[configs.SoftmaxRegressionConfig]
+):
     """Multinomial logistic regression using Gumbel max loss, for the trainer framework."""
 
-    def __init__(self, args, d, k):  # pylint: disable=invalid-name
-        """
+    defaults = configs.SoftmaxRegressionConfig
+
+    def __init__(self, hyperparameters: dict, d, k):  # pylint: disable=invalid-name
+        """Initialize GumbelCEModel.
+
         Args:
-            args (Parameters): parameter object holding hyperparameters
-            d (int): input dimension
-            k (int): number of classes
+            hyperparameters: hyperparameter dict
+            d: input dimension
+            k: number of classes
         """
-        super().__init__(args, d=d, k=k)  # pylint: disable=no-value-for-parameter,unexpected-keyword-arg
+        # LinearModel.__init__ takes neither d nor k and requires a logger, so
+        # the previous call raised a TypeError; it was silenced with pylint
+        # suppressions. d and k are plain attributes.
+        super().__init__(
+            hyperparameters, dependent=False, logger=delphi_logger.delphiLogger()
+        )
+        self.d, self.k = d, k  # pylint: disable=invalid-name
 
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up model parameters before training."""

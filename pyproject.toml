@@ -71,17 +71,16 @@ ignore_missing_imports = true
 # Trainer(...) without the now-required logger. These are real runtime
 # failures, not typing noise, so they need the port rather than annotations.
 module = [
-    # Narrowed as modules are ported; linear_model and
-    # truncated_linear_regression are now checked.
-    "delphi.stats.gumbel_ce",
-    "delphi.stats.softmax",
+    # TODO: pstefanou12@ - these two wrappers cannot run, independently
+    # of the config port. TruncatedLinearRegression never sets
+    # self.model (it uses self.weight), yet both read
+    # trunc_*.model.weight; their inner estimators call
+    # super().__init__(args, train_loader), passing the loader as phi
+    # and omitting the required alpha; and calc_emp_model references
+    # self.X / self.y, which nothing defines. Neither module has any
+    # test. Fixing this needs the estimator's intent, not annotations.
     "delphi.stats.truncated_elastic_net_regression",
-    "delphi.stats.truncated_lasso_regression",
-    "delphi.stats.truncated_logistic_regression",
-    "delphi.stats.truncated_lqr",
-    "delphi.stats.truncated_probit_regression",
     "delphi.stats.truncated_ridge_regression",
-    "tests.test_utils",
 ]
 ignore_errors = true
 
