@@ -5,7 +5,7 @@ from typing import Optional
 
 import pydantic
 
-from delphi.utils.configs.base import OptimizerConfig, TrainerConfig
+from delphi.configs.base import OptimizerConfig, TrainerConfig
 
 
 class TruncatedExponentialFamilyDistributionConfig(TrainerConfig, OptimizerConfig):

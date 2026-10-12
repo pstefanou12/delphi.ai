@@ -6,9 +6,9 @@ from typing import Generic, Optional, TypeVar
 import torch as ch
 from torch import Tensor
 
+from delphi import configs
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
-from delphi.utils import configs
 
 _LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
 

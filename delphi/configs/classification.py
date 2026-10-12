@@ -5,7 +5,7 @@ from typing import Optional
 
 import pydantic
 
-from delphi.utils.configs.base import LinearModelConfig
+from delphi.configs.base import LinearModelConfig
 
 
 class TruncatedLogisticRegressionConfig(LinearModelConfig):

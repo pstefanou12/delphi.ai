@@ -3,8 +3,8 @@
 
 from typing import Generic
 
+from delphi import configs
 from delphi.delphi import delphi
-from delphi.utils import configs
 
 
 class distributions(delphi[configs._ConfigT], Generic[configs._ConfigT]):  # pylint: disable=invalid-name,abstract-method

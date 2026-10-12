@@ -15,10 +15,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from cox.store import Store
 
+from delphi import configs
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
-from delphi.utils.configs import TrainerConfig
 from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
 
@@ -29,7 +29,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         model: delphi,
-        hyperparameters: TrainerConfig,
+        hyperparameters: configs.TrainerConfig,
         logger: delphiLogger,
         store=None,
     ):
@@ -42,7 +42,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             store: Optional cox store for experiment logging.
         """
         self.model: delphi = model
-        self.hyperparameters: TrainerConfig = hyperparameters
+        self.hyperparameters: configs.TrainerConfig = hyperparameters
         self.logger: delphiLogger = logger
         self.store: Optional[Store] = store
 

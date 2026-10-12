@@ -12,10 +12,10 @@ from torch import nn
 from scipy.linalg import lstsq
 from torch import Tensor
 
+from delphi import configs
 from delphi.delphi_logger import delphiLogger
 from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
 from delphi.trainer import Trainer
-from delphi.utils import configs
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.helpers import Bounds
 from delphi.stats.linear_model import LinearModel

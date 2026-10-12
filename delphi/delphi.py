@@ -10,7 +10,8 @@ import torch as ch
 import torch.optim
 import torch.optim.lr_scheduler
 
-from delphi.utils import configs, constants, helpers
+from delphi import configs
+from delphi.utils import constants, helpers
 
 
 _T = TypeVar("_T")

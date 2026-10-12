@@ -10,9 +10,9 @@ import torch as ch
 import torch.utils.data
 from torch import nn
 
-from delphi import delphi_logger, trainer
+from delphi import configs, delphi_logger, trainer
 from delphi.truncated.distributions import distributions, losses
-from delphi.utils import configs, datasets
+from delphi.utils import datasets
 
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes

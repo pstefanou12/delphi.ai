@@ -2,28 +2,28 @@
 """Pydantic configuration models for delphi.ai algorithms.
 
 Split by estimator family so no single module has to hold every config.
-Every name is re-exported here, so ``from delphi.utils import configs``
+Every name is re-exported here, so ``from delphi import configs``
 followed by ``configs.SomeConfig`` keeps working regardless of which
 submodule a config lives in.
 """
 
-from delphi.utils.configs.base import (
+from delphi.configs.base import (
     LinearModelConfig,
     OptimizerConfig,
     TrainerConfig,
     _ConfigT,
 )
-from delphi.utils.configs.classification import (
+from delphi.configs.classification import (
     SoftmaxRegressionConfig,
     TruncatedLogisticRegressionConfig,
     TruncatedProbitRegressionConfig,
 )
-from delphi.utils.configs.distributions import (
+from delphi.configs.distributions import (
     TruncatedExponentialFamilyDistributionConfig,
     TruncatedMultivariateNormalConfig,
 )
-from delphi.utils.configs.lqr import TruncatedLQRConfig
-from delphi.utils.configs.regression import (
+from delphi.configs.lqr import TruncatedLQRConfig
+from delphi.configs.regression import (
     TruncatedElasticNetRegressionConfig,
     TruncatedLassoRegressionConfig,
     TruncatedLinearDynamicalSystemConfig,
