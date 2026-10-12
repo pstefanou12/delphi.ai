@@ -54,12 +54,12 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             )
         self.hyperparameters: configs._ConfigT = self.defaults(**hyperparameters)
 
-        self.optimizer: torch.optim.Optimizer | None = None
-        self.schedule: torch.optim.lr_scheduler.LRScheduler | None = None
+        self.optimizer: Optional[torch.optim.Optimizer] = None
+        self.schedule: Optional[torch.optim.lr_scheduler.LRScheduler] = None
 
-        self.criterion: Callable | None = None
+        self.criterion: Optional[Callable] = None
         self.criterion_params: list = []
-        self.model: ch.nn.Module | None = None
+        self.model: Optional[ch.nn.Module] = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
         self.optimizers: dict[str, torch.optim.Optimizer] = {}
 
@@ -83,8 +83,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         return [{"params": list(self.parameters())}]
 
     def make_optimizer_and_schedule(
-        self, checkpoint: dict | None = None
-    ) -> tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler | None]:
+        self, checkpoint: Optional[dict] = None
+    ) -> tuple[torch.optim.Optimizer, Optional[torch.optim.lr_scheduler.LRScheduler]]:
         """Create and store the optimizer and learning-rate scheduler.
 
         Parameter groups are sourced from ``parameter_groups()``.  Override
@@ -241,7 +241,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         }
         return torch.optim.AdamW(params, **self._remove_none_config(config))
 
-    def _create_scheduler(self) -> torch.optim.lr_scheduler.LRScheduler | None:
+    def _create_scheduler(self) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
         """Create and return the configured learning-rate scheduler, or None."""
         if getattr(self.hyperparameters, "constant", False):
             return None
@@ -451,7 +451,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 "sets self.optimizer or populates self.optimizers."
             )
 
-    def optimizer_step(self, closure: Callable | None = None) -> ch.Tensor | None:
+    def optimizer_step(self, closure: Optional[Callable] = None) -> Optional[ch.Tensor]:
         """Perform the optimizer step.
 
         The default implementation calls ``self.optimizer.step()``.  Override
@@ -534,7 +534,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """
         return self.compute_loss(batch)
 
-    def train_batch(self, batch) -> dict | None:
+    def train_batch(self, batch) -> Optional[dict]:
         """Run a full training update for one batch.
 
         Return ``None`` (default) to let the trainer use the standard
@@ -569,7 +569,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """
         return {}
 
-    def should_stop(self) -> tuple[bool, str | None]:
+    def should_stop(self) -> tuple[bool, Optional[str]]:
         """Return whether training should stop and why.
 
         Called by the trainer's stop-criterion check in addition to the

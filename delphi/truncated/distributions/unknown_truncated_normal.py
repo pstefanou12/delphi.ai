@@ -3,6 +3,8 @@
 
 # pylint: disable=duplicate-code
 
+from typing import Optional
+
 import torch as ch
 
 from delphi.truncated.distributions import unknown_truncated_multivariate_normal
@@ -72,7 +74,7 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
     k: int,
     alpha: float,
     dims: int,
-    variance: ch.Tensor | None = None,
+    variance: Optional[ch.Tensor] = None,
 ):
     """Factory function for unknown-truncation normal distributions.
 

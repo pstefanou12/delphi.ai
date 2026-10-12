@@ -403,7 +403,7 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     k: int,
     alpha: float,
     dims: int,
-    covariance_matrix: ch.Tensor | None = None,
+    covariance_matrix: Optional[ch.Tensor] = None,
 ):
     """Factory function for unknown-truncation multivariate normal distributions.
 
