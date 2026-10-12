@@ -136,6 +136,20 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         return getattr(self.hyperparameters, "optimizer", "sgd").lower()
 
     @property
+    def required_criterion(self) -> Callable:
+        """Return the loss criterion, which a subclass must already have set.
+
+        Returns:
+            The criterion callable.
+
+        Raises:
+            RuntimeError: If no criterion has been set on this model.
+        """
+        if self.criterion is None:
+            raise RuntimeError("criterion has not been set on this model.")
+        return self.criterion
+
+    @property
     def required_optimizer(self) -> torch.optim.Optimizer:
         """Return the optimizer, which must already have been created.
 
@@ -501,12 +515,10 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
         """
-        if self.criterion is None:
-            raise RuntimeError("criterion has not been set on this model.")
         inp, targ = batch
         pred = self(inp)
         pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)
-        return self.criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
+        return self.required_criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
 
     def compute_val_loss(self, batch) -> ch.Tensor:
         """Compute the validation loss for a single batch.

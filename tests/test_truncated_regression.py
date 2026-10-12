@@ -14,7 +14,7 @@ from sklearn.linear_model import LinearRegression, LassoCV
 
 from delphi import stats
 from delphi import oracle
-from delphi.utils.helpers import Parameters, calc_spectral_norm
+from delphi.utils.helpers import calc_spectral_norm
 
 # CONSTANTS
 mse_loss = MSELoss()
@@ -59,15 +59,13 @@ def test_known_truncated_regression_one_dimension_no_intercept():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "epochs": 5,
-            "optimizer": "lbfgs",
-            "batch_size": -1,
-            "trials": 1,
-            "verbose": True,
-        }
-    )
+    train_kwargs = {
+        "epochs": 5,
+        "optimizer": "lbfgs",
+        "batch_size": -1,
+        "trials": 1,
+        "verbose": True,
+    }
     trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_scale, alpha, fit_intercept=False, noise_var=ch.ones(1, 1)
     )
@@ -124,9 +122,13 @@ def test_known_truncated_regression_one_dimension():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {"epochs": 3, "lr": 1e-1, "batch_size": 10, "trials": 1, "verbose": True}
-    )
+    train_kwargs = {
+        "epochs": 3,
+        "lr": 1e-1,
+        "batch_size": 10,
+        "trials": 1,
+        "verbose": True,
+    }
     trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_scale, alpha, fit_intercept=True, noise_var=ch.ones(1, 1)
     )
@@ -186,16 +188,14 @@ def test_known_truncated_regression_higher_dimensions():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "epochs": 5,
-            "optimizer": "lbfgs",
-            "batch_size": -1,
-            "trials": 1,
-            "verbose": True,
-            "num_samples": 5000,
-        }
-    )
+    train_kwargs = {
+        "epochs": 5,
+        "optimizer": "lbfgs",
+        "batch_size": -1,
+        "trials": 1,
+        "verbose": True,
+        "num_samples": 5000,
+    }
     trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_scale, alpha, noise_var=ch.ones(1, 1)
     )
@@ -257,16 +257,14 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     # y_trunc_emp_scale = y_trunc
     phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "optimizer": "lbfgs",
-            "trials": 1,
-            "epochs": 5,
-            "batch_size": -1,
-            "var_lr": None,
-            "verbose": True,
-        }
-    )
+    train_kwargs = {
+        "optimizer": "lbfgs",
+        "trials": 1,
+        "epochs": 5,
+        "batch_size": -1,
+        "var_lr": None,
+        "verbose": True,
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha, fit_intercept=False
     )
@@ -338,18 +336,16 @@ def test_unknown_variance_truncated_regression_one_dimension():
         (phi.left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var)
     )
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "optimizer": "sgd",
-            "trials": 1,
-            "batch_size": 100,
-            "var_lr": 1e-2,
-            "verbose": True,
-            "step_lr_gamma": 1.0,
-            "early_stopping": True,
-            "gradient_steps": 1,
-        }
-    )
+    train_kwargs = {
+        "optimizer": "sgd",
+        "trials": 1,
+        "batch_size": 100,
+        "var_lr": 1e-2,
+        "verbose": True,
+        "step_lr_gamma": 1.0,
+        "early_stopping": True,
+        "gradient_steps": 1,
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
@@ -423,17 +419,15 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
 
     # scale y features by empirical noise variance
     # train algorithm
-    args = Parameters(
-        {
-            "trials": 1,
-            "epochs": 10,
-            "optimizer": "lbfgs",
-            "batch_size": -1,
-            "var_lr": None,
-            "verbose": True,
-            "num_samples": 5000,
-        }
-    )
+    args = {
+        "trials": 1,
+        "epochs": 10,
+        "optimizer": "lbfgs",
+        "batch_size": -1,
+        "var_lr": None,
+        "verbose": True,
+        "num_samples": 5000,
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(args, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
@@ -495,19 +489,17 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
     print(f"emp mse loss: {emp_mse_loss}")
     print(f"emp noise var l1: {emp_var_l1}")
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "epochs": 5,
-            "optimizer": "lbfgs",
-            "trials": 1,
-            "batch_size": -1,
-            "var_lr": None,
-            "verbose": True,
-            "early_stopping": True,
-            "gradient_steps": 500,
-            # 'lbfgs_lr': 2.0
-        }
-    )
+    train_kwargs = {
+        "epochs": 5,
+        "optimizer": "lbfgs",
+        "trials": 1,
+        "batch_size": -1,
+        "var_lr": None,
+        "verbose": True,
+        "early_stopping": True,
+        "gradient_steps": 500,
+        # 'lbfgs_lr': 2.0
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi, alpha, fit_intercept=False
     )
@@ -571,18 +563,16 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     print(f"emp mse loss: {emp_mse_loss}")
     print(f"emp noise var l1: {emp_var_l1}")
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "epochs": 10,
-            "optimizer": "lbfgs",
-            "trials": 1,
-            "batch_size": -1,
-            "var_lr": None,
-            "verbose": True,
-            "early_stopping": True,
-            "gradient_steps": 500,
-        }
-    )
+    train_kwargs = {
+        "epochs": 10,
+        "optimizer": "lbfgs",
+        "trials": 1,
+        "batch_size": -1,
+        "var_lr": None,
+        "verbose": True,
+        "early_stopping": True,
+        "gradient_steps": 500,
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
@@ -651,20 +641,18 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     y_trunc_emp_scale = y_trunc / ch.sqrt(emp_noise_var)
     phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "epochs": 15,
-            "optimizer": "sgd",
-            "trials": 1,
-            "batch_size": 100,
-            "lr": 1e-1,
-            # 'var_lr': 1e-2,
-            "verbose": True,
-            "early_stopping": True,
-            "gradient_steps": 2500,
-            "step_lr_gamma": 1.0,
-        }
-    )
+    train_kwargs = {
+        "epochs": 15,
+        "optimizer": "sgd",
+        "trials": 1,
+        "batch_size": 100,
+        "lr": 1e-1,
+        # 'var_lr': 1e-2,
+        "verbose": True,
+        "early_stopping": True,
+        "gradient_steps": 2500,
+        "step_lr_gamma": 1.0,
+    }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
@@ -729,15 +717,13 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "lr": 1e-1,
-            "batch_size": 10,
-            "gradient_steps": 1000,
-            "trials": 1,
-            "verbose": True,
-        }
-    )
+    train_kwargs = {
+        "lr": 1e-1,
+        "batch_size": 10,
+        "gradient_steps": 1000,
+        "trials": 1,
+        "verbose": True,
+    }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs,
         phi_scale,
@@ -816,15 +802,13 @@ def test_truncated_lasso_regression_one_dimension():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "lr": 1e-1,
-            "batch_size": 10,
-            "gradient_steps": 1000,
-            "trials": 1,
-            "verbose": True,
-        }
-    )
+    train_kwargs = {
+        "lr": 1e-1,
+        "batch_size": 10,
+        "gradient_steps": 1000,
+        "trials": 1,
+        "verbose": True,
+    }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
     )
@@ -901,15 +885,13 @@ def test_truncated_lasso_regression_ten_dimensions():
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
     phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
     # train algorithm
-    train_kwargs = Parameters(
-        {
-            "lr": 1e-1,
-            "batch_size": 10,
-            "gradient_steps": 1000,
-            "trials": 1,
-            "verbose": True,
-        }
-    )
+    train_kwargs = {
+        "lr": 1e-1,
+        "batch_size": 10,
+        "gradient_steps": 1000,
+        "trials": 1,
+        "verbose": True,
+    }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
     )
@@ -957,20 +939,18 @@ def test_truncated_dependent_regression():
 
     print(f"alpha: {alpha}")
 
-    train_kwargs = Parameters(
-        {
-            "c_eta": 0.5,
-            "epochs": 5,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 100,
-            "T": X.size(0),
-            "c_s": 10.0,
-            "alpha": alpha,
-            "tol": 1e-1,
-            "c_gamma": 2.0,
-        }
-    )
+    train_kwargs = {
+        "c_eta": 0.5,
+        "epochs": 5,
+        "trials": 1,
+        "batch_size": 1,
+        "num_samples": 100,
+        "T": X.size(0),
+        "c_s": 10.0,
+        "alpha": alpha,
+        "tol": 1e-1,
+        "c_gamma": 2.0,
+    }
     trunc_lds = stats.TruncatedLinearRegression(  # pylint: disable=no-value-for-parameter
         phi, train_kwargs, noise_var=NOISE_VAR, dependent=True, rand_seed=seed
     )

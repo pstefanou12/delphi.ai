@@ -70,7 +70,19 @@ ignore_missing_imports = true
 # (args, phi, alpha, ...) signature, and the ridge/elastic-net fits call
 # Trainer(...) without the now-required logger. These are real runtime
 # failures, not typing noise, so they need the port rather than annotations.
-module = ["delphi.stats.*", "tests.test_utils"]
+module = [
+    # Narrowed as modules are ported; linear_model and
+    # truncated_linear_regression are now checked.
+    "delphi.stats.gumbel_ce",
+    "delphi.stats.softmax",
+    "delphi.stats.truncated_elastic_net_regression",
+    "delphi.stats.truncated_lasso_regression",
+    "delphi.stats.truncated_logistic_regression",
+    "delphi.stats.truncated_lqr",
+    "delphi.stats.truncated_probit_regression",
+    "delphi.stats.truncated_ridge_regression",
+    "tests.test_utils",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]

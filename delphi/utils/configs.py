@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Pydantic configuration models for delphi.ai algorithms."""
 
-from typing import TypeVar
+from typing import Optional, TypeVar
 
 import pydantic
 
@@ -201,10 +201,25 @@ class LinearModelConfig(TrainerConfig, OptimizerConfig):
     val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
     workers: int = pydantic.Field(default=0, ge=0)
     shuffle: bool = True
-    batch_size: int = pydantic.Field(default=50, ge=1)
+    # -1 is a sentinel for "full batch", read by
+    # datasets.make_train_and_val as len(dataset), so this is deliberately
+    # unconstrained to match the pre-pydantic defaults.
+    batch_size: int = 50
+    # The remaining DATASET_DEFAULTS keys. Declared so that the
+    # check_and_fill_args call still in make_train_and_val is a no-op against
+    # a pydantic config instead of trying to set an undeclared field.
+    normalize: bool = False
+    pin_memory: bool = True
+    drop_last: bool = False
     alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
     c_s: float = pydantic.Field(default=10.0, gt=0.0)
     fit_intercept: bool = True
+
+    # Must be > 0: fit() reads back best/final params from the trainer, which
+    # only records them when this is enabled. TRUNC_REG_DEFAULTS omitted the
+    # key entirely, so the pre-pydantic path got None from
+    # Parameters.__getattr__ and failed on "iterations % None".
+    record_params_every: int = pydantic.Field(default=1, ge=1)
 
 
 class TruncatedRegressionFieldsConfig(LinearModelConfig):
@@ -228,7 +243,9 @@ class TruncatedRegressionFieldsConfig(LinearModelConfig):
         constant: Disable learning-rate scheduling.
     """
 
-    var_lr: float = pydantic.Field(default=1e-2, gt=0.0)
+    # None disables the separate variance learning rate; parameters_() in
+    # TruncatedLinearRegression branches on that explicitly.
+    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
     eps: float = pydantic.Field(default=1e-5, gt=0.0)
     r: float = pydantic.Field(default=1.0, gt=0.0)
     rate: float = pydantic.Field(default=1.5, gt=0.0)
