@@ -1,7 +1,6 @@
 """Normalized probabilist Hermite polynomial utilities for multivariate Gaussian estimation."""
 
 import math
-from itertools import product
 
 import torch as ch
 
@@ -27,11 +26,34 @@ class NormalizedProbabilistHermitePolynomial:  # pylint: disable=too-few-public-
         self._norm_factors = self._precompute_norm_factors()
 
     def _generate_multi_indices(self, k):
-        """Generate all multi-indices with total degree <= k."""
-        indices = []
-        for combo in product(range(k + 1), repeat=self._d):
-            if sum(combo) <= k:
-                indices.append(list(combo))
+        """Generate all multi-indices with total degree <= k.
+
+        Builds the degree simplex directly, preserving the lexicographic order
+        a filtered full-hypercube enumeration produces. Enumerating the
+        hypercube costs (k+1)**d tuples to keep only C(k+d, d) of them: for
+        k=12, d=10 that is 137.8 billion tuples to keep 646,646, which takes
+        roughly nine hours.
+
+        Args:
+            k: Maximum total degree.
+
+        Returns:
+            Long tensor of shape (num_indices, d) holding each multi-index.
+        """
+        indices: list[list[int]] = []
+        combo = [0] * self._d
+
+        def build(pos, remaining):
+            """Fill position pos from the degree budget still available."""
+            if pos == self._d:
+                indices.append(combo.copy())
+                return
+            for value in range(remaining + 1):
+                combo[pos] = value
+                build(pos + 1, remaining - value)
+            combo[pos] = 0
+
+        build(0, k)
         return ch.tensor(indices, dtype=ch.long)
 
     def _precompute_norm_factors(self):
