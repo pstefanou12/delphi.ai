@@ -177,3 +177,195 @@ class TruncatedMultivariateNormalConfig(TruncatedExponentialFamilyDistributionCo
 
     eigenvalue_lower_bound: float = pydantic.Field(default=1e-2, gt=0.0)
     covariance_matrix_lr: float | None = pydantic.Field(default=None, gt=0.0)
+
+
+class LinearModelConfig(TrainerConfig, OptimizerConfig):
+    """Shared configuration for the delphi.stats truncated linear models.
+
+    Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in
+    ``delphi.utils.defaults`` so defaults match the previous
+    ``check_and_fill_args`` behaviour exactly.
+
+    Attributes:
+        val: Fraction of data held out for validation.
+        workers: DataLoader worker processes.
+        shuffle: Shuffle the training DataLoader.
+        batch_size: Mini-batch size for training.
+        alpha: Survival probability lower bound of the truncation set.
+        c_s: Scaling constant for the dependent-data survival threshold.
+        fit_intercept: Fit an intercept term.
+    """
+
+    model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)
+
+    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
+    workers: int = pydantic.Field(default=0, ge=0)
+    shuffle: bool = True
+    batch_size: int = pydantic.Field(default=50, ge=1)
+    alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
+    c_s: float = pydantic.Field(default=10.0, gt=0.0)
+    fit_intercept: bool = True
+
+
+class TruncatedRegressionFieldsConfig(LinearModelConfig):
+    """Fields shared by the truncated regression and dynamical-system variants.
+
+    ``TruncatedLinearRegression`` reads from both variants depending on its
+    ``dependent`` flag, so every field either one needs is declared here and
+    the concrete subclasses override only default values. That keeps a single
+    type parameter sufficient for the estimator.
+
+    Attributes:
+        var_lr: Learning rate for the variance parameter when noise_var is
+            unknown.
+        eps: Numerical stability constant for the truncated MSE criterion.
+        r: Initial projection set radius.
+        rate: Multiplicative radius expansion factor.
+        num_samples: Monte Carlo samples drawn per criterion evaluation.
+        l1: L1 regularization weight.
+        c_gamma: Scaling constant for the gamma bound.
+        c_eta: Exponent used to derive the learning rate from alpha.
+        constant: Disable learning-rate scheduling.
+    """
+
+    var_lr: float = pydantic.Field(default=1e-2, gt=0.0)
+    eps: float = pydantic.Field(default=1e-5, gt=0.0)
+    r: float = pydantic.Field(default=1.0, gt=0.0)
+    rate: float = pydantic.Field(default=1.5, gt=0.0)
+    num_samples: int = pydantic.Field(default=1000, ge=1)
+    l1: float = pydantic.Field(default=0.0, ge=0.0)
+    c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
+    c_eta: float = pydantic.Field(default=0.5, gt=0.0)
+    constant: bool = False
+
+
+class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
+    """Configuration for truncated linear regression (TRUNC_REG_DEFAULTS)."""
+
+    # Override parent defaults for truncated regression.
+    iterations: int | None = pydantic.Field(default=1500, ge=1)
+    val_interval: int | None = pydantic.Field(default=50, ge=1)
+
+
+class TruncatedLassoRegressionConfig(TruncatedRegressionConfig):
+    """Configuration for truncated LASSO regression (TRUNC_LASSO_DEFAULTS)."""
+
+    # Override parent defaults for the LASSO variant.
+    num_samples: int = pydantic.Field(default=10000, ge=1)
+
+
+class TruncatedElasticNetRegressionConfig(TruncatedLassoRegressionConfig):
+    """Configuration for truncated elastic net regression.
+
+    The pre-pydantic code derived its defaults from TRUNC_LASSO_DEFAULTS, so
+    this adds no fields of its own; weight_decay comes from OptimizerConfig.
+    """
+
+
+class TruncatedRidgeRegressionConfig(TruncatedRegressionConfig):
+    """Configuration for truncated ridge regression.
+
+    The pre-pydantic code derived its defaults from TRUNC_REG_DEFAULTS, so
+    this adds no fields of its own; weight_decay comes from OptimizerConfig.
+    """
+
+
+class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):
+    """Configuration for truncated linear dynamical systems (TRUNC_LDS_DEFAULTS)."""
+
+    # Override parent defaults for dependent data, which is consumed in order.
+    num_samples: int = pydantic.Field(default=50, ge=1)
+    shuffle: bool = False
+    constant: bool = True
+
+
+class TruncatedLogisticRegressionConfig(LinearModelConfig):
+    """Configuration for truncated logistic regression (TRUNC_LOG_REG_DEFAULTS).
+
+    Attributes:
+        l1: L1 regularization weight.
+        eps: Numerical stability constant for the criterion.
+        r: Initial projection set radius.
+        rate: Multiplicative radius expansion factor.
+        num_samples: Monte Carlo samples drawn per criterion evaluation.
+    """
+
+    l1: float = pydantic.Field(default=0.0, ge=0.0)
+    eps: float = pydantic.Field(default=1e-5, gt=0.0)
+    r: float = pydantic.Field(default=1.0, gt=0.0)
+    rate: float = pydantic.Field(default=1.5, gt=0.0)
+    num_samples: int = pydantic.Field(default=1000, ge=1)
+
+    # Override parent defaults for logistic regression.
+    epochs: int | None = pydantic.Field(default=1, ge=1)
+    batch_size: int = pydantic.Field(default=10, ge=1)
+
+
+class TruncatedProbitRegressionConfig(TruncatedLogisticRegressionConfig):
+    """Configuration for truncated probit regression (TRUNC_PROB_REG_DEFAULTS).
+
+    Attributes:
+        tol: Convergence tolerance.
+    """
+
+    tol: float = pydantic.Field(default=1e-3, ge=0.0)
+
+    # The probit defaults did not override epochs.
+    epochs: int | None = pydantic.Field(default=None, ge=1)
+
+
+class TruncatedLQRConfig(LinearModelConfig):
+    """Configuration for truncated linear quadratic regulator estimation.
+
+    Transcribed from TRUNC_LQR_DEFAULTS. R, U_A, U_B, delta and gamma were
+    marked REQ there and so are required here.
+
+    Attributes:
+        target_thickness: Target thickness of the collected trajectories.
+        num_traj_phase_one: Trajectory budget for phase one.
+        num_traj_phase_two: Trajectory budget for phase two.
+        num_traj_gen_samples_A: Trajectory budget for generating A samples.
+        num_traj_gen_samples_B: Trajectory budget for generating B samples.
+        T_phase_one: Step budget for phase one.
+        T_phase_two: Step budget for phase two.
+        T_gen_samples_A: Step budget for generating A samples.
+        T_gen_samples_B: Step budget for generating B samples.
+        R: Radius of the truncation ball.
+        U_A: Spectral norm bound on A.
+        U_B: Spectral norm bound on B.
+        delta: Failure probability.
+        eps1: Phase one accuracy target.
+        eps2: Phase two accuracy target.
+        repeat: Number of repetitions; None runs once.
+        gamma: Thickness parameter.
+    """
+
+    target_thickness: float = float("inf")
+    num_traj_phase_one: int = pydantic.Field(default=int(1e100), ge=1)
+    num_traj_phase_two: int = pydantic.Field(default=int(1e100), ge=1)
+    num_traj_gen_samples_A: int = pydantic.Field(default=int(1e100), ge=1)
+    num_traj_gen_samples_B: int = pydantic.Field(default=int(1e100), ge=1)
+    T_phase_one: int = pydantic.Field(default=int(1e100), ge=1)
+    T_phase_two: int = pydantic.Field(default=int(1e100), ge=1)
+    T_gen_samples_A: int = pydantic.Field(default=int(1e100), ge=1)
+    T_gen_samples_B: int = pydantic.Field(default=int(1e100), ge=1)
+    R: float = pydantic.Field(gt=0.0)
+    U_A: float = pydantic.Field(gt=0.0)
+    U_B: float = pydantic.Field(gt=0.0)
+    delta: float = pydantic.Field(gt=0.0, lt=1.0)
+    eps1: float = pydantic.Field(default=0.9, gt=0.0)
+    eps2: float = pydantic.Field(default=0.9, gt=0.0)
+    repeat: int | None = pydantic.Field(default=None, ge=1)
+    gamma: float = pydantic.Field(gt=0.0)
+
+
+class SoftmaxRegressionConfig(LinearModelConfig):
+    """Configuration for truncated softmax (multinomial) regression.
+
+    Attributes:
+        num_samples: Monte Carlo samples drawn per criterion evaluation.
+        multi_class: Multiclass strategy used for the empirical initialization.
+    """
+
+    num_samples: int = pydantic.Field(default=1000, ge=1)
+    multi_class: str = "ovr"
