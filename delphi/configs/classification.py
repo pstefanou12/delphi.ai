@@ -5,10 +5,10 @@ from typing import Optional
 
 import pydantic
 
-from delphi.configs.base import LinearModelConfig
+from delphi.configs.base import LinearModelConfig, TruncatedLinearModelConfig
 
 
-class TruncatedLogisticRegressionConfig(LinearModelConfig):
+class TruncatedLogisticRegressionConfig(TruncatedLinearModelConfig):
     """Configuration for truncated logistic regression (TRUNC_LOG_REG_DEFAULTS).
 
     Attributes:

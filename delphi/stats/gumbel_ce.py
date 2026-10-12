@@ -35,9 +35,7 @@ class GumbelCEModel(  # pylint: disable=abstract-method
         # LinearModel.__init__ takes neither d nor k and requires a logger, so
         # the previous call raised a TypeError; it was silenced with pylint
         # suppressions. d and k are plain attributes.
-        super().__init__(
-            hyperparameters, dependent=False, logger=delphi_logger.delphiLogger()
-        )
+        super().__init__(hyperparameters, logger=delphi_logger.delphiLogger())
         self.d, self.k = d, k  # pylint: disable=invalid-name
 
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init

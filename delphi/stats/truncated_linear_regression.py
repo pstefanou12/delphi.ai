@@ -70,9 +70,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             if dependent
             else configs.TruncatedRegressionConfig
         )
-        super().__init__(hyperparameters, dependent, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
+        # dependent and s live here rather than on LinearModel: this is the
+        # only estimator that uses them, and they are truncation concepts
+        # resting on alpha and c_s.
+        self.dependent = dependent
+        self.s: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
         if dependent:
             self.hyperparameters.lr = (2 / alpha) ** self.hyperparameters.c_eta
+            self.s = self.hyperparameters.c_s * (
+                ch.sqrt(ch.log(Tensor([1 / self.hyperparameters.alpha]))) + 1
+            )
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -100,6 +108,24 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
         # Property instance variables.
         self.coef, self.intercept = None, None
+
+    @property
+    def required_survival_threshold(self) -> ch.Tensor:
+        """Return the survival threshold s, which only dependent data has.
+
+        Returns:
+            The survival threshold computed in ``__init__``.
+
+        Raises:
+            RuntimeError: If this model was not constructed with
+                ``dependent=True``.
+        """
+        if self.s is None:
+            raise RuntimeError(
+                "s is only computed for dependent data; "
+                "construct the model with dependent=True."
+            )
+        return self.s
 
     def fit(  # pylint: disable=attribute-defined-outside-init
         self,

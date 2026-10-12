@@ -46,7 +46,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
         """
         # The logger argument was previously omitted, which raised a
         # TypeError; the call was silenced with a pylint suppression.
-        super().__init__(hyperparameters, dependent=False, logger=delphiLogger())
+        super().__init__(hyperparameters, logger=delphiLogger())
         self.fit_intercept = fit_intercept
         del self.criterion
 

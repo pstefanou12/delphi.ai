@@ -48,7 +48,7 @@ class TruncatedProbitRegression(  # pylint: disable=too-many-instance-attributes
             rand_seed (int): random seed for reproducibility
         """
         logger = delphi_logger.delphiLogger()
-        super().__init__(hyperparameters, False, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept

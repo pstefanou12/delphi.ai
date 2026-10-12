@@ -7,10 +7,10 @@ from collections.abc import Callable
 
 import pydantic
 
-from delphi.configs.base import LinearModelConfig
+from delphi.configs.base import TruncatedLinearModelConfig
 
 
-class TruncatedLQRConfig(LinearModelConfig):
+class TruncatedLQRConfig(TruncatedLinearModelConfig):
     """Configuration for truncated linear quadratic regulator estimation.
 
     Transcribed from TRUNC_LQR_DEFAULTS. R, U_A, U_B, delta and gamma were

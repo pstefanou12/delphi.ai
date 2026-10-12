@@ -6,10 +6,10 @@ from typing import Optional
 import pydantic
 import torch as ch
 
-from delphi.configs.base import LinearModelConfig
+from delphi.configs.base import TruncatedLinearModelConfig
 
 
-class TruncatedRegressionFieldsConfig(LinearModelConfig):
+class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
     """Fields shared by the truncated regression and dynamical-system variants.
 
     ``TruncatedLinearRegression`` reads from both variants depending on its

@@ -91,8 +91,6 @@ class LinearModelConfig(DelphiConfig):
     ``check_and_fill_args`` behaviour exactly.
 
     Attributes:
-        alpha: Survival probability lower bound of the truncation set.
-        c_s: Scaling constant for the dependent-data survival threshold.
         fit_intercept: Fit an intercept term.
     """
 
@@ -100,8 +98,6 @@ class LinearModelConfig(DelphiConfig):
 
     # Dataset fields (val, workers, shuffle, batch_size, normalize) come from
     # DatasetConfig via DelphiConfig.
-    alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
-    c_s: float = pydantic.Field(default=10.0, gt=0.0)
     fit_intercept: bool = True
 
     # Must be > 0: fit() reads back best/final params from the trainer, which
@@ -109,3 +105,19 @@ class LinearModelConfig(DelphiConfig):
     # key entirely, so the pre-pydantic path got None from
     # Parameters.__getattr__ and failed on "iterations % None".
     record_params_every: int = pydantic.Field(default=1, ge=1)
+
+
+class TruncatedLinearModelConfig(LinearModelConfig):
+    """Shared configuration for the truncated delphi.stats linear models.
+
+    Separate from LinearModelConfig because alpha and c_s describe a
+    truncation set, which an untruncated linear model such as softmax
+    regression does not have.
+
+    Attributes:
+        alpha: Survival probability lower bound of the truncation set.
+        c_s: Scaling constant for the dependent-data survival threshold.
+    """
+
+    alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
+    c_s: float = pydantic.Field(default=10.0, gt=0.0)
