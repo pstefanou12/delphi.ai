@@ -1,13 +1,11 @@
 # Author: pstefanou12@
 """Truncated Exponential Distribution."""
 
-import logging
 from collections.abc import Callable
 
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger
 from delphi.exponential_family import exponential
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
@@ -19,10 +17,11 @@ class TruncatedExponential(
     """Model for truncated exponential distributions to be passed into trainer."""
 
     dist = exponential.Exponential
+    defaults = configs.TruncatedExponentialFamilyDistributionConfig
 
     def __init__(
         self,
-        args: dict | configs.TruncatedExponentialFamilyDistributionConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -30,27 +29,12 @@ class TruncatedExponential(
         """Initialize TruncatedExponential.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        args = configs.make_config(
-            args, configs.TruncatedExponentialFamilyDistributionConfig
-        )
-
-        logger = (
-            delphi_logger.delphiLogger()
-            if args.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            logger,
-        )
+        super().__init__(hyperparameters, phi, alpha, dims)
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical rate."""

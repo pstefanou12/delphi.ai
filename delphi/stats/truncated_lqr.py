@@ -42,36 +42,36 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             m (int): input dimension of matrix B; must satisfy m >= d
             rand_seed (int): random seed for reproducibility
         """
-        self.args = check_and_fill_args(args, TRUNC_LQR_DEFAULTS)
+        self.hyperparameters = check_and_fill_args(args, TRUNC_LQR_DEFAULTS)
         assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
         assert (
-            self.args.target_thickness != float("inf")
-            or self.args.num_traj_phase_one != float("inf")
-            or self.args.T_phase_one != float("inf")
+            self.hyperparameters.target_thickness != float("inf")
+            or self.hyperparameters.num_traj_phase_one != float("inf")
+            or self.hyperparameters.T_phase_one != float("inf")
         ), (
             "all stopping conditions are inf, need to provide at least one stopping "
             "variable: (T, num_traj, target_thickness), that isn't infinity"
         )
         assert (
-            self.args.target_thickness != float("inf")
-            or self.args.num_traj_phase_two != float("inf")
-            or self.args.T_phase_two != float("inf")
+            self.hyperparameters.target_thickness != float("inf")
+            or self.hyperparameters.num_traj_phase_two != float("inf")
+            or self.hyperparameters.T_phase_two != float("inf")
         ), (
             "all stopping conditions are inf, need to provide at least one stopping "
             "variable: (T, num_traj, target_thickness), that isn't infinity"
         )
         assert (
-            self.args.target_thickness != float("inf")
-            or self.args.num_traj_gen_samples_B != float("inf")
-            or self.args.T_gen_samples_B != float("inf")
+            self.hyperparameters.target_thickness != float("inf")
+            or self.hyperparameters.num_traj_gen_samples_B != float("inf")
+            or self.hyperparameters.T_gen_samples_B != float("inf")
         ), (
             "all stopping conditions are inf, need to provide at least one stopping "
             "variable: (T, num_traj, target_thickness), that isn't infinity"
         )
         assert (
-            self.args.target_thickness != float("inf")
-            or self.args.num_traj_gen_samples_A != float("inf")
-            or self.args.T_gen_samples_A != float("inf")
+            self.hyperparameters.target_thickness != float("inf")
+            or self.hyperparameters.num_traj_gen_samples_A != float("inf")
+            or self.hyperparameters.T_gen_samples_A != float("inf")
         ), (
             "all stopping conditions are inf, need to provide at least one stopping "
             "variable: (T, num_traj, target_thickness), that isn't infinity"
@@ -81,7 +81,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         self.d, self.m = d, m  # pylint: disable=invalid-name
         self.rand_seed = rand_seed
 
-        self.c = (self.args.R - 3 * (self.m**0.5)) / self.args.U_B  # pylint: disable=invalid-name
+        self.c = (self.hyperparameters.R - 3 * (self.m**0.5)) / self.hyperparameters.U_B  # pylint: disable=invalid-name
         logger.info("c: %s", self.c)
 
     def fit(self):
@@ -108,9 +108,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         covariate_matrix = ch.zeros([self.d, self.d])
 
         while (
-            num_trajectories < self.args.num_traj_phase_one
-            and X.size(0) < self.args.T_phase_one
-            and calc_thickness(covariate_matrix) < self.args.target_thickness
+            num_trajectories < self.hyperparameters.num_traj_phase_one
+            and X.size(0) < self.hyperparameters.T_phase_one
+            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
         ):
             sample = self.gen_data(x_t, u_t=ch.zeros((1, self.m)))
             total_samples += 1
@@ -127,8 +127,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", X.size(0))
 
         self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self.args.phi,
-            self.args,
+            self.hyperparameters.phi,
+            self.hyperparameters,
             self.gen_data.noise_var,
             dependent=True,
             rand_seed=self.rand_seed,
@@ -150,9 +150,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         covariate_matrix = ch.zeros([self.m, self.m])
 
         while (
-            total_samples < self.args.num_traj_phase_two
-            and U.size(0) < self.args.T_phase_two
-            and calc_thickness(covariate_matrix) < self.args.target_thickness
+            total_samples < self.hyperparameters.num_traj_phase_two
+            and U.size(0) < self.hyperparameters.T_phase_two
+            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
         ):
             u = (self.c * id_[index])[None, ...]
             sample = self.gen_data(xt, u_t=u)
@@ -168,8 +168,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", U.size(0))
 
         self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self.args.phi,
-            self.args,
+            self.hyperparameters.phi,
+            self.hyperparameters,
             self.gen_data.noise_var,
             dependent=True,
             rand_seed=self.rand_seed,
@@ -219,20 +219,22 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         covariate_matrix = ch.zeros([self.d + self.m, self.d + self.m])
 
         xt = ch.zeros((1, self.d))
-        target = (1 / (self.args.eps2**2) - 1 / (self.args.eps1**2)) * 4
+        target = (
+            1 / (self.hyperparameters.eps2**2) - 1 / (self.hyperparameters.eps1**2)
+        ) * 4
         target_mat = ch.zeros([self.d + self.m, self.d + self.m])
         np.fill_diagonal(target_mat.numpy(), [0] * self.d + [target] * self.m)
 
         while (
-            traj < self.args.num_traj_gen_samples_B
-            and X.size(0) < self.args.T_gen_samples_B
-            and calc_thickness(covariate_matrix) < self.args.target_thickness
+            traj < self.hyperparameters.num_traj_gen_samples_B
+            and X.size(0) < self.hyperparameters.T_gen_samples_B
+            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
         ):
             traj += 1
             xt = ch.zeros((1, self.d))
             responsive = True
             while responsive:
-                ut = (self.args.gamma * id_[index])[None, ...]
+                ut = (self.hyperparameters.gamma * id_[index])[None, ...]
                 sample = self.gen_data(xt, u_t=ut)
                 total_samples += 1
                 if sample is not None:
@@ -288,9 +290,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
         # Break based on the number of samples collected or number of trajectories.
         while (
-            traj < self.args.num_traj_gen_samples_A
-            and X.size(0) < self.args.T_gen_samples_A
-            and calc_thickness(covariate_matrix) < self.args.target_thickness
+            traj < self.hyperparameters.num_traj_gen_samples_A
+            and X.size(0) < self.hyperparameters.T_gen_samples_A
+            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
         ):
             xt = ch.zeros(1, self.d)
             traj += 1
@@ -298,7 +300,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             responsive = True
             while responsive:
                 ut = self.calculate_u_t_two(
-                    self.A_hat_, self.B_hat_, self.args.gamma * id_[index]
+                    self.A_hat_, self.B_hat_, self.hyperparameters.gamma * id_[index]
                 )
                 sample = self.gen_data(xt, u_t=ut)
                 if sample is not None:
@@ -327,7 +329,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                         xu = ch.cat([xt, ut], dim=1)
                         covariate_matrix += xu.T @ xu
                         xt = yt
-                        if sample[0].norm() <= self.args.R + 3 * np.sqrt(self.d):
+                        if sample[0].norm() <= self.hyperparameters.R + 3 * np.sqrt(
+                            self.d
+                        ):
                             break
                     else:
                         responsive = False
@@ -343,9 +347,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         """Run the warm start phase of the algorithm."""
         logger.info("begin warm start...")
         repeat = (
-            int(-2 * np.log2(self.args.delta))
-            if self.args.repeat is None
-            else self.args.repeat
+            int(-2 * np.log2(self.hyperparameters.delta))
+            if self.hyperparameters.repeat is None
+            else self.hyperparameters.repeat
         )
 
         assert repeat >= 1, (
@@ -365,8 +369,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             y_concat = ch.cat([Yu, Yx])
 
             self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                self.args.phi,
-                self.args,
+                self.hyperparameters.phi,
+                self.hyperparameters,
                 self.gen_data.noise_var,
                 emp_weight=coef_concat,
                 dependent=True,
@@ -380,8 +384,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             A_results = ch.cat([A_results, A_[None, ...]])
             B_results = ch.cat([B_results, B_[None, ...]])
 
-        self.A_ = self.find_max(A_results, self.args.eps2)
-        self.B_ = self.find_max(B_results, self.args.eps2)
+        self.A_ = self.find_max(A_results, self.hyperparameters.eps2)
+        self.B_ = self.find_max(B_results, self.hyperparameters.eps2)
 
     @property
     def A_hat_(self):  # pylint: disable=invalid-name

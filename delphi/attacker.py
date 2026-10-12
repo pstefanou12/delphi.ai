@@ -388,16 +388,16 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
             with_image (bool) : if :samp:`False`, only return the model output
                 (even if :samp:`make_adv == True`).
         """
-        if self.args.adv:
+        if self.hyperparameters.adv:
             attacker_kwargs = {
-                "constraint": self.args.constraint,
-                "eps": self.args.eps,
-                "step_size": self.args.attack_lr,
-                "iterations": self.args.attack_steps,
-                "random_start": self.args.random_start,
+                "constraint": self.hyperparameters.constraint,
+                "eps": self.hyperparameters.eps,
+                "step_size": self.hyperparameters.attack_lr,
+                "iterations": self.hyperparameters.attack_steps,
+                "random_start": self.hyperparameters.random_start,
                 #                'custom_loss': self.adv_criterion,
-                "random_restarts": self.args.random_restarts,
-                "use_best": bool(self.args.use_best),
+                "random_restarts": self.hyperparameters.random_restarts,
+                "use_best": bool(self.hyperparameters.use_best),
             }
             assert target is not None
             # TODO: find a better way to do this --> inheritance weird here  # pylint: disable=fixme
@@ -457,8 +457,10 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
 
         # regularizer
         self.reg_term = 0.0  # pylint: disable=attribute-defined-outside-init
-        if has_attr(self.args, "regularizer") and isinstance(self.model, ch.nn.Module):
-            self.reg_term = self.args.regularizer(self.model, inp, targ)  # pylint: disable=attribute-defined-outside-init
+        if has_attr(self.hyperparameters, "regularizer") and isinstance(
+            self.model, ch.nn.Module
+        ):
+            self.reg_term = self.hyperparameters.regularizer(self.model, inp, targ)  # pylint: disable=attribute-defined-outside-init
 
         # calculate loss and regularize
         loss = ch.nn.CrossEntropyLoss()(model_logits, targ)
@@ -475,8 +477,8 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
 
         # calculate accuracy metrics
         maxk = min(5, model_logits.shape[-1])
-        if has_attr(self.args, "custom_accuracy"):
-            prec1, prec5 = self.args.custom_accuracy(model_logits, targ)  # pylint: disable=unsubscriptable-object
+        if has_attr(self.hyperparameters, "custom_accuracy"):
+            prec1, prec5 = self.hyperparameters.custom_accuracy(model_logits, targ)  # pylint: disable=unsubscriptable-object
         else:
             prec1, prec5 = accuracy(model_logits, targ, topk=(1, maxk))
             prec1, prec5 = prec1[0], prec5[0]  # pylint: disable=unsubscriptable-object
@@ -533,9 +535,11 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
                 self.writer.add_scalar("_".join([loop_type, d]), v.avg, epoch)
 
         # check for logging/checkpoint
-        last_epoch = epoch == (self.args.epochs - 1)
-        should_save_ckpt = epoch % self.args.save_ckpt_iters == 0 or last_epoch
-        should_log = epoch % self.args.log_iters == 0 or last_epoch
+        last_epoch = epoch == (self.hyperparameters.epochs - 1)
+        should_save_ckpt = (
+            epoch % self.hyperparameters.save_ckpt_iters == 0 or last_epoch
+        )
+        should_log = epoch % self.hyperparameters.log_iters == 0 or last_epoch
 
         # logging
         if should_log or should_save_ckpt:
@@ -550,7 +554,9 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
                 "optimizer": self.optimizer.state_dict(),
                 "schedule": (self.schedule and self.schedule.state_dict()),
                 "epoch": epoch + 1,
-                "amp": amp.state_dict() if self.args.mixed_precision else None,  # pylint: disable=undefined-variable  # noqa: F821
+                "amp": amp.state_dict()  # pylint: disable=undefined-variable  # noqa: F821
+                if self.hyperparameters.mixed_precision
+                else None,
                 "prec1": self.val_top1.avg,
             }
 

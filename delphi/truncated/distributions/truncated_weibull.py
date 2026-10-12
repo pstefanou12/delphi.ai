@@ -3,12 +3,10 @@
 
 from collections.abc import Callable
 from functools import partial
-import logging
 
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger
 from delphi.exponential_family import weibull
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import configs
@@ -23,9 +21,11 @@ class TruncatedWeibull(
         k (int): Weibull shape parameter.
     """
 
+    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+
     def __init__(
         self,
-        args: dict | configs.TruncatedExponentialFamilyDistributionConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         dims: int,
@@ -34,37 +34,22 @@ class TruncatedWeibull(
         """Initialize TruncatedWeibull.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             k: Weibull shape parameter.
         """
-        args = configs.make_config(
-            args, configs.TruncatedExponentialFamilyDistributionConfig
-        )
-
-        logger = (
-            delphi_logger.delphiLogger()
-            if args.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
         self.k = k
         self.dist = partial(weibull.Weibull, k)
-        self.dist.calc_suff_stat = partial(weibull.Weibull.calc_suff_stat, k)
-        super().__init__(
-            args,
-            phi,
-            alpha,
-            dims,
-            logger,
-        )
+        self.calc_suff_stat = partial(weibull.Weibull.calc_suff_stat, k)
+        super().__init__(hyperparameters, phi, alpha, dims)
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical scale."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
         # MLE: λ̂^k = mean(x^k), so λ̂ = mean(x^k)^(1/k).
-        emp_scale = self.dist.calc_suff_stat(dataset_s).mean(0).pow(1.0 / self.k)
+        emp_scale = self.calc_suff_stat(dataset_s).mean(0).pow(1.0 / self.k)
         self.emp_theta = weibull.Weibull.to_natural(self.k, emp_scale)
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 

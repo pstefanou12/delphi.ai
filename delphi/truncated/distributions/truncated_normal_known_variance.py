@@ -8,7 +8,6 @@ import torch as ch
 from delphi.truncated.distributions import (
     truncated_multivariate_normal_known_covariance,
 )
-from delphi.utils import configs
 
 
 class TruncatedNormalKnownVariance(
@@ -18,22 +17,20 @@ class TruncatedNormalKnownVariance(
 
     def __init__(
         self,
-        args: dict | configs.TruncatedMultivariateNormalConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
-        covariance_matrix: ch.Tensor | None,
-        sampler: Callable = None,
+        covariance_matrix: ch.Tensor,
     ):
         """Initialize TruncatedNormalKnownVariance.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             covariance_matrix: Known variance as a 1×1 matrix.
-            sampler: Optional sampler override.
         """
-        super().__init__(args, phi, alpha, 1, covariance_matrix, sampler)
+        super().__init__(hyperparameters, phi, alpha, 1, covariance_matrix)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

@@ -4,6 +4,7 @@
 # pylint: disable=duplicate-code
 
 from functools import partial
+from typing import Optional
 
 import torch as ch
 from torch import nn
@@ -33,7 +34,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         k: int,
         alpha: float,
         dims: int,
-        covariance_matrix: ch.Tensor | None,
+        covariance_matrix: ch.Tensor,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize UnknownTruncationMultivariateNormalKnownCovariance.
 
@@ -49,8 +50,10 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         """
         # Algorithm hyperparameters.
         self.k = k
+        # TODO: pstefanou12@ - args is a helpers.Parameters, but __init__ has
+        # been dict-only since e3c37f7; port this call with delphi/stats/.
         super().__init__(
-            args,
+            args,  # type: ignore[arg-type]
             partial(oracle.UnknownGaussian, k),
             alpha,
             dims,
@@ -63,7 +66,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         # Attributes initialized during fit.
         self.train_loader_ = None
         self.val_loader_ = None
-        self.exp_h = None
+        self.exp_h: Optional["ExpH"] = None
         self.prev_best_loss = None
         self.radius_history = None
         self.loss_history = None
@@ -86,7 +89,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             f"current input is size {S.size()}."
         )
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
-            self.args,
+            self.hyperparameters,
             S,
             datasets.UnknownTruncationNormalDataset,
         )
@@ -112,16 +115,16 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.loss_history = []
         # Initialize radius and parameters
         self._calc_emp_model()
-        self.radius = self.args.min_radius
+        self.radius = self.hyperparameters.min_radius
 
         phase = 0
-        while phase < self.args.max_phases:
+        while phase < self.hyperparameters.max_phases:
             phase += 1
             self.logger.info(f"\n{'=' * 60}")
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking
@@ -129,17 +132,27 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             self.radius_history.append(self.radius)
             self.loss_history.append(current_loss)
 
+            # TODO: pstefanou12@ - _reparameterize_canon_form is defined only on
+            # UnknownTruncationMultivariateNormalUnknownCovariance, so these calls
+            # raise AttributeError at runtime. Its body also assumes theta packs
+            # [T.flatten(), v], whereas this class's theta is just v, so the
+            # known-covariance conversion is probably loc = covariance_matrix @ theta.
+            # Needs a decision before it can be written; see the summary.
             self.best_params, self.best_loss = (
-                self._reparameterize_canon_form(self.trainer.best_params),
+                self._reparameterize_canon_form(self.trainer.best_params),  # type: ignore[operator]
                 self.trainer.best_loss,
             )
             self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
             self.final_params, self.final_loss = (
-                self._reparameterize_canon_form(self.trainer.final_params),
+                self._reparameterize_canon_form(self.trainer.final_params),  # type: ignore[operator]
                 self.trainer.final_loss,
             )
-            self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
-            self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
+            self.ema_params = self._reparameterize_canon_form(  # type: ignore[operator]
+                self.trainer.ema_params
+            )
+            self.avg_params = self._reparameterize_canon_form(  # type: ignore[operator]
+                self.trainer.avg_params
+            )
 
             should_stop, reason = self._check_convergence()
 
@@ -156,7 +169,9 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             # Expand radius for next phase
             self.prev_best_loss = current_loss
             old_radius = self.radius
-            self.radius = min(self.radius * self.args.rate, self.args.max_radius)
+            self.radius = min(
+                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
+            )
 
             self.logger.info(
                 f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
@@ -200,7 +215,14 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         """
         # Algorithm hyperparameters.
         self.k = k
-        super().__init__(args, partial(oracle.UnknownGaussian, k), alpha, dims)
+        # TODO: pstefanou12@ - args is a helpers.Parameters, but __init__ has
+        # been dict-only since e3c37f7; port this call with delphi/stats/.
+        super().__init__(
+            args,  # type: ignore[arg-type]
+            partial(oracle.UnknownGaussian, k),
+            alpha,
+            dims,
+        )
 
         self.emp_loc, self.emp_covariance_matrix = None, None
         self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
@@ -208,7 +230,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         # Attributes initialized during fit.
         self.train_loader_ = None
         self.val_loader_ = None
-        self.exp_h = None
+        self.exp_h: Optional["ExpH"] = None
         self.prev_best_loss = None
         self.radius_history = None
         self.loss_history = None
@@ -216,8 +238,8 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.trainer = None
         self.prev_theta = None
         self.prev_loss = None
-        self.emp_T = None  # pylint: disable=invalid-name
-        self.emp_v = None
+        self.emp_T: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
+        self.emp_v: Optional[ch.Tensor] = None
 
     def fit(self, S: ch.Tensor):
         """Fit the model to the observed (truncated) samples S.
@@ -233,7 +255,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             f"current input is size {S.size()}."
         )
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
-            self.args,
+            self.hyperparameters,
             S,
             datasets.UnknownTruncationNormalDataset,
         )
@@ -259,16 +281,16 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.loss_history = []
         # Initialize radius and parameters
         self._calc_emp_model()
-        self.radius = self.args.min_radius
+        self.radius = self.hyperparameters.min_radius
 
         phase = 0
-        while phase < self.args.max_phases:
+        while phase < self.hyperparameters.max_phases:
             phase += 1
             self.logger.info(f"\n{'=' * 60}")
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.args, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking
@@ -303,7 +325,9 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             # Expand radius for next phase
             self.prev_best_loss = current_loss
             old_radius = self.radius
-            self.radius = min(self.radius * self.args.rate, self.args.max_radius)
+            self.radius = min(
+                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
+            )
 
             self.logger.info(
                 f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "

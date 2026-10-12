@@ -72,9 +72,11 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.d, self.k = X.size(1), unique_classes
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
+        self.train_loader, self.val_loader = make_train_and_val(
+            self.hyperparameters, X, y
+        )
 
-        self.trainer = Trainer(self, self.args, self.logger)  # pylint: disable=no-value-for-parameter
+        self.trainer = Trainer(self, self.hyperparameters, self.logger)  # pylint: disable=no-value-for-parameter
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self

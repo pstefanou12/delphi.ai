@@ -23,6 +23,7 @@ seed = 69
 
 # left truncated linear regression with known variance - 1 dimension
 def test_known_truncated_regression_one_dimension_no_intercept():
+    ch.manual_seed(seed)
     NUM_SAMPLES = 1000
     # generate ground truth
     NOISE_VAR = ch.ones(1, 1)
@@ -83,6 +84,7 @@ def test_known_truncated_regression_one_dimension_no_intercept():
 
 # left truncated linear regression with known variance - 1 dimension
 def test_known_truncated_regression_one_dimension():
+    ch.manual_seed(seed)
     NUM_SAMPLES = 5000
     # generate ground truth
     NOISE_VAR = ch.ones(1, 1)
@@ -143,6 +145,7 @@ def test_known_truncated_regression_one_dimension():
 
 # left truncated linear regression with known variance - 20 dimensions
 def test_known_truncated_regression_higher_dimensions():
+    ch.manual_seed(seed)
     D = 20
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -211,6 +214,7 @@ def test_known_truncated_regression_higher_dimensions():
 
 # left truncated regression with unknown noise variance in one dimension - no intercept
 def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
+    ch.manual_seed(seed)
     D = 1
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -285,6 +289,7 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
 
 # left truncated regression with unknown noise variance in one dimension
 def test_unknown_variance_truncated_regression_one_dimension():
+    ch.manual_seed(seed)
     D = 1
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -372,6 +377,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
 
 # left truncated regression with unknown noise variance in one dimension with noise variance 3
 def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
+    ch.manual_seed(seed)
     D = 1
     NUM_SAMPLES = 3000
     # generate ground truth
@@ -452,6 +458,7 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
 
 
 def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
+    ch.manual_seed(seed)
     D = 10
     NUM_SAMPLES = 20000
     # generate ground truth
@@ -524,6 +531,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
 
 # left truncated regression with unknown noise variance in ten dimensions
 def test_unknown_variance_truncated_regression_ten_dimensions():
+    ch.manual_seed(seed)
     D = 10
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -600,6 +608,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
 
 # left truncated regression with unknown noise variance in ten dimensions
 def test_unknown_variance_truncated_regression_fifty_dimensions():
+    ch.manual_seed(seed)
     D = 50
     NUM_SAMPLES = 100000
     # generate ground truth
@@ -682,6 +691,7 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
 
 
 def test_truncated_lasso_regression_one_dimension_no_intercept():
+    ch.manual_seed(seed)
     L1 = 0.1
     NUM_SAMPLES = 1000
     # generate ground truth
@@ -748,6 +758,7 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
 
 
 def test_truncated_lasso_regression_one_dimension():
+    ch.manual_seed(seed)
     L1 = 0.1
     NUM_SAMPLES = 1000
     # generate ground truth
@@ -831,6 +842,7 @@ def test_truncated_lasso_regression_one_dimension():
 
 
 def test_truncated_lasso_regression_ten_dimensions():
+    ch.manual_seed(seed)
     L1 = 0.1
     NUM_SAMPLES = 10000
     D = 10
@@ -915,6 +927,7 @@ def test_truncated_lasso_regression_ten_dimensions():
 
 
 def test_truncated_dependent_regression():
+    ch.manual_seed(seed)
     D = 10  # number of dimensions for A_{*} matrix
     T = 10000  # uncensored system trajectory length
 

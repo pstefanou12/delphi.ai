@@ -1,31 +1,9 @@
 # Author: pstefanou12@
 """Pydantic configuration models for delphi.ai algorithms."""
 
+from typing import TypeVar
+
 import pydantic
-
-
-def make_config(
-    args: dict | pydantic.BaseModel, config_class: type[pydantic.BaseModel]
-) -> pydantic.BaseModel:
-    """Construct a Pydantic config from a dict or return an existing config.
-
-    Args:
-        args: Hyperparameter dict or an existing Pydantic config.
-        config_class: Target config class to instantiate when args is a dict.
-
-    Returns:
-        A fully validated instance of config_class.
-
-    Raises:
-        TypeError: If args is neither a dict nor a Pydantic BaseModel.
-    """
-    if isinstance(args, config_class):
-        return args
-    if isinstance(args, dict):
-        return config_class(**args)
-    raise TypeError(
-        f"args must be a {config_class.__name__} or dict, got {type(args).__name__}."
-    )
 
 
 class TrainerConfig(pydantic.BaseModel):
@@ -81,6 +59,9 @@ class TrainerConfig(pydantic.BaseModel):
     record_params_every: int = pydantic.Field(default=0, ge=0)
     checkpoint_dir: str | None = None
     checkpoint_every: int = pydantic.Field(default=0, ge=0)
+
+
+_ConfigT = TypeVar("_ConfigT", bound=TrainerConfig)
 
 
 class OptimizerConfig(pydantic.BaseModel):

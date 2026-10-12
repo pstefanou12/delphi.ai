@@ -121,7 +121,7 @@ def test_truncated_normal():
         "tol": 1e-3,
         "val_interval": 100,
     }
-    truncated = truncated_normal.TruncatedNormal(args, phi_std_norm, alpha, 1)
+    truncated = truncated_normal.TruncatedNormal(args, phi_std_norm, alpha)
     truncated.fit(S_std_norm)
 
     best_loc = truncated.best_loc_ * emp_scale + emp_loc

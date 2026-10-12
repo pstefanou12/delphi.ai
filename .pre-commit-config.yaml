@@ -1,22 +1,37 @@
-default_language_version:
-  python: python3.12
+# Author: pstefanou12@
+# Every hook delegates to a just recipe, which in turn goes through poetry.
+# This keeps the pre-push gate byte-identical to `just check` and to CI, and
+# avoids a second, separately-pinned copy of the linters.
 
 default_stages: [pre-push]
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.0
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
   - repo: local
     hooks:
-      - id: pylint
-        name: pylint
-        entry: pylint
+      - id: fmt-check
+        name: just fmt-check
+        entry: just fmt-check
         language: system
         pass_filenames: false
         always_run: true
-        args: [--errors-only, delphi/, tests/]
+
+      - id: lint-check
+        name: just lint-check
+        entry: just lint-check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: pylint
+        name: just pylint
+        entry: just pylint
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: typecheck
+        name: just typecheck
+        entry: just typecheck
+        language: system
+        pass_filenames: false
+        always_run: true

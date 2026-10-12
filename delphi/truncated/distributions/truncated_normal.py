@@ -4,7 +4,6 @@
 from collections.abc import Callable
 
 from delphi.truncated.distributions import truncated_multivariate_normal
-from delphi.utils import configs
 
 
 class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal):
@@ -12,20 +11,18 @@ class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal)
 
     def __init__(
         self,
-        args: dict | configs.TruncatedMultivariateNormalConfig,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
-        sampler: Callable = None,
     ):
         """Initialize TruncatedNormal.
 
         Args:
-            args: Hyperparameter dict or Pydantic config.
+            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
-            sampler: Optional sampler override.
         """
-        super().__init__(args, phi, alpha, 1, sampler)
+        super().__init__(hyperparameters, phi, alpha, 1)
 
     @property
     def best_variance_(self):
