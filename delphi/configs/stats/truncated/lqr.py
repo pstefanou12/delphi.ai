@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pydantic
 
-from delphi.configs.linear import TruncatedLinearModelConfig
+from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 
 
 class TruncatedLQRConfig(TruncatedLinearModelConfig):

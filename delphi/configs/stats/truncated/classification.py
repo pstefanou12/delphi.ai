@@ -5,7 +5,7 @@ from typing import Optional
 
 import pydantic
 
-from delphi.configs.linear import LinearModelConfig, TruncatedLinearModelConfig
+from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 
 
 class TruncatedClassificationConfig(TruncatedLinearModelConfig):
@@ -45,15 +45,3 @@ class TruncatedProbitRegressionConfig(TruncatedClassificationConfig):
     """
 
     tol: float = pydantic.Field(default=1e-3, ge=0.0)
-
-
-class SoftmaxRegressionConfig(LinearModelConfig):
-    """Configuration for truncated softmax (multinomial) regression.
-
-    Attributes:
-        num_samples: Monte Carlo samples drawn per criterion evaluation.
-        multi_class: Multiclass strategy used for the empirical initialization.
-    """
-
-    num_samples: int = pydantic.Field(default=1000, ge=1)
-    multi_class: str = "ovr"

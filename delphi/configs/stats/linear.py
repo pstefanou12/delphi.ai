@@ -1,9 +1,5 @@
 # Author: pstefanou12@
-"""Base configuration models for the delphi.stats linear models.
-
-``LinearModelConfig`` covers every linear model; the truncated ones add a
-truncation set via ``TruncatedLinearModelConfig``.
-"""
+"""Base configuration model for the delphi.stats linear models."""
 
 import pydantic
 
@@ -32,19 +28,3 @@ class LinearModelConfig(DelphiConfig):
     # key entirely, so the pre-pydantic path got None from
     # Parameters.__getattr__ and failed on "iterations % None".
     record_params_every: int = pydantic.Field(default=1, ge=1)
-
-
-class TruncatedLinearModelConfig(LinearModelConfig):
-    """Shared configuration for the truncated delphi.stats linear models.
-
-    Separate from LinearModelConfig because alpha and c_s describe a
-    truncation set, which an untruncated linear model such as softmax
-    regression does not have.
-
-    Attributes:
-        alpha: Survival probability lower bound of the truncation set.
-        c_s: Scaling constant for the dependent-data survival threshold.
-    """
-
-    alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
-    c_s: float = pydantic.Field(default=10.0, gt=0.0)

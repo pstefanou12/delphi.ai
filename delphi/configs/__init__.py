@@ -1,43 +1,25 @@
 # Author: pstefanou12@
 """Pydantic configuration models for delphi.ai algorithms.
 
-Split by concern so no single module has to hold every config: the trainer,
-optimizer, scheduler and dataset groups are separate from the per-estimator
-model configs. Every name is re-exported here, so ``from delphi import
-configs`` followed by ``configs.SomeConfig`` keeps working regardless of which
-submodule a config lives in.
+The framework-level configs are flat; the model configs are nested by domain,
+with truncation as a modifier within each domain. Every name is re-exported
+here, so ``from delphi import configs`` followed by ``configs.SomeConfig``
+keeps working regardless of which submodule a config lives in -- this module
+is the single re-export point, and the subpackage ``__init__`` files are
+deliberately empty.
 """
 
 from delphi.configs.base import DelphiConfig, TrainerConfig, _ConfigT
-from delphi.configs.classification import (
-    SoftmaxRegressionConfig,
-    TruncatedClassificationConfig,
-    TruncatedLogisticRegressionConfig,
-    TruncatedProbitRegressionConfig,
-)
 from delphi.configs.dataset import DatasetConfig
-from delphi.configs.distributions import (
+from delphi.configs.distributions.truncated.exponential_family import (
     TruncatedExponentialFamilyDistributionConfig,
     TruncatedMultivariateNormalConfig,
 )
-from delphi.configs.linear import (
-    LinearModelConfig,
-    TruncatedLinearModelConfig,
-)
-from delphi.configs.lqr import TruncatedLQRConfig
 from delphi.configs.optimizers import (
     AdamConfig,
     LBFGSConfig,
     OptimizerConfig,
     SGDConfig,
-)
-from delphi.configs.regression import (
-    TruncatedElasticNetRegressionConfig,
-    TruncatedLassoRegressionConfig,
-    TruncatedLinearDynamicalSystemConfig,
-    TruncatedRegressionConfig,
-    TruncatedRegressionFieldsConfig,
-    TruncatedRidgeRegressionConfig,
 )
 from delphi.configs.schedulers import (
     CosineLRConfig,
@@ -48,6 +30,23 @@ from delphi.configs.schedulers import (
     PlateauLRConfig,
     StepLRConfig,
     WarmupConfig,
+)
+from delphi.configs.stats.classification import SoftmaxRegressionConfig
+from delphi.configs.stats.linear import LinearModelConfig
+from delphi.configs.stats.truncated.classification import (
+    TruncatedClassificationConfig,
+    TruncatedLogisticRegressionConfig,
+    TruncatedProbitRegressionConfig,
+)
+from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
+from delphi.configs.stats.truncated.lqr import TruncatedLQRConfig
+from delphi.configs.stats.truncated.regression import (
+    TruncatedElasticNetRegressionConfig,
+    TruncatedLassoRegressionConfig,
+    TruncatedLinearDynamicalSystemConfig,
+    TruncatedRegressionConfig,
+    TruncatedRegressionFieldsConfig,
+    TruncatedRidgeRegressionConfig,
 )
 
 __all__ = [
