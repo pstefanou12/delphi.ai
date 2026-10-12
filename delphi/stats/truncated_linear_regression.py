@@ -61,7 +61,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if dependent:
             args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
             super().__init__(args, dependent, logger, emp_weight=emp_weight)
-            setattr(self.args, "lr", (2 / alpha) ** self.args.c_eta)
+            setattr(
+                self.hyperparameters, "lr", (2 / alpha) ** self.hyperparameters.c_eta
+            )
         else:
             args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
             super().__init__(args, dependent, logger, emp_weight=emp_weight)
@@ -86,8 +88,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             self.criterion_params = [
                 self.phi,
                 self.noise_var,
-                self.args.num_samples,
-                self.args.eps,
+                self.hyperparameters.num_samples,
+                self.hyperparameters.eps,
             ]
 
         # Property instance variables.
@@ -127,16 +129,16 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             )
 
         # Add number of samples to args.
-        setattr(self.args, "T", X.size(0))
+        setattr(self.hyperparameters, "T", X.size(0))
         if self.dependent:
             self.criterion_params = [
                 self.phi,
-                self.args.c_gamma,
+                self.hyperparameters.c_gamma,
                 self.alpha,
-                self.args.T,
+                self.hyperparameters.T,
                 self.noise_var,
-                self.args.num_samples,
-                self.args.eps,
+                self.hyperparameters.num_samples,
+                self.hyperparameters.eps,
             ]
 
         k = X.size(1)
@@ -150,8 +152,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
-        self.train_loader, self.val_loader = make_train_and_val(self.args, X, y)
-        self.trainer = Trainer(self, self.args, self.logger)
+        self.train_loader, self.val_loader = make_train_and_val(
+            self.hyperparameters, X, y
+        )
+        self.trainer = Trainer(self, self.hyperparameters, self.logger)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )
@@ -161,7 +165,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.
-        self.radius = self.args.r * self.base_radius
+        self.radius = self.hyperparameters.r * self.base_radius
         # Empirical estimates for the projection set.
         # Generate noise variance radius bounds when variance is unknown.
         if self.noise_var is None:
@@ -176,8 +180,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             self.criterion_params = [
                 self.lambda_,
                 self.phi,
-                self.args.num_samples,
-                self.args.eps,
+                self.hyperparameters.num_samples,
+                self.hyperparameters.eps,
             ]
         else:
             self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
@@ -213,12 +217,12 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     def post_training_hook(self):  # pylint: disable=too-many-branches,attribute-defined-outside-init
         """Process and store results after training completes."""
-        if self.args.r is not None:
-            self.args.r *= self.args.rate
+        if self.hyperparameters.r is not None:
+            self.hyperparameters.r *= self.hyperparameters.rate
         best_params = self.trainer.best_params
         final_params = self.trainer.final_params
-        if self.args.r is not None:
-            self.args.r *= self.args.rate
+        if self.hyperparameters.r is not None:
+            self.hyperparameters.r *= self.hyperparameters.rate
         # Remove model from the computation graph.
         if self.noise_var is None:
             v = self.v.data
@@ -394,9 +398,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     def parameters_(self):
         """Return parameter groups for optimizer."""
-        if self.noise_var is None and self.args.var_lr is not None:
+        if self.noise_var is None and self.hyperparameters.var_lr is not None:
             return [
-                {"params": self.v, "lr": self.args.lr},
-                {"params": self.lambda_, "lr": self.args.var_lr},
+                {"params": self.v, "lr": self.hyperparameters.lr},
+                {"params": self.lambda_, "lr": self.hyperparameters.var_lr},
             ]
         return super().parameters(recurse=True)

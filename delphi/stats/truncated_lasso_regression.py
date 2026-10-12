@@ -62,8 +62,8 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         self.criterion_params = [
             self.phi,
             self.noise_var,
-            self.args.num_samples,
-            self.args.eps,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
         ]
 
     def fit(  # pylint: disable=attribute-defined-outside-init
@@ -114,10 +114,10 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
             X = X / self.beta  # pylint: disable=invalid-name
 
         self.train_loader, self.val_loader = datasets.make_train_and_val(
-            self.args, X, y
+            self.hyperparameters, X, y
         )
 
-        self.trainer = trainer.Trainer(self, self.args, self.logger)
+        self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )
@@ -127,7 +127,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.
-        self.radius = self.args.r * self.base_radius
+        self.radius = self.hyperparameters.r * self.base_radius
         self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self) -> None:
@@ -137,7 +137,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
             fit_intercept=self.fit_intercept, alphas=[self.l1]
         )
         emp_lasso.fit(X, y)
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             lasso_coef_ = ch.from_numpy(
                 np.concatenate([emp_lasso.coef_.flatten(), emp_lasso.intercept_])
             )
@@ -161,8 +161,8 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         """Process and store results after training completes."""
         best_params = self.trainer.best_params
         final_params = self.trainer.final_params
-        if self.args.r is not None:
-            self.args.r *= self.args.rate
+        if self.hyperparameters.r is not None:
+            self.hyperparameters.r *= self.hyperparameters.rate
         if self.fit_intercept:
             self.best_coef = best_params[:, :-1] / self.beta
             self.best_intercept = best_params[:, -1]

@@ -79,7 +79,7 @@ class GumbelCEModel(stats.LinearModel):
 
     def predict(self, x):
         with ch.no_grad():
-            stacked = (x @ self.model.T).repeat(self.args.num_samples, 1, 1)
+            stacked = (x @ self.model.T).repeat(self.hyperparameters.num_samples, 1, 1)
             noised = stacked + G.sample(stacked.size())
             return noised.mean(0).argmax(-1)
 

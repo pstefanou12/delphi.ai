@@ -50,8 +50,8 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
         # Algorithm hyperparameters.
         TRUNC_ELASTIC_NET_DEFAULTS.update(TRAINER_DEFAULTS)
         TRUNC_ELASTIC_NET_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, TRUNC_ELASTIC_NET_DEFAULTS)
-        assert self.args.weight_decay > 0, (
+        self.hyperparameters = check_and_fill_args(args, TRUNC_ELASTIC_NET_DEFAULTS)
+        assert self.hyperparameters.weight_decay > 0, (
             "ridge regression requires l2 coefficient to be nonzero"
         )
 
@@ -78,31 +78,33 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
             f"y is size: {y.size()}. expecting y tensor with size num_samples by 1."
         )
 
-        self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y)  # pylint: disable=attribute-defined-outside-init
+        self.train_loader_, self.val_loader_ = make_train_and_val(
+            self.hyperparameters, X, y
+        )  # pylint: disable=attribute-defined-outside-init
 
-        if self.args.noise_var is None:
+        if self.hyperparameters.noise_var is None:
             self.trunc_elastic_net = ElasticNetUnknownVariance(  # pylint: disable=attribute-defined-outside-init
-                self.args, self.train_loader_
+                self.hyperparameters, self.train_loader_
             )
         else:
             self.trunc_elastic_net = ElasticNetKnownVariance(  # pylint: disable=attribute-defined-outside-init
-                self.args, self.train_loader_
+                self.hyperparameters, self.train_loader_
             )
 
         # Run PGD for parameter estimation.
         trainer = Trainer(  # pylint: disable=no-value-for-parameter
-            self.trunc_elastic_net, self.args, store=self.store
+            self.trunc_elastic_net, self.hyperparameters, store=self.store
         )
         trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
 
         # Assign results from the procedure to instance variables.
         self.coef = self.trunc_elastic_net.model.weight.clone()  # pylint: disable=attribute-defined-outside-init,not-callable
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.intercept = self.trunc_elastic_net.model.bias.clone()  # pylint: disable=attribute-defined-outside-init,not-callable
-        if self.args.noise_var is None:
+        if self.hyperparameters.noise_var is None:
             self.variance = self.trunc_elastic_net.lambda_.clone().inverse()  # pylint: disable=attribute-defined-outside-init
             self.coef *= self.variance
-            if self.args.fit_intercept:
+            if self.hyperparameters.fit_intercept:
                 self.intercept *= self.variance.flatten()
         return self
 
@@ -118,7 +120,7 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
     @property
     def intercept_(self):
         """Regression intercept."""
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             return self.intercept
         warnings.warn("intercept not fit, check args input.")
         return None
@@ -139,12 +141,12 @@ class ElasticNetKnownVariance(TruncatedLinearRegression):  # pylint: disable=too
     def calc_emp_model(self):  # pylint: disable=attribute-defined-outside-init,no-member
         """Calculate empirical elastic net model estimates."""
         self.emp_model = ElasticNet(
-            fit_intercept=self.args.fit_intercept,
-            alpha=self.args.weight_decay,
-            l1_ratio=self.args.l1,
+            fit_intercept=self.hyperparameters.fit_intercept,
+            alpha=self.hyperparameters.weight_decay,
+            l1_ratio=self.hyperparameters.l1,
         ).fit(self.X, self.y.flatten())  # pylint: disable=invalid-name
         self.emp_weight = Tensor(self.emp_model.coef_)[None, ...]
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(
             Tensor(self.emp_model.predict(self.X))[..., None] - self.y, dim=0
@@ -166,12 +168,12 @@ class ElasticNetUnknownVariance(TruncatedLinearRegression):  # pylint: disable=t
     def calc_emp_model(self):  # pylint: disable=attribute-defined-outside-init,no-member
         """Calculate empirical elastic net model estimates."""
         self.emp_model = ElasticNet(
-            fit_intercept=self.args.fit_intercept,
-            alpha=self.args.weight_decay,
-            l1_ratio=self.args.l1,
+            fit_intercept=self.hyperparameters.fit_intercept,
+            alpha=self.hyperparameters.weight_decay,
+            l1_ratio=self.hyperparameters.l1,
         ).fit(self.X, self.y.flatten())  # pylint: disable=invalid-name
         self.emp_weight = Tensor(self.emp_model.coef_)[None, ...]
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(
             Tensor(self.emp_model.predict(self.X))[..., None] - self.y, dim=0

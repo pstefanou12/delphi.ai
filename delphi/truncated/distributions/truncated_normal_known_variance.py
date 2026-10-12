@@ -20,7 +20,7 @@ class TruncatedNormalKnownVariance(
         hyperparameters: dict,
         phi: Callable,
         alpha: float,
-        covariance_matrix: ch.Tensor | None,
+        covariance_matrix: ch.Tensor,
     ):
         """Initialize TruncatedNormalKnownVariance.
 

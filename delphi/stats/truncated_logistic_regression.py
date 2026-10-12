@@ -66,7 +66,11 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
             self.criterion = losses.TruncatedBCE.apply
         else:
             self.criterion = losses.TruncatedCE.apply
-        self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
+        self.criterion_params = [
+            self.phi,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
+        ]
 
     def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
         """
@@ -111,10 +115,10 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
         self.D = X.size(1)  # pylint: disable=invalid-name,attribute-defined-outside-init
 
         self.train_loader, self.val_loader = datasets.make_train_and_val(
-            self.args, X, y
+            self.hyperparameters, X, y
         )  # pylint: disable=attribute-defined-outside-init
 
-        self.trainer = trainer.Trainer(self, self.args, self.logger)  # pylint: disable=attribute-defined-outside-init
+        self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)  # pylint: disable=attribute-defined-outside-init
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self
@@ -141,7 +145,7 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
         """
         # Calculate empirical estimates for the truncated linear model.
         self._calc_emp_model()
-        self.radius = self.args.r * self.base_radius  # pylint: disable=attribute-defined-outside-init
+        self.radius = self.hyperparameters.r * self.base_radius  # pylint: disable=attribute-defined-outside-init
 
     def forward(self, X):  # pylint: disable=invalid-name
         """Compute logit predictions for input features X."""
@@ -152,7 +156,7 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""
-        self.args.r *= self.args.rate
+        self.hyperparameters.r *= self.hyperparameters.rate
         best_params = self.trainer.best_params.reshape(self.weight.size())
         final_params = self.trainer.final_params.reshape(self.weight.size())
         if self.fit_intercept:

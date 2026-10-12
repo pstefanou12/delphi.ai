@@ -4,9 +4,10 @@
 import abc
 import logging
 from collections.abc import Callable
-from typing import Generic
+from typing import Generic, Optional
 
 import torch as ch
+import torch.utils.data
 from torch import nn
 
 from delphi import delphi_logger, trainer
@@ -84,25 +85,25 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.hyperparameters.eps,
         ]
 
-        self.best_params = None
-        self.best_loss = None
-        self.final_params = None
-        self.final_loss = None
-        self.ema_params = None
-        self.avg_params = None
+        self.best_params: Optional[ch.Tensor] = None
+        self.best_loss: Optional[ch.Tensor] = None
+        self.final_params: Optional[ch.Tensor] = None
+        self.final_loss: Optional[ch.Tensor] = None
+        self.ema_params: Optional[ch.Tensor] = None
+        self.avg_params: Optional[ch.Tensor] = None
 
         # Attributes initialized during fit.
-        self.train_loader_ = None
-        self.val_loader_ = None
-        self.prev_best_loss = None
-        self.radius_history = None
-        self.loss_history = None
-        self.radius = None
-        self.trainer = None
-        self.prev_theta = None
-        self.prev_loss = None
-        self.emp_theta = None
-        self.nll_init = None
+        self.train_loader_: Optional[torch.utils.data.DataLoader] = None
+        self.val_loader_: Optional[torch.utils.data.DataLoader] = None
+        self.prev_best_loss: Optional[ch.Tensor] = None
+        self.radius_history: Optional[list[float]] = None
+        self.loss_history: Optional[list[ch.Tensor]] = None
+        self.radius: Optional[float] = None
+        self.trainer: Optional[trainer.Trainer] = None
+        self.prev_theta: Optional[ch.Tensor] = None
+        self.prev_loss: Optional[ch.Tensor] = None
+        self.emp_theta: Optional[ch.Tensor] = None
+        self.nll_init: Optional[ch.Tensor] = None
 
     def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.

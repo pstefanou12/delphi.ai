@@ -1,9 +1,9 @@
 # Author: pstefanou12@
 """Parent class for models to train in the delphi trainer."""
 
-from collections.abc import Callable
 import random
-from typing import ClassVar, Generic
+from collections.abc import Callable
+from typing import ClassVar, Generic, Optional, TypeVar, cast
 
 import numpy as np
 import torch as ch
@@ -11,6 +11,9 @@ import torch.optim
 import torch.optim.lr_scheduler
 
 from delphi.utils import configs, constants, helpers
+
+
+_T = TypeVar("_T")
 
 
 class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
@@ -132,7 +135,24 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Return the lowercase optimizer type string from hyperparameters."""
         return getattr(self.hyperparameters, "optimizer", "sgd").lower()
 
-    def _get_arg(self, name: str, default: object) -> object:
+    @property
+    def required_optimizer(self) -> torch.optim.Optimizer:
+        """Return the optimizer, which must already have been created.
+
+        Returns:
+            The optimizer built by ``make_optimizer_and_schedule``.
+
+        Raises:
+            RuntimeError: If the optimizer has not been created yet.
+        """
+        if self.optimizer is None:
+            raise RuntimeError(
+                "optimizer has not been created; "
+                "make_optimizer_and_schedule must run before training."
+            )
+        return self.optimizer
+
+    def _get_arg(self, name: str, default: _T) -> _T:
         """Return the attribute ``name`` from ``self.hyperparameters`` if present and not ``None``, else ``default``."""
         val = getattr(self.hyperparameters, name, None)
         return val if val is not None else default
@@ -238,27 +258,32 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         )
         if warmup_steps > 0 and not is_plateau:
             warmup = torch.optim.lr_scheduler.LinearLR(
-                self.optimizer,
+                self.required_optimizer,
                 start_factor=1e-8,
                 end_factor=1.0,
                 total_iters=warmup_steps,
             )
             return torch.optim.lr_scheduler.SequentialLR(
-                self.optimizer,
+                self.required_optimizer,
                 schedulers=[warmup, base_schedule],
                 milestones=[warmup_steps],
             )
 
         return base_schedule
 
-    def _get_scheduler_type(self) -> str | None:
-        """Return the lowercase scheduler type string from hyperparameters, or None."""
-        if (
-            hasattr(self.hyperparameters, "scheduler")
-            and self.hyperparameters.scheduler
-        ):
-            return self.hyperparameters.scheduler.lower()
-        return None
+    def _get_scheduler_type(self) -> Optional[constants.SchedulerType]:
+        """Return the configured scheduler type, or None when no scheduler is set.
+
+        Raises:
+            ValueError: If the configured name is not a known scheduler.
+        """
+        scheduler = getattr(self.hyperparameters, "scheduler", None)
+        if not scheduler:
+            return None
+        try:
+            return constants.SchedulerType(str(scheduler).lower())
+        except ValueError:
+            raise ValueError(f"Unsupported scheduler: {scheduler}") from None
 
     def _create_cyclic_scheduler(self) -> torch.optim.lr_scheduler.CyclicLR:
         """Create a cyclic LR scheduler.
@@ -336,10 +361,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
     ) -> torch.optim.lr_scheduler.ExponentialLR:
         """Create an exponential LR scheduler."""
         assert self.optimizer is not None
-        config = {
-            "gamma": getattr(self.hyperparameters, "gamma", 0.95),
-        }
-        return torch.optim.lr_scheduler.ExponentialLR(self.optimizer, **config)
+        gamma = float(self._get_arg("gamma", 0.95))
+        return torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=gamma)
 
     def _create_plateau_scheduler(
         self,
@@ -395,6 +418,47 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         if constants.PythonFrameworks.PYTORCH in random_states:
             ch.set_rng_state(random_states[constants.PythonFrameworks.PYTORCH])
 
+    def validate_before_training(self) -> None:
+        """Validate that the model is ready to train.
+
+        Called by the trainer after ``make_optimizer_and_schedule`` and before
+        the training loop begins.  Override this method for models with more
+        complex setups (e.g. multi-optimizer models that populate
+        ``self.optimizers`` instead of ``self.optimizer``) to perform
+        custom readiness checks.
+
+        Raises:
+            RuntimeError: If neither ``self.optimizer`` nor ``self.optimizers``
+                is set.
+        """
+        if self.optimizer is None and not self.optimizers:
+            raise RuntimeError(
+                f"{self} has no optimizer. Ensure make_optimizer_and_schedule "
+                "sets self.optimizer or populates self.optimizers."
+            )
+
+    def optimizer_step(self, closure: Callable | None = None) -> ch.Tensor | None:
+        """Perform the optimizer step.
+
+        The default implementation calls ``self.optimizer.step()``.  Override
+        this method for models with more complex update rules (e.g. GANs or
+        actor-critic models that need to step multiple optimizers per update).
+        ``validate_before_training`` guarantees ``self.optimizer`` is set
+        before this method is called during training.
+
+        Args:
+            closure: Optional closure for line-search optimizers (e.g. L-BFGS).
+
+        Returns:
+            Loss evaluated by the closure, or None.
+        """
+        optimizer = cast(torch.optim.Optimizer, self.optimizer)
+        if closure is not None:
+            # torch stubs type step() as returning float, but line-search
+            # optimizers return whatever the closure returns (a Tensor here).
+            return optimizer.step(closure)  # type: ignore[return-value]
+        return optimizer.step()  # type: ignore[return-value]
+
     def pretrain_hook(self) -> None:
         """Hook called before the training procedure begins."""
 
@@ -437,6 +501,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
         """
+        if self.criterion is None:
+            raise RuntimeError("criterion has not been set on this model.")
         inp, targ = batch
         pred = self(inp)
         pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)

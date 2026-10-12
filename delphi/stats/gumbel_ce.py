@@ -36,7 +36,7 @@ class GumbelCEModel(LinearModel):  # pylint: disable=abstract-method
 
     def predict(self, x):
         """Make class predictions using trained model."""
-        stacked = (x @ self.model).repeat(self.args.num_samples, 1, 1)
+        stacked = (x @ self.model).repeat(self.hyperparameters.num_samples, 1, 1)
         noised = stacked + G.sample(stacked.size())
         return noised.mean(0).argmax(-1)
 

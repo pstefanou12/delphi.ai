@@ -6,12 +6,12 @@ import os
 import random
 from collections.abc import Iterable
 from time import time
+from typing import Any, Union
 
 import numpy as np
 import torch as ch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
-from pydantic import BaseModel
 from tqdm import tqdm
 from cox.store import Store
 
@@ -27,19 +27,22 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     """Trainer class for fitting delphi models using iterative optimization."""
 
     def __init__(
-        self, model: delphi, args: dict | BaseModel, logger: delphiLogger, store=None
+        self,
+        model: delphi,
+        hyperparameters: TrainerConfig,
+        logger: delphiLogger,
+        store=None,
     ):
         """Initialize the Trainer.
 
         Args:
             model: The delphi model to train.
-            args: Hyperparameter dict or Pydantic config. A dict is converted
-                to a TrainerConfig with defaults applied.
+            hyperparameters: Validated TrainerConfig instance.
             logger: Logger instance for training diagnostics.
             store: Optional cox store for experiment logging.
         """
         self.model: delphi = model
-        self.args: BaseModel = TrainerConfig(**args) if isinstance(args, dict) else args
+        self.hyperparameters: TrainerConfig = hyperparameters
         self.logger: delphiLogger = logger
         self.store: Store | None = store
 
@@ -56,7 +59,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.grad_norms: list[float] = []
         self._ema_params: ch.Tensor | None = None
 
-        self.t_start: float | None = None
+        self.t_start: float = 0.0
         self.t_end: float | None = None
         self.procedure_duration: float | None = None
         self._best_loss_index: int | None = None
@@ -87,12 +90,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
 
         def closure():
-            self.model.optimizer.zero_grad()
+            self.model.required_optimizer.zero_grad()
             loss = self._forward_loss(batch)
             loss.backward()
-            if self.args.max_grad_norm is not None:
+            if self.hyperparameters.max_grad_norm is not None:
                 ch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.args.max_grad_norm
+                    self.model.parameters(), self.hyperparameters.max_grad_norm
                 )
             return loss
 
@@ -134,12 +137,12 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self._last_grad_norm = self._compute_grad_norm()
 
         # Skip full parameter-vector operations for large models.
-        if self.args.record_params_every == 0:
+        if self.hyperparameters.record_params_every == 0:
             return
 
         self.grad_norms.append(self._last_grad_norm)
 
-        if self.iterations % self.args.record_params_every == 0:
+        if self.iterations % self.hyperparameters.record_params_every == 0:
             param_vec = ch.nn.utils.parameters_to_vector(
                 [p.contiguous() for p in self.model.parameters() if p.requires_grad]
             ).detach()
@@ -148,22 +151,22 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self._ema_params = param_vec
             else:
                 self._ema_params = (
-                    self.args.ema_decay * self._ema_params
-                    + (1 - self.args.ema_decay) * param_vec
+                    self.hyperparameters.ema_decay * self._ema_params
+                    + (1 - self.hyperparameters.ema_decay) * param_vec
                 )
 
     def _optimizer_step(self) -> None:
         """Perform the optimizer step, handling AMP and grad clipping."""
-        if self.args.use_amp and self.scaler is not None:
-            if self.args.max_grad_norm is not None:
-                self.scaler.unscale_(self.model.optimizer)
+        if self.hyperparameters.use_amp and self.scaler is not None:
+            if self.hyperparameters.max_grad_norm is not None:
+                self.scaler.unscale_(self.model.required_optimizer)
                 ch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.args.max_grad_norm
+                    self.model.parameters(), self.hyperparameters.max_grad_norm
                 )
-            self.scaler.step(self.model.optimizer)
+            self.scaler.step(self.model.required_optimizer)
             self.scaler.update()
         else:
-            self.model.optimizer.step()
+            self.model.required_optimizer.step()
 
     def _schedule_step(self) -> None:
         """Step the LR scheduler after each optimizer update.
@@ -196,15 +199,15 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self.iterations += 1
             return loss
 
-        accum = self.args.accumulate_grad_batches
+        accum = self.hyperparameters.accumulate_grad_batches
 
         # --- AMP / accumulation path ---
-        if self.args.use_amp or accum > 1:
+        if self.hyperparameters.use_amp or accum > 1:
             if self._accum_step == 0:
-                self.model.optimizer.zero_grad()
+                self.model.required_optimizer.zero_grad()
 
-            if self.args.use_amp and self.scaler is not None:
-                with ch.autocast(device_type=self.args.device):
+            if self.hyperparameters.use_amp and self.scaler is not None:
+                with ch.autocast(device_type=self.hyperparameters.device):
                     loss = self._forward_loss(batch)
                 self.scaler.scale(loss / accum).backward()
             else:
@@ -222,7 +225,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             return loss
 
         # --- Standard path (closure, LBFGS-compatible) ---
-        loss = self.model.optimizer.step(self.make_closure(batch))
+        loss = self.model.required_optimizer.step(self.make_closure(batch))
         self._schedule_step()
         self._record_step(loss)
         self.iterations += 1
@@ -309,8 +312,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if (
             not self.model.training
             or val_loader is None
-            or self.args.val_interval is None
-            or self.iterations % self.args.val_interval != 0
+            or self.hyperparameters.val_interval is None
+            or self.iterations % self.hyperparameters.val_interval != 0
         ):
             return
         self.model.eval()
@@ -338,9 +341,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         Returns:
             Loss tensor from the final batch.
         """
-        iterator = (
+        iterator: Any = (
             tqdm(enumerate(loader), total=len(loader), leave=False)
-            if self.args.tqdm
+            if self.hyperparameters.tqdm
             else enumerate(loader)
         )
         loss = ch.zeros(1)
@@ -358,7 +361,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
             self._validate(val_loader)
 
-            if self.args.tqdm:
+            if self.hyperparameters.tqdm:
                 iterator.set_description(
                     self.model.description(mode, self.epoch, batch_idx, loss_)
                 )
@@ -433,14 +436,17 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             Tuple of (bool, StopReason | None) where the second element
             is the stop reason.
         """
-        if self.args.iterations is not None and self.iterations >= self.args.iterations:
+        if (
+            self.hyperparameters.iterations is not None
+            and self.iterations >= self.hyperparameters.iterations
+        ):
             return True, StopReason.MAX_ITERATIONS
 
-        if self.args.early_stopping and self.args.grad_tol > 0:
-            window = max(1, self.args.grad_tol_window)
+        if self.hyperparameters.early_stopping and self.hyperparameters.grad_tol > 0:
+            window = max(1, self.hyperparameters.grad_tol_window)
             if len(self.grad_norms) >= window:
                 smoothed = sum(self.grad_norms[-window:]) / window
-                if smoothed < self.args.grad_tol:
+                if smoothed < self.hyperparameters.grad_tol:
                     return True, StopReason.GRAD_TOL
 
         model_stop, _ = self.model.should_stop()
@@ -458,16 +464,19 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         Returns:
             True if a stop criterion was met.
         """
-        if not self.args.early_stopping:
+        if not self.hyperparameters.early_stopping:
             return False
 
-        if self.args.loss_tol is not None and len(self.epoch_train_losses) > 1:
+        if (
+            self.hyperparameters.loss_tol is not None
+            and len(self.epoch_train_losses) > 1
+        ):
             delta = abs(self.epoch_train_losses[-1] - self.epoch_train_losses[-2])
-            if delta < self.args.loss_tol:
+            if delta < self.hyperparameters.loss_tol:
                 self.stop_reason = StopReason.LOSS_TOL
                 return True
 
-        patience = self.args.patience
+        patience = self.hyperparameters.patience
         if patience is not None and len(self.epoch_val_losses) > patience:
             recent = self.epoch_val_losses[-patience - 1 :]
             if recent[-1] > min(recent[:-1]):
@@ -498,7 +507,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         to ``store.path`` when a cox store is attached to the trainer.
         The caller is responsible for ensuring the directory exists.
         """
-        configured = getattr(self.args, "checkpoint_dir", None)
+        configured = getattr(self.hyperparameters, "checkpoint_dir", None)
         if configured is not None:
             return configured
         if self.store is not None and hasattr(self.store, "path"):
@@ -521,7 +530,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self._best_model_state = ckpt_path
             return
 
-        if self.args.record_params_every > 0:
+        if self.hyperparameters.record_params_every > 0:
             self._best_model_state = copy.deepcopy(self.model.state_dict())
             return
 
@@ -622,7 +631,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         row.update({f"val_{k}": float(v) for k, v in val_metrics.items()})
         store[consts.LOGS_TABLE].append_row(row)
 
-    def update_best(self, loss: ch.Tensor) -> None:
+    def update_best(self, loss: Union[ch.Tensor, float]) -> None:
         """Update the best-loss index and save model weights if loss is new minimum."""
         loss_val = loss.item() if isinstance(loss, ch.Tensor) else float(loss)
         best_val = self.best_loss.item() if self.best_loss is not None else None
@@ -717,7 +726,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
         if train_loader is not None:
             try:
-                if len(train_loader.dataset) == 0:
+                if len(train_loader.dataset) == 0:  # type: ignore[arg-type]
                     raise ValueError("No datapoints in train loader.")
             except TypeError:
                 pass  # IterableDataset does not support len().
@@ -726,15 +735,15 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             # Metadata table captures hyperparameter config; the logs table
             # is created lazily in _log_epoch after the first epoch so its
             # schema can include model-specific metric columns.
-            setup_store_with_metadata(self.args, store)
+            setup_store_with_metadata(self.hyperparameters, store)
 
         self._set_rand_seed(rand_seed)
 
         # Move model to the configured device.
-        self.model.to(self.args.device)
+        self.model.to(self.hyperparameters.device)
 
         # Initialise mixed-precision scaler.
-        if self.args.use_amp:
+        if self.hyperparameters.use_amp:
             self.scaler = ch.cuda.amp.GradScaler()
 
         self.t_start = time()
@@ -743,19 +752,19 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         # Record dataset size for algorithms that need it (e.g. mini-batch ELBO).
         if train_loader is not None:
             try:
-                self.dataset_size = len(train_loader.dataset)
+                self.dataset_size = len(train_loader.dataset)  # type: ignore[arg-type]
             except TypeError:
                 self.dataset_size = None  # IterableDataset has no len().
 
         self.model.make_optimizer_and_schedule(checkpoint)
         self.logger.info(
-            f"training: {self.model} with the following config:\n {self.args}"
+            f"training: {self.model} with the following config:\n {self.hyperparameters}"
         )
 
         if (
-            self.args.early_stopping
-            and self.args.grad_tol > 0
-            and self.args.record_params_every == 0
+            self.hyperparameters.early_stopping
+            and self.hyperparameters.grad_tol > 0
+            and self.hyperparameters.record_params_every == 0
         ):
             self.logger.warning(
                 "grad_tol is set but record_params_every=0: grad norms are not "
@@ -792,8 +801,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self._log_epoch(store, train_loss, val_loss, train_metrics, val_metrics)
 
             if (
-                self.args.checkpoint_every > 0
-                and self.epoch % self.args.checkpoint_every == 0
+                self.hyperparameters.checkpoint_every > 0
+                and self.epoch % self.hyperparameters.checkpoint_every == 0
             ):
                 self._save_periodic_checkpoint()
 
@@ -806,7 +815,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-            if self.args.epochs is not None and self.epoch == self.args.epochs:
+            if (
+                self.hyperparameters.epochs is not None
+                and self.epoch == self.hyperparameters.epochs
+            ):
                 self.stop_reason = StopReason.MAX_EPOCHS
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
@@ -816,16 +828,27 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
+        # These four attributes are accumulated as lists while training runs and
+        # are replaced here by the stacked tensors callers read afterwards.
+        # TODO: pstefanou12@ - give the stacked results their own attributes so
+        # the declared types stop changing shape partway through the object's
+        # life, and drop these suppressions.
         self.train_losses = (
-            ch.stack(self.train_losses) if self.train_losses else ch.tensor([])
+            ch.stack(self.train_losses)  # type: ignore[assignment]
+            if self.train_losses
+            else ch.tensor([])
         )
         self.val_losses = (
-            ch.stack(self.val_losses) if self.val_losses else ch.tensor([])
+            ch.stack(self.val_losses)  # type: ignore[assignment]
+            if self.val_losses
+            else ch.tensor([])
         )
         self.param_history = (
-            ch.stack(self.param_history) if self.param_history else ch.empty(0)
+            ch.stack(self.param_history)  # type: ignore[assignment]
+            if self.param_history
+            else ch.empty(0)
         )
-        self.grad_norms = ch.tensor(self.grad_norms)
+        self.grad_norms = ch.tensor(self.grad_norms)  # type: ignore[assignment]
 
         self.model.post_training_hook()
 

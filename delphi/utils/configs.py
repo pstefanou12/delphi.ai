@@ -5,8 +5,6 @@ from typing import TypeVar
 
 import pydantic
 
-_ConfigT = TypeVar("_ConfigT", bound=pydantic.BaseModel)
-
 
 class TrainerConfig(pydantic.BaseModel):
     """Configuration for the Trainer.
@@ -61,6 +59,9 @@ class TrainerConfig(pydantic.BaseModel):
     record_params_every: int = pydantic.Field(default=0, ge=0)
     checkpoint_dir: str | None = None
     checkpoint_every: int = pydantic.Field(default=0, ge=0)
+
+
+_ConfigT = TypeVar("_ConfigT", bound=TrainerConfig)
 
 
 class OptimizerConfig(pydantic.BaseModel):

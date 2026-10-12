@@ -32,6 +32,6 @@ class LinearModel(delphi):  # pylint: disable=abstract-method
         self.base_radius = 2.0
         self.dependent = dependent
         if self.dependent:
-            self.s = self.args.c_s * (  # pylint: disable=invalid-name
-                ch.sqrt(ch.log(Tensor([1 / self.args.alpha]))) + 1
+            self.s = self.hyperparameters.c_s * (  # pylint: disable=invalid-name
+                ch.sqrt(ch.log(Tensor([1 / self.hyperparameters.alpha]))) + 1
             )

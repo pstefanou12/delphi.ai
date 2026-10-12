@@ -29,7 +29,7 @@ class TruncatedMultivariateNormalKnownCovariance(
         phi: Callable,
         alpha: float,
         dims: int,
-        covariance_matrix: ch.Tensor | None,
+        covariance_matrix: ch.Tensor,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedMultivariateNormalKnownCovariance.
 

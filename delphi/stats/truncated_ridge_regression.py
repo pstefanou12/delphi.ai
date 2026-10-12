@@ -48,8 +48,8 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
         trunc_ridge_defaults = {**TRUNC_REG_DEFAULTS}
         trunc_ridge_defaults.update(TRAINER_DEFAULTS)
         trunc_ridge_defaults.update(DELPHI_DEFAULTS)
-        self.args = check_and_fill_args(args, trunc_ridge_defaults)
-        assert self.args.weight_decay > 0, (
+        self.hyperparameters = check_and_fill_args(args, trunc_ridge_defaults)
+        assert self.hyperparameters.weight_decay > 0, (
             "ridge regression requires l2 coefficient to be nonzero"
         )
 
@@ -80,27 +80,33 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
             f"y is size: {y.size()}. expecting y tensor with size num_samples by 1."
         )
 
-        self.train_loader_, self.val_loader_ = make_train_and_val(self.args, X, y)
+        self.train_loader_, self.val_loader_ = make_train_and_val(
+            self.hyperparameters, X, y
+        )
 
-        if self.args.noise_var is None:
-            self.trunc_ridge = RidgeUnknownVariance(self.args, self.train_loader_)
+        if self.hyperparameters.noise_var is None:
+            self.trunc_ridge = RidgeUnknownVariance(
+                self.hyperparameters, self.train_loader_
+            )
         else:
-            self.trunc_ridge = RidgeKnownVariance(self.args, self.train_loader_)
+            self.trunc_ridge = RidgeKnownVariance(
+                self.hyperparameters, self.train_loader_
+            )
 
         # Run PGD for parameter estimation.
         trainer = Trainer(  # pylint: disable=no-value-for-parameter
-            self.trunc_ridge, self.args, store=self.store
+            self.trunc_ridge, self.hyperparameters, store=self.store
         )
         trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
 
         # Assign results from the procedure to instance variables.
         self.coef = self.trunc_ridge.model.weight.clone()  # pylint: disable=not-callable
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.intercept = self.trunc_ridge.model.bias.clone()  # pylint: disable=not-callable
-        if self.args.noise_var is None:
+        if self.hyperparameters.noise_var is None:
             self.variance = self.trunc_ridge.lambda_.clone().inverse()
             self.coef *= self.variance
-            if self.args.fit_intercept:
+            if self.hyperparameters.fit_intercept:
                 self.intercept *= self.variance.flatten()
         return self
 
@@ -116,7 +122,7 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
     @property
     def intercept_(self):
         """Regression intercept."""
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             return self.intercept
         warnings.warn("intercept not fit, check args input.")
         return None
@@ -137,10 +143,11 @@ class RidgeKnownVariance(TruncatedLinearRegression):  # pylint: disable=too-few-
     def calc_emp_model(self):  # pylint: disable=attribute-defined-outside-init,no-member
         """Calculate empirical ridge regression estimates."""
         self.emp_model = Ridge(
-            fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay
+            fit_intercept=self.hyperparameters.fit_intercept,
+            alpha=self.hyperparameters.weight_decay,
         ).fit(self.X, self.y.flatten())  # pylint: disable=invalid-name
         self.emp_weight = Tensor(self.emp_model.coef_)[None, ...]
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(
             Tensor(self.emp_model.predict(self.X))[..., None] - self.y, dim=0
@@ -162,10 +169,11 @@ class RidgeUnknownVariance(TruncatedLinearRegression):  # pylint: disable=too-fe
     def calc_emp_model(self):  # pylint: disable=attribute-defined-outside-init,no-member
         """Calculate empirical ridge regression estimates."""
         self.emp_model = Ridge(
-            fit_intercept=self.args.fit_intercept, alpha=self.args.weight_decay
+            fit_intercept=self.hyperparameters.fit_intercept,
+            alpha=self.hyperparameters.weight_decay,
         ).fit(self.X, self.y.flatten())  # pylint: disable=invalid-name
         self.emp_weight = Tensor(self.emp_model.coef_)[None, ...]
-        if self.args.fit_intercept:
+        if self.hyperparameters.fit_intercept:
             self.emp_bias = Tensor([self.emp_model.intercept_])
         self.emp_var = ch.var(
             Tensor(self.emp_model.predict(self.X))[..., None] - self.y, dim=0

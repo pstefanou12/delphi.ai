@@ -48,7 +48,11 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
         del self.criterion
         del self.criterion_params
         self.criterion = losses.TruncatedProbitMLE.apply
-        self.criterion_params = [self.phi, self.args.num_samples, self.args.eps]
+        self.criterion_params = [
+            self.phi,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
+        ]
 
     def fit(  # pylint: disable=attribute-defined-outside-init,invalid-name
         self, X: ch.Tensor, y: ch.Tensor
@@ -79,10 +83,10 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
             X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
 
         self.train_loader, self.val_loader = datasets.make_train_and_val(
-            self.args, X, y
+            self.hyperparameters, X, y
         )
 
-        self.trainer = trainer.Trainer(self, self.args, self.logger)
+        self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
         # Run PGD for parameter estimation.
         self.trainer.train_model(self.train_loader, self.val_loader)
 
@@ -110,7 +114,7 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Projection set radius.
-        self.radius = self.args.r * (math.sqrt(math.log(1.0 / self.alpha)))
+        self.radius = self.hyperparameters.r * (math.sqrt(math.log(1.0 / self.alpha)))
 
     def forward(self, X):  # pylint: disable=invalid-name
         """Compute linear predictions X @ weight."""
@@ -121,7 +125,7 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""
-        self.args.r *= self.args.rate
+        self.hyperparameters.r *= self.hyperparameters.rate
         best_params = self.trainer.best_params
         final_params = self.trainer.final_params
         if self.fit_intercept:

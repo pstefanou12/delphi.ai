@@ -2,6 +2,7 @@
 """Truncated multivariate normal distribution with oracle access (known truncation set)."""
 
 from collections.abc import Callable
+from typing import Optional
 
 import torch as ch
 from torch import nn
@@ -21,6 +22,11 @@ class TruncatedMultivariateNormal(
         emp_T: Empirical precision matrix component.
         emp_v: Empirical natural mean component.
     """
+
+    # Created with register_parameter() in _calc_emp_model, which mypy
+    # cannot see; declared here so attribute access is typed.
+    T: nn.Parameter  # pylint: disable=invalid-name
+    v: nn.Parameter
 
     dist = multivariate_normal.MultivariateNormal
     defaults = configs.TruncatedMultivariateNormalConfig
@@ -44,8 +50,8 @@ class TruncatedMultivariateNormal(
         self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
 
         # Attributes set during _calc_emp_model.
-        self.emp_T = None  # pylint: disable=invalid-name
-        self.emp_v = None
+        self.emp_T: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
+        self.emp_v: Optional[ch.Tensor] = None
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""

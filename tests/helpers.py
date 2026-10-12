@@ -26,14 +26,14 @@ def generate_truncated_distribution_dataset(
     """
     num_accepted, num_sampled = 0, 0
 
-    S = []
+    accepted: list[ch.Tensor] = []
     while num_accepted < num_samples:
         samples = dist.sample([num_samples])
         indices = phi(samples).nonzero()[:, 0]
-        S.append(samples[indices])
+        accepted.append(samples[indices])
         num_accepted += indices.size(0)
         num_sampled += num_samples
-    S = ch.cat(S)[:num_samples]
+    S = ch.cat(accepted)[:num_samples]
     alpha = num_accepted / num_sampled
 
     return S, alpha
