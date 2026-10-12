@@ -80,6 +80,8 @@ class OptimizerConfig(pydantic.BaseModel):
         differentiable: Enable differentiable optimizer mode.
         fused: Enable fused optimizer implementation when available.
         scheduler: Learning-rate scheduler type; None disables scheduling.
+        constant: Hold the learning rate constant, skipping scheduler
+            creation entirely. Read by delphi._create_scheduler.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore")
@@ -95,6 +97,7 @@ class OptimizerConfig(pydantic.BaseModel):
     differentiable: bool = False
     fused: Optional[bool] = None
     scheduler: Optional[str] = None
+    constant: bool = False
 
 
 _ConfigT = TypeVar("_ConfigT", bound=TrainerConfig)

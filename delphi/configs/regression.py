@@ -26,7 +26,6 @@ class TruncatedRegressionFieldsConfig(LinearModelConfig):
         l1: L1 regularization weight.
         c_gamma: Scaling constant for the gamma bound.
         c_eta: Exponent used to derive the learning rate from alpha.
-        constant: Disable learning-rate scheduling.
     """
 
     # None disables the separate variance learning rate; parameters_() in
@@ -39,7 +38,6 @@ class TruncatedRegressionFieldsConfig(LinearModelConfig):
     l1: float = pydantic.Field(default=0.0, ge=0.0)
     c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
     c_eta: float = pydantic.Field(default=0.5, gt=0.0)
-    constant: bool = False
 
 
 class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
