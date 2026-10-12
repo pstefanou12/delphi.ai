@@ -951,8 +951,13 @@ def test_truncated_dependent_regression():
         "tol": 1e-1,
         "c_gamma": 2.0,
     }
-    trunc_lds = stats.TruncatedLinearRegression(  # pylint: disable=no-value-for-parameter
-        phi, train_kwargs, noise_var=NOISE_VAR, dependent=True, rand_seed=seed
+    trunc_lds = stats.TruncatedLinearRegression(
+        train_kwargs,
+        phi,
+        train_kwargs["alpha"],
+        noise_var=NOISE_VAR,
+        dependent=True,
+        rand_seed=seed,
     )
     trunc_lds.fit(X, Y)
     A_ = trunc_lds.coef_
