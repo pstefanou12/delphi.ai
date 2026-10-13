@@ -72,25 +72,16 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.hyperparameters.lr))
 
-    Each subclass gets its own registry, so registering on one model does not
-    affect its siblings or the base class.
+    A factory registered on ``delphi`` is available to every model; one
+    registered on a subclass applies only to that subclass and its children.
+    Algorithms needing several optimizers at once, such as a GAN, should
+    instead override ``make_optimizer_and_schedule`` to populate
+    ``self.optimizers`` and drive the updates from ``train_batch``.
     """
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
     defaults: type[configs._ConfigT]
-
-    def __init_subclass__(cls, **kwargs):
-        """Give each subclass its own optimizer registry.
-
-        Python calls this when a subclass is defined, at which point
-        ``cls._OPTIMIZER_REGISTRY`` still resolves through the MRO to the
-        parent's dict. Copying it and assigning to ``cls`` shadows the parent,
-        so the subclass inherits whatever was registered when it was defined
-        but its own registrations stay local instead of leaking to siblings.
-        """
-        super().__init_subclass__(**kwargs)
-        cls._OPTIMIZER_REGISTRY = dict(cls._OPTIMIZER_REGISTRY)
 
     def __init__(self, hyperparameters: dict):
         """Initialize the delphi model.
@@ -175,7 +166,31 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 where ``model`` is the ``delphi`` instance and ``params``
                 is the iterable of parameters to optimise.
         """
+        # Write into this class's own registry, creating it on first use, so
+        # the entry does not leak to sibling classes or up to the base.
+        if "_OPTIMIZER_REGISTRY" not in cls.__dict__:
+            cls._OPTIMIZER_REGISTRY = {}
         cls._OPTIMIZER_REGISTRY[name.lower()] = factory
+
+    def _registered_factory(self, name: str) -> Optional[Callable]:
+        """Return the factory registered for name, searching base classes.
+
+        Resolving along the MRO rather than copying at class-definition time
+        means a factory registered on ``delphi`` reaches models defined before
+        the registration -- the usual case in a notebook -- while a factory
+        registered on one model stays with it.
+
+        Args:
+            name: Lowercase optimizer name.
+
+        Returns:
+            The factory, or None if no class in the MRO registered one.
+        """
+        for klass in type(self).__mro__:
+            registry = klass.__dict__.get("_OPTIMIZER_REGISTRY")
+            if registry and name in registry:
+                return registry[name]
+        return None
 
     def _create_optimizer(self, params: list[dict]) -> torch.optim.Optimizer:
         """Create and return the configured optimizer.
@@ -196,8 +211,9 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """
         optimizer_type = self._get_optimizer_type()
 
-        if optimizer_type in self._OPTIMIZER_REGISTRY:
-            return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
+        factory = self._registered_factory(optimizer_type)
+        if factory is not None:
+            return factory(self, params)
 
         if optimizer_type in OPTIMIZER_SECTIONS:
             target, section = OPTIMIZER_SECTIONS[optimizer_type]
