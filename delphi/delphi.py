@@ -16,6 +16,49 @@ from delphi import configs
 from delphi.utils import constants, helpers
 
 
+# Each torch class paired with the config section that names its keyword
+# arguments. Adding an optimizer or scheduler means adding a section and a
+# line here; the keyword mapping lives on the section's fields.
+OPTIMIZER_SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
+    constants.OptimizerType.SGD: (torch.optim.SGD, configs.SGDConfig),
+    constants.OptimizerType.ADAM: (torch.optim.Adam, configs.AdamConfig),
+    constants.OptimizerType.ADAMW: (torch.optim.AdamW, configs.AdamConfig),
+    constants.OptimizerType.LBFGS: (torch.optim.LBFGS, configs.LBFGSConfig),
+}
+SCHEDULER_SECTIONS: dict[
+    constants.SchedulerType, tuple[type, type[pydantic.BaseModel]]
+] = {
+    constants.SchedulerType.STEP: (
+        torch.optim.lr_scheduler.StepLR,
+        configs.StepLRConfig,
+    ),
+    constants.SchedulerType.MULTI_STEP: (
+        torch.optim.lr_scheduler.MultiStepLR,
+        configs.MultiStepLRConfig,
+    ),
+    constants.SchedulerType.EXPONENTIAL: (
+        torch.optim.lr_scheduler.ExponentialLR,
+        configs.ExponentialLRConfig,
+    ),
+    constants.SchedulerType.COSINE: (
+        torch.optim.lr_scheduler.CosineAnnealingLR,
+        configs.CosineLRConfig,
+    ),
+    constants.SchedulerType.LINEAR: (
+        torch.optim.lr_scheduler.LinearLR,
+        configs.LinearLRConfig,
+    ),
+    constants.SchedulerType.CYCLIC: (
+        torch.optim.lr_scheduler.CyclicLR,
+        configs.CyclicLRConfig,
+    ),
+    constants.SchedulerType.REDUCE_ON_PLATEAU: (
+        torch.optim.lr_scheduler.ReduceLROnPlateau,
+        configs.PlateauLRConfig,
+    ),
+}
+
+
 class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
     """Parent/abstract class for models to be passed into the trainer.
 
@@ -29,54 +72,25 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.hyperparameters.lr))
 
-    Note: register_optimizer writes to the class on which it is called.
-    Subclasses that want an isolated registry should shadow _OPTIMIZER_REGISTRY
-    in their own class body before registering.
+    Each subclass gets its own registry, so registering on one model does not
+    affect its siblings or the base class.
     """
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
-    # Each torch class paired with the config section that names its keyword
-    # arguments. Adding an optimizer or scheduler means adding a section and a
-    # line here; the keyword mapping lives on the section's fields.
-    _OPTIMIZER_SECTIONS: ClassVar[dict[str, tuple[type, type]]] = {
-        constants.OptimizerType.SGD: (torch.optim.SGD, configs.SGDConfig),
-        constants.OptimizerType.ADAM: (torch.optim.Adam, configs.AdamConfig),
-        constants.OptimizerType.ADAMW: (torch.optim.AdamW, configs.AdamConfig),
-        constants.OptimizerType.LBFGS: (torch.optim.LBFGS, configs.LBFGSConfig),
-    }
-    _SCHEDULER_SECTIONS: ClassVar[dict[constants.SchedulerType, tuple[type, type]]] = {
-        constants.SchedulerType.STEP: (
-            torch.optim.lr_scheduler.StepLR,
-            configs.StepLRConfig,
-        ),
-        constants.SchedulerType.MULTI_STEP: (
-            torch.optim.lr_scheduler.MultiStepLR,
-            configs.MultiStepLRConfig,
-        ),
-        constants.SchedulerType.EXPONENTIAL: (
-            torch.optim.lr_scheduler.ExponentialLR,
-            configs.ExponentialLRConfig,
-        ),
-        constants.SchedulerType.COSINE: (
-            torch.optim.lr_scheduler.CosineAnnealingLR,
-            configs.CosineLRConfig,
-        ),
-        constants.SchedulerType.LINEAR: (
-            torch.optim.lr_scheduler.LinearLR,
-            configs.LinearLRConfig,
-        ),
-        constants.SchedulerType.CYCLIC: (
-            torch.optim.lr_scheduler.CyclicLR,
-            configs.CyclicLRConfig,
-        ),
-        constants.SchedulerType.REDUCE_ON_PLATEAU: (
-            torch.optim.lr_scheduler.ReduceLROnPlateau,
-            configs.PlateauLRConfig,
-        ),
-    }
-
     defaults: type[configs._ConfigT]
+
+    def __init_subclass__(cls, **kwargs):
+        """Give each subclass its own optimizer registry.
+
+        Python calls this when a subclass is defined, at which point
+        ``cls._OPTIMIZER_REGISTRY`` still resolves through the MRO to the
+        parent's dict. Copying it and assigning to ``cls`` shadows the parent,
+        so the subclass inherits whatever was registered when it was defined
+        but its own registrations stay local instead of leaking to siblings.
+        """
+        super().__init_subclass__(**kwargs)
+        cls._OPTIMIZER_REGISTRY = dict(cls._OPTIMIZER_REGISTRY)
 
     def __init__(self, hyperparameters: dict):
         """Initialize the delphi model.
@@ -164,28 +178,34 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         cls._OPTIMIZER_REGISTRY[name.lower()] = factory
 
     def _create_optimizer(self, params: list[dict]) -> torch.optim.Optimizer:
-        """Create and return the configured optimizer via the registry."""
-        optimizer_type = self._get_optimizer_type()
+        """Create and return the configured optimizer.
 
-        if optimizer_type not in self._OPTIMIZER_REGISTRY:
-            raise ValueError(f"Unsupported optimizer: {optimizer_type}")
-
-        return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
-
-    def _build_optimizer(self, optimizer_type: str, params: list[dict]):
-        """Build a built-in optimizer from its config section.
+        A factory registered via ``register_optimizer`` takes precedence, so a
+        built-in name can be replaced; otherwise the optimizer is built from
+        its entry in ``OPTIMIZER_SECTIONS``.
 
         Args:
-            optimizer_type: Key into ``_OPTIMIZER_SECTIONS``.
             params: Parameter groups to optimise.
 
         Returns:
             The constructed optimizer.
+
+        Raises:
+            ValueError: If the configured name is neither registered nor
+                built in.
         """
-        target, section = self._OPTIMIZER_SECTIONS[optimizer_type]
-        kwargs = self._shared_optimizer_kwargs(target)
-        kwargs.update(self._kwargs_for(section))
-        return target(params, **kwargs)
+        optimizer_type = self._get_optimizer_type()
+
+        if optimizer_type in self._OPTIMIZER_REGISTRY:
+            return self._OPTIMIZER_REGISTRY[optimizer_type](self, params)
+
+        if optimizer_type in OPTIMIZER_SECTIONS:
+            target, section = OPTIMIZER_SECTIONS[optimizer_type]
+            kwargs = self._shared_optimizer_kwargs(target)
+            kwargs.update(self._kwargs_for(section))
+            return target(params, **kwargs)
+
+        raise ValueError(f"Unsupported optimizer: {optimizer_type}")
 
     def _get_optimizer_type(self) -> str:
         """Return the lowercase optimizer type string from hyperparameters."""
@@ -273,7 +293,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         if not scheduler_type:
             return None
 
-        if scheduler_type not in self._SCHEDULER_SECTIONS:
+        if scheduler_type not in SCHEDULER_SECTIONS:
             raise ValueError(f"Unsupported scheduler: {scheduler_type}")
 
         base_schedule = self._build_scheduler(scheduler_type)
@@ -283,12 +303,12 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Build a scheduler from its config section.
 
         Args:
-            scheduler_type: Key into ``_SCHEDULER_SECTIONS``.
+            scheduler_type: Key into ``SCHEDULER_SECTIONS``.
 
         Returns:
             The constructed scheduler.
         """
-        target, section = self._SCHEDULER_SECTIONS[scheduler_type]
+        target, section = SCHEDULER_SECTIONS[scheduler_type]
         kwargs = self._kwargs_for(section)
 
         # The remaining arguments cannot come from a section: two are the
@@ -547,15 +567,3 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             Dict mapping metric names to scalar or float values.
         """
         return {}
-
-
-# Register the built-in optimizers after the class is fully defined. Each is
-# built from its config section rather than a hand-written factory; custom
-# factories registered by subclasses are unaffected.
-for _optimizer_type in delphi._OPTIMIZER_SECTIONS:  # pylint: disable=protected-access
-    delphi.register_optimizer(
-        _optimizer_type,
-        lambda model, params, _type=_optimizer_type: model._build_optimizer(  # pylint: disable=protected-access
-            _type, params
-        ),
-    )
