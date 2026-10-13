@@ -5,7 +5,7 @@ Truncated Linear Regression.
 
 import math
 import warnings
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 import torch as ch
 from torch import nn
@@ -72,13 +72,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         )
         super().__init__(hyperparameters, logger, emp_weight=emp_weight)
         # dependent and s live here rather than on LinearModel: this is the
-        # only estimator that uses them, and they are truncation concepts
-        # resting on alpha and c_s.
+        # only estimator that uses them, and they are truncation concepts.
         self.dependent = dependent
         self.s: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
         if dependent:
-            self.hyperparameters.lr = (2 / alpha) ** self.hyperparameters.c_eta
-            self.s = self.hyperparameters.c_s * (
+            # defaults was set to the dynamical-system config above, so c_s
+            # and c_eta are present; they exist on no other config.
+            lds = cast(
+                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
+            )
+            self.hyperparameters.lr = (2 / alpha) ** lds.c_eta
+            self.s = lds.c_s * (
                 ch.sqrt(ch.log(Tensor([1 / self.hyperparameters.alpha]))) + 1
             )
         self.phi = phi
@@ -161,9 +165,12 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             )
 
         if self.dependent:
+            lds = cast(
+                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
+            )
             self.criterion_params = [
                 self.phi,
-                self.hyperparameters.c_gamma,
+                lds.c_gamma,
                 self.alpha,
                 X.size(0),
                 self.noise_var,

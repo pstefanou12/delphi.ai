@@ -13,6 +13,8 @@ from delphi.configs.base import DelphiConfig, TrainerConfig, _ConfigT
 from delphi.configs.dataset import DatasetConfig
 from delphi.configs.distributions.truncated.exponential_family import (
     TruncatedExponentialFamilyDistributionConfig,
+)
+from delphi.configs.distributions.truncated.multivariate_normal import (
     TruncatedMultivariateNormalConfig,
 )
 from delphi.configs.optimizers import (

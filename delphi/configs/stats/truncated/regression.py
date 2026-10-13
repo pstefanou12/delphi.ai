@@ -25,8 +25,6 @@ class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
         rate: Multiplicative radius expansion factor.
         num_samples: Monte Carlo samples drawn per criterion evaluation.
         l1: L1 regularization weight.
-        c_gamma: Scaling constant for the gamma bound.
-        c_eta: Exponent used to derive the learning rate from alpha.
     """
 
     # None disables the separate variance learning rate; parameters_() in
@@ -37,8 +35,6 @@ class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
     rate: float = pydantic.Field(default=1.5, gt=0.0)
     num_samples: int = pydantic.Field(default=1000, ge=1)
     l1: float = pydantic.Field(default=0.0, ge=0.0)
-    c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
-    c_eta: float = pydantic.Field(default=0.5, gt=0.0)
 
 
 class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
@@ -83,7 +79,21 @@ class TruncatedRidgeRegressionConfig(TruncatedRegressionConfig):
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):
-    """Configuration for truncated linear dynamical systems (TRUNC_LDS_DEFAULTS)."""
+    """Configuration for truncated linear dynamical systems (TRUNC_LDS_DEFAULTS).
+
+    c_s, c_eta and c_gamma live here rather than on a shared parent: each is
+    read only from TruncatedLinearRegression's dependent branches, and
+    TRUNC_LDS_DEFAULTS was the only pre-pydantic spec that declared them.
+
+    Attributes:
+        c_s: Scaling constant for the dependent-data survival threshold.
+        c_eta: Exponent used to derive the learning rate from alpha.
+        c_gamma: Scaling constant for the gamma bound.
+    """
+
+    c_s: float = pydantic.Field(default=10.0, gt=0.0)
+    c_eta: float = pydantic.Field(default=0.5, gt=0.0)
+    c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
 
     # Override parent defaults for dependent data, which is consumed in order.
     num_samples: int = pydantic.Field(default=50, ge=1)
