@@ -19,10 +19,8 @@ import torch
 
 from delphi import configs
 
-# The defaults that were operative before the extraction, taken from the
-# getattr/_get_arg fallbacks in delphi.delphi rather than from the *_DEFAULTS
-# mappings, which were referenced only by tests and never applied to a live
-# config.
+# Taken from the getattr fallbacks delphi.delphi used, not from the
+# *_DEFAULTS mappings, which were never applied to a live config.
 OPERATIVE_DEFAULTS = {
     "adam_eps": 1e-8,
     "adam_amsgrad": False,

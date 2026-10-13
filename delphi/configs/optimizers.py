@@ -25,7 +25,7 @@ import pydantic
 from delphi.configs import schedulers
 
 
-# Each beta keeps the bounds the separate beta1/beta2 fields carried.
+# Both coefficients are probabilities.
 _Beta = Annotated[float, pydantic.Field(ge=0.0, le=1.0)]
 
 

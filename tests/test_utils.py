@@ -61,8 +61,6 @@ def calc_sarah_dean(
 
     feat_concat = ch.cat([X, U], dim=1)
 
-    # The arguments were previously in the wrong slots: a Callable was passed
-    # as the hyperparameters and the dict as phi, with alpha omitted.
     trunc_lds = TruncatedLinearRegression(
         train_kwargs,
         train_kwargs["phi"],

@@ -19,8 +19,6 @@ class LinearModelConfig(DelphiConfig):
 
     model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 
-    # Dataset fields (val, workers, shuffle, batch_size, normalize) come from
-    # DatasetConfig via DelphiConfig.
     fit_intercept: bool = True
 
     # Must be > 0: fit() reads back best/final params, which the trainer only

@@ -42,8 +42,6 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
             hyperparameters: hyperparameter dict
             fit_intercept: whether to fit an intercept term
         """
-        # The logger argument was previously omitted, which raised a
-        # TypeError; the call was silenced with a pylint suppression.
         super().__init__(hyperparameters, logger=delphiLogger())
         self.fit_intercept = fit_intercept
         del self.criterion

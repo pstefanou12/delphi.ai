@@ -28,10 +28,18 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     Supports known noise variance, unknown noise variance, and temporal
     dependence. Requires a truncation oracle and survival probability alpha.
+
+    The parameters are registered during fit and depend on the variant, so
+    only one of the first two groups exists on any instance.
+
+    Attributes:
+        v: Natural parameter, when noise_var is unknown.
+        lambda_: Inverse noise variance, when noise_var is unknown.
+        weight: Regression weight, when noise_var is known.
+        Sigma_0: Initial covariance estimate; dependent data only.
+        Sigma: Running covariance estimate; dependent data only.
     """
 
-    # Created by register_parameter in pretrain_hook and register_buffer in
-    # calc_emp_model, which mypy cannot see.
     v: nn.Parameter
     lambda_: nn.Parameter
     weight: nn.Parameter

@@ -17,7 +17,6 @@ from delphi.stats.stats import stats
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
 
 
-# Elastic net uses the same default parameter set as lasso regression.
 class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance-attributes
     """Truncated elastic net regression via projected SGD on the truncated log-likelihood."""
 
