@@ -58,6 +58,17 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
 
+[tool.ruff.lint]
+# Default rules plus I (isort): import grouping and ordering, which CLAUDE.md
+# specifies but nothing enforced.
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["delphi"]
+# Sort each section by module name alone, interleaving `import x` and
+# `from x import y`, per the convention in CLAUDE.md.
+force-sort-within-sections = true
+
 [tool.mypy]
 ignore_missing_imports = true
 

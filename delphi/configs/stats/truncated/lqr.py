@@ -1,9 +1,8 @@
 # Author: pstefanou12@
 """Configuration model for truncated linear quadratic regulator estimation."""
 
-from typing import Optional
-
 from collections.abc import Callable
+from typing import Optional
 
 import pydantic
 

@@ -8,12 +8,11 @@ Includes:
 """
 
 import numpy as np
+from sklearn.linear_model import LassoCV, LinearRegression
 import torch as ch
 from torch.nn import MSELoss
-from sklearn.linear_model import LinearRegression, LassoCV
 
-from delphi import stats
-from delphi import oracle
+from delphi import oracle, stats
 from delphi.utils.helpers import calc_spectral_norm
 
 # CONSTANTS

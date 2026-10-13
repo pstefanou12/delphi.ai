@@ -7,13 +7,13 @@ import warnings
 
 import torch as ch
 from torch import Tensor
-from torch.nn import Softmax, CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, Softmax
 
 from delphi import configs
 from delphi.delphi_logger import delphiLogger
+from delphi.stats.linear_model import LinearModel
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
-from delphi.stats.linear_model import LinearModel
 
 # Module-level constants.
 softmax = Softmax(dim=1)

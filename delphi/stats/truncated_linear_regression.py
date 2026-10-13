@@ -4,21 +4,20 @@ Truncated Linear Regression.
 """
 
 import math
-import warnings
 from typing import Callable, Optional, cast
+import warnings
 
-import torch as ch
-from torch import nn
 from scipy.linalg import lstsq
-from torch import Tensor
+import torch as ch
+from torch import Tensor, nn
 
 from delphi import configs
 from delphi.delphi_logger import delphiLogger
+from delphi.stats.linear_model import LinearModel
 from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.helpers import Bounds
-from delphi.stats.linear_model import LinearModel
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods

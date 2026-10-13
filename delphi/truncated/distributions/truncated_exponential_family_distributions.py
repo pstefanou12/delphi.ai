@@ -2,13 +2,13 @@
 """Parent class for truncated exponential distribution model classes."""
 
 import abc
-import logging
 from collections.abc import Callable
+import logging
 from typing import Generic, Optional
 
 import torch as ch
-import torch.utils.data
 from torch import nn
+import torch.utils.data
 
 from delphi import configs, delphi_logger, trainer
 from delphi.truncated.distributions import distributions, losses

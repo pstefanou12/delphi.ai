@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import types
 from collections.abc import Mapping
+import types
 from typing import TYPE_CHECKING, Union, get_args, get_origin
 
 import torch as ch

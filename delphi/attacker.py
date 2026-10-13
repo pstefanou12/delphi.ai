@@ -33,21 +33,22 @@ Cite: code for attacker model shamelessly taken from:
 
 import os
 import time
-import torch as ch
-import dill
 
-from delphi.utils.helpers import (
-    type_of_script,
-    calc_est_grad,
-    InputNormalize,
-    accuracy,
-    AverageMeter,
-    has_attr,
-    ckpt_at_epoch,
-)
-from delphi.utils import constants as consts
+import dill
+import torch as ch
+
 from delphi import attack_steps
 from delphi.delphi import delphi
+from delphi.utils import constants as consts
+from delphi.utils.helpers import (
+    AverageMeter,
+    InputNormalize,
+    accuracy,
+    calc_est_grad,
+    ckpt_at_epoch,
+    has_attr,
+    type_of_script,
+)
 
 # determine running environment
 SCRIPT = type_of_script()  # pylint: disable=invalid-name

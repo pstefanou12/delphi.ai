@@ -1,9 +1,9 @@
 """Structured logger for delphi and Trainer systems with JSONL experiment tracking."""
 
-import logging
 import json
-import time
+import logging
 from pathlib import Path
+import time
 
 
 class delphiLogger:  # pylint: disable=invalid-name

@@ -3,9 +3,9 @@
 Truncated Logistic Regression.
 """
 
-import warnings
 from collections.abc import Callable
 from typing import Optional
+import warnings
 
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
@@ -14,7 +14,6 @@ from torch import nn
 from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
 from delphi.utils import datasets
-
 
 # Module-level constants.
 softmax = nn.Softmax(dim=-1)

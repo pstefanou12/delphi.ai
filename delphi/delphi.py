@@ -1,9 +1,9 @@
 # Author: pstefanou12@
 """Parent class for models to train in the delphi trainer."""
 
-import random
-import inspect
 from collections.abc import Callable
+import inspect
+import random
 from typing import ClassVar, Generic, Optional, cast
 
 import numpy as np
@@ -14,7 +14,6 @@ import torch.optim.lr_scheduler
 
 from delphi import configs
 from delphi.utils import constants, helpers
-
 
 # Each torch class paired with the config section whose aliases name its
 # keyword arguments.

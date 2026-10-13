@@ -1,19 +1,19 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
+from collections.abc import Iterable
 import copy
 import os
 import random
-from collections.abc import Iterable
 from time import time
 from typing import Any, Optional, Union
 
+from cox.store import Store
 import numpy as np
 import torch as ch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from cox.store import Store
 
 from delphi import configs
 from delphi.delphi import delphi

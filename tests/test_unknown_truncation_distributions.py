@@ -7,8 +7,10 @@ from torch import distributions
 from torch.distributions import kl
 
 import delphi.oracle
-from delphi.truncated.distributions import unknown_truncated_multivariate_normal
-from delphi.truncated.distributions import unknown_truncated_normal
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal,
+    unknown_truncated_normal,
+)
 from delphi.utils import helpers
 from tests import helpers as test_helpers
 

@@ -6,16 +6,16 @@ from torch import distributions
 from torch.distributions import kl
 
 from delphi import oracle
-from delphi.truncated.distributions import truncated_boolean_product
-from delphi.truncated.distributions import truncated_exponential
-from delphi.truncated.distributions import truncated_multivariate_normal
 from delphi.truncated.distributions import (
+    truncated_boolean_product,
+    truncated_exponential,
+    truncated_multivariate_normal,
     truncated_multivariate_normal_known_covariance,
+    truncated_normal,
+    truncated_normal_known_variance,
+    truncated_poisson,
+    truncated_weibull,
 )
-from delphi.truncated.distributions import truncated_normal
-from delphi.truncated.distributions import truncated_normal_known_variance
-from delphi.truncated.distributions import truncated_poisson
-from delphi.truncated.distributions import truncated_weibull
 from delphi.utils import helpers as delphi_helpers
 from tests import helpers
 

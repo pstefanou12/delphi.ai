@@ -4,13 +4,13 @@
 import pytest
 
 from delphi.utils.defaults import (
-    REQ,
     DELPHI_DEFAULTS,
     OPTIMIZER_DEFAULTS,
+    REQ,
     SGD_DEFAULTS,
     TRAINER_DEFAULTS,
-    TRUNC_LQR_DEFAULTS,
     TRUNC_LOG_REG_DEFAULTS,
+    TRUNC_LQR_DEFAULTS,
     TRUNC_REG_DEFAULTS,
     check_and_fill_args,
 )

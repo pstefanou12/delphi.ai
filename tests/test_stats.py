@@ -4,15 +4,15 @@ Includes:
     -Softmax regression
 """
 
-import torch as ch
-from torch.distributions import Gumbel
-from torch.nn import CosineSimilarity
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
+import torch as ch
+from torch.distributions import Gumbel
+from torch.nn import CosineSimilarity
 
-from delphi.utils.helpers import Parameters
 from delphi.stats.softmax import SoftmaxRegression
+from delphi.utils.helpers import Parameters
 
 cos_sim = CosineSimilarity()
 gumbel = Gumbel(0, 1)

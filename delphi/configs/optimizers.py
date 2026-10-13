@@ -24,7 +24,6 @@ import pydantic
 
 from delphi.configs import schedulers
 
-
 # Both coefficients are probabilities.
 _Beta = Annotated[float, pydantic.Field(ge=0.0, le=1.0)]
 

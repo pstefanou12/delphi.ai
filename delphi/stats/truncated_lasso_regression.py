@@ -3,9 +3,9 @@
 Truncated Lasso Regression.
 """
 
-import warnings
 from collections.abc import Callable
 from typing import Optional
+import warnings
 
 import numpy as np
 from sklearn import linear_model as sklearn_linear_model

@@ -8,11 +8,10 @@ from typing import NamedTuple
 
 import cox
 import torch as ch
-from torch import Tensor
-from torch import nn
+from torch import Tensor, nn
 from torch.distributions import Uniform
-from torch.distributions.transforms import SigmoidTransform
 from torch.distributions.transformed_distribution import TransformedDistribution
+from torch.distributions.transforms import SigmoidTransform
 import torch.linalg as LA
 
 from delphi.utils import constants as consts

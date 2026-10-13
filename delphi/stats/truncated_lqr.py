@@ -9,14 +9,14 @@ truncation bias in a LQR dynamical system.
 import logging
 from typing import Protocol
 
+from cox.store import Store
 import numpy as np
 import torch as ch
 from torch import linalg as LA
-from cox.store import Store
 
 from delphi import configs
-from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
+from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 
 logger = logging.getLogger("truncated-lqr")
 logger.setLevel(logging.INFO)

@@ -5,19 +5,19 @@ Includes:
     -Truncated multinomial logistic regression
 """
 
-import torch as ch
-from torch.distributions import Uniform, Gumbel
-from torch.nn import CosineSimilarity
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 from statsmodels.discrete.discrete_model import Probit
+import torch as ch
+from torch.distributions import Gumbel, Uniform
+from torch.nn import CosineSimilarity
 
-from delphi.utils.helpers import Parameters, logistic
 from delphi import oracle
+from delphi.stats.softmax import SoftmaxRegression
 from delphi.stats.truncated_logistic_regression import TruncatedLogisticRegression
 from delphi.stats.truncated_probit_regression import TruncatedProbitRegression
-from delphi.stats.softmax import SoftmaxRegression
+from delphi.utils.helpers import Parameters, logistic
 
 cos_sim = CosineSimilarity()
 gumbel = Gumbel(0, 1)

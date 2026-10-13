@@ -3,15 +3,15 @@
 from abc import ABC
 
 import torch as ch
-import torch.linalg as LA
 from torch import Tensor
 from torch.distributions.multivariate_normal import (
     MultivariateNormal,
     _batch_mahalanobis,
 )
+import torch.linalg as LA
 
-from delphi.utils.helpers import Bounds, cov
 from delphi.polynomials import NormalizedProbabilistHermitePolynomial
+from delphi.utils.helpers import Bounds, cov
 
 
 class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods

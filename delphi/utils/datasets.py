@@ -9,20 +9,16 @@ from typing import Union
 
 import numpy as np
 import torch as ch
-import torch.linalg as LA
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader, TensorDataset, Subset
+import torch.linalg as LA
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import datasets
 
-from delphi.utils import folder
-from delphi.utils import helpers
-from delphi.utils.helpers import cov
-from delphi import configs
-from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
+from delphi import cifar_models, configs, imagenet_models
 from delphi.utils import data_augmentation as da
-from delphi import cifar_models
-from delphi import imagenet_models
-
+from delphi.utils import folder, helpers
+from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import cov
 
 ###
 # Computer Vision Datasets: (all subclassed from dataset)

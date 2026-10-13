@@ -3,10 +3,10 @@
 Truncated Probit Regression.
 """
 
-import math
-import warnings
 from collections.abc import Callable
+import math
 from typing import Optional
+import warnings
 
 from statsmodels.discrete import discrete_model
 import torch as ch

@@ -6,15 +6,15 @@ Truncated Elastic Net Regression.
 import warnings
 
 import cox
-import torch as ch
 from sklearn.linear_model import ElasticNet
+import torch as ch
 from torch import Tensor
 
 from delphi import configs
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
 from delphi.stats.stats import stats
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
 
 
 class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance-attributes

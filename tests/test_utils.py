@@ -1,7 +1,6 @@
 import torch as ch
 
-from delphi.stats import TruncatedLinearRegression
-from delphi.stats import truncated_lqr
+from delphi.stats import TruncatedLinearRegression, truncated_lqr
 
 
 class GenerateTruncatedLQRData:

@@ -3,7 +3,6 @@
 
 from typing import Generic, Optional, TypeVar
 
-
 from delphi import configs
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger

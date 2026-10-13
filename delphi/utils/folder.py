@@ -8,8 +8,7 @@ import sys
 
 from torch.utils import data
 from torch.utils.data import Dataset
-from torchvision import transforms
-from torchvision import get_image_backend
+from torchvision import get_image_backend, transforms
 
 try:
     import accimage
