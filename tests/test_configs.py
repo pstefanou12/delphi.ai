@@ -8,11 +8,14 @@ effect beforehand, and that the four previously-colliding field names stay
 distinct.
 """
 
+import ast
+import inspect
 import pathlib
 import re
 
 import pydantic
 import pytest
+import torch
 
 from delphi import configs
 
@@ -22,10 +25,9 @@ from delphi import configs
 # config.
 OPERATIVE_DEFAULTS = {
     "adam_eps": 1e-8,
-    "amsgrad": False,
-    "beta1": 0.9,
-    "beta2": 0.999,
-    "capturable": False,
+    "adam_amsgrad": False,
+    "adam_betas": (0.9, 0.999),
+    "adam_capturable": False,
     "constant": False,
     "cyclic_base_lr": 0.0,
     "cyclic_gamma": 1.0,
@@ -33,24 +35,25 @@ OPERATIVE_DEFAULTS = {
     "cyclic_mode": "triangular2",
     "cyclic_step_size_down": None,
     "cyclic_step_size_up": 2000,
-    "dampening": 0.0,
+    "sgd_dampening": 0.0,
     "differentiable": False,
     "exponential_gamma": 0.95,
     "foreach": None,
     "fused": None,
-    "history_size": 100,
-    "line_search_fn": None,
+    "lbfgs_history_size": 100,
+    "lbfgs_line_search_fn": None,
     "linear_end_factor": 0.0,
     "linear_start_factor": 1.0,
     "lr": 0.1,
-    "max_eval": None,
-    "max_iter": 20,
+    "lbfgs_max_eval": None,
+    "lbfgs_max_iter": 20,
     "maximize": False,
-    "milestones": [30, 60, 90],
-    "min_lr": 0.0,
-    "momentum": 0.0,
+    "multi_step_milestones": [30, 60, 90],
+    "plateau_min_lr": 0.0,
+    "cosine_eta_min": 0.0,
+    "sgd_momentum": 0.0,
     "multi_step_gamma": 0.1,
-    "nesterov": False,
+    "sgd_nesterov": False,
     "optimizer": "sgd",
     "plateau_cooldown": 0,
     "plateau_eps": 1e-8,
@@ -60,10 +63,10 @@ OPERATIVE_DEFAULTS = {
     "plateau_threshold": 1e-4,
     "plateau_threshold_mode": "rel",
     "scheduler": None,
-    "step_lr": 100,
+    "step_lr_step_size": 100,
     "step_lr_gamma": 0.1,
-    "tolerance_change": 1e-9,
-    "tolerance_grad": 1e-7,
+    "lbfgs_tolerance_change": 1e-9,
+    "lbfgs_tolerance_grad": 1e-7,
     "warmup_steps": 0,
     "weight_decay": 0.0,
 }
@@ -73,6 +76,8 @@ def test_every_hyperparameter_delphi_reads_is_declared() -> None:
     """No hyperparameter access in delphi.delphi falls through undeclared."""
     source = pathlib.Path("delphi/delphi.py").read_text()
     read = set(re.findall(r"self\.hyperparameters\.([A-Za-z_0-9]+)", source))
+    # model_dump and friends are pydantic's API, not hyperparameters.
+    read = {name for name in read if not name.startswith("model_")}
     undeclared = read - set(configs.DelphiConfig.model_fields)
     assert not undeclared, f"undeclared fields read by delphi.py: {sorted(undeclared)}"
 
@@ -141,7 +146,7 @@ def test_scheduler_gamma_is_distinct_from_the_lqr_gamma() -> None:
 def test_constraints_are_enforced() -> None:
     """Out-of-range values raise instead of being silently accepted."""
     with pytest.raises(pydantic.ValidationError):
-        configs.DelphiConfig(beta1=2.0)
+        configs.DelphiConfig(adam_betas=(2.0, 0.999))
     with pytest.raises(pydantic.ValidationError):
         configs.DelphiConfig(plateau_patience=0)
     with pytest.raises(pydantic.ValidationError):
@@ -173,3 +178,104 @@ def test_dependent_variant_overrides_only_defaults() -> None:
     assert set(configs.TruncatedRegressionFieldsConfig.model_fields) <= set(
         type(dynamical).model_fields
     )
+
+
+# Sections that name a torch class's keyword arguments, with the prefix each
+# one's fields must carry.
+_SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
+    "sgd_": (torch.optim.SGD, configs.SGDConfig),
+    "adam_": (torch.optim.Adam, configs.AdamConfig),
+    "lbfgs_": (torch.optim.LBFGS, configs.LBFGSConfig),
+    "step_lr_": (torch.optim.lr_scheduler.StepLR, configs.StepLRConfig),
+    "multi_step_": (torch.optim.lr_scheduler.MultiStepLR, configs.MultiStepLRConfig),
+    "exponential_": (
+        torch.optim.lr_scheduler.ExponentialLR,
+        configs.ExponentialLRConfig,
+    ),
+    "cosine_": (torch.optim.lr_scheduler.CosineAnnealingLR, configs.CosineLRConfig),
+    "linear_": (torch.optim.lr_scheduler.LinearLR, configs.LinearLRConfig),
+    "cyclic_": (torch.optim.lr_scheduler.CyclicLR, configs.CyclicLRConfig),
+    "plateau_": (torch.optim.lr_scheduler.ReduceLROnPlateau, configs.PlateauLRConfig),
+}
+
+# Declared on OptimizerConfig itself: these apply to whichever optimizer
+# ``optimizer`` selects, so they are deliberately unprefixed.
+_SHARED_FIELDS = {
+    "lr",
+    "weight_decay",
+    "maximize",
+    "foreach",
+    "differentiable",
+    "fused",
+    "optimizer",
+    "scheduler",
+    "constant",
+}
+
+
+def test_every_emitted_name_is_a_real_torch_parameter() -> None:
+    """Each section's aliases match its torch class's signature.
+
+    This is what makes a redundant alias safe: a typo'd or stale one fails
+    here rather than passing a wrong keyword or being silently dropped.
+    """
+    for prefix, (target, section) in _SECTIONS.items():
+        accepted = set(inspect.signature(target).parameters)
+        emitted = {
+            field.serialization_alias or name
+            for name, field in section.model_fields.items()
+        }
+        unknown = emitted - accepted
+        assert not unknown, f"{prefix}: {sorted(unknown)} not parameters of {target}"
+
+
+def test_every_section_field_is_prefixed_and_aliased() -> None:
+    """One naming rule, no exceptions within a section."""
+    for prefix, (_, section) in _SECTIONS.items():
+        for name, field in section.model_fields.items():
+            assert name.startswith(prefix), f"{name} lacks the {prefix} prefix"
+            assert field.serialization_alias, f"{name} declares no serialization_alias"
+
+
+def test_only_optimizer_config_fields_are_unprefixed() -> None:
+    """The bare fields are exactly the ones OptimizerConfig declares itself."""
+    section_owned: set[str] = set()
+    for _, (_, section) in _SECTIONS.items():
+        section_owned |= set(section.model_fields)
+    section_owned |= set(configs.WarmupConfig.model_fields)
+    bare = set(configs.OptimizerConfig.model_fields) - section_owned
+    assert bare == _SHARED_FIELDS
+
+
+def test_plateau_and_cosine_floors_are_independent() -> None:
+    """Separate fields: one value no longer feeds both schedulers."""
+    config = configs.DelphiConfig(plateau_min_lr=0.5)
+    assert config.plateau_min_lr == 0.5
+    assert config.cosine_eta_min == 0.0
+
+
+def _dotted(node: ast.AST) -> str:
+    """Return the dotted name of an attribute chain, or ""."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return ""
+
+
+def test_configs_construct_nothing() -> None:
+    """The configs declare names; delphi.delphi builds the torch objects.
+
+    Checked on the syntax tree so docstrings naming the torch class a section
+    describes do not count; a Tensor type annotation is also fine. What must
+    not appear is a reference to torch.optim, which would mean a config had
+    started constructing optimizers or schedulers.
+    """
+    for path in pathlib.Path("delphi/configs").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Attribute):
+                name = _dotted(node)
+                assert "optim" not in name.split("."), f"{path} references {name}"
