@@ -3,7 +3,6 @@
 
 from enum import Enum
 
-# Module-level constants.
 JUPYTER = "jupyter"
 TERMINAL = "terminal"
 IPYTHON = "ipython"

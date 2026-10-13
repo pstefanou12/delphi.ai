@@ -15,7 +15,6 @@ from delphi.stats.linear_model import LinearModel
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 
-# Module-level constants.
 softmax = Softmax(dim=1)
 ce = CrossEntropyLoss()
 

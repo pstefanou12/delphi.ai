@@ -116,7 +116,6 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 self.hyperparameters.eps,
             ]
 
-        # Property instance variables.
         self.coef, self.intercept = None, None
 
     @property

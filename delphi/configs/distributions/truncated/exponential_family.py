@@ -29,13 +29,11 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
 
     model_config = pydantic.ConfigDict(extra="ignore")
 
-    # Override parent defaults for distribution training.
     batch_size: int = 10
     tol: float = pydantic.Field(default=1e-1, ge=0.0)
     record_params_every: int = pydantic.Field(default=1, ge=1)
     epochs: Optional[int] = pydantic.Field(default=1, ge=1)
 
-    # Distribution-specific fields.
     eps: float = pydantic.Field(default=1e-5, gt=0.0)
     min_radius: float = pydantic.Field(default=3.0, ge=0.0)
     max_radius: float = pydantic.Field(default=10.0, ge=0.0)

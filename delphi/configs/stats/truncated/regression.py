@@ -40,7 +40,6 @@ class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
 class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
     """Configuration for truncated linear regression (TRUNC_REG_DEFAULTS)."""
 
-    # Override parent defaults for truncated regression.
     iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
     val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
 
@@ -48,7 +47,6 @@ class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
 class TruncatedLassoRegressionConfig(TruncatedRegressionConfig):
     """Configuration for truncated LASSO regression (TRUNC_LASSO_DEFAULTS)."""
 
-    # Override parent defaults for the LASSO variant.
     num_samples: int = pydantic.Field(default=10000, ge=1)
 
 
@@ -92,7 +90,6 @@ class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):
     c_eta: float = pydantic.Field(default=0.5, gt=0.0)
     c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
 
-    # Override parent defaults for dependent data, which is consumed in order.
     num_samples: int = pydantic.Field(default=50, ge=1)
-    shuffle: bool = False
+    shuffle: bool = False  # Dependent data is consumed in order.
     constant: bool = True

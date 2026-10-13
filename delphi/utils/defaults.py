@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from delphi.utils.helpers import Parameters
 
 
-# Module-level constants.
 REQ = "required"
 
 OPTIMIZER_DEFAULTS = {

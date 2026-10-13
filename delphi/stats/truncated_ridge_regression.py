@@ -31,13 +31,11 @@ class TruncatedRidgeRegression(stats):  # pylint: disable=too-many-instance-attr
             store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
-        # Instance variables.
         assert store is None or isinstance(store, cox.store.Store), (
             f"store is type: {type(store)}. expecting cox.store.Store."
         )
         self.store = store
         self.trunc_ridge = None
-        # Algorithm hyperparameters.
         self.hyperparameters = configs.TruncatedRidgeRegressionConfig(**hyperparameters)
         if self.hyperparameters.weight_decay <= 0:
             raise ValueError(

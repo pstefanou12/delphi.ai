@@ -15,7 +15,6 @@ from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
 from delphi.utils import datasets
 
-# Module-level constants.
 softmax = nn.Softmax(dim=-1)
 sig = nn.Sigmoid()
 OVR = "ovr"

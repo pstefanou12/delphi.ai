@@ -28,13 +28,11 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
             store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
-        # Instance variables.
         assert store is None or isinstance(store, cox.store.Store), (
             f"store is type: {type(store)}. expecting cox.store.Store."
         )
         self.store = store
         self.trunc_ridge = None
-        # Algorithm hyperparameters.
         self.hyperparameters = configs.TruncatedElasticNetRegressionConfig(
             **hyperparameters
         )

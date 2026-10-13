@@ -16,7 +16,6 @@ import torch.linalg as LA
 
 from delphi.utils import constants as consts
 
-# Module-level constants.
 JUPYTER = "jupyter"
 TERMINAL = "terminal"
 IPYTHON = "ipython"

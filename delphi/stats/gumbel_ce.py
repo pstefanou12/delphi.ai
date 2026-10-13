@@ -12,7 +12,6 @@ from delphi.stats import losses
 from delphi.stats.linear_model import LinearModel
 from delphi.utils import helpers
 
-# Module-level constants.
 mse_loss = torch.nn.MSELoss()
 G = torch.distributions.Gumbel(0, 1)
 
