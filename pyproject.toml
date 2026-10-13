@@ -58,6 +58,17 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
 
+[tool.ruff.lint]
+# Default rules plus I (isort): import grouping and ordering, which CLAUDE.md
+# specifies but nothing enforced.
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["delphi"]
+# Sort each section by module name alone, interleaving `import x` and
+# `from x import y`, per the convention in CLAUDE.md.
+force-sort-within-sections = true
+
 [tool.mypy]
 ignore_missing_imports = true
 
@@ -70,7 +81,18 @@ ignore_missing_imports = true
 # (args, phi, alpha, ...) signature, and the ridge/elastic-net fits call
 # Trainer(...) without the now-required logger. These are real runtime
 # failures, not typing noise, so they need the port rather than annotations.
-module = ["delphi.stats.*", "tests.test_utils"]
+module = [
+    # TODO: pstefanou12@ - these two wrappers cannot run, independently
+    # of the config port. TruncatedLinearRegression never sets
+    # self.model (it uses self.weight), yet both read
+    # trunc_*.model.weight; their inner estimators call
+    # super().__init__(args, train_loader), passing the loader as phi
+    # and omitting the required alpha; and calc_emp_model references
+    # self.X / self.y, which nothing defines. Neither module has any
+    # test. Fixing this needs the estimator's intent, not annotations.
+    "delphi.stats.truncated_elastic_net_regression",
+    "delphi.stats.truncated_ridge_regression",
+]
 ignore_errors = true
 
 [[tool.mypy.overrides]]

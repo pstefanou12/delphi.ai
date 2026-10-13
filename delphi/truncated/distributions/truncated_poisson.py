@@ -3,9 +3,9 @@
 
 from collections.abc import Callable
 
+from delphi import configs
 from delphi.exponential_family import poisson
 from delphi.truncated.distributions import truncated_exponential_family_distributions
-from delphi.utils import configs
 
 
 class TruncatedPoisson(

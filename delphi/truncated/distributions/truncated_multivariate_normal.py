@@ -7,9 +7,9 @@ from typing import Optional
 import torch as ch
 from torch import nn
 
+from delphi import configs
 from delphi.exponential_family import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
-from delphi.utils import configs
 
 
 class TruncatedMultivariateNormal(
@@ -23,8 +23,7 @@ class TruncatedMultivariateNormal(
         emp_v: Empirical natural mean component.
     """
 
-    # Created with register_parameter() in _calc_emp_model, which mypy
-    # cannot see; declared here so attribute access is typed.
+    # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     T: nn.Parameter  # pylint: disable=invalid-name
     v: nn.Parameter
 

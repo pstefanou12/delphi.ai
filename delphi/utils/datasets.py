@@ -5,20 +5,20 @@ Currently supported datasets:
 - CIFAR-10 (:class:`delphi.datasets.CIFAR`)
 """
 
+from typing import Union
+
 import numpy as np
 import torch as ch
-import torch.linalg as LA
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.data import DataLoader, TensorDataset, Subset
+import torch.linalg as LA
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import datasets
 
-from delphi.utils import folder
-from delphi.utils.helpers import cov
-from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
+from delphi import cifar_models, configs, imagenet_models
 from delphi.utils import data_augmentation as da
-from delphi import cifar_models
-from delphi import imagenet_models
-
+from delphi.utils import folder, helpers
+from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
+from delphi.utils.helpers import cov
 
 ###
 # Computer Vision Datasets: (all subclassed from dataset)
@@ -394,10 +394,24 @@ class Normalize:
         return self._l_inf
 
 
-def make_train_and_val(args, X, y):  # pylint: disable=invalid-name
-    """Create training and validation DataLoaders from tensors X and y."""
-    # check arguments are correct
-    args = check_and_fill_args(args, DATASET_DEFAULTS)
+def make_train_and_val(  # pylint: disable=invalid-name
+    args: Union[configs.DatasetConfig, helpers.Parameters], X, y
+):
+    """Create training and validation DataLoaders from tensors X and y.
+
+    Args:
+        args: A DatasetConfig, or a helpers.Parameters from an estimator that
+            has not been ported yet.
+        X: Input covariates.
+        y: Targets.
+
+    Returns:
+        The training and validation DataLoaders.
+    """
+    # TODO: pstefanou12@ - drop the Parameters branch, the Union and this fill
+    # once every delphi/stats/ estimator passes a config.
+    if not isinstance(args, configs.DatasetConfig):
+        args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     val = int(args.val * X.size(0))
 
@@ -425,7 +439,9 @@ def make_train_and_val(args, X, y):  # pylint: disable=invalid-name
     return train_loader, val_loader
 
 
-def make_train_and_val_distr(args, S, ds, kwargs=None):  # pylint: disable=invalid-name
+def make_train_and_val_distr(  # pylint: disable=invalid-name
+    args: Union[configs.DatasetConfig, helpers.Parameters], S, ds, kwargs=None
+):
     """Create training and validation DataLoaders from a distribution dataset S."""
     if kwargs is None:
         kwargs = {}

@@ -7,29 +7,21 @@ from torch import distributions
 from torch.distributions import kl
 
 import delphi.oracle
-from delphi.truncated.distributions import unknown_truncated_multivariate_normal
-from delphi.truncated.distributions import unknown_truncated_normal
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal,
+    unknown_truncated_normal,
+)
 from delphi.utils import helpers
 from tests import helpers as test_helpers
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
-# TODO: pstefanou12@ - re-enable with the unknown-truncation algorithm rework.
-# All three tests here are broken by pre-existing defects in that algorithm:
-#   * test_unknown_truncation_normal_known_variance: AttributeError, because
-#     _reparameterize_canon_form is defined only on the unknown-variance class.
-#   * test_unknown_truncation_normal: TypeError, a Tensor formatted with a
-#     float format spec in an f-string.
-#   * test_unknown_truncation_multivariate_normal: hangs. The Hermite oracle
-#     gets k=12 in 10 dims, i.e. 646,646 multi-indices, so h_v materialises a
-#     ~13GB (5000, 646646) tensor on every oracle call. k also changed meaning
-#     from a neighbour count to a polynomial degree without its callers being
-#     updated.
-pytestmark = pytest.mark.skip(
-    reason="unknown-truncation algorithm is being reworked in a separate PR"
+
+# TODO: pstefanou12@ - re-enable with the unknown-truncation rework.
+# _reparameterize_canon_form is defined only on the unknown-variance class.
+@pytest.mark.skip(
+    reason="unknown-truncation rework: AttributeError on _reparameterize_canon_form"
 )
-
-
 def test_unknown_truncation_normal_known_variance():
     """1D normal with unknown truncation and known variance recovers true mean."""
     ch.manual_seed(0)
@@ -104,6 +96,11 @@ def test_unknown_truncation_normal_known_variance():
     )
 
 
+# TODO: pstefanou12@ - re-enable with the unknown-truncation rework. A
+# Tensor is formatted with a float format spec in an f-string.
+@pytest.mark.skip(
+    reason="unknown-truncation rework: TypeError formatting a Tensor as a float"
+)
 def test_unknown_truncation_normal():
     """1D normal with unknown truncation recovers true mean and variance."""
     ch.manual_seed(0)
@@ -176,6 +173,14 @@ def test_unknown_truncation_normal():
     )
 
 
+# TODO: pstefanou12@ - re-enable with the unknown-truncation rework. The
+# Hermite oracle gets k=12 in 10 dims, i.e. 646,646 multi-indices, so h_v
+# materialises a ~13GB (5000, 646646) tensor on every call. k also changed
+# meaning from a neighbour count to a polynomial degree without its callers
+# being updated.
+@pytest.mark.skip(
+    reason="unknown-truncation rework: hangs building a ~13GB Hermite tensor"
+)
 def test_unknown_truncation_multivariate_normal():
     """10D sphere-truncated MVN with unknown truncation recovers true params."""
     ch.manual_seed(0)

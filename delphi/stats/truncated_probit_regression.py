@@ -3,34 +3,42 @@
 Truncated Probit Regression.
 """
 
-import math
-import warnings
 from collections.abc import Callable
+import math
+from typing import Optional
+import warnings
 
 from statsmodels.discrete import discrete_model
 import torch as ch
 
-from delphi import delphi_logger, trainer
+from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
-from delphi.utils import datasets, defaults, helpers
+from delphi.utils import datasets
 
 
-class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedProbitRegression(  # pylint: disable=too-many-instance-attributes
+    linear_model.LinearModel[configs.TruncatedProbitRegressionConfig]
+):
     """Truncated probit regression for binary classification with N(0,1) latent noise."""
+
+    # Created by register_parameter in calc_emp_model, which mypy cannot see.
+    weight: ch.nn.Parameter
+
+    defaults = configs.TruncatedProbitRegressionConfig
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: helpers.Parameters,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         fit_intercept: bool = True,
-        emp_weight: ch.Tensor = None,
+        emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
     ):
         """Initialize TruncatedProbitRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             fit_intercept (bool): whether to fit an intercept term
@@ -38,8 +46,7 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
             rand_seed (int): random seed for reproducibility
         """
         logger = delphi_logger.delphiLogger()
-        args = defaults.check_and_fill_args(args, defaults.TRUNC_PROB_REG_DEFAULTS)
-        super().__init__(args, False, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -80,7 +87,7 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
         )
         # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)
 
         self.train_loader, self.val_loader = datasets.make_train_and_val(
             self.hyperparameters, X, y
@@ -142,7 +149,7 @@ class TruncatedProbitRegression(linear_model.LinearModel):  # pylint: disable=to
     def predict(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Make class predictions with regression estimates."""
         if self.fit_intercept:
-            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1) @ self.weight
+            logits = ch.cat([X, ch.ones(X.size(0), 1)], dim=1) @ self.weight
         else:
             logits = X @ self.weight
         return 0.5 * (1 + ch.erf(logits / ch.sqrt(ch.Tensor([2.0])))) > 0.5

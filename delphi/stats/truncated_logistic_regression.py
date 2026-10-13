@@ -3,19 +3,18 @@
 Truncated Logistic Regression.
 """
 
-import warnings
 from collections.abc import Callable
+from typing import Optional
+import warnings
 
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger, trainer
+from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
-from delphi.utils import datasets, defaults, helpers
+from delphi.utils import datasets
 
-
-# Module-level constants.
 softmax = nn.Softmax(dim=-1)
 sig = nn.Sigmoid()
 OVR = "ovr"
@@ -23,23 +22,30 @@ MULTI = "multinomial"
 CLASSIFICATION_PROCEDURES = [OVR, MULTI]
 
 
-class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attributes
+    linear_model.LinearModel[configs.TruncatedLogisticRegressionConfig]
+):
     """Truncated logistic regression supporting binary and multinomial classification."""
+
+    # Created by register_parameter in _calc_emp_model, which mypy cannot see.
+    weight: nn.Parameter
+
+    defaults = configs.TruncatedLogisticRegressionConfig
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: helpers.Parameters,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         fit_intercept: bool = True,
         multi_class: str = "ovr",
-        emp_weight: ch.Tensor = None,
+        emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
     ):
         """Initialize TruncatedLogisticRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             fit_intercept (bool): whether to fit an intercept term
@@ -49,8 +55,7 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
             rand_seed (int): random seed for reproducibility
         """
         logger = delphi_logger.delphiLogger()
-        args = defaults.check_and_fill_args(args, defaults.TRUNC_LOG_REG_DEFAULTS)
-        super().__init__(args, False, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -111,7 +116,7 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
 
         # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
         self.D = X.size(1)  # pylint: disable=invalid-name,attribute-defined-outside-init
 
         self.train_loader, self.val_loader = datasets.make_train_and_val(
@@ -173,7 +178,7 @@ class TruncatedLogisticRegression(linear_model.LinearModel):  # pylint: disable=
     def predict_proba(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Probability predictions for input features."""
         if self.fit_intercept:
-            logits = ch.cat([X, ch.ones(X.size(0), 1)], axis=1) @ self.best_coef.T
+            logits = ch.cat([X, ch.ones(X.size(0), 1)], dim=1) @ self.best_coef.T
         else:
             logits = X @ self.best_coef.T
         if self.multi_class == MULTI:

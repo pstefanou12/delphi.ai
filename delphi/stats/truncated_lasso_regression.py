@@ -3,41 +3,49 @@
 Truncated Lasso Regression.
 """
 
-import warnings
 from collections.abc import Callable
+from typing import Optional
+import warnings
 
 import numpy as np
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
 
-from delphi import delphi_logger, trainer
+from delphi import configs, delphi_logger, trainer
 from delphi.stats import linear_model, losses
-from delphi.utils import datasets, defaults, helpers
+from delphi.utils import datasets
 
 
-class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too-many-instance-attributes
+class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
+    linear_model.LinearModel[configs.TruncatedLassoRegressionConfig]
+):
     """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
 
     Supports known noise variance. Requires a truncation oracle and survival
     probability alpha.
     """
 
+    # Created by register_parameter in pretrain_hook, which mypy cannot see.
+    weight: nn.Parameter
+
+    defaults = configs.TruncatedLassoRegressionConfig
+
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: helpers.Parameters,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         l1: float = 1.0,
         fit_intercept: bool = True,
         noise_var: float = 1.0,
-        emp_weight: ch.Tensor = None,
+        emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
     ):
         """Initialize TruncatedLassoRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             l1 (float): L1 regularization coefficient
@@ -47,8 +55,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
             rand_seed (int): random seed for reproducibility
         """
         logger = delphi_logger.delphiLogger()
-        args = defaults.check_and_fill_args(args, defaults.TRUNC_LASSO_DEFAULTS)
-        super().__init__(args, False, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1
@@ -94,7 +101,7 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
         )
         # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
         if self.fit_intercept:
             k = X.size(1) - 1
@@ -137,25 +144,38 @@ class TruncatedLassoRegression(linear_model.LinearModel):  # pylint: disable=too
             fit_intercept=self.fit_intercept, alphas=[self.l1]
         )
         emp_lasso.fit(X, y)
-        if self.hyperparameters.fit_intercept:
+        # self.fit_intercept, not hyperparameters.fit_intercept: the former is
+        # what LassoCV was given above, and the latter defaults to True.
+        if self.fit_intercept:
             lasso_coef_ = ch.from_numpy(
-                np.concatenate([emp_lasso.coef_.flatten(), emp_lasso.intercept_])
+                np.concatenate(
+                    [emp_lasso.coef_.flatten(), np.atleast_1d(emp_lasso.intercept_)]
+                )
             )
         else:
             lasso_coef_ = ch.from_numpy(emp_lasso.coef_).float()[..., None]
-        self.register_buffer("emp_weight", lasso_coef_)
+        # Plain assignment: LinearModel.__init__ already set emp_weight, so
+        # register_buffer would raise KeyError.
+        self.emp_weight = lasso_coef_
 
     def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         """Forward pass through the model."""
         return X @ self.weight
 
     def pre_step_hook(self, inp: ch.Tensor) -> None:
-        """Pre-step hook to apply L1 regularization gradient."""
+        """Pre-step hook to apply L1 regularization gradient.
+
+        Args:
+            inp: The batch's input covariates.
+        """
+        grad = self.weight.grad
+        if grad is None:
+            return
         # Only regularize the weight coefficients and not the intercept.
         if self.fit_intercept:
-            self.weight.grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
+            grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
         else:
-            self.weight.grad += (self.l1 * ch.sign(inp)).mean(0)[..., None]
+            grad += (self.l1 * ch.sign(inp)).mean(0)[..., None]
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""

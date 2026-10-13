@@ -4,9 +4,9 @@
 import math
 
 import torch as ch
+from torch import sigmoid as sig  # pylint: disable=no-name-in-module
 import torch.distributions
 import torch.nn
-from torch import sigmoid as sig  # pylint: disable=no-name-in-module
 
 from delphi.utils import helpers
 

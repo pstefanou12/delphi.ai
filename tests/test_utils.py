@@ -1,8 +1,6 @@
 import torch as ch
-from typing import Callable
 
-from delphi.stats import TruncatedLinearRegression
-from delphi.utils.helpers import Parameters
+from delphi.stats import TruncatedLinearRegression, truncated_lqr
 
 
 class GenerateTruncatedLQRData:
@@ -29,8 +27,8 @@ class GenerateTruncatedLQRData:
 
 
 def calc_sarah_dean(
-    train_kwargs: Parameters,
-    gen_data: Callable,
+    train_kwargs: dict,
+    gen_data: truncated_lqr.DataGenerator,
     num_traj: int,
     D: int,
     M: int,
@@ -60,12 +58,13 @@ def calc_sarah_dean(
             xt = ch.zeros((1, D))
         total_samples += 1
 
-    feat_concat = ch.cat([X, U], axis=1)
+    feat_concat = ch.cat([X, U], dim=1)
 
     trunc_lds = TruncatedLinearRegression(
-        train_kwargs.phi,
         train_kwargs,
-        gen_data.noise_var,
+        train_kwargs["phi"],
+        train_kwargs["alpha"],
+        noise_var=gen_data.noise_var,
         dependent=True,
         rand_seed=rand_seed,
     )

@@ -7,19 +7,21 @@ import warnings
 
 import torch as ch
 from torch import Tensor
-from torch.nn import Softmax, CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, Softmax
 
-from delphi.trainer import Trainer
-from delphi.utils.helpers import Parameters
-from delphi.utils.datasets import make_train_and_val
+from delphi import configs
+from delphi.delphi_logger import delphiLogger
 from delphi.stats.linear_model import LinearModel
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
 
-# Module-level constants.
 softmax = Softmax(dim=1)
 ce = CrossEntropyLoss()
 
 
-class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attributes,abstract-method
+class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstract-method
+    LinearModel[configs.SoftmaxRegressionConfig]
+):
     """Softmax regression using cross-entropy loss, for the trainer framework.
 
     Attributes:
@@ -27,14 +29,23 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
         criterion: Cross-entropy loss function.
     """
 
-    def __init__(self, args: Parameters, fit_intercept: bool = True):
-        super().__init__(args, dependent=False)  # pylint: disable=no-value-for-parameter
+    # Created by register_parameter in pretrain_hook, which mypy cannot see.
+    weight: ch.nn.Parameter
+
+    defaults = configs.SoftmaxRegressionConfig
+
+    def __init__(self, hyperparameters: dict, fit_intercept: bool = True):
+        """Initialize SoftmaxRegression.
+
+        Args:
+            hyperparameters: hyperparameter dict
+            fit_intercept: whether to fit an intercept term
+        """
+        super().__init__(hyperparameters, logger=delphiLogger())
         self.fit_intercept = fit_intercept
         del self.criterion
 
         self.criterion = ce
-
-        self.d, self.k = None, None  # pylint: disable=invalid-name
 
     def fit(self, X, y):  # pylint: disable=invalid-name,attribute-defined-outside-init
         """Train the softmax regression model on labeled data.
@@ -69,14 +80,14 @@ class SoftmaxRegression(LinearModel):  # pylint: disable=too-many-instance-attri
 
         # Add one feature column to X when fitting an intercept.
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)
 
         self.d, self.k = X.size(1), unique_classes
         self.train_loader, self.val_loader = make_train_and_val(
             self.hyperparameters, X, y
         )
 
-        self.trainer = Trainer(self, self.hyperparameters, self.logger)  # pylint: disable=no-value-for-parameter
+        self.trainer = Trainer(self, self.hyperparameters, self.logger)
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self

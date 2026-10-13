@@ -7,19 +7,28 @@ truncation bias in a LQR dynamical system.
 """
 
 import logging
-from typing import Callable
+from typing import Protocol
 
+from cox.store import Store
 import numpy as np
 import torch as ch
 from torch import linalg as LA
-from cox.store import Store
 
-from delphi.utils.defaults import TRUNC_LQR_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import Parameters, calc_spectral_norm, calc_thickness
+from delphi import configs
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
+from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 
 logger = logging.getLogger("truncated-lqr")
 logger.setLevel(logging.INFO)
+
+
+class DataGenerator(Protocol):  # pylint: disable=too-few-public-methods
+    """A dynamical-system data generator with a known noise variance."""
+
+    noise_var: ch.Tensor
+
+    def __call__(self, *args, **kwargs):
+        """Generate the next sample."""
 
 
 class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
@@ -27,8 +36,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: Parameters,
-        gen_data: Callable,
+        hyperparameters: dict,
+        gen_data: DataGenerator,
         d: int,  # pylint: disable=invalid-name
         m: int,  # pylint: disable=invalid-name
         rand_seed: int = 0,
@@ -36,13 +45,13 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         """Initialize TruncatedLQR.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             gen_data (Callable): data-generating function for the dynamical system
             d (int): state dimension of matrix A
             m (int): input dimension of matrix B; must satisfy m >= d
             rand_seed (int): random seed for reproducibility
         """
-        self.hyperparameters = check_and_fill_args(args, TRUNC_LQR_DEFAULTS)
+        self.hyperparameters = configs.TruncatedLQRConfig(**hyperparameters)
         assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
         assert (
             self.hyperparameters.target_thickness != float("inf")
@@ -127,9 +136,10 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", X.size(0))
 
         self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+            self.hyperparameters.model_dump(),
             self.hyperparameters.phi,
-            self.hyperparameters,
-            self.gen_data.noise_var,
+            self.hyperparameters.alpha,
+            noise_var=self.gen_data.noise_var,
             dependent=True,
             rand_seed=self.rand_seed,
         )
@@ -168,9 +178,10 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", U.size(0))
 
         self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+            self.hyperparameters.model_dump(),
             self.hyperparameters.phi,
-            self.hyperparameters,
-            self.gen_data.noise_var,
+            self.hyperparameters.alpha,
+            noise_var=self.gen_data.noise_var,
             dependent=True,
             rand_seed=self.rand_seed,
         )
@@ -363,15 +374,16 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             Xu, Uu, Yu = self.generate_samples_B()  # pylint: disable=invalid-name
             Xx, Ux, Yx = self.generate_samples_A()  # pylint: disable=invalid-name
 
-            XU_concat = ch.cat([Xu, Uu], axis=1)  # pylint: disable=invalid-name
-            XX_concat = ch.cat([Xx, Ux], axis=1)  # pylint: disable=invalid-name
+            XU_concat = ch.cat([Xu, Uu], dim=1)  # pylint: disable=invalid-name
+            XX_concat = ch.cat([Xx, Ux], dim=1)  # pylint: disable=invalid-name
             feat_concat = ch.cat([XU_concat, XX_concat])
             y_concat = ch.cat([Yu, Yx])
 
             self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+                self.hyperparameters.model_dump(),
                 self.hyperparameters.phi,
-                self.hyperparameters,
-                self.gen_data.noise_var,
+                self.hyperparameters.alpha,
+                noise_var=self.gen_data.noise_var,
                 emp_weight=coef_concat,
                 dependent=True,
                 rand_seed=self.rand_seed,

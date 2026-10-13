@@ -48,7 +48,6 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        # Algorithm hyperparameters.
         self.k = k
         # TODO: pstefanou12@ - args is a helpers.Parameters, but __init__ has
         # been dict-only since e3c37f7; port this call with delphi/stats/.
@@ -213,7 +212,6 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         Raises:
             TypeError: If args is not a Parameters instance.
         """
-        # Algorithm hyperparameters.
         self.k = k
         # TODO: pstefanou12@ - args is a helpers.Parameters, but __init__ has
         # been dict-only since e3c37f7; port this call with delphi/stats/.
@@ -403,7 +401,7 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
     k: int,
     alpha: float,
     dims: int,
-    covariance_matrix: ch.Tensor | None = None,
+    covariance_matrix: Optional[ch.Tensor] = None,
 ):
     """Factory function for unknown-truncation multivariate normal distributions.
 

@@ -5,9 +5,9 @@ Data loader wrappers providing per-epoch recomputation and real-time transformat
 
 import torch as ch
 
+from delphi.utils import constants as consts
 from delphi.utils import folder
 from delphi.utils.helpers import type_of_script
-from delphi.utils import constants as consts
 
 # Determine running environment.
 SCRIPT = type_of_script()

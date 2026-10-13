@@ -6,54 +6,41 @@ Truncated Elastic Net Regression.
 import warnings
 
 import cox
-import torch as ch
 from sklearn.linear_model import ElasticNet
+import torch as ch
 from torch import Tensor
 
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import (
-    DELPHI_DEFAULTS,
-    TRAINER_DEFAULTS,
-    TRUNC_LASSO_DEFAULTS,
-    check_and_fill_args,
-)
-from delphi.utils.helpers import Parameters
+from delphi import configs
 from delphi.stats.stats import stats
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
-
-# Elastic net uses the same default parameter set as lasso regression.
-TRUNC_ELASTIC_NET_DEFAULTS = {**TRUNC_LASSO_DEFAULTS}
+from delphi.trainer import Trainer
+from delphi.utils.datasets import make_train_and_val
 
 
 class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance-attributes
     """Truncated elastic net regression via projected SGD on the truncated log-likelihood."""
 
-    def __init__(self, args: Parameters, store: cox.store.Store = None):
+    def __init__(self, hyperparameters: dict, store: cox.store.Store = None):
         """Initialize TruncatedElasticNetRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             store (cox.store.Store): optional cox store for logging
         """
         super().__init__()
-        # Instance variables.
-        assert isinstance(args, Parameters), (
-            f"args is type: {type(args)}. expecting args to be type "
-            "delphi.utils.helpers.Parameters"
-        )
         assert store is None or isinstance(store, cox.store.Store), (
             f"store is type: {type(store)}. expecting cox.store.Store."
         )
         self.store = store
         self.trunc_ridge = None
-        # Algorithm hyperparameters.
-        TRUNC_ELASTIC_NET_DEFAULTS.update(TRAINER_DEFAULTS)
-        TRUNC_ELASTIC_NET_DEFAULTS.update(DELPHI_DEFAULTS)
-        self.hyperparameters = check_and_fill_args(args, TRUNC_ELASTIC_NET_DEFAULTS)
-        assert self.hyperparameters.weight_decay > 0, (
-            "ridge regression requires l2 coefficient to be nonzero"
+        self.hyperparameters = configs.TruncatedElasticNetRegressionConfig(
+            **hyperparameters
         )
+        if self.hyperparameters.weight_decay <= 0:
+            raise ValueError(
+                "weight_decay must be nonzero for this estimator; got "
+                f"{self.hyperparameters.weight_decay}."
+            )
 
     def fit(self, X: Tensor, y: Tensor):  # pylint: disable=invalid-name
         """
@@ -95,7 +82,7 @@ class TruncatedElasticNetRegression(stats):  # pylint: disable=too-many-instance
         trainer = Trainer(  # pylint: disable=no-value-for-parameter
             self.trunc_elastic_net, self.hyperparameters, store=self.store
         )
-        trainer.train_model((self.train_loader_, self.val_loader_))  # pylint: disable=no-value-for-parameter
+        trainer.train_model(self.train_loader_, self.val_loader_)
 
         # Assign results from the procedure to instance variables.
         self.coef = self.trunc_elastic_net.model.weight.clone()  # pylint: disable=attribute-defined-outside-init,not-callable
@@ -133,7 +120,7 @@ class ElasticNetKnownVariance(TruncatedLinearRegression):  # pylint: disable=too
         """Initialize ElasticNetKnownVariance.
 
         Args:
-            args (Parameters): hyperparameter object
+            args: validated hyperparameter config
             train_loader: data loader for training data
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter
@@ -160,7 +147,7 @@ class ElasticNetUnknownVariance(TruncatedLinearRegression):  # pylint: disable=t
         """Initialize ElasticNetUnknownVariance.
 
         Args:
-            args (Parameters): hyperparameter object
+            args: validated hyperparameter config
             train_loader: data loader for training data
         """
         super().__init__(args, train_loader)  # pylint: disable=no-value-for-parameter

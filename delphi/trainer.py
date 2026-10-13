@@ -1,24 +1,24 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
+from collections.abc import Iterable
 import copy
 import os
 import random
-from collections.abc import Iterable
 from time import time
-from typing import Any, Union
+from typing import Any, Optional, Union
 
+from cox.store import Store
 import numpy as np
 import torch as ch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from cox.store import Store
 
+from delphi import configs
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
-from delphi.utils.configs import TrainerConfig
 from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
 
@@ -29,7 +29,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         model: delphi,
-        hyperparameters: TrainerConfig,
+        hyperparameters: configs.TrainerConfig,
         logger: delphiLogger,
         store=None,
     ):
@@ -42,9 +42,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             store: Optional cox store for experiment logging.
         """
         self.model: delphi = model
-        self.hyperparameters: TrainerConfig = hyperparameters
+        self.hyperparameters: configs.TrainerConfig = hyperparameters
         self.logger: delphiLogger = logger
-        self.store: Store | None = store
+        self.store: Optional[Store] = store
 
         self.epoch: int = 0
         self.iterations: int = 0
@@ -57,29 +57,29 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.param_history: list[ch.Tensor] = []
         self.val_param_history_indices: list[int] = []
         self.grad_norms: list[float] = []
-        self._ema_params: ch.Tensor | None = None
+        self._ema_params: Optional[ch.Tensor] = None
 
         self.t_start: float = 0.0
-        self.t_end: float | None = None
-        self.procedure_duration: float | None = None
-        self._best_loss_index: int | None = None
-        self._best_param_index: int | None = None
+        self.t_end: Optional[float] = None
+        self.procedure_duration: Optional[float] = None
+        self._best_loss_index: Optional[int] = None
+        self._best_param_index: Optional[int] = None
         # Either a state_dict (in-memory) or a filesystem path (disk) to the
         # best checkpoint; None when neither saving mode is active.
-        self._best_model_state: dict | str | None = None
-        self.stop_reason: StopReason | None = None
+        self._best_model_state: dict | Optional[str] = None
+        self.stop_reason: Optional[StopReason] = None
         # Tracks whether the cox logs table has been created for this run.
         self._store_logs_ready: bool = False
         # Size of the training dataset; set by train_model for ELBO scaling etc.
-        self.dataset_size: int | None = None
+        self.dataset_size: Optional[int] = None
 
         # Gradient accumulation counter.
         self._accum_step: int = 0
         # GradScaler for mixed precision; set by train_model.
-        self.scaler: ch.cuda.amp.GradScaler | None = None
+        self.scaler: Optional[ch.cuda.amp.GradScaler] = None
         # Most recent global gradient L2 norm; set every step regardless of
         # record_params_every so it is always available for logging.
-        self._last_grad_norm: float | None = None
+        self._last_grad_norm: Optional[float] = None
 
     def make_closure(self, batch):
         """Create an optimizer closure for the given batch.
@@ -299,7 +299,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 val.item() if isinstance(val, ch.Tensor) else float(val)
             )
 
-    def _validate(self, val_loader: DataLoader | None) -> None:
+    def _validate(self, val_loader: Optional[DataLoader]) -> None:
         """Run mid-epoch validation if the configured interval has been reached.
 
         No-op when the model is not training, ``val_loader`` is ``None``,
@@ -324,7 +324,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def _batch_epoch(
         self,
         loader: DataLoader,
-        val_loader: DataLoader | None,
+        val_loader: Optional[DataLoader],
         mode: ProcedureStage,
         loss_: AverageMeter,
         metric_meters: dict[str, AverageMeter],
@@ -392,7 +392,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         )
 
     def run_epoch(
-        self, loader: DataLoader | None, val_loader: DataLoader | None = None
+        self, loader: Optional[DataLoader], val_loader: Optional[DataLoader] = None
     ) -> tuple[float, dict[str, float]]:
         """Run one full epoch and return ``(avg_loss, metrics_dict)``.
 
@@ -433,7 +433,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         criteria (e.g. reward threshold in RL).
 
         Returns:
-            Tuple of (bool, StopReason | None) where the second element
+            Tuple of (bool, Optional[StopReason]) where the second element
             is the stop reason.
         """
         if (
@@ -500,7 +500,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         if ch.cuda.is_available():
             ch.cuda.manual_seed_all(rand_seed)
 
-    def _resolve_checkpoint_dir(self) -> str | None:
+    def _resolve_checkpoint_dir(self) -> Optional[str]:
         """Return the directory for on-disk checkpoints, or None.
 
         Prefers the explicitly configured ``checkpoint_dir`` arg; falls back
@@ -604,7 +604,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self,
         store: Store,
         train_loss: float,
-        val_loss: float | None,
+        val_loss: Optional[float],
         train_metrics: dict,
         val_metrics: dict,
     ) -> None:
@@ -655,7 +655,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self.model.load_state_dict(self._best_model_state)
         self.logger.info("Restored model weights from best checkpoint.")
 
-    def _val_epoch(self, val_loader: DataLoader | None) -> tuple[float | None, dict]:
+    def _val_epoch(
+        self, val_loader: Optional[DataLoader]
+    ) -> tuple[Optional[float], dict]:
         """Run one validation epoch and return ``(val_loss, val_metrics)``.
 
         Handles two cases:
@@ -701,8 +703,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        train_loader: DataLoader | None,
-        val_loader: DataLoader | None,
+        train_loader: Optional[DataLoader],
+        val_loader: Optional[DataLoader],
         rand_seed: int = 0,
         store: Store = None,
         checkpoint=None,
@@ -828,11 +830,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-        # These four attributes are accumulated as lists while training runs and
-        # are replaced here by the stacked tensors callers read afterwards.
+        # Accumulated as lists while training, replaced here by the stacked
+        # tensors callers read afterwards.
         # TODO: pstefanou12@ - give the stacked results their own attributes so
-        # the declared types stop changing shape partway through the object's
-        # life, and drop these suppressions.
+        # the declared types stop changing shape, and drop these suppressions.
         self.train_losses = (
             ch.stack(self.train_losses)  # type: ignore[assignment]
             if self.train_losses

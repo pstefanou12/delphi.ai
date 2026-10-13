@@ -4,51 +4,62 @@ Truncated Linear Regression.
 """
 
 import math
+from typing import Callable, Optional, cast
 import warnings
-from typing import Callable
 
-import torch as ch
-from torch import nn
 from scipy.linalg import lstsq
-from torch import Tensor
+import torch as ch
+from torch import Tensor, nn
 
+from delphi import configs
 from delphi.delphi_logger import delphiLogger
+from delphi.stats.linear_model import LinearModel
 from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
-from delphi.utils.defaults import (
-    TRUNC_LDS_DEFAULTS,
-    TRUNC_REG_DEFAULTS,
-    check_and_fill_args,
-)
-from delphi.utils.helpers import Bounds, Parameters
-from delphi.stats.linear_model import LinearModel
+from delphi.utils.helpers import Bounds
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
-    LinearModel
+    LinearModel[configs.TruncatedRegressionFieldsConfig]
 ):
     """Truncated linear regression via projected SGD on the truncated log-likelihood.
 
     Supports known noise variance, unknown noise variance, and temporal
     dependence. Requires a truncation oracle and survival probability alpha.
+
+    The parameters are registered during fit and depend on the variant, so
+    only one of the first two groups exists on any instance.
+
+    Attributes:
+        v: Natural parameter, when noise_var is unknown.
+        lambda_: Inverse noise variance, when noise_var is unknown.
+        weight: Regression weight, when noise_var is known.
+        Sigma_0: Initial covariance estimate; dependent data only.
+        Sigma: Running covariance estimate; dependent data only.
     """
+
+    v: nn.Parameter
+    lambda_: nn.Parameter
+    weight: nn.Parameter
+    Sigma_0: ch.Tensor  # pylint: disable=invalid-name
+    Sigma: ch.Tensor  # pylint: disable=invalid-name
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        args: Parameters,
+        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         fit_intercept: bool = True,
-        noise_var: ch.Tensor = None,
+        noise_var: Optional[ch.Tensor] = None,
         dependent: bool = False,
-        emp_weight: ch.Tensor = None,
+        emp_weight: Optional[ch.Tensor] = None,
         rand_seed=0,
     ):
         """Initialize TruncatedLinearRegression.
 
         Args:
-            args (Parameters): hyperparameter object
+            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             fit_intercept (bool): whether to fit an intercept term
@@ -58,15 +69,28 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
+        # The two variants carry different defaults, so pick the config class
+        # before delphi.__init__ validates the dict against it.
+        self.defaults = (
+            configs.TruncatedLinearDynamicalSystemConfig
+            if dependent
+            else configs.TruncatedRegressionConfig
+        )
+        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
+        # dependent and s live here rather than on LinearModel: this is the
+        # only estimator that uses them, and they are truncation concepts.
+        self.dependent = dependent
+        self.s: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
         if dependent:
-            args = check_and_fill_args(args, TRUNC_LDS_DEFAULTS)
-            super().__init__(args, dependent, logger, emp_weight=emp_weight)
-            setattr(
-                self.hyperparameters, "lr", (2 / alpha) ** self.hyperparameters.c_eta
+            # defaults was set to the dynamical-system config above, so c_s
+            # and c_eta are present; they exist on no other config.
+            lds = cast(
+                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
             )
-        else:
-            args = check_and_fill_args(args, TRUNC_REG_DEFAULTS)
-            super().__init__(args, dependent, logger, emp_weight=emp_weight)
+            self.hyperparameters.lr = (2 / alpha) ** lds.c_eta
+            self.s = lds.c_s * (
+                ch.sqrt(ch.log(Tensor([1 / self.hyperparameters.alpha]))) + 1
+            )
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -92,8 +116,25 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 self.hyperparameters.eps,
             ]
 
-        # Property instance variables.
         self.coef, self.intercept = None, None
+
+    @property
+    def required_survival_threshold(self) -> ch.Tensor:
+        """Return the survival threshold s, which only dependent data has.
+
+        Returns:
+            The survival threshold computed in ``__init__``.
+
+        Raises:
+            RuntimeError: If this model was not constructed with
+                ``dependent=True``.
+        """
+        if self.s is None:
+            raise RuntimeError(
+                "s is only computed for dependent data; "
+                "construct the model with dependent=True."
+            )
+        return self.s
 
     def fit(  # pylint: disable=attribute-defined-outside-init
         self,
@@ -128,14 +169,15 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 "expecting noise_var.size(0) == y.size(1)"
             )
 
-        # Add number of samples to args.
-        setattr(self.hyperparameters, "T", X.size(0))
         if self.dependent:
+            lds = cast(
+                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
+            )
             self.criterion_params = [
                 self.phi,
-                self.hyperparameters.c_gamma,
+                lds.c_gamma,
                 self.alpha,
-                self.hyperparameters.T,
+                X.size(0),
                 self.noise_var,
                 self.hyperparameters.num_samples,
                 self.hyperparameters.eps,
@@ -210,7 +252,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 ).sum(0)
 
             XXT_sum = calc_sigma_0(X)  # pylint: disable=invalid-name
-            Sigma_0 = (1 / (self.s * len(X))) * XXT_sum  # pylint: disable=invalid-name
+            Sigma_0 = (  # pylint: disable=invalid-name
+                1 / (self.required_survival_threshold * len(X))
+            ) * XXT_sum
             self.register_buffer("Sigma_0", Sigma_0)
             assert ch.det(self.Sigma_0) != 0, "Sigma_0 is singular and non-invertible"  # pylint: disable=no-member
             self.register_buffer("Sigma", self.Sigma_0.clone())  # pylint: disable=no-member
@@ -273,14 +317,18 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def loss(self, X: Tensor, y: Tensor) -> Tensor:  # pylint: disable=invalid-name
         """Compute loss for given inputs."""
         with ch.no_grad():
-            return self.criterion(self.predict(X), y, *self.criterion_params)
+            return self.required_criterion(  # pylint: disable=not-callable
+                self.predict(X), y, *self.criterion_params
+            )
 
     def emp_nll(self, X: Tensor, y: Tensor) -> Tensor:  # pylint: disable=invalid-name
         """Compute empirical negative log-likelihood."""
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], axis=1)  # pylint: disable=invalid-name
+            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
         with ch.no_grad():
-            return self.criterion(X @ self.emp_weight, y, *self.criterion_params)
+            return self.required_criterion(  # pylint: disable=not-callable
+                X @ self.emp_weight, y, *self.criterion_params
+            )
 
     @property
     def best_coef_(self):
