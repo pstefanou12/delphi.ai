@@ -21,9 +21,7 @@ class TruncatedProbitRegression(  # pylint: disable=too-many-instance-attributes
 ):
     """Truncated probit regression for binary classification with N(0,1) latent noise."""
 
-    # Created with register_parameter/register_buffer during fit,
-    # which mypy cannot see; declared here so attribute access is
-    # typed rather than resolved through nn.Module.__getattr__.
+    # Created by register_parameter in calc_emp_model, which mypy cannot see.
     weight: ch.nn.Parameter
 
     defaults = configs.TruncatedProbitRegressionConfig

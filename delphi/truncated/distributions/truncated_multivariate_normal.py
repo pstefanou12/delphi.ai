@@ -23,8 +23,7 @@ class TruncatedMultivariateNormal(
         emp_v: Empirical natural mean component.
     """
 
-    # Created with register_parameter() in _calc_emp_model, which mypy
-    # cannot see; declared here so attribute access is typed.
+    # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     T: nn.Parameter  # pylint: disable=invalid-name
     v: nn.Parameter
 

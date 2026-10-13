@@ -32,9 +32,7 @@ class GumbelCEModel(  # pylint: disable=abstract-method
             d: input dimension
             k: number of classes
         """
-        # LinearModel.__init__ takes neither d nor k and requires a logger, so
-        # the previous call raised a TypeError; it was silenced with pylint
-        # suppressions. d and k are plain attributes.
+        # d and k are plain attributes; LinearModel.__init__ takes neither.
         super().__init__(hyperparameters, logger=delphi_logger.delphiLogger())
         self.d, self.k = d, k  # pylint: disable=invalid-name
 

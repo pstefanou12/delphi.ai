@@ -30,9 +30,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
         criterion: Cross-entropy loss function.
     """
 
-    # Created with register_parameter/register_buffer during fit,
-    # which mypy cannot see; declared here so attribute access is
-    # typed rather than resolved through nn.Module.__getattr__.
+    # Created by register_parameter in pretrain_hook, which mypy cannot see.
     weight: ch.nn.Parameter
 
     defaults = configs.SoftmaxRegressionConfig
@@ -92,7 +90,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
             self.hyperparameters, X, y
         )
 
-        self.trainer = Trainer(self, self.hyperparameters, self.logger)  # pylint: disable=no-value-for-parameter
+        self.trainer = Trainer(self, self.hyperparameters, self.logger)
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self

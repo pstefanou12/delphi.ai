@@ -23,8 +23,6 @@ class LinearModelConfig(DelphiConfig):
     # DatasetConfig via DelphiConfig.
     fit_intercept: bool = True
 
-    # Must be > 0: fit() reads back best/final params from the trainer, which
-    # only records them when this is enabled. TRUNC_REG_DEFAULTS omitted the
-    # key entirely, so the pre-pydantic path got None from
-    # Parameters.__getattr__ and failed on "iterations % None".
+    # Must be > 0: fit() reads back best/final params, which the trainer only
+    # records when this is enabled.
     record_params_every: int = pydantic.Field(default=1, ge=1)

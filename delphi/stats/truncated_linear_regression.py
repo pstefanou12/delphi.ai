@@ -30,8 +30,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     dependence. Requires a truncation oracle and survival probability alpha.
     """
 
-    # Created with register_parameter/register_buffer during fit, which mypy
-    # cannot see; declared here so attribute access is typed.
+    # Created by register_parameter in pretrain_hook and register_buffer in
+    # calc_emp_model, which mypy cannot see.
     v: nn.Parameter
     lambda_: nn.Parameter
     weight: nn.Parameter
@@ -62,9 +62,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             rand_seed (int): random seed for reproducibility
         """
         logger = delphiLogger()
-        # The two variants carry different defaults (num_samples, shuffle,
-        # constant), so the config class is selected from dependent before
-        # delphi.__init__ validates the dict against it.
+        # The two variants carry different defaults, so pick the config class
+        # before delphi.__init__ validates the dict against it.
         self.defaults = (
             configs.TruncatedLinearDynamicalSystemConfig
             if dependent

@@ -830,11 +830,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 )
                 break
 
-        # These four attributes are accumulated as lists while training runs and
-        # are replaced here by the stacked tensors callers read afterwards.
+        # Accumulated as lists while training, replaced here by the stacked
+        # tensors callers read afterwards.
         # TODO: pstefanou12@ - give the stacked results their own attributes so
-        # the declared types stop changing shape partway through the object's
-        # life, and drop these suppressions.
+        # the declared types stop changing shape, and drop these suppressions.
         self.train_losses = (
             ch.stack(self.train_losses)  # type: ignore[assignment]
             if self.train_losses

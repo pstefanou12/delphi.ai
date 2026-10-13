@@ -59,9 +59,8 @@ class TruncatedElasticNetRegressionConfig(TruncatedLassoRegressionConfig):
     this adds no fields of its own; weight_decay comes from OptimizerConfig.
     """
 
-    # Read by the elastic net wrapper to choose between the known- and
-    # unknown-variance estimators. The pre-pydantic path relied on
-    # Parameters.__getattr__ returning None when the key was absent.
+    # Selects the known- or unknown-variance estimator in the elastic net
+    # wrapper.
     noise_var: Optional[ch.Tensor] = None
 
 
@@ -72,9 +71,7 @@ class TruncatedRidgeRegressionConfig(TruncatedRegressionConfig):
     this adds no fields of its own; weight_decay comes from OptimizerConfig.
     """
 
-    # Read by the ridge wrapper to choose between the known- and
-    # unknown-variance estimators. The pre-pydantic path relied on
-    # Parameters.__getattr__ returning None when the key was absent.
+    # Selects the known- or unknown-variance estimator in the ridge wrapper.
     noise_var: Optional[ch.Tensor] = None
 
 

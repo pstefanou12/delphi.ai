@@ -26,9 +26,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     probability alpha.
     """
 
-    # Created with register_parameter/register_buffer during fit,
-    # which mypy cannot see; declared here so attribute access is
-    # typed rather than resolved through nn.Module.__getattr__.
+    # Created by register_parameter in pretrain_hook, which mypy cannot see.
     weight: nn.Parameter
 
     defaults = configs.TruncatedLassoRegressionConfig
@@ -146,11 +144,8 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             fit_intercept=self.fit_intercept, alphas=[self.l1]
         )
         emp_lasso.fit(X, y)
-        # self.fit_intercept, not hyperparameters.fit_intercept: the
-        # constructor argument is what was passed to LassoCV three lines up,
-        # and the config field defaults to True, so reading it here took the
-        # intercept branch for a model fitted without one and tried to
-        # concatenate a scalar intercept_ onto a 1-D coef_.
+        # self.fit_intercept, not hyperparameters.fit_intercept: the former is
+        # what LassoCV was given above, and the latter defaults to True.
         if self.fit_intercept:
             lasso_coef_ = ch.from_numpy(
                 np.concatenate(
@@ -159,9 +154,8 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             )
         else:
             lasso_coef_ = ch.from_numpy(emp_lasso.coef_).float()[..., None]
-        # Plain assignment, matching TruncatedLinearRegression.calc_emp_model:
-        # LinearModel.__init__ already set emp_weight as an ordinary
-        # attribute, so register_buffer raises KeyError here.
+        # Plain assignment: LinearModel.__init__ already set emp_weight, so
+        # register_buffer would raise KeyError.
         self.emp_weight = lasso_coef_
 
     def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name

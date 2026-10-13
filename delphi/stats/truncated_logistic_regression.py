@@ -29,9 +29,7 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
 ):
     """Truncated logistic regression supporting binary and multinomial classification."""
 
-    # Created with register_parameter/register_buffer during fit,
-    # which mypy cannot see; declared here so attribute access is
-    # typed rather than resolved through nn.Module.__getattr__.
+    # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     weight: nn.Parameter
 
     defaults = configs.TruncatedLogisticRegressionConfig

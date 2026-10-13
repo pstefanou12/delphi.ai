@@ -16,9 +16,8 @@ from delphi import configs
 from delphi.utils import constants, helpers
 
 
-# Each torch class paired with the config section that names its keyword
-# arguments. Adding an optimizer or scheduler means adding a section and a
-# line here; the keyword mapping lives on the section's fields.
+# Each torch class paired with the config section whose aliases name its
+# keyword arguments.
 OPTIMIZER_SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
     constants.OptimizerType.SGD: (torch.optim.SGD, configs.SGDConfig),
     constants.OptimizerType.ADAM: (torch.optim.Adam, configs.AdamConfig),
@@ -327,9 +326,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         target, section = SCHEDULER_SECTIONS[scheduler_type]
         kwargs = self._kwargs_for(section)
 
-        # The remaining arguments cannot come from a section: two are the
-        # trainer's epoch budget under torch's own names, and CyclicLR needs
-        # the optimizer's learning rate, which only exists once it is built.
+        # These cannot come from a section: epochs is the trainer's, and
+        # CyclicLR's max_lr is only known once the optimizer exists.
         if scheduler_type is constants.SchedulerType.COSINE:
             kwargs["T_max"] = self.hyperparameters.epochs
         elif scheduler_type is constants.SchedulerType.LINEAR:
