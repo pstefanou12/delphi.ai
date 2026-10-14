@@ -12,14 +12,9 @@ class LinearModelConfig(DelphiConfig):
     Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in
     ``delphi.utils.defaults`` so defaults match the previous
     ``check_and_fill_args`` behaviour exactly.
-
-    Attributes:
-        fit_intercept: Fit an intercept term.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)
-
-    fit_intercept: bool = True
 
     # Must be > 0: fit() reads back best/final params, which the trainer only
     # records when this is enabled.

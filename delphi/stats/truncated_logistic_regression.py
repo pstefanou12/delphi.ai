@@ -131,15 +131,15 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
     def _calc_emp_model(self):
         """Calculate empirical logistic regression estimates using SKlearn module."""
         X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
-        if self._emp_weight is None and self.multi_class == "ovr":  # pylint: disable=access-member-before-definition
+        if self.emp_weight is None and self.multi_class == "ovr":  # pylint: disable=access-member-before-definition
             log_reg = sklearn_linear_model.LogisticRegression(
                 penalty=None, fit_intercept=False, multi_class=self.multi_class
             )
             log_reg.fit(X, y.flatten())
-            self._emp_weight = ch.from_numpy(log_reg.coef_).float()  # pylint: disable=attribute-defined-outside-init
-        elif self._emp_weight is None:
-            self._emp_weight = ch.randn(self.K, self.D)  # pylint: disable=attribute-defined-outside-init
-        self.register_parameter("weight", ch.nn.Parameter(self._emp_weight.clone()))
+            self.emp_weight = ch.from_numpy(log_reg.coef_).float()  # pylint: disable=attribute-defined-outside-init
+        elif self.emp_weight is None:
+            self.emp_weight = ch.randn(self.K, self.D)  # pylint: disable=attribute-defined-outside-init
+        self.register_parameter("weight", ch.nn.Parameter(self.emp_weight.clone()))
 
     def pretrain_hook(self):
         """
@@ -177,10 +177,11 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
 
     def predict_proba(self, X: ch.Tensor):  # pylint: disable=invalid-name
         """Probability predictions for input features."""
+        # Add the intercept rather than a ones column: post_training_hook
+        # split it out of best_coef, so the column has nothing to multiply.
+        logits = X @ self.best_coef.T
         if self.fit_intercept:
-            logits = ch.cat([X, ch.ones(X.size(0), 1)], dim=1) @ self.best_coef.T
-        else:
-            logits = X @ self.best_coef.T
+            logits = logits + self.best_intercept
         if self.multi_class == MULTI:
             return softmax(logits)
         return sig(logits)

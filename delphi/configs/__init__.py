@@ -43,12 +43,10 @@ from delphi.configs.stats.truncated.classification import (
 from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 from delphi.configs.stats.truncated.lqr import TruncatedLQRConfig
 from delphi.configs.stats.truncated.regression import (
-    TruncatedElasticNetRegressionConfig,
     TruncatedLassoRegressionConfig,
     TruncatedLinearDynamicalSystemConfig,
     TruncatedRegressionConfig,
     TruncatedRegressionFieldsConfig,
-    TruncatedRidgeRegressionConfig,
 )
 
 __all__ = [
@@ -69,7 +67,6 @@ __all__ = [
     "StepLRConfig",
     "TrainerConfig",
     "TruncatedClassificationConfig",
-    "TruncatedElasticNetRegressionConfig",
     "TruncatedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",
     "TruncatedLassoRegressionConfig",
@@ -80,7 +77,6 @@ __all__ = [
     "TruncatedProbitRegressionConfig",
     "TruncatedRegressionConfig",
     "TruncatedRegressionFieldsConfig",
-    "TruncatedRidgeRegressionConfig",
     "WarmupConfig",
     "_ConfigT",
 ]

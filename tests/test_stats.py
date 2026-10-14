@@ -5,7 +5,6 @@ Includes:
 """
 
 import numpy as np
-import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 import torch as ch
@@ -13,19 +12,12 @@ from torch.distributions import Gumbel
 from torch.nn import CosineSimilarity
 
 from delphi.stats.softmax import SoftmaxRegression
-from delphi.utils.helpers import Parameters
 
 cos_sim = CosineSimilarity()
 gumbel = Gumbel(0, 1)
 seed = 69
 
 
-# TODO: pstefanou12@ - retarget onto dict hyperparameters, with the 11 cases in
-# test_truncated_logistic_regression.py that share this cause.
-@pytest.mark.xfail(
-    reason="test passes helpers.Parameters; the config port requires a dict",
-    strict=False,
-)
 def test_softmax_regression():
     D, K = 1, 2
 
@@ -53,18 +45,16 @@ def test_softmax_regression():
     sklearn_conf_matrix = confusion_matrix(y, pred)
     print(f"sklearn confusion matrix: \n {sklearn_conf_matrix}")
 
-    args = Parameters(
-        {
-            "batch_size": 32,
-            "epochs": 10,
-            "lr": 1e-1,
-            "trials": 1,
-            "verbose": True,
-            "early_stopping": True,
-            "grad_tol": 0,
-            "patience": float("inf"),
-        }
-    )
+    args = {
+        "batch_size": 32,
+        "epochs": 10,
+        "lr": 1e-1,
+        "trials": 1,
+        "verbose": True,
+        "early_stopping": True,
+        "grad_tol": 0,
+        "patience": None,
+    }
     ch.manual_seed(seed)
     delphi_soft_reg = SoftmaxRegression(args, fit_intercept=False)
     delphi_soft_reg.fit(X, y)

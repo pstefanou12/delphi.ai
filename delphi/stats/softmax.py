@@ -102,13 +102,11 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
         with ch.no_grad():
             return softmax(x @ self.best_coef.T).argmax(dim=-1)
 
-    def __call__(self, X, y):
-        """
-        Compute logit predictions for a batch.
+    def forward(self, X):  # pylint: disable=invalid-name
+        """Compute logit predictions for a batch.
 
         Args:
-            X (Tensor): input features
-            y (Tensor): target class labels (unused; present for API consistency)
+            X: Input features of shape (num_samples, d).
 
         Returns:
             Logit predictions of shape (num_samples, k).

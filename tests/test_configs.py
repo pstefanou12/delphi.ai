@@ -70,9 +70,12 @@ OPERATIVE_DEFAULTS = {
 }
 
 
+_REPO_ROOT = pathlib.Path(__file__).parent.parent
+
+
 def test_every_hyperparameter_delphi_reads_is_declared() -> None:
     """No hyperparameter access in delphi.delphi falls through undeclared."""
-    source = pathlib.Path("delphi/delphi.py").read_text()
+    source = (_REPO_ROOT / "delphi/delphi.py").read_text()
     read = set(re.findall(r"self\.hyperparameters\.([A-Za-z_0-9]+)", source))
     # model_dump and friends are pydantic's API, not hyperparameters.
     read = {name for name in read if not name.startswith("model_")}
@@ -82,7 +85,7 @@ def test_every_hyperparameter_delphi_reads_is_declared() -> None:
 
 def test_no_defensive_hyperparameter_reads_remain() -> None:
     """delphi.delphi reads declared attributes, not getattr with a fallback."""
-    source = pathlib.Path("delphi/delphi.py").read_text()
+    source = (_REPO_ROOT / "delphi/delphi.py").read_text()
     assert "getattr(self.hyperparameters" not in source
     assert "_get_arg(" not in source
 
@@ -272,7 +275,7 @@ def test_configs_construct_nothing() -> None:
     not appear is a reference to torch.optim, which would mean a config had
     started constructing optimizers or schedulers.
     """
-    for path in pathlib.Path("delphi/configs").rglob("*.py"):
+    for path in (_REPO_ROOT / "delphi/configs").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Attribute):
                 name = _dotted(node)

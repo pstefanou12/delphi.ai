@@ -73,7 +73,7 @@ def calc_sarah_dean(
     AB = trunc_lds.coef_
     A_, B_ = AB[:D], AB[D:]
 
-    ols_ = trunc_lds.emp_weight
+    ols_ = trunc_lds.required_emp_weight
     A_ols, B_ols = ols_[:D], ols_[D:]
 
     return A_, B_, A_ols, B_ols
