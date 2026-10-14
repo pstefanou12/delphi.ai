@@ -83,6 +83,8 @@ def test_known_truncated_regression_one_dimension_no_intercept():
 # left truncated linear regression with known variance - 1 dimension
 # TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
 # estimator: ch.cat gets a scalar at position 1.
+# TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
+# estimator: ch.cat gets a scalar at position 1.
 @pytest.mark.skip(reason="test builds a 0-d tensor that ch.cat cannot concatenate")
 def test_known_truncated_regression_one_dimension():
     ch.manual_seed(seed)
@@ -293,7 +295,11 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
 # unknown-variance cases, and lasso no-intercept) miss by 0.12 to 2.85. The
 # gradient_steps key these tests pass is dead, so none of them ever set the
 # training length they intended.
-@pytest.mark.skip(reason="unknown-variance accuracy: mse 0.134 against a 0.1 tolerance")
+# TODO: pstefanou12@ - the eight accuracy skips in this file (five
+# unknown-variance cases and three lasso) miss by 0.12 to 2.85. The
+# gradient_steps key these tests pass is dead, so none of them ever set
+# the training length they intended; DelphiConfig now warns about it.
+@pytest.mark.skip(reason="accuracy: mse 0.134 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_one_dimension():
     ch.manual_seed(seed)
     D = 1
@@ -380,9 +386,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
 
 
 # left truncated regression with unknown noise variance in one dimension with noise variance 3
-@pytest.mark.skip(
-    reason="unknown-variance accuracy: var l1 0.122 against a 0.1 tolerance"
-)
+@pytest.mark.skip(reason="accuracy: var l1 0.122 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     ch.manual_seed(seed)
     D = 1
@@ -462,9 +466,7 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     )
 
 
-@pytest.mark.skip(
-    reason="unknown-variance accuracy: var l1 1.40 against a 0.1 tolerance"
-)
+@pytest.mark.skip(reason="accuracy: var l1 1.40 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
     ch.manual_seed(seed)
     D = 10
@@ -536,7 +538,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
 
 
 # left truncated regression with unknown noise variance in ten dimensions
-@pytest.mark.skip(reason="unknown-variance accuracy: mse 1.92 against a 0.1 tolerance")
+@pytest.mark.skip(reason="accuracy: mse 1.92 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_ten_dimensions():
     ch.manual_seed(seed)
     D = 10
@@ -612,7 +614,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
 
 
 # left truncated regression with unknown noise variance in ten dimensions
-@pytest.mark.skip(reason="unknown-variance accuracy: mse 2.85 against a 0.1 tolerance")
+@pytest.mark.skip(reason="accuracy: mse 2.85 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_fifty_dimensions():
     ch.manual_seed(seed)
     D = 50
@@ -694,7 +696,7 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     )
 
 
-@pytest.mark.skip(reason="lasso accuracy: mse 0.146 against a 0.1 tolerance")
+@pytest.mark.skip(reason="accuracy: mse 0.146 against a 0.1 tolerance")
 def test_truncated_lasso_regression_one_dimension_no_intercept():
     ch.manual_seed(seed)
     L1 = 0.1
@@ -762,7 +764,7 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
 
 # TODO: pstefanou12@ - the lasso weight carries one column more than the
 # design matrix, so the intercept column is counted twice.
-@pytest.mark.skip(reason="lasso size mismatch: mat (10x2) against vec (3)")
+@pytest.mark.skip(reason="accuracy: mse 0.175 against a 0.1 tolerance")
 def test_truncated_lasso_regression_one_dimension():
     ch.manual_seed(seed)
     L1 = 0.1
@@ -845,7 +847,7 @@ def test_truncated_lasso_regression_one_dimension():
     assert trunc_mse_loss <= 1e-1, msg
 
 
-@pytest.mark.skip(reason="lasso size mismatch: mat (10x11) against vec (12)")
+@pytest.mark.skip(reason="accuracy: mse 0.438 against an empirical 0.025")
 def test_truncated_lasso_regression_ten_dimensions():
     ch.manual_seed(seed)
     L1 = 0.1
@@ -931,7 +933,10 @@ def test_truncated_lasso_regression_ten_dimensions():
 
 # TODO: pstefanou12@ - truncated_linear_regression.py:421 multiplies by a
 # weight that the dependent path never assigns.
-@pytest.mark.skip(reason="dependent path reaches Tensor @ None")
+# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
+# backward, so weight.grad is still None when Sigma.inverse() needs it.
+# Applying the transform needs to move relative to the closure.
+@pytest.mark.skip(reason="dependent path reaches Tensor @ None in step_pre_hook")
 def test_truncated_dependent_regression():
     ch.manual_seed(seed)
     D = 10  # number of dimensions for A_{*} matrix

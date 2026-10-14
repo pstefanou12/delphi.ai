@@ -88,9 +88,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
             )
             self.hyperparameters.lr = (2 / alpha) ** lds.c_eta
-            self.s = lds.c_s * (
-                ch.sqrt(ch.log(Tensor([1 / self.hyperparameters.alpha]))) + 1
-            )
+            self.s = lds.c_s * (ch.sqrt(ch.log(Tensor([1 / alpha]))) + 1)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -327,7 +325,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
         with ch.no_grad():
             return self.required_criterion(  # pylint: disable=not-callable
-                X @ self.emp_weight, y, *self.criterion_params
+                X @ self.required_emp_weight, y, *self.criterion_params
             )
 
     @property

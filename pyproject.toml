@@ -73,29 +73,6 @@ force-sort-within-sections = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# TODO: pstefanou12@ - port delphi/stats/ to pydantic configs, then drop this.
-# stats/ still passes helpers.Parameters (a plain class) into delphi.__init__,
-# which has been dict-only with a TypeError guard since e3c37f7. Several call
-# sites are also stale: truncated_lqr.py and tests/test_utils.py call
-# TruncatedLinearRegression(phi, args, noise_var, ...) against an
-# (args, phi, alpha, ...) signature, and the ridge/elastic-net fits call
-# Trainer(...) without the now-required logger. These are real runtime
-# failures, not typing noise, so they need the port rather than annotations.
-module = [
-    # TODO: pstefanou12@ - these two wrappers cannot run, independently
-    # of the config port. TruncatedLinearRegression never sets
-    # self.model (it uses self.weight), yet both read
-    # trunc_*.model.weight; their inner estimators call
-    # super().__init__(args, train_loader), passing the loader as phi
-    # and omitting the required alpha; and calc_emp_model references
-    # self.X / self.y, which nothing defines. Neither module has any
-    # test. Fixing this needs the estimator's intent, not annotations.
-    "delphi.stats.truncated_elastic_net_regression",
-    "delphi.stats.truncated_ridge_regression",
-]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 # TODO: pstefanou12@ - revisit the generic/config typing of
 # TruncatedExponentialFamilyDistribution, then drop this. configs._ConfigT is
 # bound to TrainerConfig while this module reads fields declared only on

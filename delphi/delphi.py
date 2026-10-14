@@ -325,17 +325,37 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         target, section = SCHEDULER_SECTIONS[scheduler_type]
         kwargs = self._kwargs_for(section)
 
-        # These cannot come from a section: epochs is the trainer's, and
+        # These cannot come from a section: the horizon is the trainer's, and
         # CyclicLR's max_lr is only known once the optimizer exists.
         if scheduler_type is constants.SchedulerType.COSINE:
-            kwargs["T_max"] = self.hyperparameters.epochs
+            kwargs["T_max"] = self._schedule_horizon()
         elif scheduler_type is constants.SchedulerType.LINEAR:
-            kwargs["total_iters"] = self.hyperparameters.epochs
+            kwargs["total_iters"] = self._schedule_horizon()
         elif scheduler_type is constants.SchedulerType.CYCLIC:
             kwargs.setdefault("max_lr", self.required_optimizer.param_groups[0]["lr"])
             kwargs["cycle_momentum"] = False
 
         return target(self.required_optimizer, **kwargs)
+
+    def _schedule_horizon(self) -> int:
+        """Return the step budget the cosine and linear schedules decay over.
+
+        Returns:
+            The configured iteration cap, or the epoch cap when only that is
+            set.
+
+        Raises:
+            ValueError: If neither cap is set, leaving the decay unbounded.
+        """
+        # Prefer iterations: _schedule_step runs per optimizer step, not per
+        # epoch. Either cap may be None, and torch rejects None here.
+        horizon = self.hyperparameters.iterations or self.hyperparameters.epochs
+        if horizon is None:
+            raise ValueError(
+                f"{self.hyperparameters.scheduler} needs iterations or epochs "
+                "set; it decays over a fixed number of steps."
+            )
+        return horizon
 
     def _with_warmup(
         self, base_schedule: torch.optim.lr_scheduler.LRScheduler

@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import Optional
 import warnings
 
-import numpy as np
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
@@ -140,23 +139,11 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     def calc_emp_model(self) -> None:
         """Calculate empirical lasso regression estimates using sklearn."""
         X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
-        emp_lasso = sklearn_linear_model.LassoCV(
-            fit_intercept=self.fit_intercept, alphas=[self.l1]
-        )
+        # fit_intercept=False unconditionally: fit() appends the ones column
+        # to X, so coef_ already spans the intercept.
+        emp_lasso = sklearn_linear_model.LassoCV(fit_intercept=False, alphas=[self.l1])
         emp_lasso.fit(X, y)
-        # self.fit_intercept, not hyperparameters.fit_intercept: the former is
-        # what LassoCV was given above, and the latter defaults to True.
-        if self.fit_intercept:
-            lasso_coef_ = ch.from_numpy(
-                np.concatenate(
-                    [emp_lasso.coef_.flatten(), np.atleast_1d(emp_lasso.intercept_)]
-                )
-            )
-        else:
-            lasso_coef_ = ch.from_numpy(emp_lasso.coef_).float()[..., None]
-        # Plain assignment: LinearModel.__init__ already set emp_weight, so
-        # register_buffer would raise KeyError.
-        self.emp_weight = lasso_coef_
+        self.emp_weight = ch.from_numpy(emp_lasso.coef_).float()[..., None]
 
     def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         """Forward pass through the model."""
@@ -179,15 +166,17 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
 
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""
-        best_params = self.trainer.best_params
-        final_params = self.trainer.final_params
+        # The trainer records a flat vector, and the intercept is the last
+        # row: forward multiplies X @ weight, so weight is (d + 1, 1).
+        best_params = self.trainer.best_params.reshape(self.weight.size())
+        final_params = self.trainer.final_params.reshape(self.weight.size())
         if self.hyperparameters.r is not None:
             self.hyperparameters.r *= self.hyperparameters.rate
         if self.fit_intercept:
-            self.best_coef = best_params[:, :-1] / self.beta
-            self.best_intercept = best_params[:, -1]
-            self.final_coef = final_params[:, :-1] / self.beta
-            self.final_intercept = final_params[:, -1]
+            self.best_coef = best_params[:-1] / self.beta
+            self.best_intercept = best_params[-1]
+            self.final_coef = final_params[:-1] / self.beta
+            self.final_intercept = final_params[-1]
             self.emp_weight /= self.beta
         else:
             self.best_coef = best_params[:] / self.beta

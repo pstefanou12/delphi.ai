@@ -3,6 +3,8 @@
 
 from typing import Generic, Optional, TypeVar
 
+import torch as ch
+
 from delphi import configs
 from delphi.delphi import delphi
 from delphi.delphi_logger import delphiLogger
@@ -26,6 +28,9 @@ class LinearModel(  # pylint: disable=abstract-method
         base_radius: Base projection set radius.
     """
 
+    # Created by register_buffer below, which pylint and mypy cannot see.
+    emp_weight: Optional[ch.Tensor]
+
     def __init__(
         self,
         hyperparameters: dict,
@@ -42,8 +47,22 @@ class LinearModel(  # pylint: disable=abstract-method
         """
         super().__init__(hyperparameters)
         self.logger = logger
-        self.emp_weight = emp_weight
+        self.register_buffer("emp_weight", emp_weight)
 
         self.d: Optional[int] = None  # pylint: disable=invalid-name
         self.k: Optional[int] = None  # pylint: disable=invalid-name
         self.base_radius = 2.0
+
+    @property
+    def required_emp_weight(self) -> ch.Tensor:
+        """Return the empirical weight, which calc_emp_model must have set.
+
+        Returns:
+            The empirical weight estimate.
+
+        Raises:
+            RuntimeError: If no empirical weight has been computed yet.
+        """
+        if self.emp_weight is None:
+            raise RuntimeError("emp_weight has not been computed on this model.")
+        return self.emp_weight

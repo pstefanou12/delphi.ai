@@ -93,6 +93,20 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         self.c = (self.hyperparameters.R - 3 * (self.m**0.5)) / self.hyperparameters.U_B  # pylint: disable=invalid-name
         logger.info("c: %s", self.c)
 
+    def _lds_hyperparameters(self) -> dict:
+        """Return the settings to hand to each phase's regression.
+
+        Returns:
+            The explicitly-set hyperparameters that the dynamical-system
+            config also declares.
+        """
+        # exclude_unset, and the field filter, keep this config's generic
+        # defaults from overriding the dynamical-system ones, which differ
+        # deliberately: shuffle is False and constant is True there.
+        settings = self.hyperparameters.model_dump(exclude_unset=True)
+        fields = set(configs.TruncatedLinearDynamicalSystemConfig.model_fields)
+        return {key: value for key, value in settings.items() if key in fields}
+
     def fit(self):
         """Run all three phases of the truncated LQR algorithm."""
         self.run_phase_one()
@@ -136,7 +150,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", X.size(0))
 
         self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self.hyperparameters.model_dump(),
+            self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
             noise_var=self.gen_data.noise_var,
@@ -178,7 +192,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
                 logger.info("total number of samples: %s", U.size(0))
 
         self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self.hyperparameters.model_dump(),
+            self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
             noise_var=self.gen_data.noise_var,
@@ -380,7 +394,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             y_concat = ch.cat([Yu, Yx])
 
             self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                self.hyperparameters.model_dump(),
+                self._lds_hyperparameters(),
                 self.hyperparameters.phi,
                 self.hyperparameters.alpha,
                 noise_var=self.gen_data.noise_var,

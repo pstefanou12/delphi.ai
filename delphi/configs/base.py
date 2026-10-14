@@ -7,6 +7,7 @@ derives from.
 """
 
 from typing import Optional, TypeVar
+import warnings
 
 import pydantic
 
@@ -77,6 +78,29 @@ class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
     to TrainerConfig alone, those fields were untypeable from the base class
     and every read had to go through ``getattr(..., default)``.
     """
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _warn_on_unknown_keys(cls, data):
+        """Warn about hyperparameter keys this config will discard.
+
+        Args:
+            data: The raw input, usually the caller's hyperparameter dict.
+
+        Returns:
+            The input unchanged.
+        """
+        # extra="ignore" means a renamed or misspelled key would otherwise
+        # train with a silently different value than the caller asked for.
+        if isinstance(data, dict):
+            unknown = sorted(set(data) - set(cls.model_fields))
+            if unknown:
+                warnings.warn(
+                    f"{cls.__name__} ignores unknown hyperparameters: "
+                    f"{', '.join(unknown)}.",
+                    stacklevel=2,
+                )
+        return data
 
 
 _ConfigT = TypeVar("_ConfigT", bound=DelphiConfig)

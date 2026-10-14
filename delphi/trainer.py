@@ -66,7 +66,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self._best_param_index: Optional[int] = None
         # Either a state_dict (in-memory) or a filesystem path (disk) to the
         # best checkpoint; None when neither saving mode is active.
-        self._best_model_state: dict | Optional[str] = None
+        self._best_model_state: Optional[Union[dict, str]] = None
         self.stop_reason: Optional[StopReason] = None
         # Tracks whether the cox logs table has been created for this run.
         self._store_logs_ready: bool = False

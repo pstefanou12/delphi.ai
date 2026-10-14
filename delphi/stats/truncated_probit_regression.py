@@ -133,14 +133,16 @@ class TruncatedProbitRegression(  # pylint: disable=too-many-instance-attributes
     def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Process and store results after training completes."""
         self.hyperparameters.r *= self.hyperparameters.rate
-        best_params = self.trainer.best_params
-        final_params = self.trainer.final_params
+        # The trainer records a flat vector, and the intercept is the last
+        # row: forward multiplies X @ weight, so weight is (d + 1, 1).
+        best_params = self.trainer.best_params.reshape(self.weight.size())
+        final_params = self.trainer.final_params.reshape(self.weight.size())
         if self.fit_intercept:
-            self.best_coef = best_params[:, :-1]
-            self.best_intercept = best_params[:, -1]
+            self.best_coef = best_params[:-1]
+            self.best_intercept = best_params[-1]
 
-            self.final_coef = final_params[:, :-1]
-            self.final_intercept = final_params[:, -1]
+            self.final_coef = final_params[:-1]
+            self.final_intercept = final_params[-1]
 
         else:
             self.best_coef = best_params
