@@ -3,45 +3,7 @@
 
 import torch as ch
 
-# Floors the block estimate so a run of rejections cannot ask for an
-# unbounded draw, and caps any single block.
-_MIN_ACCEPTANCE_RATE = 1e-3
-_MAX_BLOCK = 100
-
-
-def _sample_truncated(dist, phi, num_samples):  # pylint: disable=invalid-name
-    """Draw samples from dist that fall inside the truncation set.
-
-    Args:
-        dist: Distribution to sample from.
-        phi: Truncation set oracle.
-        num_samples: Minimum number of accepted samples to return.
-
-    Returns:
-        Tuple of (accepted samples, acceptance rate).
-    """
-    z = []
-    num_sampled = 0
-    num_accepted = 0
-    # Drawing a fixed multiple of num_samples per block wastes most of it
-    # whenever the survival mass is large: at alpha = 0.36, collecting 1000
-    # accepted needs about 2700 draws, so a 10x block throws away two thirds.
-    # Sizing each block from the acceptance rate seen so far keeps the total
-    # within one block of what is actually required, at any alpha.
-    block = num_samples
-    while num_accepted < num_samples:
-        s = dist.sample([block])
-        accepted = s[phi(s).nonzero()[:, 0]]
-        z.append(accepted)
-        num_accepted += accepted.size(0)
-        num_sampled += block
-        if num_accepted < num_samples:
-            rate = max(num_accepted / num_sampled, _MIN_ACCEPTANCE_RATE)
-            block = min(
-                int((num_samples - num_accepted) / rate) + 1,
-                _MAX_BLOCK * num_samples,
-            )
-    return ch.cat(z), ch.Tensor([num_accepted / num_sampled])
+from delphi.truncated import sampling
 
 
 class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-method
@@ -75,7 +37,7 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         D = dist(theta, dims)  # pylint: disable=invalid-name
         log_prob = D.log_prob(S)
 
-        z, p_hat = _sample_truncated(D, phi, num_samples)
+        z, p_hat = sampling.rejection_sample(D, phi, num_samples)
         if p_hat < 0.01:
             print(f"acceptance rate: {p_hat.item()}")
 
@@ -136,7 +98,7 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         # The identity below is exact for an exponential family, where the
         # log-partition function's second derivative is Cov[T].
         with ch.no_grad():
-            z, _ = _sample_truncated(dist(theta, dims), phi, num_samples)
+            z, _ = sampling.rejection_sample(dist(theta, dims), phi, num_samples)
             return calc_suff_stat(z).T.cov()
 
 
