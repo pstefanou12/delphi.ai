@@ -92,11 +92,8 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
             entries at sampling noise, so callers wanting per-coordinate
             curvature should take the diagonal.
         """
-        # Differentiating backward() cannot produce this: its gradient is a
-        # constant built from saved samples, so theta's influence -- which
-        # lives in the sampling distribution -- is invisible to autograd.
-        # The identity below is exact for an exponential family, where the
-        # log-partition function's second derivative is Cov[T].
+        # Autograd cannot produce this: backward() returns a constant built
+        # from saved samples, hiding theta's effect on where they came from.
         with ch.no_grad():
             z, _ = sampling.rejection_sample(dist(theta, dims), phi, num_samples)
             return calc_suff_stat(z).T.cov()

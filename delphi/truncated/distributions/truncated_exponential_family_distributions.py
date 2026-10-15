@@ -78,9 +78,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         self.phi = phi
-        # _initial_radius takes log(1/alpha), and the survival mass is a
-        # probability, so anything outside (0, 1] is unusable rather than
-        # merely odd.
         if alpha is not None and not 0.0 < alpha <= 1.0:
             raise ValueError(
                 f"alpha is the survival probability and must lie in (0, 1]; got {alpha}."
@@ -232,13 +229,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             An explicit ``min_radius``, else ``log(1 / alpha)`` when alpha is
             known, else the ``min_radius`` default.
         """
-        # Karatapanis et al. (2025) constrain to L(theta) <= L(theta_0) +
-        # log(1/alpha), which keeps every feasible theta assigning Omega(alpha)
-        # mass to the survival set. Estimating alpha here is not an option:
-        # the only parameter available is theta_0, the truncated-data MLE,
-        # whose own truncation bias inflates p(S) -- on the 20-dim Weibull it
-        # reads 0.59 against a true 0.36, and biased high means a radius too
-        # small, which can exclude theta* from the feasible set.
         if "min_radius" in self.hyperparameters.model_fields_set:
             return self.hyperparameters.min_radius
         if self.alpha is not None:

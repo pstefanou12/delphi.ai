@@ -44,10 +44,8 @@ class FisherLR(InverseTimeLR):
             raise ValueError(f"mu cannot exceed smoothness; got {mu} and {smoothness}.")
         self.mu = mu
         self.smoothness = smoothness
-        # The theory fixes the starting rate, so whatever lr the optimizer was
-        # built with is replaced rather than scaled. This has to happen before
-        # LRScheduler.__init__, which captures base_lrs and applies the first
-        # rate immediately.
+        # Before LRScheduler.__init__, which captures base_lrs and applies
+        # the first rate immediately.
         for group in optimizer.param_groups:
             group["lr"] = 1.0 / smoothness
             group.pop("initial_lr", None)
@@ -69,9 +67,8 @@ class FisherLR(InverseTimeLR):
         Raises:
             ValueError: If the estimate has no positive curvature.
         """
-        # Eigenvalues of a sampled near-diagonal matrix can fall below the
-        # true minimum, and mu sets the decay constant, so a product family
-        # reads its diagonal instead.
+        # A sampled near-diagonal matrix can show eigenvalues below the true
+        # minimum, and mu sets the decay constant.
         values = (
             hessian.diagonal() if independent else ch.linalg.eigvalsh(hessian)  # pylint: disable=not-callable
         )

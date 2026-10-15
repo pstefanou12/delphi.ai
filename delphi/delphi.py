@@ -344,9 +344,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             kwargs.setdefault("max_lr", self.required_optimizer.param_groups[0]["lr"])
             kwargs["cycle_momentum"] = False
         elif scheduler_type is constants.SchedulerType.FISHER:
-            # Only sample a Hessian when the caller has not supplied both
-            # constants: doing it unconditionally would cost a sampling round
-            # and would fail on models that cannot report curvature.
+            # Skip the sampling round when the caller supplied both.
             if kwargs.keys() < {"mu", "smoothness"}:
                 mu, smoothness = self._hessian_spectrum()
                 kwargs.setdefault("mu", mu)
@@ -383,17 +381,15 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Raises:
             NotImplementedError: If the model cannot supply a Hessian.
         """
-        # Once per fit, not per step: both papers state these as bounds
-        # holding over the whole feasible set, so they are constants of the
-        # problem rather than per-iteration quantities.
+        # Once per fit: both papers state these as bounds over the feasible
+        # set, not per-iteration quantities.
         if not hasattr(self, "hessian"):
             raise NotImplementedError(
                 f"{type(self).__name__} does not implement hessian(), which "
                 f"the {constants.SchedulerType.FISHER.value} scheduler needs; "
                 "set fisher_mu and fisher_smoothness explicitly instead."
             )
-        # nn.Module.__getattr__ types every attribute as a Tensor, so the
-        # method has to be named explicitly for the call to type.
+        # nn.Module.__getattr__ types every attribute as a Tensor.
         hessian = cast(Callable[[], ch.Tensor], getattr(self, "hessian"))
         return fisher.FisherLR.spectrum(
             hessian(), getattr(self, "independent_coordinates", True)
