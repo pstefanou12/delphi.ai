@@ -28,14 +28,18 @@ class TruncatedMultivariateNormal(
     v: nn.Parameter
 
     dist = multivariate_normal.MultivariateNormal
+    # T(x) is [vec(xx^T), x], whose coordinates are dependent, so the
+    # Hessian is dense and its spectrum needs eigenvalues.
+    independent_coordinates = False
+
     defaults = configs.TruncatedMultivariateNormalConfig
 
     def __init__(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
+        alpha: Optional[float] = None,
     ):
         """Initialize TruncatedMultivariateNormal.
 
@@ -45,7 +49,7 @@ class TruncatedMultivariateNormal(
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        super().__init__(hyperparameters, phi, alpha, dims)
+        super().__init__(hyperparameters, phi, dims, alpha)
         self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
 
         # Attributes set during _calc_emp_model.

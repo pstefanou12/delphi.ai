@@ -9,6 +9,8 @@ import torch
 
 from delphi import configs
 from delphi.delphi import OPTIMIZER_SECTIONS, SCHEDULER_SECTIONS, delphi
+from delphi.optim.lr_scheduler import fisher
+from delphi.utils import constants
 
 
 class Model(delphi[configs.TruncatedRegressionConfig]):
@@ -49,10 +51,46 @@ def test_builtin_optimizers_build_from_their_sections() -> None:
 def test_every_scheduler_builds() -> None:
     """Each scheduler is constructed from its section."""
     for name, (target, _) in SCHEDULER_SECTIONS.items():
-        _, schedule = Model(
-            {"scheduler": name.value, "epochs": 5, "constant": False}
-        ).make_optimizer_and_schedule()
+        hyperparameters: dict = {
+            "scheduler": name.value,
+            "epochs": 5,
+            "constant": False,
+        }
+        if name is constants.SchedulerType.FISHER:
+            # Model declares no hessian(), which is the path a caller takes
+            # when supplying the curvature constants directly.
+            hyperparameters |= {"fisher_mu": 0.5, "fisher_smoothness": 8.0}
+        _, schedule = Model(hyperparameters).make_optimizer_and_schedule()
         assert isinstance(schedule, target)
+
+
+def test_fisher_scheduler_refuses_a_model_without_a_hessian() -> None:
+    """Deriving the spectrum needs a Hessian, so say so rather than guess."""
+    with pytest.raises(NotImplementedError, match="hessian"):
+        Model(
+            {"scheduler": "fisher", "epochs": 5, "constant": False}
+        ).make_optimizer_and_schedule()
+
+
+def test_fisher_scheduler_derives_its_constants_from_a_hessian() -> None:
+    """A model that reports curvature needs no learning rate of its own."""
+
+    class CurvedModel(Model):  # pylint: disable=too-few-public-methods
+        """Model whose Hessian has a known spectrum."""
+
+        independent_coordinates = True
+
+        def hessian(self) -> torch.Tensor:
+            """Return a diagonal Hessian with eigenvalues 2 and 50."""
+            return torch.diag(torch.Tensor([2.0, 50.0]))
+
+    _, schedule = CurvedModel(
+        {"scheduler": "fisher", "epochs": 5, "constant": False}
+    ).make_optimizer_and_schedule()
+    assert isinstance(schedule, fisher.FisherLR)
+    assert (schedule.mu, schedule.smoothness) == (2.0, 50.0)
+    # Starts at 1 / smoothness, the largest step that stays stable.
+    assert schedule.get_last_lr()[0] == pytest.approx(1.0 / 50.0)
 
 
 def test_section_aliases_match_their_torch_signature() -> None:

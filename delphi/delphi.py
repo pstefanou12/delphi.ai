@@ -13,6 +13,7 @@ import torch.optim
 import torch.optim.lr_scheduler
 
 from delphi import configs
+from delphi.optim.lr_scheduler import fisher, inverse_time
 from delphi.utils import constants, helpers
 
 # Each torch class paired with the config section whose aliases name its
@@ -53,6 +54,14 @@ SCHEDULER_SECTIONS: dict[
     constants.SchedulerType.REDUCE_ON_PLATEAU: (
         torch.optim.lr_scheduler.ReduceLROnPlateau,
         configs.PlateauLRConfig,
+    ),
+    constants.SchedulerType.INVERSE_TIME: (
+        inverse_time.InverseTimeLR,
+        configs.InverseTimeLRConfig,
+    ),
+    constants.SchedulerType.FISHER: (
+        fisher.FisherLR,
+        configs.FisherLRConfig,
     ),
 }
 
@@ -334,6 +343,12 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         elif scheduler_type is constants.SchedulerType.CYCLIC:
             kwargs.setdefault("max_lr", self.required_optimizer.param_groups[0]["lr"])
             kwargs["cycle_momentum"] = False
+        elif scheduler_type is constants.SchedulerType.FISHER:
+            # Skip the sampling round when the caller supplied both.
+            if kwargs.keys() < {"mu", "smoothness"}:
+                mu, smoothness = self._hessian_spectrum()
+                kwargs.setdefault("mu", mu)
+                kwargs.setdefault("smoothness", smoothness)
 
         return target(self.required_optimizer, **kwargs)
 
@@ -356,6 +371,29 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 "set; it decays over a fixed number of steps."
             )
         return horizon
+
+    def _hessian_spectrum(self) -> tuple[float, float]:
+        """Return the curvature constants FisherLR decays by.
+
+        Returns:
+            Tuple of (mu, smoothness) from this model's Hessian.
+
+        Raises:
+            NotImplementedError: If the model cannot supply a Hessian.
+        """
+        # Once per fit: both papers state these as bounds over the feasible
+        # set, not per-iteration quantities.
+        if not hasattr(self, "hessian"):
+            raise NotImplementedError(
+                f"{type(self).__name__} does not implement hessian(), which "
+                f"the {constants.SchedulerType.FISHER.value} scheduler needs; "
+                "set fisher_mu and fisher_smoothness explicitly instead."
+            )
+        # nn.Module.__getattr__ types every attribute as a Tensor.
+        hessian = cast(Callable[[], ch.Tensor], getattr(self, "hessian"))
+        return fisher.FisherLR.spectrum(
+            hessian(), getattr(self, "independent_coordinates", True)
+        )
 
     def _with_warmup(
         self, base_schedule: torch.optim.lr_scheduler.LRScheduler

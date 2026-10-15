@@ -1,16 +1,23 @@
 """
 Test suite for evaluating truncated lqr algorithm.
 """
+
+import pytest
+
 # import torch as ch
 
 # from delphi import oracle
 # from delphi.stats.truncated_lqr import TruncatedLQR
 # from delphi.utils.helpers import Parameters, calc_spectral_norm
-# from .test_utils import GenerateTruncatedLQRData, calc_sarah_dean
 
 
+# TODO: pstefanou12@ - the body below is commented out and its data generator,
+# tests/test_utils.py, was deleted alongside this change; recover it from
+# history when truncated LQR is revived. Skipped rather than left as
+# `assert True`, which reported a pass while covering nothing.
+@pytest.mark.skip(reason="truncated LQR has no live test; body is commented out")
 def test_truncated_lqr():
-    assert True
+    pass
     # RAND_SEED = 69
     # ch.manual_seed(RAND_SEED)
     # gamma = 2.0

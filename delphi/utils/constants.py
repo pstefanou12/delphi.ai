@@ -64,6 +64,8 @@ class SchedulerType(str, Enum):
     MULTI_STEP = "multi_step"
     EXPONENTIAL = "exponential"
     REDUCE_ON_PLATEAU = "reduce_on_plateau"
+    INVERSE_TIME = "inverse_time"
+    FISHER = "fisher"
 
 
 class CheckpointKey(str, Enum):

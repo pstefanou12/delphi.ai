@@ -85,6 +85,8 @@ def test_known_truncated_regression_one_dimension_no_intercept():
 # estimator: ch.cat gets a scalar at position 1.
 # TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
 # estimator: ch.cat gets a scalar at position 1.
+# TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
+# estimator: ch.cat gets a scalar at position 1.
 @pytest.mark.skip(reason="test builds a 0-d tensor that ch.cat cannot concatenate")
 def test_known_truncated_regression_one_dimension():
     ch.manual_seed(seed)
@@ -299,6 +301,11 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
 # unknown-variance cases and three lasso) miss by 0.12 to 2.85. The
 # gradient_steps key these tests pass is dead, so none of them ever set
 # the training length they intended; DelphiConfig now warns about it.
+# TODO: pstefanou12@ - the eight accuracy skips here are not a
+# training-length artefact. The dead gradient_steps key was renamed to
+# iterations, which cut this file's runtime from 11:10 to 1:35 and so
+# demonstrably binds; only lasso ten-dimensions moved (0.438 to 0.220) and
+# nothing started passing. The gap is in the estimator.
 @pytest.mark.skip(reason="accuracy: mse 0.134 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_one_dimension():
     ch.manual_seed(seed)
@@ -358,7 +365,6 @@ def test_unknown_variance_truncated_regression_one_dimension():
         "verbose": True,
         "step_lr_gamma": 1.0,
         "early_stopping": True,
-        "gradient_steps": 1,
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
@@ -513,7 +519,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
         "var_lr": None,
         "verbose": True,
         "early_stopping": True,
-        "gradient_steps": 500,
+        "iterations": 500,
         # 'lbfgs_lr': 2.0
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
@@ -588,7 +594,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
         "var_lr": None,
         "verbose": True,
         "early_stopping": True,
-        "gradient_steps": 500,
+        "iterations": 500,
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
@@ -668,7 +674,7 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
         # 'var_lr': 1e-2,
         "verbose": True,
         "early_stopping": True,
-        "gradient_steps": 2500,
+        "iterations": 2500,
         "step_lr_gamma": 1.0,
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
@@ -739,7 +745,7 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
     train_kwargs = {
         "lr": 1e-1,
         "batch_size": 10,
-        "gradient_steps": 1000,
+        "iterations": 1000,
         "trials": 1,
         "verbose": True,
     }
@@ -827,7 +833,7 @@ def test_truncated_lasso_regression_one_dimension():
     train_kwargs = {
         "lr": 1e-1,
         "batch_size": 10,
-        "gradient_steps": 1000,
+        "iterations": 1000,
         "trials": 1,
         "verbose": True,
     }
@@ -847,7 +853,7 @@ def test_truncated_lasso_regression_one_dimension():
     assert trunc_mse_loss <= 1e-1, msg
 
 
-@pytest.mark.skip(reason="accuracy: mse 0.438 against an empirical 0.025")
+@pytest.mark.skip(reason="accuracy: mse 0.220 against an empirical 0.025")
 def test_truncated_lasso_regression_ten_dimensions():
     ch.manual_seed(seed)
     L1 = 0.1
@@ -911,7 +917,7 @@ def test_truncated_lasso_regression_ten_dimensions():
     train_kwargs = {
         "lr": 1e-1,
         "batch_size": 10,
-        "gradient_steps": 1000,
+        "iterations": 1000,
         "trials": 1,
         "verbose": True,
     }
@@ -933,6 +939,9 @@ def test_truncated_lasso_regression_ten_dimensions():
 
 # TODO: pstefanou12@ - truncated_linear_regression.py:421 multiplies by a
 # weight that the dependent path never assigns.
+# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
+# backward, so weight.grad is still None when Sigma.inverse() needs it.
+# Applying the transform needs to move relative to the closure.
 # TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
 # backward, so weight.grad is still None when Sigma.inverse() needs it.
 # Applying the transform needs to move relative to the closure.

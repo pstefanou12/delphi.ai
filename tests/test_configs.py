@@ -12,12 +12,14 @@ import ast
 import inspect
 import pathlib
 import re
+import warnings
 
 import pydantic
 import pytest
 import torch
 
 from delphi import configs
+from delphi.optim.lr_scheduler import fisher, inverse_time
 
 # Taken from the getattr fallbacks delphi.delphi used, not from the
 # *_DEFAULTS mappings, which were never applied to a live config.
@@ -162,12 +164,20 @@ def test_required_lqr_fields_must_be_supplied() -> None:
         configs.TruncatedLQRConfig()  # type: ignore[call-arg]
 
 
-def test_unknown_keys_are_ignored() -> None:
-    """Callers pass one flat dict, so extra keys must not raise."""
+def test_unknown_keys_are_ignored_but_warn() -> None:
+    """Callers pass one flat dict, so extra keys warn rather than raise."""
     # Splatting a caller-supplied dict is exactly what delphi.__init__ does.
     hyperparameters = {"not_a_field": 1, "lr": 0.5}
-    config = configs.TruncatedRegressionConfig(**hyperparameters)  # type: ignore[arg-type]
+    with pytest.warns(UserWarning, match="ignores unknown hyperparameters"):
+        config = configs.TruncatedRegressionConfig(**hyperparameters)  # type: ignore[arg-type]
     assert config.lr == 0.5
+
+
+def test_known_keys_do_not_warn() -> None:
+    """A config built from declared fields alone emits no warning."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        configs.TruncatedRegressionConfig(lr=0.5, epochs=3)
 
 
 def test_dependent_variant_overrides_only_defaults() -> None:
@@ -197,6 +207,8 @@ _SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
     "linear_": (torch.optim.lr_scheduler.LinearLR, configs.LinearLRConfig),
     "cyclic_": (torch.optim.lr_scheduler.CyclicLR, configs.CyclicLRConfig),
     "plateau_": (torch.optim.lr_scheduler.ReduceLROnPlateau, configs.PlateauLRConfig),
+    "inverse_time_": (inverse_time.InverseTimeLR, configs.InverseTimeLRConfig),
+    "fisher_": (fisher.FisherLR, configs.FisherLRConfig),
 }
 
 # Declared on OptimizerConfig itself: these apply to whichever optimizer

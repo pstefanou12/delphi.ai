@@ -112,6 +112,8 @@ class OptimizerConfig(  # pylint: disable=too-many-ancestors
     schedulers.LinearLRConfig,
     schedulers.CyclicLRConfig,
     schedulers.PlateauLRConfig,
+    schedulers.InverseTimeLRConfig,
+    schedulers.FisherLRConfig,
     schedulers.WarmupConfig,
 ):
     """Configuration for optimizers and learning-rate schedulers.

@@ -2,6 +2,7 @@
 """Truncated Poisson Distribution."""
 
 from collections.abc import Callable
+from typing import Optional
 
 from delphi import configs
 from delphi.exponential_family import poisson
@@ -20,8 +21,8 @@ class TruncatedPoisson(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
+        alpha: Optional[float] = None,
     ):
         """Initialize TruncatedPoisson.
 
@@ -31,7 +32,7 @@ class TruncatedPoisson(
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        super().__init__(hyperparameters, phi, alpha, dims)
+        super().__init__(hyperparameters, phi, dims, alpha)
 
     @property
     def best_lambda_(self):

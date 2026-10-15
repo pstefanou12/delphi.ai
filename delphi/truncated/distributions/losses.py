@@ -3,6 +3,8 @@
 
 import torch as ch
 
+from delphi.truncated import sampling
+
 
 class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-method
     ch.autograd.Function
@@ -35,20 +37,7 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         D = dist(theta, dims)  # pylint: disable=invalid-name
         log_prob = D.log_prob(S)
 
-        z = []
-        num_sampled = 0
-        num_accepted = 0
-
-        while num_accepted < num_samples:
-            s = D.sample([10 * num_samples])
-            mask = phi(s)
-            accepted = s[mask.nonzero()[:, 0]]
-            z.append(accepted)
-            num_accepted += accepted.size(0)
-            num_sampled += 10 * num_samples
-        z = ch.cat(z)
-
-        p_hat = ch.Tensor([num_accepted / num_sampled])
+        z, p_hat = sampling.rejection_sample(D, phi, num_samples)
         if p_hat < 0.01:
             print(f"acceptance rate: {p_hat.item()}")
 
@@ -77,6 +66,37 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
             None,
             None,
         )
+
+    @staticmethod
+    def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        theta,
+        phi,  # pylint: disable=invalid-name
+        dims,
+        dist,
+        calc_suff_stat,  # pylint: disable=invalid-name
+        num_samples=1000,
+    ):
+        """Compute the Hessian of the truncated NLL at theta.
+
+        Args:
+            theta: Natural parameters to evaluate at.
+            phi: Truncation set oracle.
+            dims: Number of dimensions.
+            dist: Callable building the distribution from theta and dims.
+            calc_suff_stat: Sufficient statistic of the family.
+            num_samples: Rejection samples backing the estimate.
+
+        Returns:
+            ``Cov[T(z)]`` over the truncated distribution, shaped (k, k) for
+            k sufficient statistics. Product families leave the off-diagonal
+            entries at sampling noise, so callers wanting per-coordinate
+            curvature should take the diagonal.
+        """
+        # Autograd cannot produce this: backward() returns a constant built
+        # from saved samples, hiding theta's effect on where they came from.
+        with ch.no_grad():
+            z, _ = sampling.rejection_sample(dist(theta, dims), phi, num_samples)
+            return calc_suff_stat(z).T.cov()
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
