@@ -185,3 +185,34 @@ class WarmupConfig(pydantic.BaseModel):
     """
 
     warmup_steps: int = pydantic.Field(default=0, ge=0)
+
+
+class InverseTimeLRConfig(pydantic.BaseModel):
+    """Configuration for delphi.schedulers.inverse_time.InverseTimeLR.
+
+    Attributes:
+        inverse_time_tau: Steps over which the rate falls by half.
+    """
+
+    inverse_time_tau: float = pydantic.Field(
+        default=100.0, gt=0.0, serialization_alias="tau"
+    )
+
+
+class FisherLRConfig(pydantic.BaseModel):
+    """Configuration for delphi.schedulers.fisher.FisherLR.
+
+    Both constants are read off the model's Hessian when omitted, which is the
+    point of this schedule; setting either overrides that derivation.
+
+    Attributes:
+        fisher_mu: Strong-convexity constant, the smallest Hessian eigenvalue.
+        fisher_smoothness: Smoothness constant, the largest eigenvalue.
+    """
+
+    fisher_mu: Optional[float] = pydantic.Field(
+        default=None, gt=0.0, serialization_alias="mu"
+    )
+    fisher_smoothness: Optional[float] = pydantic.Field(
+        default=None, gt=0.0, serialization_alias="smoothness"
+    )

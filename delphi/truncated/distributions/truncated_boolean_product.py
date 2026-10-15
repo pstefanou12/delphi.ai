@@ -2,6 +2,7 @@
 """Truncated Boolean Product Distributions."""
 
 from collections.abc import Callable
+from typing import Optional
 
 from delphi import configs
 from delphi.exponential_family import boolean_product
@@ -20,8 +21,8 @@ class TruncatedBooleanProduct(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
+        alpha: Optional[float] = None,
     ):
         """Initialize TruncatedBooleanProduct.
 
@@ -31,7 +32,7 @@ class TruncatedBooleanProduct(
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
         """
-        super().__init__(hyperparameters, phi, alpha, dims)
+        super().__init__(hyperparameters, phi, dims, alpha)
 
     @property
     def best_p_(self):

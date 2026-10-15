@@ -50,7 +50,7 @@ def test_truncated_normal_known_variance():
         "iterations": 1500,
     }
     truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
-        args, phi_std_norm, alpha, ch.eye(1)
+        args, phi_std_norm, ch.eye(1), alpha
     )
     truncated.fit(S_std_norm)
 
@@ -194,7 +194,7 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
         "lr": 1e-2,
     }
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        args, phi, alpha, dims, M.covariance_matrix
+        args, phi, dims, M.covariance_matrix, alpha
     )
     truncated.fit(S)
 
@@ -272,7 +272,7 @@ def test_truncated_2_dim_multivariate_normal():
         "covariance_matrix_lr": 1e-2,
     }
     truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
-        args, phi_std_norm, alpha, dims
+        args, phi_std_norm, dims, alpha
     )
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(emp_var) + emp_loc
@@ -362,7 +362,7 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
         @ ch.diag(ch.sqrt(true_var)).inverse()
     )
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        args, phi_std_norm, alpha, dims, scaled_cov
+        args, phi_std_norm, dims, scaled_cov, alpha
     )
     truncated.fit(S_std_norm)
     best_loc = truncated.best_loc_ * ch.sqrt(true_var) + emp_loc
@@ -439,7 +439,7 @@ def test_truncated_10_dim_multivariate_normal():
         "covariance_matrix_lr": 1e-2,
     }
     truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
-        args, phi_std_norm, alpha, dims
+        args, phi_std_norm, dims, alpha
     )
     truncated.fit(S_std_norm)
 
@@ -523,7 +523,7 @@ def test_truncated_boolean_product_2_dims():
     }
 
     truncated = truncated_boolean_product.TruncatedBooleanProduct(
-        args, phi, alpha, dims
+        args, phi, dims, alpha
     )
     truncated.fit(S)
 
@@ -612,7 +612,7 @@ def test_truncated_boolean_product_20_dims():
     }
 
     truncated = truncated_boolean_product.TruncatedBooleanProduct(
-        args, phi, alpha, dims
+        args, phi, dims, alpha
     )
     truncated.fit(S)
 
@@ -679,7 +679,7 @@ def test_truncated_exponential():
         "rate": 1.5,
     }
 
-    truncated = truncated_exponential.TruncatedExponential(args, phi, alpha, dims)
+    truncated = truncated_exponential.TruncatedExponential(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -743,7 +743,7 @@ def test_truncated_exponential_2_dims():
         "lr": 1e-2,
     }
 
-    truncated = truncated_exponential.TruncatedExponential(args, phi, alpha, dims)
+    truncated = truncated_exponential.TruncatedExponential(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -809,7 +809,7 @@ def test_truncated_exponential_20_dims():
         "lr": 1e-1,
     }
 
-    truncated = truncated_exponential.TruncatedExponential(args, phi, alpha, dims)
+    truncated = truncated_exponential.TruncatedExponential(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -875,7 +875,7 @@ def test_truncated_poisson():
         "rate": 1.5,
     }
 
-    truncated = truncated_poisson.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = truncated_poisson.TruncatedPoisson(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -939,7 +939,7 @@ def test_truncated_poisson_2_dims():
         "lr": 1e-2,
     }
 
-    truncated = truncated_poisson.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = truncated_poisson.TruncatedPoisson(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1005,7 +1005,7 @@ def test_truncated_poisson_20_dims():
         "lr": 1e-2,
     }
 
-    truncated = truncated_poisson.TruncatedPoisson(args, phi, alpha, dims)
+    truncated = truncated_poisson.TruncatedPoisson(args, phi, dims, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1074,7 +1074,7 @@ def test_truncated_weibull():
         "rate": 1.5,
     }
 
-    truncated = truncated_weibull.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1132,7 +1132,7 @@ def test_truncated_weibull_2_dims():
         "lr": 1e-2,
     }
 
-    truncated = truncated_weibull.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1190,7 +1190,7 @@ def test_truncated_weibull_2_dims_diff_scale():
         "lr": 1e-2,
     }
 
-    truncated = truncated_weibull.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_
@@ -1255,7 +1255,7 @@ def test_truncated_weibull_20_dims_diff_scale():
         "lr": 1e-2,
     }
 
-    truncated = truncated_weibull.TruncatedWeibull(args, phi, alpha, dims, k)
+    truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
     best_lambda = truncated.best_lambda_

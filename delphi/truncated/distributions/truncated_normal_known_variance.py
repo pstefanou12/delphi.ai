@@ -2,6 +2,7 @@
 """Truncated normal distribution with known variance."""
 
 from collections.abc import Callable
+from typing import Optional
 
 import torch as ch
 
@@ -19,8 +20,8 @@ class TruncatedNormalKnownVariance(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         covariance_matrix: ch.Tensor,
+        alpha: Optional[float] = None,
     ):
         """Initialize TruncatedNormalKnownVariance.
 
@@ -30,7 +31,7 @@ class TruncatedNormalKnownVariance(
             alpha: Survival probability lower bound.
             covariance_matrix: Known variance as a 1×1 matrix.
         """
-        super().__init__(hyperparameters, phi, alpha, 1, covariance_matrix)
+        super().__init__(hyperparameters, phi, 1, covariance_matrix, alpha)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

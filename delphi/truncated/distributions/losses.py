@@ -3,6 +3,46 @@
 
 import torch as ch
 
+# Floors the block estimate so a run of rejections cannot ask for an
+# unbounded draw, and caps any single block.
+_MIN_ACCEPTANCE_RATE = 1e-3
+_MAX_BLOCK = 100
+
+
+def _sample_truncated(dist, phi, num_samples):  # pylint: disable=invalid-name
+    """Draw samples from dist that fall inside the truncation set.
+
+    Args:
+        dist: Distribution to sample from.
+        phi: Truncation set oracle.
+        num_samples: Minimum number of accepted samples to return.
+
+    Returns:
+        Tuple of (accepted samples, acceptance rate).
+    """
+    z = []
+    num_sampled = 0
+    num_accepted = 0
+    # Drawing a fixed multiple of num_samples per block wastes most of it
+    # whenever the survival mass is large: at alpha = 0.36, collecting 1000
+    # accepted needs about 2700 draws, so a 10x block throws away two thirds.
+    # Sizing each block from the acceptance rate seen so far keeps the total
+    # within one block of what is actually required, at any alpha.
+    block = num_samples
+    while num_accepted < num_samples:
+        s = dist.sample([block])
+        accepted = s[phi(s).nonzero()[:, 0]]
+        z.append(accepted)
+        num_accepted += accepted.size(0)
+        num_sampled += block
+        if num_accepted < num_samples:
+            rate = max(num_accepted / num_sampled, _MIN_ACCEPTANCE_RATE)
+            block = min(
+                int((num_samples - num_accepted) / rate) + 1,
+                _MAX_BLOCK * num_samples,
+            )
+    return ch.cat(z), ch.Tensor([num_accepted / num_sampled])
+
 
 class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-method
     ch.autograd.Function
@@ -35,20 +75,7 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         D = dist(theta, dims)  # pylint: disable=invalid-name
         log_prob = D.log_prob(S)
 
-        z = []
-        num_sampled = 0
-        num_accepted = 0
-
-        while num_accepted < num_samples:
-            s = D.sample([10 * num_samples])
-            mask = phi(s)
-            accepted = s[mask.nonzero()[:, 0]]
-            z.append(accepted)
-            num_accepted += accepted.size(0)
-            num_sampled += 10 * num_samples
-        z = ch.cat(z)
-
-        p_hat = ch.Tensor([num_accepted / num_sampled])
+        z, p_hat = _sample_truncated(D, phi, num_samples)
         if p_hat < 0.01:
             print(f"acceptance rate: {p_hat.item()}")
 
@@ -77,6 +104,40 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
             None,
             None,
         )
+
+    @staticmethod
+    def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        theta,
+        phi,  # pylint: disable=invalid-name
+        dims,
+        dist,
+        calc_suff_stat,  # pylint: disable=invalid-name
+        num_samples=1000,
+    ):
+        """Compute the Hessian of the truncated NLL at theta.
+
+        Args:
+            theta: Natural parameters to evaluate at.
+            phi: Truncation set oracle.
+            dims: Number of dimensions.
+            dist: Callable building the distribution from theta and dims.
+            calc_suff_stat: Sufficient statistic of the family.
+            num_samples: Rejection samples backing the estimate.
+
+        Returns:
+            ``Cov[T(z)]`` over the truncated distribution, shaped (k, k) for
+            k sufficient statistics. Product families leave the off-diagonal
+            entries at sampling noise, so callers wanting per-coordinate
+            curvature should take the diagonal.
+        """
+        # Differentiating backward() cannot produce this: its gradient is a
+        # constant built from saved samples, so theta's influence -- which
+        # lives in the sampling distribution -- is invisible to autograd.
+        # The identity below is exact for an exponential family, where the
+        # log-partition function's second derivative is Cov[T].
+        with ch.no_grad():
+            z, _ = _sample_truncated(dist(theta, dims), phi, num_samples)
+            return calc_suff_stat(z).T.cov()
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method

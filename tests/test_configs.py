@@ -19,6 +19,7 @@ import pytest
 import torch
 
 from delphi import configs
+from delphi.schedulers import fisher, inverse_time
 
 # Taken from the getattr fallbacks delphi.delphi used, not from the
 # *_DEFAULTS mappings, which were never applied to a live config.
@@ -206,6 +207,8 @@ _SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
     "linear_": (torch.optim.lr_scheduler.LinearLR, configs.LinearLRConfig),
     "cyclic_": (torch.optim.lr_scheduler.CyclicLR, configs.CyclicLRConfig),
     "plateau_": (torch.optim.lr_scheduler.ReduceLROnPlateau, configs.PlateauLRConfig),
+    "inverse_time_": (inverse_time.InverseTimeLR, configs.InverseTimeLRConfig),
+    "fisher_": (fisher.FisherLR, configs.FisherLRConfig),
 }
 
 # Declared on OptimizerConfig itself: these apply to whichever optimizer

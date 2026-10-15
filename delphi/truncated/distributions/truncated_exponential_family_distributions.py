@@ -4,6 +4,7 @@
 import abc
 from collections.abc import Callable
 import logging
+import math
 from typing import Generic, Optional
 
 import torch as ch
@@ -47,20 +48,28 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             projection (Karatapanis et al., Algorithm 2).
     """
 
+    # Cov[T(z)] is diagonal up to sampling noise for a product family, so
+    # FisherLR.spectrum reads the diagonal rather than eigenvalues.
+    independent_coordinates: bool = True
+
     def __init__(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
+        alpha: Optional[float] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
             hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
-            alpha: Survival probability lower bound.
             dims: Number of dimensions.
+            alpha: Survival probability in (0, 1]; estimated from phi at the
+                empirical initialization when omitted.
+
+        Raises:
+            ValueError: If alpha is given and lies outside (0, 1].
         """
         super().__init__(hyperparameters)
         self.logger = (
@@ -69,6 +78,13 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             else delphi_logger.delphiLogger(level=logging.CRITICAL)
         )
         self.phi = phi
+        # _initial_radius takes log(1/alpha), and the survival mass is a
+        # probability, so anything outside (0, 1] is unusable rather than
+        # merely odd.
+        if alpha is not None and not 0.0 < alpha <= 1.0:
+            raise ValueError(
+                f"alpha is the survival probability and must lie in (0, 1]; got {alpha}."
+            )
         self.alpha = alpha
         self.dims = dims
 
@@ -136,7 +152,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.loss_history = []
         self._calc_emp_model()
         self.nll_init = self._compute_nll(self.emp_theta)
-        self.radius = self.hyperparameters.min_radius
+        self.radius = self._initial_radius()
 
         phase = 0
         while phase < self.hyperparameters.max_phases:
@@ -189,6 +205,45 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
 
         return self
+
+    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+        """Return the Hessian of the truncated NLL, for deriving step sizes.
+
+        Args:
+            theta: Point to evaluate at; defaults to the empirical
+                initialization, which is where step sizes are chosen.
+
+        Returns:
+            ``Cov[T(z)]`` over the truncated distribution, shaped (k, k).
+        """
+        return losses.TruncatedExponentialFamilyDistributionNLL.hessian(
+            self.emp_theta if theta is None else theta,
+            self.phi,
+            self.dims,
+            self.dist,
+            self.calc_suff_stat,
+            self.hyperparameters.num_samples,
+        )
+
+    def _initial_radius(self) -> float:
+        """Return the NLL budget above the empirical initialization.
+
+        Returns:
+            An explicit ``min_radius``, else ``log(1 / alpha)`` when alpha is
+            known, else the ``min_radius`` default.
+        """
+        # Karatapanis et al. (2025) constrain to L(theta) <= L(theta_0) +
+        # log(1/alpha), which keeps every feasible theta assigning Omega(alpha)
+        # mass to the survival set. Estimating alpha here is not an option:
+        # the only parameter available is theta_0, the truncated-data MLE,
+        # whose own truncation bias inflates p(S) -- on the 20-dim Weibull it
+        # reads 0.59 against a true 0.36, and biased high means a radius too
+        # small, which can exclude theta* from the feasible set.
+        if "min_radius" in self.hyperparameters.model_fields_set:
+            return self.hyperparameters.min_radius
+        if self.alpha is not None:
+            return math.log(1.0 / self.alpha)
+        return self.hyperparameters.min_radius
 
     def _check_convergence(self):
         """Determine if the entire training procedure should stop.

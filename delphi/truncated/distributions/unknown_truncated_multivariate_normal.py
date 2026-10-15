@@ -54,9 +54,9 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         super().__init__(
             args,  # type: ignore[arg-type]
             partial(oracle.UnknownGaussian, k),
-            alpha,
             dims,
-            covariance_matrix=covariance_matrix,
+            covariance_matrix,
+            alpha,
         )
 
         self.emp_loc, self.emp_covariance_matrix = None, None
@@ -218,8 +218,8 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         super().__init__(
             args,  # type: ignore[arg-type]
             partial(oracle.UnknownGaussian, k),
-            alpha,
             dims,
+            alpha,
         )
 
         self.emp_loc, self.emp_covariance_matrix = None, None

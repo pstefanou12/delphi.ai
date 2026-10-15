@@ -3,6 +3,7 @@
 
 from collections.abc import Callable
 from functools import partial
+from typing import Optional
 
 import torch as ch
 from torch import nn
@@ -27,9 +28,9 @@ class TruncatedMultivariateNormalKnownCovariance(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
         covariance_matrix: ch.Tensor,
+        alpha: Optional[float] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedMultivariateNormalKnownCovariance.
 
@@ -46,7 +47,7 @@ class TruncatedMultivariateNormalKnownCovariance(
             covariance_matrix,
         )
         self.calc_suff_stat = multivariate_normal_known_covariance.MultivariateNormalKnownCovariance.calc_suff_stat
-        super().__init__(hyperparameters, phi, alpha, dims)
+        super().__init__(hyperparameters, phi, dims, alpha)
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register theta as an nn.Parameter."""

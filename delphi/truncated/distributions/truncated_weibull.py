@@ -3,6 +3,7 @@
 
 from collections.abc import Callable
 from functools import partial
+from typing import Optional
 
 import torch as ch
 from torch import nn
@@ -27,9 +28,9 @@ class TruncatedWeibull(
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
         dims: int,
         k: int,
+        alpha: Optional[float] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedWeibull.
 
@@ -43,7 +44,7 @@ class TruncatedWeibull(
         self.k = k
         self.dist = partial(weibull.Weibull, k)
         self.calc_suff_stat = partial(weibull.Weibull.calc_suff_stat, k)
-        super().__init__(hyperparameters, phi, alpha, dims)
+        super().__init__(hyperparameters, phi, dims, alpha)
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical scale."""

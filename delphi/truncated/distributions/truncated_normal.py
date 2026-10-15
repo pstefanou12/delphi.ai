@@ -2,6 +2,7 @@
 """Truncated normal distribution with oracle access (known truncation set)."""
 
 from collections.abc import Callable
+from typing import Optional
 
 from delphi.truncated.distributions import truncated_multivariate_normal
 
@@ -13,7 +14,7 @@ class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal)
         self,
         hyperparameters: dict,
         phi: Callable,
-        alpha: float,
+        alpha: Optional[float] = None,
     ):
         """Initialize TruncatedNormal.
 
@@ -22,7 +23,7 @@ class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal)
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
         """
-        super().__init__(hyperparameters, phi, alpha, 1)
+        super().__init__(hyperparameters, phi, 1, alpha)
 
     @property
     def best_variance_(self):
