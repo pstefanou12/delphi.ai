@@ -9,7 +9,7 @@ import torch
 
 from delphi import configs
 from delphi.delphi import OPTIMIZER_SECTIONS, SCHEDULER_SECTIONS, delphi
-from delphi.schedulers import fisher
+from delphi.optim.lr_scheduler import fisher
 from delphi.utils import constants
 
 

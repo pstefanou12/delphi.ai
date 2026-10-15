@@ -13,7 +13,7 @@ import torch.optim
 import torch.optim.lr_scheduler
 
 from delphi import configs
-from delphi.schedulers import fisher, inverse_time
+from delphi.optim.lr_scheduler import fisher, inverse_time
 from delphi.utils import constants, helpers
 
 # Each torch class paired with the config section whose aliases name its

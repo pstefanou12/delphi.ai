@@ -188,7 +188,7 @@ class WarmupConfig(pydantic.BaseModel):
 
 
 class InverseTimeLRConfig(pydantic.BaseModel):
-    """Configuration for delphi.schedulers.inverse_time.InverseTimeLR.
+    """Configuration for delphi.optim.lr_scheduler.inverse_time.InverseTimeLR.
 
     Attributes:
         inverse_time_tau: Steps over which the rate falls by half.
@@ -200,7 +200,7 @@ class InverseTimeLRConfig(pydantic.BaseModel):
 
 
 class FisherLRConfig(pydantic.BaseModel):
-    """Configuration for delphi.schedulers.fisher.FisherLR.
+    """Configuration for delphi.optim.lr_scheduler.fisher.FisherLR.
 
     Both constants are read off the model's Hessian when omitted, which is the
     point of this schedule; setting either overrides that derivation.

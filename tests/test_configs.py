@@ -19,7 +19,7 @@ import pytest
 import torch
 
 from delphi import configs
-from delphi.schedulers import fisher, inverse_time
+from delphi.optim.lr_scheduler import fisher, inverse_time
 
 # Taken from the getattr fallbacks delphi.delphi used, not from the
 # *_DEFAULTS mappings, which were never applied to a live config.

@@ -3,7 +3,7 @@
 
 import torch as ch
 
-from delphi.schedulers.inverse_time import InverseTimeLR
+from delphi.optim.lr_scheduler.inverse_time import InverseTimeLR
 
 
 class FisherLR(InverseTimeLR):
