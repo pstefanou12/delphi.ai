@@ -30,7 +30,9 @@ def test_unknown_truncation_normal_known_variance():
 
     phi = delphi.oracle.Left_Distribution(ch.Tensor([0.0]))
     num_samples = 10000
-    S, alpha = test_helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num_samples: {num_samples}")
 
@@ -109,7 +111,9 @@ def test_unknown_truncation_normal():
     M = distributions.MultivariateNormal(ch.zeros(dims), ch.eye(dims))
     phi = delphi.oracle.Right_Distribution(ch.Tensor([0.0]))
     num_samples = 10000
-    S, alpha = test_helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num_samples: {num_samples}")
     emp_loc = S.mean(0)
@@ -192,7 +196,9 @@ def test_unknown_truncation_multivariate_normal():
     phi = delphi.oracle.Sphere(M.covariance_matrix, centroid, 3.5)
 
     num_samples = 5000
-    S, alpha = test_helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
 

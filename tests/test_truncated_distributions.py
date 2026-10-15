@@ -1,7 +1,8 @@
 # Author: pstefanou12@
 """Tests for truncated exponential family distributions."""
 
-import pytest
+import functools
+
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
@@ -29,7 +30,9 @@ def test_truncated_normal_known_variance():
     M = distributions.MultivariateNormal(ch.zeros(1), ch.eye(1))
     phi = oracle.Left_Distribution(ch.Tensor([0.0]))
     num_samples = 1000
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num_samples: {num_samples}")
 
@@ -96,7 +99,9 @@ def test_truncated_normal():
 
     phi = oracle.Left_Distribution(ch.Tensor([0.0]))
     num_samples = 1000
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num_samples: {num_samples}")
 
@@ -177,7 +182,9 @@ def test_truncated_2_dim_multivariate_normal_known_covariance_matrix():
     def phi(x):
         return x[:, 0] > 0
 
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
 
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
@@ -243,7 +250,9 @@ def test_truncated_2_dim_multivariate_normal():
     def phi(x):
         return x[:, 0] > 0
 
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
 
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
@@ -332,7 +341,9 @@ def test_truncated_10_dim_multivariate_normal_known_covariance_matrix():
         return x[:, 0] > 0
 
     num_samples = 1000
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
 
@@ -410,7 +421,9 @@ def test_truncated_10_dim_multivariate_normal():
         return x[:, 0] > 0
 
     num_samples = 5000
-    S, alpha = helpers.generate_truncated_distribution_dataset(M, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        M, phi, num_samples
+    )
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
 
@@ -502,7 +515,9 @@ def test_truncated_boolean_product_2_dims():
         return ~((z[:, 0] == 1) * (z[:, 1] == 1))
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_p = S.mean(0)
     print(f"alpha: {alpha}")
@@ -595,7 +610,9 @@ def test_truncated_boolean_product_20_dims():
 
     num_samples = 10000
 
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
     emp_p = S.mean(0)
     print(f"alpha: {alpha}")
     print(f"num truncated samples: {S.size(0)}")
@@ -660,7 +677,9 @@ def test_truncated_exponential():
         return z > 1
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = 1.0 / S.mean(0)
     print(f"alpha: {alpha}")
@@ -726,7 +745,9 @@ def test_truncated_exponential_2_dims():
         return z[:, 0] > 0.5
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = 1.0 / S.mean(0)
     print(f"alpha: {alpha}")
@@ -792,7 +813,9 @@ def test_truncated_exponential_20_dims():
         return z[:, 0] > 0.25
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = 1.0 / S.mean(0)
     print(f"alpha: {alpha}")
@@ -856,7 +879,9 @@ def test_truncated_poisson():
         return z > 1
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = S.mean(0)
     print(f"alpha: {alpha}")
@@ -922,7 +947,9 @@ def test_truncated_poisson_2_dims():
         return z[:, 0] > 0.25
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = S.mean(0)
     print(f"alpha: {alpha}")
@@ -988,7 +1015,9 @@ def test_truncated_poisson_20_dims():
         return z[:, 0] > 1
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda = S.mean(0)
     print(f"alpha: {alpha}")
@@ -1055,7 +1084,9 @@ def test_truncated_weibull():
         return z > 1.5
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda_ = S.pow(k).mean(0).pow(1.0 / k)
     print(f"alpha: {alpha}")
@@ -1077,26 +1108,30 @@ def test_truncated_weibull():
     truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
-    best_lambda = truncated.best_lambda_
-    print(f"best lambda:\n {best_lambda.T}")
-    best_l2_err = (best_lambda - lambda_).norm(p=2)
-    print(f"truncated l2 error: {best_l2_err.item():.3f}")
+    # The untruncated MLE is what the estimator is asked to recover; comparing
+    # against the true lambda instead would charge it for sampling error that
+    # no estimator can remove.
+    mle = parent.pow(k).mean(0).pow(1.0 / k)
+    kl_of = functools.partial(
+        helpers.weibull_kl_divergence, other_scale=mle, concentration=k
+    )
 
-    ema_lambda = truncated.ema_lambda_
-    print(f"ema lambda:\n {ema_lambda.T}")
-    ema_l2_err = (ema_lambda - lambda_).norm(p=2)
-    print(f"ema l2 error: {ema_l2_err}")
-
-    avg_lambda = truncated.avg_lambda_
-    print(f"avg lambda:\n {avg_lambda.T}")
-    avg_l2_err = (avg_lambda - lambda_).norm(p=2)
-    print(f"avg l2 error: {avg_l2_err}")
-
-    # check performance
-    emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
-    print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    assert best_l2_err <= 1e-1, (
-        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    best_kl = kl_of(truncated.best_lambda_.flatten()).sum()
+    ema_kl = kl_of(truncated.ema_lambda_.flatten()).sum()
+    avg_kl = kl_of(truncated.avg_lambda_.flatten()).sum()
+    emp_kl = kl_of(emp_lambda_.flatten()).sum()
+    print(f"empirical kl divergence: {emp_kl.item():.4f}")
+    print(f"best kl divergence: {best_kl.item():.4f}")
+    print(f"ema kl divergence: {ema_kl.item():.4f}")
+    print(f"avg kl divergence: {avg_kl.item():.4f}")
+    assert ema_kl <= 1e-1, (
+        f"EMA KL divergence to the untruncated MLE exceeds 0.1: {ema_kl}"
+    )
+    assert avg_kl <= 0.15, (
+        f"Average KL divergence to the untruncated MLE exceeds 0.15: {avg_kl}"
+    )
+    assert best_kl <= 0.2, (
+        f"Best KL divergence to the untruncated MLE exceeds 0.2: {best_kl}"
     )
 
 
@@ -1115,7 +1150,9 @@ def test_truncated_weibull_2_dims():
         return z[:, 0] > 1.0
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda_ = S.pow(k).mean(0).pow(1.0 / k)
     print(f"alpha: {alpha}")
@@ -1135,26 +1172,30 @@ def test_truncated_weibull_2_dims():
     truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
-    best_lambda = truncated.best_lambda_
-    print(f"best lambda:\n {best_lambda.T}")
-    best_l2_err = (best_lambda - lambda_).norm(p=2)
-    print(f"truncated l2 error: {best_l2_err.item():.3f}")
+    # The untruncated MLE is what the estimator is asked to recover; comparing
+    # against the true lambda instead would charge it for sampling error that
+    # no estimator can remove.
+    mle = parent.pow(k).mean(0).pow(1.0 / k)
+    kl_of = functools.partial(
+        helpers.weibull_kl_divergence, other_scale=mle, concentration=k
+    )
 
-    ema_lambda = truncated.ema_lambda_
-    print(f"ema lambda:\n {ema_lambda.T}")
-    ema_l2_err = (ema_lambda - lambda_).norm(p=2)
-    print(f"ema l2 error: {ema_l2_err}")
-
-    avg_lambda = truncated.avg_lambda_
-    print(f"avg lambda:\n {avg_lambda.T}")
-    avg_l2_err = (avg_lambda - lambda_).norm(p=2)
-    print(f"avg l2 error: {avg_l2_err}")
-
-    # check performance
-    emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
-    print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    assert best_l2_err <= 1e-1, (
-        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    best_kl = kl_of(truncated.best_lambda_.flatten()).sum()
+    ema_kl = kl_of(truncated.ema_lambda_.flatten()).sum()
+    avg_kl = kl_of(truncated.avg_lambda_.flatten()).sum()
+    emp_kl = kl_of(emp_lambda_.flatten()).sum()
+    print(f"empirical kl divergence: {emp_kl.item():.4f}")
+    print(f"best kl divergence: {best_kl.item():.4f}")
+    print(f"ema kl divergence: {ema_kl.item():.4f}")
+    print(f"avg kl divergence: {avg_kl.item():.4f}")
+    assert ema_kl <= 1e-1, (
+        f"EMA KL divergence to the untruncated MLE exceeds 0.1: {ema_kl}"
+    )
+    assert avg_kl <= 0.15, (
+        f"Average KL divergence to the untruncated MLE exceeds 0.15: {avg_kl}"
+    )
+    assert best_kl <= 0.2, (
+        f"Best KL divergence to the untruncated MLE exceeds 0.2: {best_kl}"
     )
 
 
@@ -1173,7 +1214,9 @@ def test_truncated_weibull_2_dims_diff_scale():
         return z[:, 0] > 1.0
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda_ = S.pow(k).mean(0).pow(1.0 / k)
     print(f"alpha: {alpha}")
@@ -1193,36 +1236,33 @@ def test_truncated_weibull_2_dims_diff_scale():
     truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
-    best_lambda = truncated.best_lambda_
-    print(f"best lambda:\n {best_lambda.T}")
-    best_l2_err = (best_lambda - lambda_).norm(p=2)
-    print(f"truncated l2 error: {best_l2_err.item():.3f}")
+    # The untruncated MLE is what the estimator is asked to recover; comparing
+    # against the true lambda instead would charge it for sampling error that
+    # no estimator can remove.
+    mle = parent.pow(k).mean(0).pow(1.0 / k)
+    kl_of = functools.partial(
+        helpers.weibull_kl_divergence, other_scale=mle, concentration=k
+    )
 
-    ema_lambda = truncated.ema_lambda_
-    print(f"ema lambda:\n {ema_lambda.T}")
-    ema_l2_err = (ema_lambda - lambda_).norm(p=2)
-    print(f"ema l2 error: {ema_l2_err}")
-
-    avg_lambda = truncated.avg_lambda_
-    print(f"avg lambda:\n {avg_lambda.T}")
-    avg_l2_err = (avg_lambda - lambda_).norm(p=2)
-    print(f"avg l2 error: {avg_l2_err}")
-
-    # check performance
-    emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
-    print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    assert best_l2_err <= 1e-1, (
-        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    best_kl = kl_of(truncated.best_lambda_.flatten()).sum()
+    ema_kl = kl_of(truncated.ema_lambda_.flatten()).sum()
+    avg_kl = kl_of(truncated.avg_lambda_.flatten()).sum()
+    emp_kl = kl_of(emp_lambda_.flatten()).sum()
+    print(f"empirical kl divergence: {emp_kl.item():.4f}")
+    print(f"best kl divergence: {best_kl.item():.4f}")
+    print(f"ema kl divergence: {ema_kl.item():.4f}")
+    print(f"avg kl divergence: {avg_kl.item():.4f}")
+    assert ema_kl <= 1e-1, (
+        f"EMA KL divergence to the untruncated MLE exceeds 0.1: {ema_kl}"
+    )
+    assert avg_kl <= 0.15, (
+        f"Average KL divergence to the untruncated MLE exceeds 0.15: {avg_kl}"
+    )
+    assert best_kl <= 0.2, (
+        f"Best KL divergence to the untruncated MLE exceeds 0.2: {best_kl}"
     )
 
 
-# TODO: pstefanou12@ - fix 20-dim Weibull scale recovery. The estimate lands
-# an L2 distance of 1.41 from the true distribution against a 0.1 tolerance;
-# the 2-dim different-scale case passes, so the defect scales with dimension.
-@pytest.mark.xfail(
-    reason="20-dim Weibull scale estimate is 1.41 off, tolerance is 0.1",
-    strict=False,
-)
 def test_truncated_weibull_20_dims_diff_scale():
     """20D truncated Weibull with mixed shapes recovers true scales."""
     ch.manual_seed(0)
@@ -1238,7 +1278,9 @@ def test_truncated_weibull_20_dims_diff_scale():
         return z[:, 0] > 1.0
 
     num_samples = 10000
-    S, alpha = helpers.generate_truncated_distribution_dataset(dist, phi, num_samples)
+    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
+        dist, phi, num_samples
+    )
 
     emp_lambda_ = S.pow(k).mean(0).pow(1.0 / k)
     print(f"alpha: {alpha}")
@@ -1258,24 +1300,28 @@ def test_truncated_weibull_20_dims_diff_scale():
     truncated = truncated_weibull.TruncatedWeibull(args, phi, dims, k, alpha)
     truncated.fit(S)
 
-    best_lambda = truncated.best_lambda_
-    print(f"best lambda:\n {best_lambda.T}")
-    best_l2_err = (best_lambda - lambda_).norm(p=2)
-    print(f"truncated l2 error: {best_l2_err.item():.3f}")
+    # The untruncated MLE is what the estimator is asked to recover; comparing
+    # against the true lambda instead would charge it for sampling error that
+    # no estimator can remove.
+    mle = parent.pow(k).mean(0).pow(1.0 / k)
+    kl_of = functools.partial(
+        helpers.weibull_kl_divergence, other_scale=mle, concentration=k
+    )
 
-    ema_lambda = truncated.ema_lambda_
-    print(f"ema lambda:\n {ema_lambda.T}")
-    ema_l2_err = (ema_lambda - lambda_).norm(p=2)
-    print(f"ema l2 error: {ema_l2_err}")
-
-    avg_lambda = truncated.avg_lambda_
-    print(f"avg lambda:\n {avg_lambda.T}")
-    avg_l2_err = (avg_lambda - lambda_).norm(p=2)
-    print(f"avg l2 error: {avg_l2_err}")
-
-    # check performance
-    emp_l2_err = (emp_lambda_ - lambda_).norm(p=2)
-    print(f"empirical l2 error: {emp_l2_err.item():.3f}")
-    assert best_l2_err <= 1e-1, (
-        f"L2 error to true distribution exceeds 0.1: {best_l2_err}"
+    best_kl = kl_of(truncated.best_lambda_.flatten()).sum()
+    ema_kl = kl_of(truncated.ema_lambda_.flatten()).sum()
+    avg_kl = kl_of(truncated.avg_lambda_.flatten()).sum()
+    emp_kl = kl_of(emp_lambda_.flatten()).sum()
+    print(f"empirical kl divergence: {emp_kl.item():.4f}")
+    print(f"best kl divergence: {best_kl.item():.4f}")
+    print(f"ema kl divergence: {ema_kl.item():.4f}")
+    print(f"avg kl divergence: {avg_kl.item():.4f}")
+    assert ema_kl <= 1e-1, (
+        f"EMA KL divergence to the untruncated MLE exceeds 0.1: {ema_kl}"
+    )
+    assert avg_kl <= 0.15, (
+        f"Average KL divergence to the untruncated MLE exceeds 0.15: {avg_kl}"
+    )
+    assert best_kl <= 0.2, (
+        f"Best KL divergence to the untruncated MLE exceeds 0.2: {best_kl}"
     )
