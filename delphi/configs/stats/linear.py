@@ -11,7 +11,7 @@ class LinearModelConfig(DelphiConfig):
 
     Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in
     ``delphi.utils.defaults`` so defaults match the previous
-    ``check_and_fill_args`` behaviour exactly.
+    ``check_and_fill_args`` behavior exactly.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)

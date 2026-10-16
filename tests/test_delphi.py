@@ -14,7 +14,7 @@ from delphi.utils import constants
 
 
 class Model(delphi[configs.TruncatedRegressionConfig]):
-    """Minimal concrete model with a parameter to optimise."""
+    """Minimal concrete model with a parameter to optimize."""
 
     defaults = configs.TruncatedRegressionConfig
 

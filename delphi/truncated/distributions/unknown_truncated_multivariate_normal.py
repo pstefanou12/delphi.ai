@@ -24,7 +24,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
     """Truncated multivariate normal with known covariance and unknown truncation.
 
     Attributes:
-        k (int): Number of nearest neighbours used by the oracle.
+        k (int): Number of nearest neighbors used by the oracle.
         exp_h: Exponential h helper object, set during fit.
     """
 
@@ -190,7 +190,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
     """Truncated multivariate normal with unknown covariance and unknown truncation.
 
     Attributes:
-        k (int): Number of nearest neighbours used by the oracle.
+        k (int): Number of nearest neighbors used by the oracle.
         exp_h: Exponential h helper object, set during fit.
     """
 
@@ -410,7 +410,7 @@ def UnknownTruncationMultivariateNormal(  # pylint: disable=invalid-name
 
     Args:
         args: Hyperparameter object.
-        k: Number of nearest neighbours for the oracle.
+        k: Number of nearest neighbors for the oracle.
         alpha: Survival probability lower bound.
         dims: Number of dimensions.
         covariance_matrix: Known covariance; if None, it is estimated.

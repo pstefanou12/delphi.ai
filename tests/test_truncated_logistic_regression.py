@@ -14,7 +14,6 @@ import torch as ch
 from torch.distributions import Gumbel, Uniform
 from torch.nn import CosineSimilarity
 
-from delphi import oracle
 from delphi.stats.softmax import SoftmaxRegression
 from delphi.stats.truncated_logistic_regression import TruncatedLogisticRegression
 from delphi.stats.truncated_probit_regression import TruncatedProbitRegression
@@ -43,7 +42,11 @@ def test_truncated_one_dimension_logistic_regression_no_intercept():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     y_trunc = y[indices][..., None]
@@ -123,7 +126,11 @@ def test_truncated_one_dimension_logistic_regression():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     y_trunc = y[indices][..., None]
@@ -207,7 +214,11 @@ def test_truncated_ten_dimension_logistic_regression():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     y_trunc = y[indices][..., None]
@@ -290,7 +301,11 @@ def test_truncated_one_dimension_probit_regression_no_intercept():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     y_trunc = y[indices][..., None]
@@ -368,7 +383,11 @@ def test_truncated_one_dimension_probit_regression():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     x_trunc_ones = X_ones[indices[0]]
@@ -448,7 +467,11 @@ def test_truncated_ten_dimension_probit_regression():
     y = (z > 0).float()
 
     # generate ground-truth data
-    phi = oracle.Left_Regression(C)
+    phi_left = C
+
+    def phi(x):
+        return x > phi_left
+
     indices = phi(z).nonzero(as_tuple=True)
     x_trunc = X[indices[0]]
     x_trunc_ones = X_ones[indices[0]]

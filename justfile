@@ -48,11 +48,11 @@ typecheck:
 
 # Run the test suite. Extra arguments are forwarded to pytest.
 test *ARGS:
-    poetry run pytest tests/ {{ARGS}}
+    poetry run pytest {{ARGS}}
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:
-    poetry run pytest tests/ --cov=delphi --cov-branch \
+    poetry run pytest --cov=delphi --cov-branch \
         --cov-report=term-missing {{ARGS}}
 
 # Install the pre-push git hooks.

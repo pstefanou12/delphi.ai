@@ -171,7 +171,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             name: Lowercase optimizer name (e.g. ``"adamw"``).
             factory: Callable with signature ``(model, params) -> Optimizer``
                 where ``model`` is the ``delphi`` instance and ``params``
-                is the iterable of parameters to optimise.
+                is the iterable of parameters to optimize.
         """
         # Write into this class's own registry, creating it on first use, so
         # the entry does not leak to sibling classes or up to the base.
@@ -207,7 +207,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         its entry in ``OPTIMIZER_SECTIONS``.
 
         Args:
-            params: Parameter groups to optimise.
+            params: Parameter groups to optimize.
 
         Returns:
             The constructed optimizer.

@@ -13,7 +13,7 @@ from sklearn.linear_model import LassoCV, LinearRegression
 import torch as ch
 from torch.nn import MSELoss
 
-from delphi import oracle, stats
+from delphi import stats
 from delphi.utils.helpers import calc_spectral_norm
 
 # CONSTANTS
@@ -36,7 +36,11 @@ def test_known_truncated_regression_one_dimension_no_intercept():
     y = X @ W.T
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.zeros(1))
+    phi_left = ch.zeros(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -57,7 +61,11 @@ def test_known_truncated_regression_one_dimension_no_intercept():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "epochs": 5,
@@ -104,7 +112,11 @@ def test_known_truncated_regression_one_dimension():
     y = X @ W.T + W0
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.ones(1))
+    phi_left = ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -127,7 +139,11 @@ def test_known_truncated_regression_one_dimension():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "epochs": 3,
@@ -170,7 +186,11 @@ def test_known_truncated_regression_higher_dimensions():
     y = X @ W.T + W0
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(10 * ch.ones(1))
+    phi_left = 10 * ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -193,7 +213,11 @@ def test_known_truncated_regression_higher_dimensions():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "epochs": 5,
@@ -235,8 +259,11 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     y = X @ W.T
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.zeros(1))
-    # phi = oracle.Identity()
+    phi_left = ch.zeros(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -262,7 +289,11 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     # scale y features by empirical noise variance
     y_trunc_emp_scale = y_trunc / ch.sqrt(emp_noise_var)
     # y_trunc_emp_scale = y_trunc
-    phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
+    phi_emp_scale_left = phi_left / ch.sqrt(emp_noise_var)
+
+    def phi_emp_scale(x):
+        return x > phi_emp_scale_left
+
     # train algorithm
     train_kwargs = {
         "optimizer": "lbfgs",
@@ -324,8 +355,11 @@ def test_unknown_variance_truncated_regression_one_dimension():
     y = X @ W.T + W0
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.ones(1))
-    # phi = oracle.Identity()
+    phi_left = ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -353,9 +387,11 @@ def test_unknown_variance_truncated_regression_one_dimension():
     # scale y features by empirical noise variance
     y_trunc_emp_scale = (y_trunc - ols_trunc.intercept_) / ch.sqrt(emp_noise_var)
     # y_trunc_emp_scale = y_trunc
-    phi_emp_scale = oracle.Left_Regression(
-        (phi.left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var)
-    )
+    phi_emp_scale_left = (phi_left - ols_trunc.intercept_) / ch.sqrt(emp_noise_var)
+
+    def phi_emp_scale(x):
+        return x > phi_emp_scale_left
+
     # train algorithm
     train_kwargs = {
         "optimizer": "sgd",
@@ -412,8 +448,11 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     y = X @ W.T + W0
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.ones(1))
-    # phi = oracle.Identity()
+    phi_left = ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -488,7 +527,11 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
     y = X @ W.T
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(5 * ch.ones(1))
+    phi_left = 5 * ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -561,7 +604,11 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     y = X @ W.T + W0
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(6 * ch.ones(1))
+    phi_left = 6 * ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -637,7 +684,11 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     y = X @ W.T + W0
     noised = y + ch.sqrt(noise_var) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(25 * ch.ones(1))
+    phi_left = 25 * ch.ones(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -663,7 +714,11 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     print(f"emp noise var l1: {emp_var_l1}")
     # scale y features by empirical noise variance
     y_trunc_emp_scale = y_trunc / ch.sqrt(emp_noise_var)
-    phi_emp_scale = oracle.Left_Regression(phi.left / ch.sqrt(emp_noise_var))
+    phi_emp_scale_left = phi_left / ch.sqrt(emp_noise_var)
+
+    def phi_emp_scale(x):
+        return x > phi_emp_scale_left
+
     # train algorithm
     train_kwargs = {
         "epochs": 15,
@@ -718,7 +773,11 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
     y = X @ W.T
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(ch.zeros(1))
+    phi_left = ch.zeros(1)
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -740,7 +799,11 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "lr": 1e-1,
@@ -788,7 +851,11 @@ def test_truncated_lasso_regression_one_dimension():
     y = X @ W.T + W0
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(2)
+    phi_left = 2
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -828,7 +895,11 @@ def test_truncated_lasso_regression_one_dimension():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "lr": 1e-1,
@@ -872,7 +943,11 @@ def test_truncated_lasso_regression_ten_dimensions():
     y = X @ W.T + W0
     noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
     # generate ground-truth data
-    phi = oracle.Left_Regression(5)
+    phi_left = 5
+
+    def phi(x):
+        return x > phi_left
+
     # truncate
     indices = phi(noised).nonzero()[:, 0]
     x_trunc, y_trunc = X[indices], noised[indices]
@@ -912,7 +987,11 @@ def test_truncated_lasso_regression_ten_dimensions():
 
     # scale y features
     y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale = oracle.Left_Regression(phi.left / ch.sqrt(NOISE_VAR))
+    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
+
+    def phi_scale(x):
+        return x > phi_scale_left
+
     # train algorithm
     train_kwargs = {
         "lr": 1e-1,
@@ -959,7 +1038,10 @@ def test_truncated_dependent_regression():
     spectral_norm = calc_spectral_norm(A)
     print(f"A spectral norm: {calc_spectral_norm(A)}")
 
-    phi = oracle.LogitBall(4.0)
+    phi_bound = 4.0
+
+    def phi(x):
+        return x.norm(dim=-1, keepdim=True) <= phi_bound
 
     X, Y = ch.Tensor([]), ch.Tensor([])
     NOISE_VAR = ch.eye(D)

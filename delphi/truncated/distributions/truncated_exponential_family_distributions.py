@@ -5,9 +5,10 @@ import abc
 from collections.abc import Callable
 import logging
 import math
-from typing import Generic, Optional
+from typing import ClassVar, Generic, Optional
 
 import torch as ch
+from torch import distributions as torch_distributions
 from torch import nn
 import torch.utils.data
 
@@ -15,24 +16,30 @@ from delphi import configs, delphi_logger, trainer
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import datasets
 
+# Builds the family's distribution at a given natural parameter: the shape
+# losses.py calls as dist(theta, dims) on every step.
+DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distribution]
+
+# Maps samples to the family's sufficient statistic T(x).
+SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
+
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
     distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
 ):
     """Base class for truncated exponential family distribution models.
 
-    Concrete subclasses must define a class attribute ``dist`` pointing to
-    the exponential family distribution class (or a partial thereof).
+    Concrete subclasses either set the ``dist`` class attribute to their
+    exponential family class, or override ``_build_distribution`` when the
+    family takes an argument fixed at construction.
 
     Attributes:
         phi (Callable): Truncation set oracle.
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
-        dist: Exponential family distribution class or partial, set by subclass.
-        calc_suff_stat (Callable): Sufficient-statistic function for ``dist``.
-            Subclasses whose ``dist`` is a ``partial`` must set this attribute
-            before calling ``super().__init__``; for plain distribution classes
-            it is derived automatically from ``dist.calc_suff_stat``.
+        dist: Exponential family class or factory, resolved during ``fit``.
+        calc_suff_stat (Callable): Sufficient-statistic function for ``dist``,
+            resolved alongside it.
         criterion: NLL loss function applied during training.
         criterion_params (list): Extra parameters passed to criterion.
         best_params: Best natural parameters found across all training phases.
@@ -51,6 +58,13 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # Cov[T(z)] is diagonal up to sampling noise for a product family, so
     # FisherLR.spectrum reads the diagonal rather than eigenvalues.
     independent_coordinates: bool = True
+
+    # Set by each subclass to its exponential family class, and read through
+    # _build_distribution. Annotated as a type rather than a Callable because
+    # mypy reads a callable class attribute as a method and eats the first
+    # argument. Subclasses binding a runtime argument override that method
+    # instead and leave this None.
+    dist: ClassVar[Optional[type[torch_distributions.Distribution]]] = None
 
     def __init__(
         self,
@@ -84,19 +98,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
         self.alpha = alpha
         self.dims = dims
-
-        if not hasattr(self, "calc_suff_stat"):
-            self.calc_suff_stat = self.dist.calc_suff_stat
-
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
-        self.criterion_params = [
-            self.phi,
-            self.dims,
-            self.dist,
-            self.calc_suff_stat,
-            self.hyperparameters.num_samples,
-            self.hyperparameters.eps,
-        ]
 
         self.best_params: Optional[ch.Tensor] = None
         self.best_loss: Optional[ch.Tensor] = None
@@ -136,6 +138,16 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 f"batch size ({self.hyperparameters.batch_size}) must be smaller than "
                 f"or equal to the number of samples ({self.hyperparameters.num_samples})."
             )
+
+        self.dist, self.calc_suff_stat = self._build_distribution()
+        self.criterion_params = [
+            self.phi,
+            self.dims,
+            self.dist,
+            self.calc_suff_stat,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
+        ]
 
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.hyperparameters,
@@ -202,6 +214,27 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
 
         return self
+
+    def _build_distribution(self) -> tuple[DistributionFactory, SufficientStatistic]:
+        """Return the distribution factory and its sufficient statistic.
+
+        Resolved when ``fit`` runs rather than during ``__init__``, so a
+        subclass sets whatever it needs after ``super().__init__`` like any
+        other attribute.
+
+        Returns:
+            The callable building the distribution from theta, and the
+            sufficient statistic of the family.
+
+        Raises:
+            NotImplementedError: If the subclass declares no ``dist``.
+        """
+        if getattr(self, "dist", None) is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} must declare a dist class attribute or "
+                "override _build_distribution."
+            )
+        return self.dist, self.dist.calc_suff_stat
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the Hessian of the truncated NLL, for deriving step sizes.
