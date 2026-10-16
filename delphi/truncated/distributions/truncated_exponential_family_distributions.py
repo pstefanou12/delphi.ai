@@ -84,19 +84,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
         self.alpha = alpha
         self.dims = dims
-
-        if not hasattr(self, "calc_suff_stat"):
-            self.calc_suff_stat = self.dist.calc_suff_stat
-
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
-        self.criterion_params = [
-            self.phi,
-            self.dims,
-            self.dist,
-            self.calc_suff_stat,
-            self.hyperparameters.num_samples,
-            self.hyperparameters.eps,
-        ]
 
         self.best_params: Optional[ch.Tensor] = None
         self.best_loss: Optional[ch.Tensor] = None
@@ -136,6 +124,16 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 f"batch size ({self.hyperparameters.batch_size}) must be smaller than "
                 f"or equal to the number of samples ({self.hyperparameters.num_samples})."
             )
+
+        self.dist, self.calc_suff_stat = self._build_distribution()
+        self.criterion_params = [
+            self.phi,
+            self.dims,
+            self.dist,
+            self.calc_suff_stat,
+            self.hyperparameters.num_samples,
+            self.hyperparameters.eps,
+        ]
 
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.hyperparameters,
@@ -202,6 +200,27 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
 
         return self
+
+    def _build_distribution(self) -> tuple[Callable, Callable]:
+        """Return the distribution factory and its sufficient statistic.
+
+        Resolved when ``fit`` runs rather than during ``__init__``, so a
+        subclass sets whatever it needs after ``super().__init__`` like any
+        other attribute.
+
+        Returns:
+            The callable building the distribution from theta, and the
+            sufficient statistic of the family.
+
+        Raises:
+            NotImplementedError: If the subclass declares no ``dist``.
+        """
+        if getattr(self, "dist", None) is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} must declare a dist class attribute or "
+                "override _build_distribution."
+            )
+        return self.dist, self.dist.calc_suff_stat
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the Hessian of the truncated NLL, for deriving step sizes.

@@ -41,10 +41,19 @@ class TruncatedWeibull(
             dims: Number of dimensions.
             k: Weibull shape parameter.
         """
-        self.k = k
-        self.dist = partial(weibull.Weibull, k)
-        self.calc_suff_stat = partial(weibull.Weibull.calc_suff_stat, k)
         super().__init__(hyperparameters, phi, dims, alpha)
+        self.k = k
+
+    def _build_distribution(self):
+        """Bind the known shape into the distribution and its statistic.
+
+        Returns:
+            The Weibull factory and sufficient statistic, both closed over k.
+        """
+        return (
+            partial(weibull.Weibull, self.k),
+            partial(weibull.Weibull.calc_suff_stat, self.k),
+        )
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical scale."""

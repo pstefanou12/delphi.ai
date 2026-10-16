@@ -5,14 +5,14 @@ import pytest
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
+from torch.distributions.multivariate_normal import _batch_mahalanobis
 
-import delphi.oracle
 from delphi.truncated.distributions import (
     unknown_truncated_multivariate_normal,
     unknown_truncated_normal,
 )
+from delphi.truncated.distributions.tests import helpers as test_helpers
 from delphi.utils import helpers
-from tests import helpers as test_helpers
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -28,7 +28,11 @@ def test_unknown_truncation_normal_known_variance():
     dims = 1
     M = distributions.MultivariateNormal(ch.zeros(dims), ch.eye(dims))
 
-    phi = delphi.oracle.Left_Distribution(ch.Tensor([0.0]))
+    left = ch.Tensor([0.0])
+
+    def phi(x):
+        return (x > left).prod(dim=-1, keepdim=True)
+
     num_samples = 10000
     S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(
         M, phi, num_samples
@@ -109,7 +113,11 @@ def test_unknown_truncation_normal():
     dims = 1
     # generate ground-truth data
     M = distributions.MultivariateNormal(ch.zeros(dims), ch.eye(dims))
-    phi = delphi.oracle.Right_Distribution(ch.Tensor([0.0]))
+    right = ch.Tensor([0.0])
+
+    def phi(x):
+        return (x < right).prod(dim=-1)
+
     num_samples = 10000
     S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(
         M, phi, num_samples
@@ -193,7 +201,12 @@ def test_unknown_truncation_multivariate_normal():
 
     W = distributions.Uniform(-0.5, 0.5)
     centroid = W.sample([dims])
-    phi = delphi.oracle.Sphere(M.covariance_matrix, centroid, 3.5)
+    scale_tril = ch.linalg.cholesky(M.covariance_matrix)  # pylint: disable=not-callable
+
+    def phi(x):
+        diff = x - centroid
+        dist = ch.sqrt(_batch_mahalanobis(scale_tril, diff))
+        return (dist < 3.5).float().flatten()
 
     num_samples = 5000
     S, alpha, parent = test_helpers.generate_truncated_distribution_dataset(

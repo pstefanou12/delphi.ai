@@ -41,13 +41,23 @@ class TruncatedMultivariateNormalKnownCovariance(
             dims: Number of dimensions.
             covariance_matrix: Known covariance matrix.
         """
-        self.covariance_matrix = covariance_matrix
-        self.dist = partial(
-            multivariate_normal_known_covariance.MultivariateNormalKnownCovariance,
-            covariance_matrix,
-        )
-        self.calc_suff_stat = multivariate_normal_known_covariance.MultivariateNormalKnownCovariance.calc_suff_stat
         super().__init__(hyperparameters, phi, dims, alpha)
+        self.covariance_matrix = covariance_matrix
+
+    def _build_distribution(self):
+        """Bind the known covariance into the distribution.
+
+        Returns:
+            The factory closed over the covariance, and the sufficient
+            statistic of the family.
+        """
+        return (
+            partial(
+                multivariate_normal_known_covariance.MultivariateNormalKnownCovariance,
+                self.covariance_matrix,
+            ),
+            multivariate_normal_known_covariance.MultivariateNormalKnownCovariance.calc_suff_stat,
+        )
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register theta as an nn.Parameter."""
