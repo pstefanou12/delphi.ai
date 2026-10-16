@@ -12,7 +12,7 @@ from torch import distributions as torch_distributions
 from torch import nn
 import torch.utils.data
 
-from delphi import configs, delphi_logger, trainer
+from delphi import configs, trainer
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import datasets
 
@@ -81,11 +81,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             ValueError: If alpha is given and lies outside (0, 1].
         """
         super().__init__(hyperparameters)
-        self.logger = (
-            delphi_logger.delphiLogger()
-            if self.hyperparameters.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
+        self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
         if alpha is not None and not 0.0 < alpha <= 1.0:
             raise ValueError(
@@ -165,7 +161,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             current_loss = self.trainer.best_loss

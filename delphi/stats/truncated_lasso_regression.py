@@ -11,7 +11,7 @@ from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
 
-from delphi import configs, delphi_logger, trainer
+from delphi import configs, trainer
 from delphi.stats import linear_model, losses
 from delphi.utils import datasets
 
@@ -53,8 +53,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphi_logger.delphiLogger()
-        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1
@@ -123,7 +122,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             self.hyperparameters, X, y
         )
 
-        self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
+        self.trainer = trainer.Trainer(self, self.hyperparameters)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )

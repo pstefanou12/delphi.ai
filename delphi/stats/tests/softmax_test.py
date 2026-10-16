@@ -50,7 +50,6 @@ def test_softmax_regression():
         "epochs": 10,
         "lr": 1e-1,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "grad_tol": 0,
         "patience": None,

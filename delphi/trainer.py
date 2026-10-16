@@ -3,6 +3,7 @@
 
 from collections.abc import Iterable
 import copy
+import logging
 import os
 import random
 from time import time
@@ -17,7 +18,6 @@ from tqdm import tqdm
 
 from delphi import configs
 from delphi.delphi import delphi
-from delphi.delphi_logger import delphiLogger
 from delphi.utils import constants as consts
 from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
@@ -30,7 +30,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self,
         model: delphi,
         hyperparameters: configs.TrainerConfig,
-        logger: delphiLogger,
         store=None,
     ):
         """Initialize the Trainer.
@@ -38,12 +37,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         Args:
             model: The delphi model to train.
             hyperparameters: Validated TrainerConfig instance.
-            logger: Logger instance for training diagnostics.
             store: Optional cox store for experiment logging.
         """
         self.model: delphi = model
         self.hyperparameters: configs.TrainerConfig = hyperparameters
-        self.logger: delphiLogger = logger
+        self.logger: logging.Logger = logging.getLogger(__name__)
         self.store: Optional[Store] = store
 
         self.epoch: int = 0

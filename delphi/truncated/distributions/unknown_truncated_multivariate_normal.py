@@ -123,7 +123,7 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking
@@ -288,7 +288,7 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             # Update tracking

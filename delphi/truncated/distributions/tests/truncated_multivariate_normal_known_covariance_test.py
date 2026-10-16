@@ -31,7 +31,6 @@ def test_two_dimensions():
         "batch_size": 1,
         "num_samples": 10000,
         "lr": 1e-2,
-        "verbose": True,
     }
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
         hyperparameters, phi, dims, target.covariance_matrix, alpha
@@ -80,7 +79,6 @@ def test_ten_dimensions():
         "num_samples": 1000,
         "optimizer": "sgd",
         "lr": 1e-2,
-        "verbose": True,
     }
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
         hyperparameters, phi_standardised, dims, scaled_covariance, alpha

@@ -63,7 +63,6 @@ def test_one_dimension():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
-            "verbose": True,
         },
     )
 
@@ -81,7 +80,6 @@ def test_two_dimensions():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
-            "verbose": True,
         },
     )
 
@@ -99,7 +97,6 @@ def test_two_dimensions_differing_shapes():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
-            "verbose": True,
         },
     )
 
@@ -117,6 +114,5 @@ def test_twenty_dimensions_differing_shapes():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
-            "verbose": True,
         },
     )
