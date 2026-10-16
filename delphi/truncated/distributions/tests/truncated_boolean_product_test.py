@@ -13,7 +13,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 def _recovers(
     dims: int,
     probability: ch.Tensor,
-    phi: helpers.TruncationOracle,
+    phi: helpers.Oracle,
     hyperparameters: dict,
 ) -> None:
     helpers.assert_family_recovers(

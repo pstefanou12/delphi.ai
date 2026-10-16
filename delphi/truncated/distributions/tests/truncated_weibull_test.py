@@ -14,7 +14,7 @@ def _recovers(
     dims: int,
     concentration: ch.Tensor,
     scale: ch.Tensor,
-    phi: helpers.TruncationOracle,
+    phi: helpers.Oracle,
     hyperparameters: dict,
 ) -> None:
     """Fit a truncated Weibull and assert it recovers the untruncated MLE.

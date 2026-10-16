@@ -8,7 +8,7 @@ import torch as ch
 from torch.distributions import Distribution, kl
 
 # Read through .nonzero(), so a bool, int or float return all work.
-TruncationOracle = Callable[[ch.Tensor], ch.Tensor]
+Oracle = Callable[[ch.Tensor], ch.Tensor]
 
 
 class TruncatedSample(NamedTuple):
@@ -28,7 +28,7 @@ class TruncatedSample(NamedTuple):
 
 
 def generate_truncated_distribution_dataset(
-    dist: Distribution, phi: TruncationOracle, dataset_size: int
+    dist: Distribution, phi: Oracle, dataset_size: int
 ) -> TruncatedSample:
     """Draw samples from dist that satisfy phi.
 
@@ -130,7 +130,7 @@ def assert_recovers(
 def assert_family_recovers(  # pylint: disable=too-many-arguments
     model_class: Callable[..., TruncatedModel],
     target: Distribution,
-    phi: TruncationOracle,
+    phi: Oracle,
     dims: int,
     parameter: str,
     empirical: Callable[[ch.Tensor], ch.Tensor],
