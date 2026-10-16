@@ -2,7 +2,7 @@
 """Shared helper utilities for delphi test modules."""
 
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import torch as ch
 from torch.distributions import Distribution
@@ -76,3 +76,36 @@ def weibull_kl_divergence(
     """
     ratio = scale / other_scale
     return concentration * ch.log(1.0 / ratio) + ratio.pow(concentration) - 1.0
+
+
+# The averaged iterate is the least noisy estimate and the one selected by a
+# noisy validation loss is the most, so each carries its own bound.
+TOLERANCES = {"ema": 1e-1, "avg": 0.15, "best": 0.2}
+
+
+def assert_recovers(
+    estimate: Callable[[str], object],
+    divergence: Callable[[object], ch.Tensor],
+    baseline: Optional[object] = None,
+    tolerances: Optional[dict[str, float]] = None,
+) -> None:
+    """Assert every estimator lands within its divergence tolerance.
+
+    Args:
+        estimate: Maps an estimator name -- ``ema``, ``avg`` or ``best`` -- to
+            the fitted value, undoing any standardisation the caller applied.
+        divergence: Maps a fitted value to a scalar divergence from the target.
+        baseline: The naive estimate, printed for comparison so a test that
+            stops discriminating is visible.
+        tolerances: Per-estimator bounds, defaulting to ``TOLERANCES``.
+
+    Raises:
+        AssertionError: If any estimator exceeds its bound.
+    """
+    bounds = TOLERANCES if tolerances is None else tolerances
+    if baseline is not None:
+        print(f"empirical divergence: {float(divergence(baseline)):.4f}")
+    for name, bound in bounds.items():
+        value = float(divergence(estimate(name)))
+        print(f"{name} divergence: {value:.4f}")
+        assert value <= bound, f"{name} divergence {value:.4f} exceeds {bound}"

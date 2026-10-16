@@ -11,76 +11,46 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def test_truncated_normal_known_variance():
-    """Right-truncated 1D normal with known variance converges to true mean."""
+def test_one_dimension():
     ch.manual_seed(0)
-    M = distributions.MultivariateNormal(ch.zeros(1), ch.eye(1))
+    covariance_matrix = ch.eye(1)
+    target = distributions.MultivariateNormal(ch.zeros(1), covariance_matrix)
     left = ch.Tensor([0.0])
 
     def phi(x):
         return (x > left).prod(dim=-1, keepdim=True)
 
-    num_samples = 1000
-    S, alpha, parent = helpers.generate_truncated_distribution_dataset(
-        M, phi, num_samples
+    S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
+        target, phi, 1000
     )
-    print(f"alpha: {alpha}")
-    print(f"num_samples: {num_samples}")
 
+    # The procedure is run on centred data, so the shift is undone on the way
+    # out; phi moves with it.
     emp_loc = S.mean(0)
-    print(f"emp loc:\n {emp_loc}")
-    print(f"known variance:\n {ch.eye(1)}")
-    S_std_norm = S - emp_loc
-    left_std_norm = (left - emp_loc).flatten()
+    left_centred = (left - emp_loc).flatten()
 
-    def phi_std_norm(x):
-        return (x > left_std_norm).prod(dim=-1, keepdim=True)
+    def phi_centred(x):
+        return (x > left_centred).prod(dim=-1, keepdim=True)
 
     hyperparameters = {
-        "batch_size": 10,
+        "iterations": 1500,
         "trials": 1,
-        "verbose": True,
-        "lr": 1e-1,
+        "batch_size": 10,
         "num_samples": 1000,
+        "lr": 1e-1,
+        "verbose": True,
         "early_stopping": True,
         "tol": 5e-2,
-        "iterations": 1500,
     }
     truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
-        hyperparameters, phi_std_norm, ch.eye(1), alpha
+        hyperparameters, phi_centred, covariance_matrix, alpha
     )
-    truncated.fit(S_std_norm)
+    truncated.fit(S - emp_loc)
 
-    best_loc = truncated.best_loc_ + emp_loc
-    print(f"best loc:\n {best_loc}")
-    best_m = distributions.MultivariateNormal(best_loc, ch.eye(1))
-    kl_truncated = kl.kl_divergence(best_m, M)
-    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-
-    ema_loc = truncated.ema_loc_ + emp_loc
-    print(f"ema loc:\n {ema_loc}")
-    ema_m = distributions.MultivariateNormal(ema_loc, ch.eye(1))
-    ema_kl_div = kl.kl_divergence(ema_m, M)
-    print(f"ema kl divergence: {ema_kl_div}")
-
-    avg_loc = truncated.avg_loc_ + emp_loc
-    print(f"avg loc:\n {avg_loc}")
-    avg_m = distributions.MultivariateNormal(avg_loc, ch.eye(1))
-    avg_kl_div = kl.kl_divergence(avg_m, M)
-    print(f"avg kl divergence: {avg_kl_div}")
-
-    # check performance
-    kl_emp = kl.kl_divergence(
-        distributions.MultivariateNormal(emp_loc, M.covariance_matrix), M
-    )
-    print(f"empirical kl divergence: {kl_emp.item():.3f}")
-    print(f"truncated kl divergence: {kl_truncated.item():.3f}")
-    assert ema_kl_div <= 1e-1, (
-        f"EMA KL divergence to true distribution exceeds 0.1: {ema_kl_div}"
-    )
-    assert avg_kl_div <= 0.15, (
-        f"Average KL divergence to true distribution exceeds 0.15: {avg_kl_div}"
-    )
-    assert kl_truncated <= 0.2, (
-        f"Best KL divergence to true distribution exceeds 0.2: {kl_truncated}"
+    helpers.assert_recovers(
+        estimate=lambda name: distributions.MultivariateNormal(
+            getattr(truncated, f"{name}_loc_") + emp_loc, covariance_matrix
+        ),
+        divergence=lambda fitted: kl.kl_divergence(fitted, target),
+        baseline=distributions.MultivariateNormal(emp_loc, covariance_matrix),
     )
