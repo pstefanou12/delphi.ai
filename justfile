@@ -24,27 +24,27 @@ sync:
 
 # Format the codebase in place.
 fmt:
-    poetry run ruff format delphi/ tests/
+    poetry run ruff format delphi/
 
 # Check formatting without modifying files.
 fmt-check:
-    poetry run ruff format --check delphi/ tests/
+    poetry run ruff format --check delphi/
 
 # Lint and apply safe fixes.
 lint:
-    poetry run ruff check --fix delphi/ tests/
+    poetry run ruff check --fix delphi/
 
 # Lint without modifying files.
 lint-check:
-    poetry run ruff check delphi/ tests/
+    poetry run ruff check delphi/
 
 # Detect logical errors with pylint.
 pylint:
-    poetry run pylint --errors-only delphi/ tests/
+    poetry run pylint --errors-only delphi/
 
 # Type-check with mypy.
 typecheck:
-    poetry run mypy delphi/ tests/
+    poetry run mypy delphi/
 
 # Run the test suite. Extra arguments are forwarded to pytest.
 test *ARGS:
@@ -59,7 +59,7 @@ cov *ARGS:
 hooks:
     poetry run pre-commit install --hook-type pre-push
 
-# Static gate: exactly what pre-commit runs on push. Excludes tests.
+# Static gate: exactly what pre-commit runs on push. Does not run the suite.
 check: fmt-check lint-check pylint typecheck
 
 # Full gate: the static checks plus the test suite.

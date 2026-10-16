@@ -10,7 +10,12 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def _recovers(dims, rate, phi, hyperparameters):
+def _recovers(
+    dims: int,
+    rate: ch.Tensor,
+    phi: helpers.Oracle,
+    hyperparameters: dict,
+) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_exponential.TruncatedExponential,
         target=distributions.Exponential(rate),

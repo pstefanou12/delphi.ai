@@ -18,6 +18,7 @@ import pydantic
 import pytest
 import torch
 
+import delphi
 from delphi import configs
 from delphi.optim.lr_scheduler import fisher, inverse_time
 
@@ -72,12 +73,14 @@ OPERATIVE_DEFAULTS = {
 }
 
 
-_REPO_ROOT = pathlib.Path(__file__).parent.parent
+# Anchored on the package rather than counting parents up from this file,
+# which a move of this module silently breaks.
+_DELPHI_ROOT = pathlib.Path(delphi.__file__).parent
 
 
 def test_every_hyperparameter_delphi_reads_is_declared() -> None:
     """No hyperparameter access in delphi.delphi falls through undeclared."""
-    source = (_REPO_ROOT / "delphi/delphi.py").read_text()
+    source = (_DELPHI_ROOT / "delphi.py").read_text()
     read = set(re.findall(r"self\.hyperparameters\.([A-Za-z_0-9]+)", source))
     # model_dump and friends are pydantic's API, not hyperparameters.
     read = {name for name in read if not name.startswith("model_")}
@@ -87,7 +90,7 @@ def test_every_hyperparameter_delphi_reads_is_declared() -> None:
 
 def test_no_defensive_hyperparameter_reads_remain() -> None:
     """delphi.delphi reads declared attributes, not getattr with a fallback."""
-    source = (_REPO_ROOT / "delphi/delphi.py").read_text()
+    source = (_DELPHI_ROOT / "delphi.py").read_text()
     assert "getattr(self.hyperparameters" not in source
     assert "_get_arg(" not in source
 
@@ -287,7 +290,10 @@ def test_configs_construct_nothing() -> None:
     not appear is a reference to torch.optim, which would mean a config had
     started constructing optimizers or schedulers.
     """
-    for path in (_REPO_ROOT / "delphi/configs").rglob("*.py"):
+    for path in (_DELPHI_ROOT / "configs").rglob("*.py"):
+        # This module lives under configs/ and names torch.optim deliberately.
+        if "tests" in path.parts:
+            continue
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Attribute):
                 name = _dotted(node)

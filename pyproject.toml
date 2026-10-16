@@ -59,9 +59,14 @@ build-backend = "poetry.core.masonry.api"
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
 # Tests live beside the code they cover, named <module>_test.py, so both
-# the discovery pattern and the search roots differ from the defaults.
-python_files = ["*_test.py", "test_*.py"]
-testpaths = ["tests", "delphi"]
+# the discovery pattern and the search root differ from the defaults.
+python_files = ["*_test.py"]
+testpaths = ["delphi"]
+
+[tool.coverage.run]
+# The test modules sit under delphi/, so --cov=delphi would otherwise score
+# them against themselves.
+omit = ["*/tests/*"]
 
 [tool.ruff.lint]
 # Default rules plus I (isort): import grouping and ordering, which CLAUDE.md

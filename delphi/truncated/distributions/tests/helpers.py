@@ -7,6 +7,9 @@ from typing import NamedTuple, Optional, Protocol, TypeVar, cast
 import torch as ch
 from torch.distributions import Distribution, kl
 
+# Read through .nonzero(), so a bool, int or float return all work.
+Oracle = Callable[[ch.Tensor], ch.Tensor]
+
 
 class TruncatedSample(NamedTuple):
     """A truncated sample together with the draw it came from.
@@ -25,7 +28,7 @@ class TruncatedSample(NamedTuple):
 
 
 def generate_truncated_distribution_dataset(
-    dist: Distribution, phi: Callable, dataset_size: int
+    dist: Distribution, phi: Oracle, dataset_size: int
 ) -> TruncatedSample:
     """Draw samples from dist that satisfy phi.
 
@@ -80,9 +83,7 @@ def weibull_kl_divergence(
     return concentration * ch.log(1.0 / ratio) + ratio.pow(concentration) - 1.0
 
 
-# A fitted value, scored by whatever divergence the caller pairs with it: a
-# torch distribution under a registered KL, or a bare parameter tensor where
-# torch registers none.
+# Generic because Weibull has no registered KL, so it scores bare tensors.
 _FittedT = TypeVar("_FittedT")
 
 
@@ -129,7 +130,7 @@ def assert_recovers(
 def assert_family_recovers(  # pylint: disable=too-many-arguments
     model_class: Callable[..., TruncatedModel],
     target: Distribution,
-    phi: Callable,
+    phi: Oracle,
     dims: int,
     parameter: str,
     empirical: Callable[[ch.Tensor], ch.Tensor],

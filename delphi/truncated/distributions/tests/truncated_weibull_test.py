@@ -10,7 +10,13 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def _recovers(dims, concentration, scale, phi, hyperparameters):
+def _recovers(
+    dims: int,
+    concentration: ch.Tensor,
+    scale: ch.Tensor,
+    phi: helpers.Oracle,
+    hyperparameters: dict,
+) -> None:
     """Fit a truncated Weibull and assert it recovers the untruncated MLE.
 
     The comparison is against the MLE of the draw before truncation, not the

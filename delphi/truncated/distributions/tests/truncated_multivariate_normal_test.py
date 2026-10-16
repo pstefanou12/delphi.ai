@@ -12,13 +12,18 @@ from delphi.utils import helpers as delphi_helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def _recovers(dims, covariance_matrix, num_samples, hyperparameters):
+def _recovers(
+    dims: int,
+    covariance_matrix: ch.Tensor,
+    dataset_size: int,
+    hyperparameters: dict,
+) -> None:
     """Fit a truncated multivariate normal and assert it recovers the truth.
 
     Args:
         dims: Number of dimensions.
         covariance_matrix: True covariance.
-        num_samples: Truncated samples to draw.
+        dataset_size: Truncated samples to draw.
         hyperparameters: Hyperparameter dict for the procedure.
     """
     ch.manual_seed(0)
@@ -28,10 +33,10 @@ def _recovers(dims, covariance_matrix, num_samples, hyperparameters):
         return x[:, 0] > 0
 
     S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
-        target, phi, num_samples
+        target, phi, dataset_size
     )
 
-    # Standardized going in, undone coming out; phi moves with the transform.
+    # phi is standardized too, or the fit sees the wrong truncation set.
     emp_loc = S.mean(0, keepdim=True)
     emp_var = S.var(0)
     emp_scale = ch.sqrt(emp_var)
@@ -61,7 +66,7 @@ def test_two_dimensions():
     _recovers(
         dims=2,
         covariance_matrix=2 * ch.eye(2),
-        num_samples=1000,
+        dataset_size=1000,
         hyperparameters={
             "iterations": 5000,
             "trials": 1,
@@ -79,7 +84,7 @@ def test_ten_dimensions():
     _recovers(
         dims=10,
         covariance_matrix=10 * ch.eye(10),
-        num_samples=5000,
+        dataset_size=5000,
         hyperparameters={
             "iterations": 5000,
             "trials": 1,

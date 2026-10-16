@@ -19,7 +19,7 @@ class TruncatedWeibull(
     """Model for truncated Weibull distributions to be passed into trainer.
 
     Attributes:
-        k (int): Weibull shape parameter.
+        k (ch.Tensor): Weibull shape parameter, one per coordinate.
     """
 
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
@@ -29,7 +29,7 @@ class TruncatedWeibull(
         hyperparameters: dict,
         phi: Callable,
         dims: int,
-        k: int,
+        k: ch.Tensor,
         alpha: Optional[float] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedWeibull.
@@ -39,7 +39,7 @@ class TruncatedWeibull(
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
-            k: Weibull shape parameter.
+            k: Weibull shape parameter, one per coordinate.
         """
         super().__init__(hyperparameters, phi, dims, alpha)
         self.k = k

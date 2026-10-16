@@ -24,8 +24,7 @@ def test_one_dimension():
         target, phi, 1000
     )
 
-    # The procedure is run on centered data, so the shift is undone on the way
-    # out; phi moves with it.
+    # phi is shifted too, or the fit sees the wrong truncation set.
     emp_loc = S.mean(0)
     left_centred = (left - emp_loc).flatten()
 

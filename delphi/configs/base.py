@@ -102,5 +102,23 @@ class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
                 )
         return data
 
+    def __str__(self):
+        """Render the explicitly-set hyperparameters, one per aligned line.
+
+        Only the fields the caller passed, since a config carries 85 and a
+        caller typically sets under ten. ``repr`` keeps pydantic's flat form
+        and ``model_dump`` the full mapping, so structured sinks are unchanged.
+        """
+        if not self.model_fields_set:
+            return f"{type(self).__name__}: all {len(type(self).model_fields)} defaults"
+
+        names = sorted(self.model_fields_set)
+        width = max(len(name) for name in names)
+        lines = [f"  {name:<{width}}  {getattr(self, name)}" for name in names]
+        hidden = len(type(self).model_fields) - len(names)
+        if hidden:
+            lines.append(f"  ({hidden} defaults not shown; see model_dump())")
+        return "\n".join(lines)
+
 
 _ConfigT = TypeVar("_ConfigT", bound=DelphiConfig)
