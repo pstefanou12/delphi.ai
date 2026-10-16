@@ -759,9 +759,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.dataset_size = None  # IterableDataset has no len().
 
         self.model.make_optimizer_and_schedule(checkpoint)
-        self.logger.info(
-            f"training: {self.model} with the following config:\n {self.hyperparameters}"
-        )
+        self.logger.info(f"training: {self.model}\n{self.hyperparameters}")
 
         if (
             self.hyperparameters.early_stopping

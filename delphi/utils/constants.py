@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Constants used throughout the delphi library."""
 
-from enum import Enum
+from enum import StrEnum
 
 JUPYTER = "jupyter"
 TERMINAL = "terminal"
@@ -27,14 +27,14 @@ CKPT_NAME_LATEST = CKPT_NAME + ".latest"
 CKPT_NAME_BEST = CKPT_NAME + BEST_APPEND
 
 
-class ProcedureStage(str, Enum):
+class ProcedureStage(StrEnum):
     """Training procedure stage identifiers."""
 
     TRAIN = "train"
     VAL = "val"
 
 
-class StopReason(str, Enum):
+class StopReason(StrEnum):
     """Stop reasons recorded by the Trainer when a stop criterion fires."""
 
     GRAD_TOL = "grad_tol"
@@ -45,7 +45,7 @@ class StopReason(str, Enum):
     MODEL_STOP = "model_stop"
 
 
-class OptimizerType(str, Enum):
+class OptimizerType(StrEnum):
     """Built-in optimizer type identifiers."""
 
     SGD = "sgd"
@@ -54,7 +54,7 @@ class OptimizerType(str, Enum):
     ADAMW = "adamw"
 
 
-class SchedulerType(str, Enum):
+class SchedulerType(StrEnum):
     """Built-in learning-rate scheduler type identifiers."""
 
     CYCLIC = "cyclic"
@@ -68,7 +68,7 @@ class SchedulerType(str, Enum):
     FISHER = "fisher"
 
 
-class CheckpointKey(str, Enum):
+class CheckpointKey(StrEnum):
     """Standard keys used in checkpoint dicts."""
 
     MODEL = "model"
@@ -80,7 +80,7 @@ class CheckpointKey(str, Enum):
     BEST_LOSS = "best_loss"
 
 
-class PythonFrameworks(str, Enum):
+class PythonFrameworks(StrEnum):
     """Keys for the random-state sub-dict stored in checkpoints."""
 
     PYTHON = "python"
