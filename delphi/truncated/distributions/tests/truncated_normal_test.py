@@ -23,8 +23,7 @@ def test_one_dimension():
         target, phi, 1000
     )
 
-    # The procedure is run on standardized data, so the transform is undone on
-    # the way out; phi moves with it.
+    # phi is standardized too, or the fit sees the wrong truncation set.
     emp_loc, emp_var = S.mean(0), S.var(0)
     emp_scale = ch.sqrt(emp_var)
     left_standardised = ((left - emp_loc) / emp_scale).flatten()

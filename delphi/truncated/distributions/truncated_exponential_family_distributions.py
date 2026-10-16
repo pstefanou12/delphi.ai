@@ -16,11 +16,9 @@ from delphi import configs, delphi_logger, trainer
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import datasets
 
-# Builds the family's distribution at a given natural parameter: the shape
-# losses.py calls as dist(theta, dims) on every step.
+# Called as dist(theta, dims) in losses.py on every step.
 DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distribution]
 
-# Maps samples to the family's sufficient statistic T(x).
 SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 
 
@@ -59,11 +57,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # FisherLR.spectrum reads the diagonal rather than eigenvalues.
     independent_coordinates: bool = True
 
-    # Set by each subclass to its exponential family class, and read through
-    # _build_distribution. Annotated as a type rather than a Callable because
-    # mypy reads a callable class attribute as a method and eats the first
-    # argument. Subclasses binding a runtime argument override that method
-    # instead and leave this None.
+    # A type, not a Callable: mypy reads a callable class attribute as a
+    # method and drops the first argument.
     dist: ClassVar[Optional[type[torch_distributions.Distribution]]] = None
 
     def __init__(

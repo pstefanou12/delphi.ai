@@ -61,8 +61,7 @@ def test_ten_dimensions():
         target, phi, 1000
     )
 
-    # Standardized by the known variance, so the scaling is undone on the way
-    # out and phi moves with it.
+    # phi is standardized too, or the fit sees the wrong truncation set.
     emp_loc = S.mean(0, keepdim=True)
     true_scale = ch.sqrt(target.covariance_matrix.diag())
     scaled_covariance = (
