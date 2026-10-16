@@ -83,7 +83,7 @@ def UnknownTruncationNormal(  # pylint: disable=invalid-name
 
     Args:
         args: Hyperparameter dict or Pydantic config.
-        k: Number of nearest neighbours for the oracle.
+        k: Number of nearest neighbors for the oracle.
         alpha: Survival probability lower bound.
         dims: Number of dimensions.
         variance: Known variance; if None, variance is estimated.

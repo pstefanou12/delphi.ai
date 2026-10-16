@@ -3,7 +3,6 @@
 
 import torch as ch
 from torch import distributions
-from torch.distributions import kl
 
 from delphi.truncated.distributions import truncated_boolean_product
 from delphi.truncated.distributions.tests import helpers
@@ -12,28 +11,14 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(dims, probability, phi, hyperparameters):
-    """Fit a truncated boolean product and assert it recovers the true p.
-
-    Args:
-        dims: Number of dimensions.
-        probability: True success probability per dimension.
-        phi: Truncation set oracle.
-        hyperparameters: Hyperparameter dict for the procedure.
-    """
-    ch.manual_seed(0)
-    target = distributions.Bernoulli(probability)
-    S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
-        target, phi, 10000
-    )
-    truncated = truncated_boolean_product.TruncatedBooleanProduct(
-        hyperparameters, phi, dims, alpha
-    )
-    truncated.fit(S)
-
-    helpers.assert_recovers(
-        estimate=lambda name: distributions.Bernoulli(getattr(truncated, f"{name}_p_")),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target).sum(),
-        baseline=distributions.Bernoulli(S.mean(0)),
+    helpers.assert_family_recovers(
+        model_class=truncated_boolean_product.TruncatedBooleanProduct,
+        target=distributions.Bernoulli(probability),
+        phi=phi,
+        dims=dims,
+        parameter="p_",
+        empirical=lambda s: s.mean(0),
+        hyperparameters=hyperparameters,
     )
 
 

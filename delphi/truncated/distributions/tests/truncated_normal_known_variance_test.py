@@ -24,7 +24,7 @@ def test_one_dimension():
         target, phi, 1000
     )
 
-    # The procedure is run on centred data, so the shift is undone on the way
+    # The procedure is run on centered data, so the shift is undone on the way
     # out; phi moves with it.
     emp_loc = S.mean(0)
     left_centred = (left - emp_loc).flatten()

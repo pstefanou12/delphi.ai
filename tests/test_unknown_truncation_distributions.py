@@ -188,7 +188,7 @@ def test_unknown_truncation_normal():
 # TODO: pstefanou12@ - re-enable with the unknown-truncation rework. The
 # Hermite oracle gets k=12 in 10 dims, i.e. 646,646 multi-indices, so h_v
 # materialises a ~13GB (5000, 646646) tensor on every call. k also changed
-# meaning from a neighbour count to a polynomial degree without its callers
+# meaning from a neighbor count to a polynomial degree without its callers
 # being updated.
 @pytest.mark.skip(
     reason="unknown-truncation rework: hangs building a ~13GB Hermite tensor"

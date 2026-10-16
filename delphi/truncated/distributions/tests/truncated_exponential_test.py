@@ -3,7 +3,6 @@
 
 import torch as ch
 from torch import distributions
-from torch.distributions import kl
 
 from delphi.truncated.distributions import truncated_exponential
 from delphi.truncated.distributions.tests import helpers
@@ -12,30 +11,14 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(dims, rate, phi, hyperparameters):
-    """Fit a truncated exponential and assert it recovers the true rates.
-
-    Args:
-        dims: Number of dimensions.
-        rate: True rate per dimension.
-        phi: Truncation set oracle.
-        hyperparameters: Hyperparameter dict for the procedure.
-    """
-    ch.manual_seed(0)
-    target = distributions.Exponential(rate)
-    S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
-        target, phi, 10000
-    )
-    truncated = truncated_exponential.TruncatedExponential(
-        hyperparameters, phi, dims, alpha
-    )
-    truncated.fit(S)
-
-    helpers.assert_recovers(
-        estimate=lambda name: distributions.Exponential(
-            getattr(truncated, f"{name}_lambda_")
-        ),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target).sum(),
-        baseline=distributions.Exponential(1.0 / S.mean(0)),
+    helpers.assert_family_recovers(
+        model_class=truncated_exponential.TruncatedExponential,
+        target=distributions.Exponential(rate),
+        phi=phi,
+        dims=dims,
+        parameter="lambda_",
+        empirical=lambda s: 1.0 / s.mean(0),
+        hyperparameters=hyperparameters,
     )
 
 

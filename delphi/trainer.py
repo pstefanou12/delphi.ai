@@ -610,7 +610,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     ) -> None:
         """Build and append one training-log row to the cox store.
 
-        Lazily initialises the logs table on the first call so that
+        Lazily initializes the logs table on the first call so that
         model-specific metric columns are included in the schema.
 
         Args:

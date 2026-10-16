@@ -31,7 +31,7 @@ def _recovers(dims, covariance_matrix, num_samples, hyperparameters):
         target, phi, num_samples
     )
 
-    # Standardised going in, undone coming out; phi moves with the transform.
+    # Standardized going in, undone coming out; phi moves with the transform.
     emp_loc = S.mean(0, keepdim=True)
     emp_var = S.var(0)
     emp_scale = ch.sqrt(emp_var)
