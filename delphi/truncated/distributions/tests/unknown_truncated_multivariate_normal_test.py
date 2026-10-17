@@ -54,7 +54,6 @@ def test_unknown_truncation_multivariate_normal():
     args = {
         "epochs": 25,
         "batch_size": 100,
-        "verbose": True,
     }
     truncated = (
         unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(

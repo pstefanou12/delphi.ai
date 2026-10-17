@@ -11,7 +11,7 @@ from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 from torch import nn
 
-from delphi import configs, delphi_logger, trainer
+from delphi import configs, trainer
 from delphi.stats import linear_model, losses
 from delphi.utils import datasets
 
@@ -54,8 +54,7 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphi_logger.delphiLogger()
-        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, emp_weight=emp_weight)
         self.phi = phi
         self.alpha = alpha
         self.fit_intercept = fit_intercept
@@ -123,7 +122,7 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
             self.hyperparameters, X, y
         )  # pylint: disable=attribute-defined-outside-init
 
-        self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)  # pylint: disable=attribute-defined-outside-init
+        self.trainer = trainer.Trainer(self, self.hyperparameters)  # pylint: disable=attribute-defined-outside-init
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self

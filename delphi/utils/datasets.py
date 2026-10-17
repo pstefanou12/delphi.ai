@@ -139,7 +139,6 @@ class DataSet:
         val=True,
         shuffle=True,
         seed=1,
-        verbose=True,  # pylint: disable=unused-argument
     ):
         """
         Args:

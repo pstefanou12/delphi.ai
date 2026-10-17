@@ -74,7 +74,6 @@ def test_two_dimensions():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-1,
-            "verbose": True,
             "covariance_matrix_lr": 1e-2,
         },
     )
@@ -92,7 +91,6 @@ def test_ten_dimensions():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-1,
-            "verbose": True,
             "covariance_matrix_lr": 1e-2,
         },
     )
