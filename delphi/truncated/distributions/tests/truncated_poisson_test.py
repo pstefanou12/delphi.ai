@@ -18,6 +18,8 @@ def _recovers(
     phi: helpers.Oracle,
     hyperparameters: dict,
     dataset_size: int = 10000,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_poisson.TruncatedPoisson,
@@ -28,6 +30,8 @@ def _recovers(
         empirical=lambda s: s.mean(0),
         hyperparameters=hyperparameters,
         dataset_size=dataset_size,
+        pass_alpha=pass_alpha,
+        baseline_must_fail=baseline_must_fail,
     )
 
 
@@ -153,4 +157,92 @@ def test_five_dimensions_random_polytope():
             "lr": 1e-2,
         },
         dataset_size=5000,
+    )
+
+
+def test_one_dimension_no_truncation():
+    # phi admits everything, so the procedure should reduce to the
+    # untruncated MLE and the naive estimate is the right answer.
+    _recovers(
+        dims=1,
+        rate=ch.Tensor([1.0]),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_no_truncation():
+    _recovers(
+        dims=10,
+        rate=ch.linspace(1.0, 3.0, 10),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_sum_threshold():
+    rate = ch.linspace(1.0, 3.0, 10)
+    # One scalar condition, so sampling stays cheap, but it biases every
+    # coordinate instead of one.
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        distributions.Poisson(rate),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 200.0),
+    )
+    _recovers(
+        dims=10,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
+        },
+    )
+
+
+def test_one_dimension_small_mass():
+    rate = ch.Tensor([1.0])
+    # The regime both papers state their guarantees in; nothing else in the
+    # suite goes near it.
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Poisson(rate),
+        target_alpha=(0.005, 0.03),
+        bounds=(0.0, 50.0),
+    )
+    _recovers(
+        dims=1,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
     )

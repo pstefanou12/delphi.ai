@@ -18,6 +18,8 @@ def _recovers(
     scale: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: dict,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
 ) -> None:
     """Fit a truncated Weibull and assert it recovers the untruncated MLE.
 
@@ -31,14 +33,17 @@ def _recovers(
         scale: True scale per dimension.
         phi: Truncation set oracle.
         hyperparameters: Hyperparameter dict for the procedure.
+        pass_alpha: Supply the measured survival mass to the model.
+        baseline_must_fail: Forwarded to ``assert_recovers``.
     """
     ch.manual_seed(0)
     target = distributions.Weibull(scale, concentration)
     S, alpha, parent = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
         target, phi, 10000
     )
+    args = (alpha,) if pass_alpha else ()
     truncated = truncated_weibull.TruncatedWeibull(
-        hyperparameters, phi, dims, concentration, alpha
+        hyperparameters, phi, dims, concentration, *args
     )
     truncated.fit(S)
 
@@ -49,6 +54,7 @@ def _recovers(
             fitted, mle, concentration
         ),
         baseline=S.pow(concentration).mean(0).pow(1.0 / concentration).flatten(),
+        baseline_must_fail=baseline_must_fail,
     )
 
 
@@ -152,6 +158,72 @@ def test_two_dimensions_random_disc_union():
     )
     _recovers(
         dims=2,
+        concentration=concentration,
+        scale=scale,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+    )
+
+
+def test_one_dimension_no_truncation():
+    # phi admits everything, so the procedure should reduce to the
+    # untruncated MLE and the naive estimate is the right answer.
+    _recovers(
+        dims=1,
+        concentration=ch.Tensor([2.0]),
+        scale=ch.Tensor([1.0]),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_no_truncation():
+    _recovers(
+        dims=10,
+        concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
+        scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_one_dimension_small_mass():
+    scale, concentration = ch.Tensor([1.0]), ch.Tensor([2.0])
+    # The regime both papers state their guarantees in; nothing else in the
+    # suite goes near it.
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Weibull(scale, concentration),
+        target_alpha=(0.008, 0.02),
+        bounds=(0.0, 50.0),
+    )
+    _recovers(
+        dims=1,
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,

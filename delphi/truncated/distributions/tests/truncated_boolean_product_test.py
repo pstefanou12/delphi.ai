@@ -17,6 +17,8 @@ def _recovers(
     probability: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: dict,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_boolean_product.TruncatedBooleanProduct,
@@ -26,6 +28,8 @@ def _recovers(
         parameter="p_",
         empirical=lambda s: s.mean(0),
         hyperparameters=hyperparameters,
+        pass_alpha=pass_alpha,
+        baseline_must_fail=baseline_must_fail,
     )
 
 
@@ -95,5 +99,68 @@ def test_five_dimensions_random_polytope():
             "optimizer": "sgd",
             "lr": 1e-1,
             "project": False,
+        },
+    )
+
+
+def test_one_dimension_no_truncation():
+    # phi admits everything, so the procedure should reduce to the
+    # untruncated MLE and the naive estimate is the right answer.
+    _recovers(
+        dims=1,
+        probability=ch.Tensor([0.4]),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_no_truncation():
+    _recovers(
+        dims=10,
+        probability=ch.linspace(0.3, 0.7, 10),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_sum_threshold():
+    probability = ch.linspace(0.3, 0.7, 10)
+    # One scalar condition, so sampling stays cheap, but it biases every
+    # coordinate instead of one.
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        distributions.Bernoulli(probability),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 200.0),
+    )
+    _recovers(
+        dims=10,
+        probability=probability,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
         },
     )

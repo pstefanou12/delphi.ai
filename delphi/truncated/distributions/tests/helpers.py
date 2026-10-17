@@ -165,6 +165,8 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     empirical: Callable[[ch.Tensor], ch.Tensor],
     hyperparameters: dict,
     dataset_size: int = 10000,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
 ) -> None:
     """Fit a family on truncated data and assert it recovers the target.
 
@@ -184,13 +186,18 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         empirical: Maps the truncated data to the naive estimate.
         hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
+        pass_alpha: Supply the measured survival mass to the model. False
+            leaves the model to fall back on ``min_radius``, which is what a
+            caller who cannot measure it gets.
+        baseline_must_fail: Forwarded to ``assert_recovers``.
 
     Raises:
         AssertionError: If any estimator exceeds its bound.
     """
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
-    truncated = model_class(hyperparameters, phi, dims, sample.alpha)
+    args = (sample.alpha,) if pass_alpha else ()
+    truncated = model_class(hyperparameters, phi, dims, *args)
     truncated.fit(sample.S)
 
     # Each family here builds from its canonical parameter alone, which the
@@ -200,4 +207,5 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         estimate=lambda name: family(getattr(truncated, f"{name}_{parameter}")),
         divergence=lambda fitted: kl.kl_divergence(fitted, target),
         baseline=family(empirical(sample.S)),
+        baseline_must_fail=baseline_must_fail,
     )

@@ -3,6 +3,7 @@
 
 import functools
 
+import pytest
 import torch as ch
 from torch import distributions
 
@@ -17,6 +18,8 @@ def _recovers(
     rate: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: dict,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_exponential.TruncatedExponential,
@@ -26,6 +29,8 @@ def _recovers(
         parameter="lambda_",
         empirical=lambda s: 1.0 / s.mean(0),
         hyperparameters=hyperparameters,
+        pass_alpha=pass_alpha,
+        baseline_must_fail=baseline_must_fail,
     )
 
 
@@ -133,3 +138,125 @@ def test_two_dimensions_random_ellipsoid():
             "lr": 1e-1,
         },
     )
+
+
+def test_one_dimension_no_truncation():
+    # phi admits everything, so the procedure should reduce to the
+    # untruncated MLE and the naive estimate is the right answer.
+    _recovers(
+        dims=1,
+        rate=ch.Tensor([1.0]),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_no_truncation():
+    _recovers(
+        dims=10,
+        rate=ch.linspace(1.0, 2.0, 10),
+        phi=truncation_sets.no_truncation(),
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_sum_threshold():
+    rate = ch.linspace(1.0, 2.0, 10)
+    # One scalar condition, so sampling stays cheap, but it biases every
+    # coordinate instead of one.
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        distributions.Exponential(rate),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 200.0),
+    )
+    _recovers(
+        dims=10,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
+        },
+    )
+
+
+def test_one_dimension_small_mass():
+    rate = ch.Tensor([1.0])
+    # The regime both papers state their guarantees in; nothing else in the
+    # suite goes near it.
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Exponential(rate),
+        target_alpha=(0.008, 0.02),
+        bounds=(0.0, 50.0),
+    )
+    _recovers(
+        dims=1,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+    )
+
+
+def test_ten_dimensions_norm_threshold():
+    rate = ch.linspace(1.0, 2.0, 10)
+    # Couples every coordinate like the sum does, and also excludes the mode.
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.norm_threshold,
+        distributions.Exponential(rate),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 100.0),
+    )
+    _recovers(
+        dims=10,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
+        },
+    )
+
+
+def test_unit_alpha_is_rejected():
+    with pytest.raises(ValueError, match="nothing was truncated"):
+        truncated_exponential.TruncatedExponential(
+            {"iterations": 10, "trials": 1, "batch_size": 10},
+            truncation_sets.no_truncation(),
+            1,
+            alpha=1.0,
+        )

@@ -78,14 +78,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 empirical initialization when omitted.
 
         Raises:
-            ValueError: If alpha is given and lies outside (0, 1].
+            ValueError: If alpha is given and lies outside (0, 1).
         """
         super().__init__(hyperparameters)
         self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
-        if alpha is not None and not 0.0 < alpha <= 1.0:
+        if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
-                f"alpha is the survival probability and must lie in (0, 1]; got {alpha}."
+                "alpha is the survival probability and must lie in (0, 1); got "
+                f"{alpha}. alpha=1 claims nothing was truncated, which leaves "
+                "the procedure nothing to correct for: fit the family directly, "
+                "or omit alpha to fall back on min_radius."
             )
         self.alpha = alpha
         self.dims = dims
