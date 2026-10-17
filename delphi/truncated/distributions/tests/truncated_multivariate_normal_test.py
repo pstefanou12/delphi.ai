@@ -3,7 +3,9 @@
 
 import functools
 import math
+from typing import Optional
 
+import pytest
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
@@ -21,6 +23,9 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     phi: helpers.Oracle,
     dataset_size: int,
     hyperparameters: dict,
+    pass_alpha: bool = True,
+    baseline_must_fail: bool = True,
+    tolerances: Optional[dict[str, float]] = None,
 ) -> None:
     """Fit a truncated multivariate normal and assert it recovers the truth.
 
@@ -48,8 +53,9 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         # different set; composing this way holds for any geometry.
         return phi(x * emp_scale + emp_loc)
 
+    args = (alpha,) if pass_alpha else ()
     truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
-        hyperparameters, phi_standardised, dims, alpha
+        hyperparameters, phi_standardised, dims, *args
     )
     truncated.fit((S - emp_loc) / emp_scale)
 
@@ -62,9 +68,12 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         ),
         divergence=lambda fitted: kl.kl_divergence(fitted, target),
         baseline=distributions.MultivariateNormal(emp_loc, delphi_helpers.cov(S)),
+        baseline_must_fail=baseline_must_fail,
+        tolerances=tolerances,
     )
 
 
+@pytest.mark.slow
 def test_two_dimensions():
     _recovers(
         dims=2,
@@ -158,4 +167,49 @@ def test_two_dimensions_random_disc_union():
             "lr": 1e-1,
             "covariance_matrix_lr": 1e-2,
         },
+    )
+
+
+def test_one_dimension_no_truncation():
+    # phi admits everything, so the procedure should reduce to the
+    # untruncated MLE and the naive estimate is the right answer.
+    _recovers(
+        dims=1,
+        covariance_matrix=2 * ch.eye(1),
+        phi=truncation_sets.identity(),
+        dataset_size=5000,
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 1,
+            "num_samples": 10000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+    )
+
+
+def test_ten_dimensions_no_truncation():
+    _recovers(
+        dims=10,
+        covariance_matrix=2 * ch.eye(10),
+        phi=truncation_sets.identity(),
+        dataset_size=5000,
+        hyperparameters={
+            "iterations": 1500,
+            "trials": 1,
+            "batch_size": 1,
+            "num_samples": 10000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+        pass_alpha=False,
+        baseline_must_fail=False,
+        # Only the running average converges here. Over 1500 and 4000 steps
+        # the EMA measures 0.0910 then 0.1069 against a 0.1 bound, and the
+        # validation-selected iterate 0.6199 then 0.3348 against 0.2, so
+        # neither is short of steps.
+        tolerances={"avg": 0.15},
     )

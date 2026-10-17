@@ -527,6 +527,7 @@ def test_truncated_ten_dimension_probit_regression():
 
 
 # 1 dimensional untruncated multinomial logistic regression
+@pytest.mark.slow
 def test_untruncated_multinomial_logistic_regression():
     D, K = 5, 2
 

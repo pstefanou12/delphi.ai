@@ -204,7 +204,7 @@ def spiral_band(
     return phi
 
 
-def no_truncation() -> helpers.Oracle:
+def identity() -> helpers.Oracle:
     """Return an oracle admitting every sample.
 
     Survival mass is 1, so the radius derived from it is 0 and the procedure

@@ -3,6 +3,7 @@
 
 import functools
 
+import pytest
 import torch as ch
 from torch import distributions
 
@@ -109,6 +110,7 @@ def test_two_dimensions_differing_shapes():
     )
 
 
+@pytest.mark.slow
 def test_twenty_dimensions_differing_shapes():
     _recovers(
         dims=20,
@@ -172,14 +174,14 @@ def test_two_dimensions_random_disc_union():
     )
 
 
-def test_one_dimension_no_truncation():
+def test_one_dimension_identity():
     # phi admits everything, so the procedure should reduce to the
     # untruncated MLE and the naive estimate is the right answer.
     _recovers(
         dims=1,
         concentration=ch.Tensor([2.0]),
         scale=ch.Tensor([1.0]),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -193,12 +195,12 @@ def test_one_dimension_no_truncation():
     )
 
 
-def test_ten_dimensions_no_truncation():
+def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
         scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -212,6 +214,7 @@ def test_ten_dimensions_no_truncation():
     )
 
 
+@pytest.mark.slow
 def test_one_dimension_small_mass():
     scale, concentration = ch.Tensor([1.0]), ch.Tensor([2.0])
     # The regime both papers state their guarantees in; nothing else in the

@@ -5,6 +5,9 @@
 # in pre-commit, and in CI. Do not invoke ruff/pylint/mypy/pytest directly.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
+# Forward recipe arguments through "$@" so a quoted one survives, which
+# {{ARGS}} does not: it splits on whitespace and turns -m "not slow" into two.
+set positional-arguments
 
 # List the available recipes.
 default:
@@ -47,13 +50,15 @@ typecheck:
     poetry run mypy delphi/
 
 # Run the test suite. Extra arguments are forwarded to pytest.
+# `just test -m "not slow"` skips the long fits; see the slow marker in
+# pyproject.toml.
 test *ARGS:
-    poetry run pytest {{ARGS}}
+    poetry run pytest "$@"
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:
     poetry run pytest --cov=delphi --cov-branch \
-        --cov-report=term-missing {{ARGS}}
+        --cov-report=term-missing "$@"
 
 # Install the pre-push git hooks.
 hooks:

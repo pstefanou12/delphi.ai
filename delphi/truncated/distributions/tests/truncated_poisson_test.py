@@ -3,6 +3,7 @@
 
 import functools
 
+import pytest
 import torch as ch
 from torch import distributions
 
@@ -76,6 +77,7 @@ def test_two_dimensions():
     )
 
 
+@pytest.mark.slow
 def test_twenty_dimensions():
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
@@ -160,13 +162,13 @@ def test_five_dimensions_random_polytope():
     )
 
 
-def test_one_dimension_no_truncation():
+def test_one_dimension_identity():
     # phi admits everything, so the procedure should reduce to the
     # untruncated MLE and the naive estimate is the right answer.
     _recovers(
         dims=1,
         rate=ch.Tensor([1.0]),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -180,11 +182,11 @@ def test_one_dimension_no_truncation():
     )
 
 
-def test_ten_dimensions_no_truncation():
+def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 3.0, 10),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,

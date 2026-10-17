@@ -140,13 +140,13 @@ def test_two_dimensions_random_ellipsoid():
     )
 
 
-def test_one_dimension_no_truncation():
+def test_one_dimension_identity():
     # phi admits everything, so the procedure should reduce to the
     # untruncated MLE and the naive estimate is the right answer.
     _recovers(
         dims=1,
         rate=ch.Tensor([1.0]),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -160,11 +160,11 @@ def test_one_dimension_no_truncation():
     )
 
 
-def test_ten_dimensions_no_truncation():
+def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 2.0, 10),
-        phi=truncation_sets.no_truncation(),
+        phi=truncation_sets.identity(),
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -203,6 +203,7 @@ def test_ten_dimensions_sum_threshold():
     )
 
 
+@pytest.mark.slow
 def test_one_dimension_small_mass():
     rate = ch.Tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the
@@ -256,7 +257,7 @@ def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         truncated_exponential.TruncatedExponential(
             {"iterations": 10, "trials": 1, "batch_size": 10},
-            truncation_sets.no_truncation(),
+            truncation_sets.identity(),
             1,
             alpha=1.0,
         )
