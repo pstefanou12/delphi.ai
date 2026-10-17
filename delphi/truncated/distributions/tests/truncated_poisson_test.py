@@ -48,10 +48,19 @@ def test_one_dimension():
 
 
 def test_two_dimensions():
+    rate = ch.Tensor([1.0, 2.0])
+    # A discrete family reaches only the masses its integer thresholds give,
+    # so the band is wider than the continuous families use.
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Poisson(rate),
+        target_alpha=(0.10, 0.30),
+        bounds=(0.0, 30.0),
+    )
     _recovers(
         dims=2,
-        rate=ch.Tensor([1.0, 2.0]),
-        phi=lambda z: z[:, 0] > 0.25,
+        rate=rate,
+        phi=calibrated.phi,
         hyperparameters={
             "iterations": 2500,
             "trials": 1,
@@ -64,10 +73,17 @@ def test_two_dimensions():
 
 
 def test_twenty_dimensions():
+    rate = 2 * ch.ones(20)
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Poisson(rate),
+        target_alpha=(0.10, 0.30),
+        bounds=(0.0, 30.0),
+    )
     _recovers(
         dims=20,
-        rate=2 * ch.ones(20),
-        phi=lambda z: z[:, 0] > 1,
+        rate=rate,
+        phi=calibrated.phi,
         hyperparameters={
             "iterations": 2500,
             "trials": 1,

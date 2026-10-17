@@ -98,33 +98,62 @@ class TruncatedModel(Protocol):
 # noisy validation loss is the most, so each carries its own bound.
 TOLERANCES = {"ema": 1e-1, "avg": 0.15, "best": 0.2}
 
+# A summed bound lets one coordinate absorb the whole budget while the rest
+# are perfect. Measured worst coordinate across the suite is 0.0809.
+MAX_COORDINATE = 0.1
 
-def assert_recovers(
+
+def assert_recovers(  # pylint: disable=too-many-arguments
     estimate: Callable[[str], _FittedT],
     divergence: Callable[[_FittedT], ch.Tensor],
     baseline: Optional[_FittedT] = None,
     tolerances: Optional[dict[str, float]] = None,
+    baseline_must_fail: bool = True,
+    max_coordinate: Optional[float] = None,
 ) -> None:
     """Assert every estimator lands within its divergence tolerance.
 
     Args:
         estimate: Maps an estimator name -- ``ema``, ``avg`` or ``best`` -- to
             the fitted value, undoing any standardization the caller applied.
-        divergence: Maps a fitted value to a scalar divergence from the target.
-        baseline: The naive estimate, printed for comparison so a test that
-            stops discriminating is visible.
-        tolerances: Per-estimator bounds, defaulting to ``TOLERANCES``.
+        divergence: Maps a fitted value to its divergence from the target,
+            unreduced, so a product family returns one entry per coordinate.
+        baseline: The naive estimate, scored for comparison.
+        tolerances: Per-estimator bounds on the summed divergence, defaulting
+            to ``TOLERANCES``.
+        baseline_must_fail: Require the naive estimate to breach every bound.
+            False only where it is the right answer, as under no truncation.
+        max_coordinate: Bound on the worst single coordinate, defaulting to
+            ``MAX_COORDINATE``. Applied only where the divergence decomposes,
+            so a one-dimensional or joint score is scored by the sum alone.
 
     Raises:
-        AssertionError: If any estimator exceeds its bound.
+        AssertionError: If an estimator exceeds a bound, or if the naive
+            estimate passes while ``baseline_must_fail`` is set.
     """
     bounds = TOLERANCES if tolerances is None else tolerances
     if baseline is not None:
-        print(f"empirical divergence: {float(divergence(baseline)):.4f}")
+        naive = float(divergence(baseline).sum())
+        print(f"empirical divergence: {naive:.4f}")
+        if baseline_must_fail:
+            assert naive > max(bounds.values()), (
+                f"the naive estimate scores {naive:.4f}, inside the loosest "
+                f"bound {max(bounds.values())}: this test would pass without "
+                "an estimator, so it measures nothing"
+            )
+
     for name, bound in bounds.items():
-        value = float(divergence(estimate(name)))
-        print(f"{name} divergence: {value:.4f}")
+        per_coordinate = divergence(estimate(name))
+        value = float(per_coordinate.sum())
+        worst = float(per_coordinate.max())
+        print(f"{name} divergence: {value:.4f} (worst coordinate {worst:.4f})")
         assert value <= bound, f"{name} divergence {value:.4f} exceeds {bound}"
+        if per_coordinate.numel() > 1:
+            ceiling = MAX_COORDINATE if max_coordinate is None else max_coordinate
+            assert worst <= ceiling, (
+                f"{name} worst coordinate {worst:.4f} exceeds {ceiling}, so the "
+                "error is concentrated rather than spread"
+            )
 
 
 def assert_family_recovers(  # pylint: disable=too-many-arguments
@@ -169,6 +198,6 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     family = cast(Callable[[ch.Tensor], Distribution], type(target))
     assert_recovers(
         estimate=lambda name: family(getattr(truncated, f"{name}_{parameter}")),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target).sum(),
+        divergence=lambda fitted: kl.kl_divergence(fitted, target),
         baseline=family(empirical(sample.S)),
     )

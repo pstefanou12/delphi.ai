@@ -46,10 +46,16 @@ def test_one_dimension():
 
 
 def test_two_dimensions():
+    rate = ch.Tensor([1.0, 2.0])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Exponential(rate),
+        target_alpha=(0.15, 0.25),
+    )
     _recovers(
         dims=2,
-        rate=ch.Tensor([1.0, 2.0]),
-        phi=lambda z: z[:, 0] > 0.5,
+        rate=rate,
+        phi=calibrated.phi,
         hyperparameters={
             "iterations": 2500,
             "trials": 1,
@@ -62,10 +68,16 @@ def test_two_dimensions():
 
 
 def test_twenty_dimensions():
+    rate = 2 * ch.ones(20)
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.coordinate_threshold, 0),
+        distributions.Exponential(rate),
+        target_alpha=(0.15, 0.25),
+    )
     _recovers(
         dims=20,
-        rate=2 * ch.ones(20),
-        phi=lambda z: z[:, 0] > 0.25,
+        rate=rate,
+        phi=calibrated.phi,
         hyperparameters={
             "iterations": 1500,
             "trials": 1,

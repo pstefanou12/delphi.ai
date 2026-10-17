@@ -204,6 +204,28 @@ def spiral_band(
     return phi
 
 
+def coordinate_threshold(index: int, threshold: float) -> helpers.Oracle:
+    """Return membership in a one-sided bound on a single coordinate.
+
+    The simplest truncation there is, kept here so a test states the survival
+    mass it wants and lets ``calibrate`` find the threshold, rather than
+    hard-coding a constant whose mass nobody measured.
+
+    Args:
+        index: Coordinate the bound applies to.
+        threshold: Lower bound. Survival mass decreases as this grows, so it
+            is the knob ``calibrate`` turns.
+
+    Returns:
+        Oracle over a batch.
+    """
+
+    def phi(z: ch.Tensor) -> ch.Tensor:
+        return z[:, index] > threshold
+
+    return phi
+
+
 def _unit_directions(seed: int, dims: int, count: int) -> ch.Tensor:
     """Return count directions drawn uniformly on the unit sphere.
 

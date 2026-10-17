@@ -47,7 +47,7 @@ def _recovers(
         estimate=lambda name: getattr(truncated, f"{name}_lambda_").flatten(),
         divergence=lambda fitted: helpers.weibull_kl_divergence(
             fitted, mle, concentration
-        ).sum(),
+        ),
         baseline=S.pow(concentration).mean(0).pow(1.0 / concentration).flatten(),
     )
 
