@@ -56,7 +56,6 @@ def test_unknown_truncation_normal_known_variance():
         "batch_size": 10,
         "lr": 1e-1,
         "early_stopping": True,
-        "verbose": True,
     }
     truncated = unknown_truncated_normal.UnknownTruncationNormal(
         args, k, alpha, dims, variance=true_cov_std
@@ -137,7 +136,6 @@ def test_unknown_truncation_normal():
         "lr": 1e-1,
         "covariance_matrix_lr": 1e-1,
         "early_stopping": True,
-        "verbose": True,
     }
     truncated = unknown_truncated_normal.UnknownTruncationNormal(args, k, alpha, dims)
     truncated.fit(S_std_norm)

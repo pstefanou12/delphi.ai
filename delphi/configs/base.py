@@ -25,7 +25,6 @@ class TrainerConfig(pydantic.BaseModel):
         ema_decay: Exponential moving-average decay factor.
         tol: Convergence tolerance.
         early_stopping: Enable early stopping based on loss_tol / patience.
-        verbose: Enable verbose logging.
         disable_no_grad: Disable torch.no_grad during validation.
         val_interval: Step frequency for mid-epoch validation; None disables it.
         patience: Early-stopping patience in epochs without improvement.
@@ -52,7 +51,6 @@ class TrainerConfig(pydantic.BaseModel):
     ema_decay: float = pydantic.Field(default=0.99, ge=0.0, le=1.0)
     tol: float = pydantic.Field(default=1e-3, ge=0.0)
     early_stopping: bool = False
-    verbose: bool = False
     disable_no_grad: bool = False
     val_interval: Optional[int] = pydantic.Field(default=None, ge=1)
     patience: Optional[int] = pydantic.Field(default=None, ge=1)

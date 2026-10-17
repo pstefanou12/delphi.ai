@@ -1,13 +1,13 @@
 # Author: pstefanou12@
 """Linear model class for delphi."""
 
+import logging
 from typing import Generic, Optional, TypeVar
 
 import torch as ch
 
 from delphi import configs
 from delphi.delphi import delphi
-from delphi.delphi_logger import delphiLogger
 
 _LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
 
@@ -34,7 +34,6 @@ class LinearModel(  # pylint: disable=abstract-method
     def __init__(
         self,
         hyperparameters: dict,
-        logger: delphiLogger,
         emp_weight=None,
     ):
         """Initialize the linear model.
@@ -42,11 +41,10 @@ class LinearModel(  # pylint: disable=abstract-method
         Args:
             hyperparameters: Hyperparameter dict, validated and stored as
                 ``self.hyperparameters`` via the subclass ``defaults`` config.
-            logger: Logger instance for training diagnostics.
             emp_weight: Optional empirical weight initialization.
         """
         super().__init__(hyperparameters)
-        self.logger = logger
+        self.logger = logging.getLogger(type(self).__module__)
         self.register_buffer("emp_weight", emp_weight)
 
         self.d: Optional[int] = None  # pylint: disable=invalid-name
