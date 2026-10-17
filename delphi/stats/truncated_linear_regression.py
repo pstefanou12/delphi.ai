@@ -12,7 +12,6 @@ import torch as ch
 from torch import Tensor, nn
 
 from delphi import configs
-from delphi.delphi_logger import delphiLogger
 from delphi.stats.linear_model import LinearModel
 from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
 from delphi.trainer import Trainer
@@ -68,7 +67,6 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
         """
-        logger = delphiLogger()
         # The two variants carry different defaults, so pick the config class
         # before delphi.__init__ validates the dict against it.
         self.defaults = (
@@ -76,7 +74,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             if dependent
             else configs.TruncatedRegressionConfig
         )
-        super().__init__(hyperparameters, logger, emp_weight=emp_weight)
+        super().__init__(hyperparameters, emp_weight=emp_weight)
         # dependent and s live here rather than on LinearModel: this is the
         # only estimator that uses them, and they are truncation concepts.
         self.dependent = dependent
@@ -195,7 +193,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self.train_loader, self.val_loader = make_train_and_val(
             self.hyperparameters, X, y
         )
-        self.trainer = Trainer(self, self.hyperparameters, self.logger)
+        self.trainer = Trainer(self, self.hyperparameters)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )

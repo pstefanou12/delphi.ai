@@ -37,7 +37,6 @@ def test_one_dimension():
         "batch_size": 10,
         "num_samples": 1000,
         "lr": 1e-2,
-        "verbose": True,
         "early_stopping": True,
         "tol": 1e-3,
         "val_interval": 100,

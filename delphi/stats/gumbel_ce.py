@@ -7,7 +7,7 @@ Multinomial logistic regression that uses gumbel max loss function.
 import torch.distributions
 import torch.nn
 
-from delphi import configs, delphi_logger
+from delphi import configs
 from delphi.stats import losses
 from delphi.stats.linear_model import LinearModel
 from delphi.utils import helpers
@@ -32,7 +32,7 @@ class GumbelCEModel(  # pylint: disable=abstract-method
             k: number of classes
         """
         # d and k are plain attributes; LinearModel.__init__ takes neither.
-        super().__init__(hyperparameters, logger=delphi_logger.delphiLogger())
+        super().__init__(hyperparameters)
         self.d, self.k = d, k  # pylint: disable=invalid-name
 
     def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init

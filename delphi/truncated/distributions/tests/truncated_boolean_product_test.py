@@ -53,7 +53,6 @@ def test_two_dimensions():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-1,
-            "verbose": True,
             "project": False,
         },
     )
@@ -71,7 +70,6 @@ def test_twenty_dimensions():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-1,
-            "verbose": True,
         },
     )
 
