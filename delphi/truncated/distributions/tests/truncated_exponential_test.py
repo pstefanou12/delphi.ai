@@ -1,11 +1,13 @@
 # Author: pstefanou12@
 """Tests for the truncated exponential distribution."""
 
+import functools
+
 import torch as ch
 from torch import distributions
 
 from delphi.truncated.distributions import truncated_exponential
-from delphi.truncated.distributions.tests import helpers
+from delphi.truncated.distributions.tests import helpers, truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -74,5 +76,51 @@ def test_twenty_dimensions():
             "optimizer": "sgd",
             "lr": 1e-1,
             "verbose": True,
+        },
+    )
+
+
+def test_two_dimensions_random_half_space():
+    rate = ch.Tensor([1.0, 2.0])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_half_space, 1, 2),
+        distributions.Exponential(rate),
+        bounds=(-25.0, 25.0),
+    )
+    _recovers(
+        dims=2,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+    )
+
+
+def test_two_dimensions_random_ellipsoid():
+    rate = ch.Tensor([1.0, 2.0])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_ellipsoid, 0, 2),
+        distributions.Exponential(rate),
+        bounds=(1e-4, 1e4),
+    )
+    # A bounded set leaves the empirical rate far from the truth, so the lr
+    # the axis-aligned tests use still measures 0.3173 after 2500 steps.
+    _recovers(
+        dims=2,
+        rate=rate,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 5000,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
         },
     )

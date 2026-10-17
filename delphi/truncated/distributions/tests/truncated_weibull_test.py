@@ -1,11 +1,13 @@
 # Author: pstefanou12@
 """Tests for the truncated Weibull distribution."""
 
+import functools
+
 import torch as ch
 from torch import distributions
 
 from delphi.truncated.distributions import truncated_weibull
-from delphi.truncated.distributions.tests import helpers
+from delphi.truncated.distributions.tests import helpers, truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -118,5 +120,51 @@ def test_twenty_dimensions_differing_shapes():
             "optimizer": "sgd",
             "lr": 1e-2,
             "verbose": True,
+        },
+    )
+
+
+def test_two_dimensions_random_half_space():
+    concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_half_space, 2, 2),
+        distributions.Weibull(scale, concentration),
+        bounds=(-25.0, 25.0),
+    )
+    _recovers(
+        dims=2,
+        concentration=concentration,
+        scale=scale,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+        },
+    )
+
+
+def test_two_dimensions_random_disc_union():
+    concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_disc_union, 1, 2, 6),
+        distributions.Weibull(scale, concentration),
+        bounds=(1e-4, 1e3),
+    )
+    _recovers(
+        dims=2,
+        concentration=concentration,
+        scale=scale,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
         },
     )

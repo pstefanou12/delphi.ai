@@ -1,11 +1,13 @@
 # Author: pstefanou12@
 """Tests for the truncated boolean product distribution."""
 
+import functools
+
 import torch as ch
 from torch import distributions
 
 from delphi.truncated.distributions import truncated_boolean_product
-from delphi.truncated.distributions.tests import helpers
+from delphi.truncated.distributions.tests import helpers, truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -70,5 +72,30 @@ def test_twenty_dimensions():
             "optimizer": "sgd",
             "lr": 1e-1,
             "verbose": True,
+        },
+    )
+
+
+def test_five_dimensions_random_polytope():
+    # Two dimensions would leave four atoms, too few for a set carrying
+    # survival mass near a third to keep every coordinate identifiable.
+    probability = ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8])
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_polytope, 0, 5, 4),
+        distributions.Bernoulli(probability),
+        bounds=(-25.0, 25.0),
+    )
+    _recovers(
+        dims=5,
+        probability=probability,
+        phi=calibrated.phi,
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 1,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-1,
+            "project": False,
         },
     )
