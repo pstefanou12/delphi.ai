@@ -3,7 +3,6 @@
 
 import functools
 
-import pytest
 import torch as ch
 from torch import distributions
 
@@ -110,7 +109,6 @@ def test_two_dimensions_differing_shapes():
     )
 
 
-@pytest.mark.slow
 def test_twenty_dimensions_differing_shapes():
     _recovers(
         dims=20,
@@ -214,7 +212,6 @@ def test_ten_dimensions_identity():
     )
 
 
-@pytest.mark.slow
 def test_one_dimension_small_mass():
     scale, concentration = ch.Tensor([1.0]), ch.Tensor([2.0])
     # The regime both papers state their guarantees in; nothing else in the

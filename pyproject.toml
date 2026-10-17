@@ -62,9 +62,11 @@ filterwarnings = ["ignore::DeprecationWarning"]
 # the discovery pattern and the search root differ from the defaults.
 python_files = ["*_test.py"]
 testpaths = ["delphi"]
-# Fits that take upwards of 20 seconds. They run by default, including in CI;
-# `just test -m "not slow"` drops them for a quick local pass.
-markers = ["slow: a fit long enough to be worth skipping locally"]
+# Fits over a minute. They run by default, including in CI;
+# `just test -m "not slow"` drops them for a quick local pass. The bar is
+# deliberately high: a high-dimensional fit taking half a minute is worth
+# running every time.
+markers = ["slow: a fit over a minute, worth skipping only locally"]
 
 [tool.coverage.run]
 # The test modules sit under delphi/, so --cov=delphi would otherwise score

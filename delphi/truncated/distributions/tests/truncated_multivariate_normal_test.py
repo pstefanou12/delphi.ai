@@ -5,7 +5,6 @@ import functools
 import math
 from typing import Optional
 
-import pytest
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
@@ -73,7 +72,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@pytest.mark.slow
 def test_two_dimensions():
     _recovers(
         dims=2,

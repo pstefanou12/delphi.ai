@@ -3,7 +3,6 @@
 
 import functools
 
-import pytest
 import torch as ch
 from torch import distributions
 
@@ -77,7 +76,6 @@ def test_two_dimensions():
     )
 
 
-@pytest.mark.slow
 def test_twenty_dimensions():
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(

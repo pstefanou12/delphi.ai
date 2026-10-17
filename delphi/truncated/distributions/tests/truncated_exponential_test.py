@@ -203,7 +203,6 @@ def test_ten_dimensions_sum_threshold():
     )
 
 
-@pytest.mark.slow
 def test_one_dimension_small_mass():
     rate = ch.Tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the

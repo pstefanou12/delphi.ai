@@ -167,7 +167,6 @@ def test_known_truncated_regression_one_dimension():
 
 
 # left truncated linear regression with known variance - 20 dimensions
-@pytest.mark.slow
 def test_known_truncated_regression_higher_dimensions():
     ch.manual_seed(seed)
     D = 20

@@ -5,7 +5,6 @@ import functools
 import math
 from typing import Optional
 
-import pytest
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
@@ -221,7 +220,6 @@ def test_ten_dimensions_no_truncation():
     )
 
 
-@pytest.mark.slow
 def test_one_dimension_small_mass():
     covariance_matrix = 2 * ch.eye(1)
     # The regime both papers state their guarantees in; nothing else in the
@@ -248,7 +246,6 @@ def test_one_dimension_small_mass():
     )
 
 
-@pytest.mark.slow
 def test_ten_dimensions_sum_threshold():
     covariance_matrix = 2 * ch.eye(10)
     # A centred ball would not do: excluding one is symmetric, so it leaves
