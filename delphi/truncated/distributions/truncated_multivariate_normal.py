@@ -19,17 +19,19 @@ class TruncatedMultivariateNormal(
 
     Attributes:
         eigenvalue_lower_bound: Minimum eigenvalue for covariance projection.
-        emp_T: Empirical precision matrix component.
+        emp_T: Empirical precision component, as a lower triangle.
         emp_v: Empirical natural mean component.
     """
 
     # Created by register_parameter in _calc_emp_model, which mypy cannot see.
+    # Holds the lower triangle, so descent moves dims * (dims + 1) / 2 numbers
+    # rather than repeating every off-diagonal.
     T: nn.Parameter  # pylint: disable=invalid-name
     v: nn.Parameter
 
     dist = multivariate_normal.MultivariateNormal
-    # T(x) is [vec(xx^T), x], whose coordinates are dependent, so the
-    # Hessian is dense and its spectrum needs eigenvalues.
+    # T(x) mixes coordinates through xx^T, so the Hessian is dense and its
+    # spectrum needs eigenvalues rather than the diagonal.
     independent_coordinates = False
 
     defaults = configs.TruncatedMultivariateNormalConfig
@@ -59,21 +61,17 @@ class TruncatedMultivariateNormal(
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        suff_stats = multivariate_normal.MultivariateNormal.calc_suff_stat(
-            dataset_s
-        ).mean(0)
-        second_moment = suff_stats[: self.dims**2].view(self.dims, self.dims)
-        loc = suff_stats[self.dims**2 :]
+        loc = dataset_s.mean(0)
+        second_moment = (dataset_s.T @ dataset_s) / dataset_s.size(0)
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
         cov_matrix = second_moment - ch.outer(loc, loc)
         emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
         self.emp_theta = multivariate_normal.MultivariateNormal.to_natural(
             emp_canon_params, self.dims
         )
-        self.emp_T = self.emp_theta[: self.dims**2].view(  # pylint: disable=invalid-name
-            self.dims, self.dims
-        )
-        self.emp_v = self.emp_theta[self.dims**2 :]
+        size = multivariate_normal.MultivariateNormal.natural_size(self.dims)
+        self.emp_T = self.emp_theta[:size]  # pylint: disable=invalid-name
+        self.emp_v = self.emp_theta[size:]
         # Clone so that SGD in-place updates to T and v do not corrupt
         # emp_theta, which is used as the fixed anchor in the sublevel-set
         # projection bisection.
@@ -98,21 +96,20 @@ class TruncatedMultivariateNormal(
         immediately (when args.project is False).
         """
         with ch.no_grad():
-            mat_t = self.T.clone().view(self.dims, self.dims)  # pylint: disable=invalid-name
-            mat_t = 0.5 * (mat_t + mat_t.T)
+            mat_t = multivariate_normal.MultivariateNormal.unvech(  # pylint: disable=invalid-name
+                self.T.detach(), self.dims
+            )
             mat_t = self._project_to_neg_definite(
                 mat_t, eps=self.eigenvalue_lower_bound
             )
-            mat_t = 0.5 * (mat_t + mat_t.T)
-            self.T.copy_(mat_t)
+            self.T.copy_(multivariate_normal.MultivariateNormal.vech(mat_t))
         super().step_post_hook(optimizer, args, kwargs)
 
     def _write_theta(self, value: ch.Tensor) -> None:
         """Split the projected flat theta into T and v and copy to their Parameters."""
-        mat_t = value[: self.dims**2].view(self.dims, self.dims)  # pylint: disable=invalid-name
-        mat_t = 0.5 * (mat_t + mat_t.T)
-        self.T.copy_(mat_t)
-        self.v.copy_(value[self.dims**2 :])
+        size = multivariate_normal.MultivariateNormal.natural_size(self.dims)
+        self.T.copy_(value[:size])
+        self.v.copy_(value[size:])
 
     def parameter_groups(self):
         """Return parameter groups, optionally with separate LR for covariance."""
@@ -126,7 +123,7 @@ class TruncatedMultivariateNormal(
     @property
     def theta(self):
         """Return the current natural parameters as a flat tensor."""
-        return ch.cat([self.T.flatten(), self.v])
+        return ch.cat([self.T, self.v])
 
     @property
     def best_loc_(self):
