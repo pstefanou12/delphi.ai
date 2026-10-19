@@ -99,6 +99,9 @@ def test_five_dimensions_random_polytope():
             "optimizer": "sgd",
             "lr": 1e-1,
             "project": False,
+            # Started at the naive estimate, a constant rate leaves the running
+            # average at 0.35; the decay brings it to 0.07.
+            "scheduler": "fisher",
         },
     )
 
@@ -162,5 +165,31 @@ def test_ten_dimensions_sum_threshold():
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-1,
+        },
+    )
+
+
+def test_indistinguishable_pair():
+    # Conditioning on an exact count would make the pair identical rather
+    # than alike: scaling every odds ratio leaves p(x | sum(x) = k) unchanged.
+    # Two counts keep the ratio between them, which is what identifies p.
+    helpers.assert_family_distinguishes(
+        model_class=truncated_boolean_product.TruncatedBooleanProduct,
+        targets=(
+            distributions.Bernoulli(ch.full((5,), 0.3)),
+            distributions.Bernoulli(ch.full((5,), 0.6)),
+        ),
+        phi=lambda z: (z.sum(-1) >= 2) & (z.sum(-1) <= 3),
+        dims=5,
+        parameter="p_",
+        empirical=lambda s: s.mean(0).clamp(1e-4, 1 - 1e-4),
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+            "scheduler": "fisher",
         },
     )

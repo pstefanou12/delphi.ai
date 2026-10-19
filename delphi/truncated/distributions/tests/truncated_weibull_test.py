@@ -236,3 +236,49 @@ def test_one_dimension_small_mass():
             "lr": 1e-2,
         },
     )
+
+
+def test_indistinguishable_pair():
+    # Truncated to a narrow window the two samples agree to within sampling
+    # error, so only an estimator that knows the window can tell them apart.
+    concentration = ch.Tensor([2.0])
+    scales = (ch.Tensor([1.0]), ch.Tensor([2.0]))
+
+    def phi(z):
+        return (z[:, 0] > 1.0) & (z[:, 0] < 1.2)
+
+    fits, naive = [], []
+    for scale in scales:
+        ch.manual_seed(0)
+        sample = helpers.generate_truncated_distribution_dataset(
+            distributions.Weibull(scale, concentration), phi, 10000
+        )
+        truncated = truncated_weibull.TruncatedWeibull(
+            {
+                "iterations": 2500,
+                "trials": 1,
+                "batch_size": 10,
+                "num_samples": 1000,
+                "optimizer": "sgd",
+                "lr": 1e-2,
+                "scheduler": "fisher",
+            },
+            phi,
+            1,
+            concentration,
+            sample.alpha,
+        )
+        truncated.fit(sample.S)
+        fits.append(truncated)
+        naive.append(sample.S.pow(concentration).mean(0).pow(1.0 / concentration))
+
+    for name in helpers.TOLERANCES:
+        helpers.assert_distinguishes(
+            targets=scales,
+            recovered=(
+                getattr(fits[0], f"{name}_lambda_").flatten(),
+                getattr(fits[1], f"{name}_lambda_").flatten(),
+            ),
+            naive=(naive[0], naive[1]),
+            divergence=lambda a, b: helpers.weibull_kl_divergence(a, b, concentration),
+        )

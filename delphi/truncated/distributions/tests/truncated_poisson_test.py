@@ -246,3 +246,28 @@ def test_one_dimension_small_mass():
             "lr": 1e-2,
         },
     )
+
+
+def test_indistinguishable_pair():
+    # Truncated to a narrow window the two samples agree to within sampling
+    # error, so only an estimator that knows the window can tell them apart.
+    helpers.assert_family_distinguishes(
+        model_class=truncated_poisson.TruncatedPoisson,
+        targets=(
+            distributions.Poisson(ch.Tensor([2.0])),
+            distributions.Poisson(ch.Tensor([5.0])),
+        ),
+        phi=lambda z: (z[:, 0] >= 3) & (z[:, 0] <= 4),
+        dims=1,
+        parameter="lambda_",
+        empirical=lambda s: s.mean(0),
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+            "scheduler": "fisher",
+        },
+    )

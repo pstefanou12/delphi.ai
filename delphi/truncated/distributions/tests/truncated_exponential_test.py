@@ -260,3 +260,28 @@ def test_unit_alpha_is_rejected():
             1,
             alpha=1.0,
         )
+
+
+def test_indistinguishable_pair():
+    # Truncated to a narrow window the two samples agree to within sampling
+    # error, so only an estimator that knows the window can tell them apart.
+    helpers.assert_family_distinguishes(
+        model_class=truncated_exponential.TruncatedExponential,
+        targets=(
+            distributions.Exponential(ch.Tensor([0.5])),
+            distributions.Exponential(ch.Tensor([1.5])),
+        ),
+        phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
+        dims=1,
+        parameter="lambda_",
+        empirical=lambda s: 1.0 / s.mean(0),
+        hyperparameters={
+            "iterations": 2500,
+            "trials": 1,
+            "batch_size": 10,
+            "num_samples": 1000,
+            "optimizer": "sgd",
+            "lr": 1e-2,
+            "scheduler": "fisher",
+        },
+    )
