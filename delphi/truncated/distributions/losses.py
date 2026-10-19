@@ -100,7 +100,9 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         # from saved samples, hiding theta's effect on where they came from.
         with ch.no_grad():
             z, _ = sampling.rejection_sample(dist(theta, dims), phi, num_samples)
-            return calc_suff_stat(z).T.cov()
+            # torch.cov returns a 0-d scalar for a single statistic, not a
+            # 1 x 1 matrix.
+            return ch.atleast_2d(calc_suff_stat(z).T.cov())
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method

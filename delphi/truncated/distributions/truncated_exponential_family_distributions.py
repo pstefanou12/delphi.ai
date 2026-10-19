@@ -9,7 +9,6 @@ from typing import ClassVar, Generic, Optional
 
 import torch as ch
 from torch import distributions as torch_distributions
-from torch import nn
 import torch.utils.data
 
 from delphi import configs, trainer
@@ -306,10 +305,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         return self.nll_init + self.radius
 
     def _calc_emp_model(self):
-        """Calculate empirical natural parameters from training data."""
-        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_theta = self.calc_suff_stat(dataset_s).mean(0)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        """Initialize theta from the training data.
+
+        Raises:
+            NotImplementedError: Always. The empirical mean of ``T(x)`` is the
+                mean parameter, and mapping it back to the natural one inverts
+                the gradient of the log-partition, which is family-specific.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must override _calc_emp_model to convert "
+            "the empirical mean of T(x) to a natural parameter."
+        )
 
     def _compute_nll(self, theta: ch.Tensor) -> float:
         """Compute non-truncated NLL of training samples under theta.
