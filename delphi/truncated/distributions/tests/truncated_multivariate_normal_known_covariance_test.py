@@ -180,7 +180,7 @@ def test_ten_dimensions():
     )
 
 
-def test_one_dimension_no_truncation():
+def test_one_dimension_identity():
     # phi admits everything, so the procedure should reduce to the
     # untruncated MLE and the naive estimate is the right answer.
     _recovers(
@@ -191,7 +191,7 @@ def test_one_dimension_no_truncation():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 1,
+            "batch_size": 100,
             "num_samples": 10000,
             "optimizer": "sgd",
             "lr": 1e-2,
@@ -201,7 +201,7 @@ def test_one_dimension_no_truncation():
     )
 
 
-def test_ten_dimensions_no_truncation():
+def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         covariance_matrix=2 * ch.eye(10),
@@ -210,7 +210,7 @@ def test_ten_dimensions_no_truncation():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 1,
+            "batch_size": 100,
             "num_samples": 10000,
             "optimizer": "sgd",
             "lr": 1e-2,

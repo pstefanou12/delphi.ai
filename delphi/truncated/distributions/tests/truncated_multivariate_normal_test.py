@@ -168,7 +168,7 @@ def test_two_dimensions_random_disc_union():
     )
 
 
-def test_one_dimension_no_truncation():
+def test_one_dimension_identity():
     # phi admits everything, so the procedure should reduce to the
     # untruncated MLE and the naive estimate is the right answer.
     _recovers(
@@ -179,7 +179,7 @@ def test_one_dimension_no_truncation():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 1,
+            "batch_size": 100,
             "num_samples": 10000,
             "optimizer": "sgd",
             "lr": 1e-2,
@@ -189,7 +189,7 @@ def test_one_dimension_no_truncation():
     )
 
 
-def test_ten_dimensions_no_truncation():
+def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         covariance_matrix=2 * ch.eye(10),
@@ -198,16 +198,11 @@ def test_ten_dimensions_no_truncation():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 1,
+            "batch_size": 100,
             "num_samples": 10000,
             "optimizer": "sgd",
             "lr": 1e-2,
         },
         pass_alpha=False,
         baseline_must_fail=False,
-        # Only the running average converges here. Over 1500 and 4000 steps
-        # the EMA measures 0.0910 then 0.1069 against a 0.1 bound, and the
-        # validation-selected iterate 0.6199 then 0.3348 against 0.2, so
-        # neither is short of steps.
-        tolerances={"avg": 0.15},
     )

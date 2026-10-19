@@ -183,7 +183,7 @@ def test_one_dimension_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 10,
+            "batch_size": 100,
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
@@ -202,7 +202,7 @@ def test_ten_dimensions_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 10,
+            "batch_size": 100,
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,

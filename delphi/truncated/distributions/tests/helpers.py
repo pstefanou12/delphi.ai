@@ -98,6 +98,10 @@ class TruncatedModel(Protocol):
 # noisy validation loss is the most, so each carries its own bound.
 TOLERANCES = {"ema": 1e-1, "avg": 0.15, "best": 0.2}
 
+# With nothing truncated the procedure starts at the MLE and should stay
+# there, so it is held far tighter than a fit that has to travel.
+UNTRUNCATED_TOLERANCES = {"ema": 0.02, "avg": 0.02, "best": 0.02}
+
 # A summed bound lets one coordinate absorb the whole budget while the rest
 # are perfect. Measured worst coordinate across the suite is 0.0809.
 MAX_COORDINATE = 0.1
@@ -120,7 +124,8 @@ def assert_recovers(  # pylint: disable=too-many-arguments
             unreduced, so a product family returns one entry per coordinate.
         baseline: The naive estimate, scored for comparison.
         tolerances: Per-estimator bounds on the summed divergence, defaulting
-            to ``TOLERANCES``.
+            to ``TOLERANCES``, or to ``UNTRUNCATED_TOLERANCES`` when
+            ``baseline_must_fail`` is off.
         baseline_must_fail: Require the naive estimate to breach every bound.
             False only where it is the right answer, as under no truncation.
         max_coordinate: Bound on the worst single coordinate, defaulting to
@@ -131,7 +136,12 @@ def assert_recovers(  # pylint: disable=too-many-arguments
         AssertionError: If an estimator exceeds a bound, or if the naive
             estimate passes while ``baseline_must_fail`` is set.
     """
-    bounds = TOLERANCES if tolerances is None else tolerances
+    if tolerances is not None:
+        bounds = tolerances
+    elif baseline_must_fail:
+        bounds = TOLERANCES
+    else:
+        bounds = UNTRUNCATED_TOLERANCES
     if baseline is not None:
         naive = float(divergence(baseline).sum())
         print(f"empirical divergence: {naive:.4f}")
