@@ -109,7 +109,7 @@ def test_one_dimension_identity():
     _recovers(
         dims=1,
         probability=ch.Tensor([0.4]),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -127,7 +127,7 @@ def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         probability=ch.linspace(0.3, 0.7, 10),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         hyperparameters={
             "iterations": 1500,
             "trials": 1,

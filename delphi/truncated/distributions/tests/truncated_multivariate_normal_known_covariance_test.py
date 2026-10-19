@@ -186,7 +186,7 @@ def test_one_dimension_no_truncation():
     _recovers(
         dims=1,
         covariance_matrix=2 * ch.eye(1),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         dataset_size=5000,
         hyperparameters={
             "iterations": 1500,
@@ -205,7 +205,7 @@ def test_ten_dimensions_no_truncation():
     _recovers(
         dims=10,
         covariance_matrix=2 * ch.eye(10),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         dataset_size=5000,
         hyperparameters={
             "iterations": 1500,
@@ -248,7 +248,7 @@ def test_one_dimension_small_mass():
 
 def test_ten_dimensions_sum_threshold():
     covariance_matrix = 2 * ch.eye(10)
-    # A centred ball would not do: excluding one is symmetric, so it leaves
+    # A centered ball would not do: excluding one is symmetric, so it leaves
     # the mean where it was and the naive estimate scores 0.0026. A bound on
     # the sum breaks the symmetry and biases every coordinate.
     calibrated = truncation_sets.calibrate(

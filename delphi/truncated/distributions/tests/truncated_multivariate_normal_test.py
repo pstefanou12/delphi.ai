@@ -174,7 +174,7 @@ def test_one_dimension_no_truncation():
     _recovers(
         dims=1,
         covariance_matrix=2 * ch.eye(1),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         dataset_size=5000,
         hyperparameters={
             "iterations": 1500,
@@ -193,7 +193,7 @@ def test_ten_dimensions_no_truncation():
     _recovers(
         dims=10,
         covariance_matrix=2 * ch.eye(10),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         dataset_size=5000,
         hyperparameters={
             "iterations": 1500,

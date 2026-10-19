@@ -179,7 +179,7 @@ def test_one_dimension_identity():
         dims=1,
         concentration=ch.Tensor([2.0]),
         scale=ch.Tensor([1.0]),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
@@ -198,7 +198,7 @@ def test_ten_dimensions_identity():
         dims=10,
         concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
         scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
-        phi=truncation_sets.identity(),
+        phi=truncation_sets.identity,
         hyperparameters={
             "iterations": 1500,
             "trials": 1,

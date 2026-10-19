@@ -15,8 +15,8 @@ shaped ``(n,)``; ``generate_truncated_distribution_dataset`` reads them
 through ``.nonzero()``.
 
 Survival mass under a random set swings with the seed -- six unit discs over
-seeds 0 to 5 measured 0.4864 to 0.6006 on a centred ``N(0, 2I)`` -- and
-rejection cost is one draw per alpha accepted samples, so ``calibrate``
+seeds 0 to 5 measured 0.4864 to 0.6006 on a centered ``N(0, 2I)`` -- and
+rejection cost is one draw per alpha accepted samples, so a calibration search
 bisects one scale parameter until the mass lands in a requested band.
 """
 
@@ -47,7 +47,7 @@ def _radius_and_angle(z: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
 def annulus(r_inner: float, r_outer: float) -> helpers.Oracle:
     """Return membership in the ring between two radii.
 
-    Excludes the mode of any centred distribution, so the truncated mean is
+    Excludes the mode of any centered distribution, so the truncated mean is
     unbiased while the truncated covariance is badly inflated, and the set is
     not convex.
 
@@ -72,8 +72,7 @@ def crescent(
     """Return membership in an annulus with an angular wedge removed.
 
     Cutting one wedge out of a ring leaves a set that is neither convex nor
-    symmetric, so unlike the annulus it biases the mean in a known direction
-    and a fit that only matches second moments will miss.
+    symmetric, so it biases the mean in a known direction.
 
     Args:
         r_inner: Inner radius of the ring, excluded.
@@ -140,7 +139,7 @@ def checkerboard(cell_size: float) -> helpers.Oracle:
     them, which is where a connectedness assumption would show up. No
     distribution test uses it: with cells narrower than a standard deviation
     the parity of one coordinate is near-independent of the other, which
-    leaves the moments almost untouched -- on a centred ``N(0, 2I)`` the
+    leaves the moments almost untouched -- on a centered ``N(0, 2I)`` the
     naive mean and covariance measure 0.0002 and 0.0026 against a 0.2
     tolerance, so nothing can tell a fit from doing nothing.
 
@@ -171,7 +170,7 @@ def spiral_band(
     The thinnest and most curved set here: ``r = offset + growth * t``
     thickened by ``width``, which leaves a support of a few percent survival
     mass and no straight piece anywhere. No distribution test uses it either:
-    on a centred ``N(0, 2I)`` the arms sample the angle evenly, so at
+    on a centered ``N(0, 2I)`` the arms sample the angle evenly, so at
     ``(0.15, 0.5)`` over four turns the mass is 0.0456 -- 22 draws per
     accepted sample -- while the naive mean and covariance only reach 0.0299
     and 0.0349.
@@ -204,33 +203,30 @@ def spiral_band(
     return phi
 
 
-def identity() -> helpers.Oracle:
-    """Return an oracle admitting every sample.
+def identity(z: ch.Tensor) -> ch.Tensor:
+    """Return membership for every sample.
 
-    Survival mass is 1, so the radius derived from it is 0 and the procedure
-    should reduce to the untruncated MLE.
+    Survival mass is 1, so a procedure given this set has nothing to correct
+    for and should reduce to the untruncated MLE.
+
+    Args:
+        z: Samples to test.
 
     Returns:
-        Oracle over a batch.
+        Mask over the batch, all true.
     """
-
-    def phi(z: ch.Tensor) -> ch.Tensor:
-        return ch.ones(z.size(0), dtype=ch.bool)
-
-    return phi
+    return ch.ones(z.size(0), dtype=ch.bool)
 
 
 def sum_threshold(threshold: float) -> helpers.Oracle:
     """Return membership in a lower bound on the coordinate sum.
 
     One scalar condition, so rejection sampling stays cheap, but it biases
-    every coordinate rather than one. At matched survival mass in twenty
-    dimensions it is the hardest set measured: naive error 0.8895 against
-    0.6535 for a single coordinate and 0.0762 for a conjunction of twenty.
+    every coordinate rather than one.
 
     Args:
         threshold: Lower bound on the sum. Survival mass decreases as this
-            grows, so it is the knob ``calibrate`` turns.
+            grows, so it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -243,14 +239,14 @@ def sum_threshold(threshold: float) -> helpers.Oracle:
 
 
 def norm_threshold(threshold: float) -> helpers.Oracle:
-    """Return membership outside a ball centred at the origin.
+    """Return membership outside a ball centered at the origin.
 
-    Couples every coordinate like ``sum_threshold`` and excludes the mode,
-    which a one-sided bound on a sum does not.
+    Couples every coordinate, and excludes the mode as a one-sided bound
+    on a sum does not.
 
     Args:
         threshold: Radius of the excluded ball. Survival mass decreases as
-            this grows, so it is the knob ``calibrate`` turns.
+            this grows, so it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -265,14 +261,14 @@ def norm_threshold(threshold: float) -> helpers.Oracle:
 def coordinate_threshold(index: int, threshold: float) -> helpers.Oracle:
     """Return membership in a one-sided bound on a single coordinate.
 
-    The simplest truncation there is, kept here so a test states the survival
-    mass it wants and lets ``calibrate`` find the threshold, rather than
+    The simplest truncation there is, kept here so a test can state the
+    survival mass it wants and have the threshold searched for, rather than
     hard-coding a constant whose mass nobody measured.
 
     Args:
         index: Coordinate the bound applies to.
-        threshold: Lower bound. Survival mass decreases as this grows, so it
-            is the knob ``calibrate`` turns.
+        threshold: Lower bound. Survival mass decreases as this grows, so
+            it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -307,7 +303,7 @@ def random_half_space(seed: int, dims: int, offset: float) -> helpers.Oracle:
         seed: Seed fixing the normal direction.
         dims: Number of dimensions.
         offset: Signed distance of the boundary from the origin. Survival mass
-            decreases as this grows, so it is the knob ``calibrate`` turns.
+            decreases as this grows, so it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -333,7 +329,7 @@ def random_polytope(
         dims: Number of dimensions.
         num_faces: Number of half-spaces to intersect.
         offset: Distance of every face from the origin. Survival mass grows
-            with it, so it is the knob ``calibrate`` turns.
+            with it, so it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -352,17 +348,17 @@ def random_polytope(
 
 
 def random_ellipsoid(seed: int, dims: int, level: float) -> helpers.Oracle:
-    """Return membership in an ellipsoid with a random shape and centre.
+    """Return membership in an ellipsoid with a random shape and center.
 
     The quadratic form is ``A A^T + I`` for a random ``A``, which is positive
     definite by construction, so the set is a bounded ellipsoid whose axes
     agree with no coordinate direction.
 
     Args:
-        seed: Seed fixing the shape matrix and the centre.
+        seed: Seed fixing the shape matrix and the center.
         dims: Number of dimensions.
         level: Right-hand side of the quadratic form. Survival mass grows with
-            it, so it is the knob ``calibrate`` turns.
+            it, so it is the knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -370,10 +366,10 @@ def random_ellipsoid(seed: int, dims: int, level: float) -> helpers.Oracle:
     generator = ch.Generator().manual_seed(seed)
     factor = ch.randn(dims, dims, generator=generator) / math.sqrt(dims)
     shape = factor @ factor.T + ch.eye(dims)
-    centre = ch.randn(dims, generator=generator)
+    center = ch.randn(dims, generator=generator)
 
     def phi(z: ch.Tensor) -> ch.Tensor:
-        offset = z - centre
+        offset = z - center
         return ((offset @ shape) * offset).sum(dim=-1) <= level
 
     return phi
@@ -382,17 +378,17 @@ def random_ellipsoid(seed: int, dims: int, level: float) -> helpers.Oracle:
 def random_disc_union(
     seed: int, dims: int, num_discs: int, radius: float
 ) -> helpers.Oracle:
-    """Return membership in a union of balls with random centres.
+    """Return membership in a union of balls with random centers.
 
     Disconnected whenever the balls are small enough to stay apart, and the
     number of components is itself a function of the seed.
 
     Args:
-        seed: Seed fixing the centres.
+        seed: Seed fixing the centers.
         dims: Number of dimensions.
         num_discs: Number of balls in the union.
-        radius: Shared radius. Survival mass grows with it, so it is the knob
-            ``calibrate`` turns.
+        radius: Shared radius. Survival mass grows with it, so it is the
+            knob to search over.
 
     Returns:
         Oracle over a batch.
@@ -403,10 +399,10 @@ def random_disc_union(
     if num_discs < 1:
         raise ValueError(f"num_discs must be at least one; got {num_discs}.")
     generator = ch.Generator().manual_seed(seed)
-    centres = ch.randn(num_discs, dims, generator=generator)
+    centers = ch.randn(num_discs, dims, generator=generator)
 
     def phi(z: ch.Tensor) -> ch.Tensor:
-        distances = (z[:, None, :] - centres[None, :, :]).norm(dim=-1)
+        distances = (z[:, None, :] - centers[None, :, :]).norm(dim=-1)
         return (distances <= radius).any(dim=-1)
 
     return phi
