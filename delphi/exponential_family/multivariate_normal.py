@@ -33,6 +33,9 @@ class MultivariateNormal(
         mat_t = self.unvech(theta[:size], dims)  # pylint: disable=invalid-name
         v = theta[size:]
         covariance_matrix = ch.inverse(-2 * mat_t)
+        # A numerical inverse is symmetric only to rounding, which torch's
+        # PositiveDefinite check rejects.
+        covariance_matrix = 0.5 * (covariance_matrix + covariance_matrix.T)
         mu = (covariance_matrix @ v).view(dims)
         super().__init__(mu, covariance_matrix)
 
@@ -128,5 +131,6 @@ class MultivariateNormal(
         mat_t = MultivariateNormal.unvech(theta[:size], dims)  # pylint: disable=invalid-name
         v = theta[size:]
         covariance_matrix = (-2 * mat_t).inverse()
+        covariance_matrix = 0.5 * (covariance_matrix + covariance_matrix.T)
         loc = covariance_matrix @ v
         return ch.cat([covariance_matrix.flatten(), loc.flatten()])
