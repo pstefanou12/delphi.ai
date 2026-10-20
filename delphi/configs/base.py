@@ -23,6 +23,8 @@ class TrainerConfig(pydantic.BaseModel):
         iterations: Maximum training iterations; mutually exclusive with epochs.
         trials: Number of independent training runs.
         ema_decay: Exponential moving-average decay factor.
+        avg_burn_in: Fraction of recorded iterates discarded before
+            averaging, so the average covers only the tail of the run.
         tol: Convergence tolerance.
         early_stopping: Enable early stopping based on loss_tol / patience.
         disable_no_grad: Disable torch.no_grad during validation.
@@ -48,7 +50,8 @@ class TrainerConfig(pydantic.BaseModel):
     epochs: Optional[int] = pydantic.Field(default=None, ge=1)
     iterations: Optional[int] = pydantic.Field(default=None, ge=1)
     trials: int = pydantic.Field(default=1, ge=1)
-    ema_decay: float = pydantic.Field(default=0.99, ge=0.0, le=1.0)
+    ema_decay: float = pydantic.Field(default=0.99, ge=0.0, lt=1.0)
+    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
     tol: float = pydantic.Field(default=1e-3, ge=0.0)
     early_stopping: bool = False
     disable_no_grad: bool = False

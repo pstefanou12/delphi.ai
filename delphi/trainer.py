@@ -55,7 +55,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.param_history: list[ch.Tensor] = []
         self.val_param_history_indices: list[int] = []
         self.grad_norms: list[float] = []
-        self._ema_params: Optional[ch.Tensor] = None
+        # Zero-initialized and bias-corrected on read, so the starting
+        # point carries no more weight than any other step.
+        self._ema_sum: Optional[ch.Tensor] = None
+        self._ema_steps: int = 0
 
         self.t_start: float = 0.0
         self.t_end: Optional[float] = None
@@ -140,18 +143,16 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         self.grad_norms.append(self._last_grad_norm)
 
+        param_vec = ch.nn.utils.parameters_to_vector(
+            [p.contiguous() for p in self.model.parameters() if p.requires_grad]
+        ).detach()
+        decay = self.hyperparameters.ema_decay
+        if self._ema_sum is None:
+            self._ema_sum = ch.zeros_like(param_vec)
+        self._ema_sum = decay * self._ema_sum + (1 - decay) * param_vec
+        self._ema_steps += 1
         if self.iterations % self.hyperparameters.record_params_every == 0:
-            param_vec = ch.nn.utils.parameters_to_vector(
-                [p.contiguous() for p in self.model.parameters() if p.requires_grad]
-            ).detach()
             self.param_history.append(param_vec)
-            if self._ema_params is None:
-                self._ema_params = param_vec
-            else:
-                self._ema_params = (
-                    self.hyperparameters.ema_decay * self._ema_params
-                    + (1 - self.hyperparameters.ema_decay) * param_vec
-                )
 
     def _optimizer_step(self) -> None:
         """Perform the optimizer step, handling AMP and grad clipping."""
@@ -915,12 +916,15 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     @property
     def ema_params(self):
-        """Return the exponential moving average of parameter vectors, or None."""
-        return self._ema_params
+        """Return the bias-corrected moving average of the iterates, or None."""
+        if self._ema_sum is None:
+            return None
+        return self._ema_sum / (1 - self.hyperparameters.ema_decay**self._ema_steps)
 
     @property
     def avg_params(self):
-        """Return the mean of all parameter vectors seen during training, or None."""
+        """Return the mean of the recorded iterates after the burn-in, or None."""
         if self.param_history.numel() == 0:
             return None
-        return self.param_history.mean(0)
+        start = int(self.hyperparameters.avg_burn_in * len(self.param_history))
+        return self.param_history[start:].mean(0)
