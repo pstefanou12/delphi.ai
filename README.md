@@ -5,32 +5,61 @@ observation outside some set is missing entirely, so the sample is a biased
 view of the distribution that produced it. Given a membership oracle for that
 set, delphi recovers the distribution as it was before truncation.
 
-## Supported distributions
+## Table of Contents
+
+- [Install](#install)
+- [Truncated Distributions](#truncated-distributions)
+  - [Quickstart](#quickstart)
+  - [Usage notes](#usage-notes)
+- [Development](#development)
+- [Citing](#citing)
+- [License](#license)
+
+## Install
+
+delphi needs Python 3.10 to 3.14, [Poetry](https://python-poetry.org) and
+[`just`](https://github.com/casey/just). Neither needs a version manager such
+as asdf.
+
+```bash
+# Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+
+# just, into ~/.local/bin (or: brew install just, cargo install just)
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/.local/bin
+```
+
+Then clone and install delphi:
+
+```bash
+git clone https://github.com/pstefanou12/delphi.ai.git
+cd delphi.ai
+just install    # poetry install --with dev
+just hooks      # pre-push hooks running just check
+```
+
+## Truncated Distributions
 
 Each model is fit by projected stochastic gradient descent on the truncated
 negative log-likelihood, following Karatapanis, Kontonis and Tzamos, *Oracle
-Efficient Truncated Statistics* (ICLR 2025).
+Efficient Truncated Statistics* (ICLR 2025). All live in
+`delphi.truncated.distributions`.
 
-| Model | Module | Constructor | Estimate |
-|---|---|---|---|
-| `TruncatedMultivariateNormal` | `truncated_multivariate_normal` | `(hyperparameters, phi, dims, alpha=None)` | `avg_loc_`, `avg_covariance_matrix_` |
-| `TruncatedMultivariateNormalKnownCovariance` | `truncated_multivariate_normal_known_covariance` | `(hyperparameters, phi, dims, covariance_matrix, alpha=None)` | `avg_loc_` |
-| `TruncatedNormal` | `truncated_normal` | `(hyperparameters, phi, alpha=None)` | `avg_loc_`, `avg_variance_` |
-| `TruncatedNormalKnownVariance` | `truncated_normal_known_variance` | `(hyperparameters, phi, covariance_matrix, alpha=None)` | `avg_loc_` |
-| `TruncatedExponential` | `truncated_exponential` | `(hyperparameters, phi, dims, alpha=None)` | `avg_lambda_` |
-| `TruncatedPoisson` | `truncated_poisson` | `(hyperparameters, phi, dims, alpha=None)` | `avg_lambda_` |
-| `TruncatedWeibull` | `truncated_weibull` | `(hyperparameters, phi, dims, k, alpha=None)` | `avg_lambda_` (scale; shape `k` known) |
-| `TruncatedBooleanProduct` | `truncated_boolean_product` | `(hyperparameters, phi, dims, alpha=None)` | `avg_p_` |
-| `TruncatedGamma` | `truncated_gamma` | `(hyperparameters, phi, dims, concentration, alpha=None)` | `avg_rate_` (shape known) |
-| `TruncatedPareto` | `truncated_pareto` | `(hyperparameters, phi, dims, scale, alpha=None)` | `avg_alpha_` (tail index; scale known) |
-| `TruncatedBeta` | `truncated_beta` | `(hyperparameters, phi, dims, alpha=None)` | `avg_a_`, `avg_b_` |
+| Model | Module | Example |
+|---|---|---|
+| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | |
+| `TruncatedMultivariateNormalKnownCovariance` | [`truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/truncated_multivariate_normal_known_covariance.py) | |
+| `TruncatedNormal` | [`truncated_normal`](delphi/truncated/distributions/truncated_normal.py) | |
+| `TruncatedNormalKnownVariance` | [`truncated_normal_known_variance`](delphi/truncated/distributions/truncated_normal_known_variance.py) | |
+| `TruncatedExponential` | [`truncated_exponential`](delphi/truncated/distributions/truncated_exponential.py) | |
+| `TruncatedPoisson` | [`truncated_poisson`](delphi/truncated/distributions/truncated_poisson.py) | |
+| `TruncatedWeibull` | [`truncated_weibull`](delphi/truncated/distributions/truncated_weibull.py) | |
+| `TruncatedBooleanProduct` | [`truncated_boolean_product`](delphi/truncated/distributions/truncated_boolean_product.py) | |
+| `TruncatedGamma` | [`truncated_gamma`](delphi/truncated/distributions/truncated_gamma.py) | |
+| `TruncatedPareto` | [`truncated_pareto`](delphi/truncated/distributions/truncated_pareto.py) | |
+| `TruncatedBeta` | [`truncated_beta`](delphi/truncated/distributions/truncated_beta.py) | |
 
-All live in `delphi.truncated.distributions`. Each is tested on one-sided,
-non-convex, disconnected and seeded random truncation sets, at survival mass
-down to about 1%, with no truncation at all, and on pairs of distributions
-whose truncated samples are indistinguishable without the oracle.
-
-## Quickstart
+### Quickstart
 
 A correlated Gaussian, observed only where `x0 + x1 > 1`:
 
@@ -80,7 +109,7 @@ recovered_cov = ch.diag(std) @ model.avg_covariance_matrix_ @ ch.diag(std)
 28% of the population survives. The sample's own statistics are off in every
 entry, and even get the sign of the correlation wrong.
 
-## Usage notes
+### Usage notes
 
 **The truncation set is a plain callable.** `phi` maps a batch of shape
 `(n, dims)` to a mask over it. Anything that answers "is this point observed?"
@@ -131,18 +160,6 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("delphi.trainer").setLevel(logging.WARNING)  # per module
 ```
 
-## Install
-
-```bash
-git clone https://github.com/pstefanou12/delphi.ai.git
-cd delphi.ai
-just install    # poetry install --with dev
-just hooks      # pre-push hooks running just check
-```
-
-Requires [Poetry](https://python-poetry.org) and
-[`just`](https://github.com/casey/just).
-
 ## Development
 
 ```bash
@@ -152,6 +169,31 @@ just test -m "not slow"    # skip fits over a minute
 just test <path> --log-cli-level=INFO   # show training logs
 just cov                   # branch coverage of delphi/
 ```
+
+## Citing
+
+If you use delphi in your work, please cite it:
+
+```bibtex
+@software{stefanou_delphi,
+  author  = {Stefanou, Patroklos},
+  title   = {delphi: statistical estimation from truncated samples},
+  url     = {https://github.com/pstefanou12/delphi.ai},
+  version = {0.2.1.9},
+  year    = {2026},
+}
+```
+
+and the papers behind the methods you use:
+
+- Karatapanis, Kontonis and Tzamos. *Oracle Efficient Truncated Statistics.*
+  ICLR 2025. The fitting procedure every truncated distribution uses.
+- Daskalakis, Gouleakis, Tzamos and Zampetakis. *Efficient Statistics, in High
+  Dimensions, from Truncated Samples.* FOCS 2018.
+  [arXiv:1809.03986](https://arxiv.org/abs/1809.03986). The truncated
+  multivariate normal.
+- Lee, Wibisono and Zampetakis. *Learning Exponential Families from Truncated
+  Samples.* NeurIPS 2023. Truncated exponential families in general.
 
 ## License
 

@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use delphi in your work, please cite it as below."
+title: "delphi: statistical estimation from truncated samples"
+type: software
+authors:
+  - family-names: Stefanou
+    given-names: Patroklos
+version: 0.2.1.9
+license: MIT
+url: "https://github.com/pstefanou12/delphi.ai"
+repository-code: "https://github.com/pstefanou12/delphi.ai"
