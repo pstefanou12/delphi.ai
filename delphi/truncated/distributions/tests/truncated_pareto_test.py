@@ -2,6 +2,7 @@
 """Tests for the truncated Pareto (known scale) distribution."""
 
 import functools
+from typing import Optional
 
 import torch as ch
 from torch import distributions
@@ -36,7 +37,7 @@ def _recovers(
     scale: ch.Tensor,
     tail: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
@@ -62,15 +63,6 @@ def test_one_dimension():
         scale=ch.Tensor([1.0]),
         tail=ch.Tensor([2.5]),
         phi=lambda z: z[:, 0] > 2.0,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -87,15 +79,6 @@ def test_two_dimensions():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -111,15 +94,6 @@ def test_two_dimensions_random_half_space():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -129,14 +103,7 @@ def test_one_dimension_identity():
         scale=ch.Tensor([1.0]),
         tail=ch.Tensor([2.5]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -148,14 +115,7 @@ def test_ten_dimensions_identity():
         scale=ch.ones(10),
         tail=ch.linspace(1.5, 4.0, 10),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -174,15 +134,6 @@ def test_one_dimension_small_mass():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -199,15 +150,6 @@ def test_ten_dimensions_sum_threshold():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -222,15 +164,6 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="alpha_",
         empirical=lambda s: 1.0 / ch.log(s).mean(0),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
         model_args=(ch.Tensor([1.0]),),
         rebuild=functools.partial(distributions.Pareto, ch.Tensor([1.0])),
         divergence=pareto_kl_divergence,

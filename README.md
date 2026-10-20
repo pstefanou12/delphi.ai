@@ -86,7 +86,7 @@ alpha = phi(population).float().mean().item()
 # Fit on standardized data, moving phi through the same transform.
 mean, std = S.mean(0), S.std(0)
 model = truncated_multivariate_normal.TruncatedMultivariateNormal(
-    {"iterations": 2500, "batch_size": 10, "lr": 1e-2, "scheduler": "fisher"},
+    {},  # the defaults: 2500 steps, lr 1e-2, the Fisher schedule
     lambda z: phi(z * std + mean),
     dims=2,
     alpha=alpha,
@@ -102,7 +102,7 @@ recovered_cov = ch.diag(std) @ model.avg_covariance_matrix_ @ ch.diag(std)
 |---|---|---|
 | truth | (0, 0) | [[1, 0.5], [0.5, 1]] |
 | sample mean and covariance | (1.042, 1.041) | [[0.447, −0.053], [−0.053, 0.436]] |
-| recovered | (0.015, 0.051) | [[1.016, 0.488], [0.488, 0.959]] |
+| recovered | (0.015, 0.047) | [[1.016, 0.491], [0.491, 0.963]] |
 
 28% of the population survives. The sample's own statistics are off in every
 entry, and even get the sign of the correlation wrong.
@@ -119,14 +119,15 @@ Omit it if you cannot measure it, and the `min_radius` hyperparameter is used
 instead. `alpha=1` is rejected: with nothing truncated there is nothing to
 correct, so fit the distribution directly.
 
-**Use `"scheduler": "fisher"`.** It sets the step size from the Hessian of the
-truncated likelihood, starting at `1 / L` and decaying as `1 / (L + mu t)`, so
-neither needs tuning. In the example above, a constant rate ends at KL 0.025
-from the truth after the same 2500 steps, against 0.002.
+**The Fisher schedule is the default.** It sets the step size from the
+Hessian of the truncated likelihood, starting at `1 / L` and decaying as
+`1 / (L + mu t)`, and re-measures both as the fit moves, so neither needs
+tuning. In the example above, a constant rate (`"scheduler": None`) ends at KL
+0.026 from the truth after the same 2500 steps, against 0.002.
 
 **Standardize multivariate normals first.** Fit on `(S - mean) / std` with
 `phi` composed with the inverse transform, as above, and map the estimates
-back. On the example above, fitting the raw data instead ends at KL 0.19
+back. On the example above, fitting the raw data instead ends at KL 0.27
 after the same 2500 steps, against 0.002.
 
 **Use the `avg_` estimates.** Every model exposes four: `avg_` (the mean of

@@ -33,15 +33,12 @@ def test_one_dimension():
 
     hyperparameters = {
         "iterations": 1500,
-        "trials": 1,
-        "batch_size": 10,
-        "num_samples": 1000,
         "lr": 1e-1,
         "early_stopping": True,
         "tol": 5e-2,
     }
     truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
-        hyperparameters, phi_centred, covariance_matrix, alpha
+        hyperparameters or {}, phi_centred, covariance_matrix, alpha
     )
     truncated.fit(S - emp_loc)
 

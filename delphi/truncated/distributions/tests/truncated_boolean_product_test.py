@@ -2,6 +2,7 @@
 """Tests for the truncated boolean product distribution."""
 
 import functools
+from typing import Optional
 
 import torch as ch
 from torch import distributions
@@ -16,7 +17,7 @@ def _recovers(
     dims: int,
     probability: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
@@ -50,15 +51,7 @@ def test_two_dimensions():
         dims=2,
         probability=ch.Tensor([0.5, 0.75]),
         phi=_not_both_set,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-            "project": False,
-        },
+        hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
     )
 
 
@@ -67,14 +60,7 @@ def test_twenty_dimensions():
         dims=20,
         probability=ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
         phi=_not_both_set,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"batch_size": 1, "lr": 1e-1},
     )
 
 
@@ -91,18 +77,7 @@ def test_five_dimensions_random_polytope():
         dims=5,
         probability=probability,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-            "project": False,
-            # Started at the naive estimate, a constant rate leaves the running
-            # average at 0.35; the decay brings it to 0.07.
-            "scheduler": "fisher",
-        },
+        hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
     )
 
 
@@ -111,14 +86,7 @@ def test_one_dimension_identity():
         dims=1,
         probability=ch.Tensor([0.4]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -129,14 +97,7 @@ def test_ten_dimensions_identity():
         dims=10,
         probability=ch.linspace(0.3, 0.7, 10),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -156,14 +117,7 @@ def test_ten_dimensions_sum_threshold():
         dims=10,
         probability=probability,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"lr": 1e-1},
     )
 
 
@@ -181,13 +135,4 @@ def test_indistinguishable_pair():
         dims=5,
         parameter="probs_",
         empirical=lambda s: s.mean(0).clamp(1e-4, 1 - 1e-4),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )

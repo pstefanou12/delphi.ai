@@ -18,7 +18,7 @@ def _fitted():
 
     sample = helpers.generate_truncated_distribution_dataset(target, phi, 2000)
     model = truncated_exponential.TruncatedExponential(
-        {"iterations": 200, "batch_size": 10, "num_samples": 500},
+        {"iterations": 200, "num_samples": 500},
         phi,
         2,
         sample.alpha,

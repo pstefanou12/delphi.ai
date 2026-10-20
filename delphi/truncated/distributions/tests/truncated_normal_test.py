@@ -33,16 +33,12 @@ def test_one_dimension():
 
     hyperparameters = {
         "iterations": 1500,
-        "trials": 1,
-        "batch_size": 10,
-        "num_samples": 1000,
-        "lr": 1e-2,
         "early_stopping": True,
         "tol": 1e-3,
         "val_interval": 100,
     }
     truncated = truncated_normal.TruncatedNormal(
-        hyperparameters, phi_standardised, alpha
+        hyperparameters or {}, phi_standardised, alpha
     )
     truncated.fit((S - emp_loc) / emp_scale)
 
