@@ -10,6 +10,7 @@ from torch import nn
 from delphi import configs
 from delphi.exponential_family import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
+from delphi.utils import helpers
 
 
 class TruncatedMultivariateNormal(
@@ -26,7 +27,7 @@ class TruncatedMultivariateNormal(
     # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     # Holds the lower triangle, so descent moves dims * (dims + 1) / 2 numbers
     # rather than repeating every off-diagonal.
-    T: nn.Parameter  # pylint: disable=invalid-name
+    T: nn.Parameter
     v: nn.Parameter
 
     dist = multivariate_normal.MultivariateNormal
@@ -55,12 +56,12 @@ class TruncatedMultivariateNormal(
         self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
 
         # Attributes set during _calc_emp_model.
-        self.emp_T: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
+        self.emp_T: Optional[ch.Tensor] = None
         self.emp_v: Optional[ch.Tensor] = None
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v as nn.Parameters."""
-        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+        dataset_s = self.train_loader_.dataset.S
         loc = dataset_s.mean(0)
         second_moment = (dataset_s.T @ dataset_s) / dataset_s.size(0)
         # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
@@ -69,8 +70,8 @@ class TruncatedMultivariateNormal(
         self.emp_theta = multivariate_normal.MultivariateNormal.to_natural(
             emp_canon_params, self.dims
         )
-        size = multivariate_normal.MultivariateNormal.natural_size(self.dims)
-        self.emp_T = self.emp_theta[:size]  # pylint: disable=invalid-name
+        size = helpers.vech_size(self.dims)
+        self.emp_T = self.emp_theta[:size]
         self.emp_v = self.emp_theta[size:]
         # Clone so that SGD in-place updates to T and v do not corrupt
         # emp_theta, which is used as the fixed anchor in the sublevel-set
@@ -80,11 +81,11 @@ class TruncatedMultivariateNormal(
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 
-    def _project_to_neg_definite(self, M, eps=1e-6):  # pylint: disable=invalid-name
+    def _project_to_neg_definite(self, M, eps=1e-6):
         """Projects a symmetric matrix M onto the negative semi-definite cone."""
         L, Q = ch.linalg.eigh(M)  # pylint: disable=invalid-name,not-callable
-        L_clipped = ch.clamp(L, max=-eps)  # pylint: disable=invalid-name
-        return Q @ ch.diag_embed(L_clipped) @ Q.T  # pylint: disable=invalid-name
+        L_clipped = ch.clamp(L, max=-eps)
+        return Q @ ch.diag_embed(L_clipped) @ Q.T
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
         """Project T onto the negative-definite cone, then delegate to the base class.
@@ -96,18 +97,16 @@ class TruncatedMultivariateNormal(
         immediately (when args.project is False).
         """
         with ch.no_grad():
-            mat_t = multivariate_normal.MultivariateNormal.unvech(  # pylint: disable=invalid-name
-                self.T.detach(), self.dims
-            )
+            mat_t = helpers.unvech(self.T.detach(), self.dims)
             mat_t = self._project_to_neg_definite(
                 mat_t, eps=self.eigenvalue_lower_bound
             )
-            self.T.copy_(multivariate_normal.MultivariateNormal.vech(mat_t))
+            self.T.copy_(helpers.vech(mat_t))
         super().step_post_hook(optimizer, args, kwargs)
 
     def _write_theta(self, value: ch.Tensor) -> None:
         """Split the projected flat theta into T and v and copy to their Parameters."""
-        size = multivariate_normal.MultivariateNormal.natural_size(self.dims)
+        size = helpers.vech_size(self.dims)
         self.T.copy_(value[:size])
         self.v.copy_(value[size:])
 

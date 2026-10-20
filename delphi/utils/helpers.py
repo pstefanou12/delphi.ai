@@ -140,6 +140,47 @@ def is_psd(matrix, tol=1e-8):
         return False
 
 
+def vech_size(dims: int) -> int:
+    """Return the length of ``vech`` for a ``dims x dims`` matrix.
+
+    Args:
+        dims: Side length of the matrix.
+
+    Returns:
+        ``dims * (dims + 1) / 2``.
+    """
+    return dims * (dims + 1) // 2
+
+
+def vech(matrix: ch.Tensor) -> ch.Tensor:
+    """Return the lower triangle of a symmetric matrix as a vector.
+
+    Args:
+        matrix: Symmetric matrix of shape (dims, dims).
+
+    Returns:
+        Vector of length ``vech_size(dims)``.
+    """
+    rows, cols = ch.tril_indices(matrix.size(-1), matrix.size(-1))
+    return matrix[rows, cols]
+
+
+def unvech(vector: ch.Tensor, dims: int) -> ch.Tensor:
+    """Rebuild a symmetric matrix from its lower triangle.
+
+    Args:
+        vector: Lower triangle, as produced by ``vech``.
+        dims: Side length of the matrix.
+
+    Returns:
+        Symmetric matrix of shape (dims, dims).
+    """
+    rows, cols = ch.tril_indices(dims, dims)
+    matrix = ch.zeros(dims, dims, dtype=vector.dtype, device=vector.device)
+    matrix[rows, cols] = vector
+    return matrix + matrix.T - ch.diag(ch.diag(matrix))
+
+
 def type_of_script():
     """
     Check the program's running environment.
