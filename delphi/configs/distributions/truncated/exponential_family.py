@@ -25,6 +25,8 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         relative_loss_tol: Relative loss improvement threshold between phases.
         loss_increase_tol: Loss increase threshold for detecting overshoot.
         project: Enable per-step sublevel-set projection.
+        warm_start_iterations: Steps refining the initialization to the
+            untruncated MLE, for families whose MLE has no closed form.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -51,6 +53,7 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     relative_loss_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
     loss_increase_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
     project: bool = True
+    warm_start_iterations: int = pydantic.Field(default=1000, ge=1)
 
     @pydantic.model_validator(mode="after")
     def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":

@@ -26,6 +26,11 @@ SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 MASS_DRAWS = 20000
 
 
+def _admit_all(z: ch.Tensor) -> ch.Tensor:
+    """Return membership for every sample, the untruncated case."""
+    return ch.ones(z.size(0), dtype=ch.bool)
+
+
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
     distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
 ):
@@ -68,6 +73,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # Suffixes of the canonical estimates, so that f"avg_{suffix}" names
     # one. Read by summary().
     estimate_suffixes: ClassVar[tuple[str, ...]] = ()
+
+    # Set by a family whose MLE has no closed form: its _calc_emp_model gives
+    # a rough start, and _warm_start refines it to the untruncated MLE.
+    needs_warm_start: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -170,6 +179,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.radius_history = []
         self.loss_history = []
         self._calc_emp_model()
+        if self.needs_warm_start:
+            self._warm_start()
         self.nll_init = self._compute_nll(self.emp_theta)
         self.radius = self._initial_radius()
 
@@ -226,6 +237,34 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
         self.fit_seconds_ = time.perf_counter() - started
         return self
+
+    def _warm_start(self) -> None:
+        """Refine the initialization to the untruncated MLE.
+
+        With phi admitting every sample, the truncated NLL is the untruncated
+        one, so the existing trainer solves for its minimizer: one routine for
+        every family whose MLE has no closed form. It runs before nll_init,
+        which anchors the projection, so the projection is off meanwhile.
+        """
+        saved = (self.phi, self.criterion_params, self.hyperparameters)
+        self.phi = _admit_all
+        self.criterion_params = [self.phi, *saved[1][1:]]
+        self.hyperparameters = saved[2].model_copy(
+            update={
+                "project": False,
+                "iterations": saved[2].warm_start_iterations,
+                "epochs": None,
+            }
+        )
+        try:
+            warm = trainer.Trainer(self, self.hyperparameters)
+            warm.train_model(self.train_loader_, self.val_loader_)
+            refined = warm.avg_params
+        finally:
+            self.phi, self.criterion_params, self.hyperparameters = saved
+        self.emp_theta = self._constraints(refined.detach().clone())
+        with ch.no_grad():
+            self._write_theta(self.emp_theta)
 
     def _build_distribution(self) -> tuple[DistributionFactory, SufficientStatistic]:
         """Return the distribution factory and its sufficient statistic.
@@ -432,21 +471,16 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         return theta
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Optionally project theta onto the NLL sublevel set after each update.
+        """Keep theta in its domain, and optionally on the NLL sublevel set.
 
-        When args.project is True, implements the per-step projection from
-        Karatapanis et al. (2025), Algorithm 2:
-            θ ← Π_D(θ),  D = {θ : L(θ) ≤ nll_threshold}.
-        When args.project is False, the step is a no-op.
+        The constraints always apply: a step can leave the parameter's domain
+        whether or not the projection is on. With ``project`` set, theta is
+        then projected onto ``{θ : L(θ) ≤ nll_threshold}``, per Karatapanis et
+        al. (2025), Algorithm 2.
         """
-        if self.hyperparameters.project:
-            with ch.no_grad():
-                # Enforce constraints before projection so that _compute_nll
-                # inside _project_onto_sublevel_set always receives a theta in
-                # the valid domain (e.g. strictly negative for exponential /
-                # Weibull).  Constraints are applied again after projection to
-                # keep the final value valid as well.
-                self._write_theta(self._constraints(self.theta))
+        with ch.no_grad():
+            self._write_theta(self._constraints(self.theta))
+            if self.hyperparameters.project:
                 proj_theta = self._project_onto_sublevel_set(self.theta)
                 self._write_theta(self._constraints(proj_theta))
 
