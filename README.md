@@ -21,6 +21,9 @@ Efficient Truncated Statistics* (ICLR 2025).
 | `TruncatedPoisson` | `truncated_poisson` | `(hyperparameters, phi, dims, alpha=None)` | `avg_lambda_` |
 | `TruncatedWeibull` | `truncated_weibull` | `(hyperparameters, phi, dims, k, alpha=None)` | `avg_lambda_` (scale; shape `k` known) |
 | `TruncatedBooleanProduct` | `truncated_boolean_product` | `(hyperparameters, phi, dims, alpha=None)` | `avg_p_` |
+| `TruncatedGamma` | `truncated_gamma` | `(hyperparameters, phi, dims, concentration, alpha=None)` | `avg_rate_` (shape known) |
+| `TruncatedPareto` | `truncated_pareto` | `(hyperparameters, phi, dims, scale, alpha=None)` | `avg_alpha_` (tail index; scale known) |
+| `TruncatedBeta` | `truncated_beta` | `(hyperparameters, phi, dims, alpha=None)` | `avg_a_`, `avg_b_` |
 
 All live in `delphi.truncated.distributions`. Each is tested on one-sided,
 non-convex, disconnected and seeded random truncation sets, at survival mass
