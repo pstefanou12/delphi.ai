@@ -9,10 +9,9 @@ from typing import ClassVar, Generic, Optional
 
 import torch as ch
 from torch import distributions as torch_distributions
-from torch import nn
 import torch.utils.data
 
-from delphi import configs, delphi_logger, trainer
+from delphi import configs, trainer
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import datasets
 
@@ -78,18 +77,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 empirical initialization when omitted.
 
         Raises:
-            ValueError: If alpha is given and lies outside (0, 1].
+            ValueError: If alpha is given and lies outside (0, 1).
         """
         super().__init__(hyperparameters)
-        self.logger = (
-            delphi_logger.delphiLogger()
-            if self.hyperparameters.verbose
-            else delphi_logger.delphiLogger(level=logging.CRITICAL)
-        )
+        self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
-        if alpha is not None and not 0.0 < alpha <= 1.0:
+        if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
-                f"alpha is the survival probability and must lie in (0, 1]; got {alpha}."
+                "alpha is the survival probability and must lie in (0, 1); got "
+                f"{alpha}. alpha=1 claims nothing was truncated, which leaves "
+                "the procedure nothing to correct for: fit the family directly, "
+                "or omit alpha to fall back on min_radius."
             )
         self.alpha = alpha
         self.dims = dims
@@ -165,7 +163,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
             self.logger.info(f"\n{'=' * 60}")
 
-            self.trainer = trainer.Trainer(self, self.hyperparameters, self.logger)
+            self.trainer = trainer.Trainer(self, self.hyperparameters)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
 
             current_loss = self.trainer.best_loss
@@ -307,10 +305,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         return self.nll_init + self.radius
 
     def _calc_emp_model(self):
-        """Calculate empirical natural parameters from training data."""
-        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
-        self.emp_theta = self.calc_suff_stat(dataset_s).mean(0)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        """Initialize theta from the training data.
+
+        Raises:
+            NotImplementedError: Always. The empirical mean of ``T(x)`` is the
+                mean parameter, and mapping it back to the natural one inverts
+                the gradient of the log-partition, which is family-specific.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must override _calc_emp_model to convert "
+            "the empirical mean of T(x) to a natural parameter."
+        )
 
     def _compute_nll(self, theta: ch.Tensor) -> float:
         """Compute non-truncated NLL of training samples under theta.

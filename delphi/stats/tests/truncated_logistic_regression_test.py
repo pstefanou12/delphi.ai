@@ -83,7 +83,6 @@ def test_truncated_one_dimension_logistic_regression_no_intercept():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -171,7 +170,6 @@ def test_truncated_one_dimension_logistic_regression():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -259,7 +257,6 @@ def test_truncated_ten_dimension_logistic_regression():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -340,7 +337,6 @@ def test_truncated_one_dimension_probit_regression_no_intercept():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -423,7 +419,6 @@ def test_truncated_one_dimension_probit_regression():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -507,7 +502,6 @@ def test_truncated_ten_dimension_probit_regression():
         "batch_size": 10,
         "epochs": 10,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
     }
     ch.manual_seed(seed)
@@ -533,6 +527,7 @@ def test_truncated_ten_dimension_probit_regression():
 
 
 # 1 dimensional untruncated multinomial logistic regression
+@pytest.mark.slow
 def test_untruncated_multinomial_logistic_regression():
     D, K = 5, 2
 
@@ -584,7 +579,6 @@ def test_untruncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 50,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 10000,
         "grad_tol": 1e-3,
@@ -613,7 +607,6 @@ def test_untruncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 50,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         # 'gradient_steps': 1500,
         "grad_tol": 1e-3,
@@ -701,7 +694,6 @@ def test_truncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 50,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 10000,
         "grad_tol": 0,
@@ -729,7 +721,6 @@ def test_truncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 50,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 10000,
         "grad_tol": 0,
@@ -812,7 +803,6 @@ def test_3_dim_truncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 20,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 5000,
     }
@@ -897,7 +887,6 @@ def test_10_dim_truncated_multinomial_logistic_regression():
         "batch_size": 50,
         "epochs": 20,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 5000,
     }
@@ -991,7 +980,6 @@ def test_truncated_multinomial_logistic_regression_labels():
         "batch_size": 50,
         "epochs": 20,
         "trials": 1,
-        "verbose": True,
         "early_stopping": True,
         "num_samples": 10000,
         "grad_tol": 1e-3,

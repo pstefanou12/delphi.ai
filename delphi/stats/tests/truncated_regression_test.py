@@ -72,7 +72,6 @@ def test_known_truncated_regression_one_dimension_no_intercept():
         "optimizer": "lbfgs",
         "batch_size": -1,
         "trials": 1,
-        "verbose": True,
     }
     trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_scale, alpha, fit_intercept=False, noise_var=ch.ones(1, 1)
@@ -150,7 +149,6 @@ def test_known_truncated_regression_one_dimension():
         "lr": 1e-1,
         "batch_size": 10,
         "trials": 1,
-        "verbose": True,
     }
     trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_scale, alpha, fit_intercept=True, noise_var=ch.ones(1, 1)
@@ -224,7 +222,6 @@ def test_known_truncated_regression_higher_dimensions():
         "optimizer": "lbfgs",
         "batch_size": -1,
         "trials": 1,
-        "verbose": True,
         "num_samples": 5000,
     }
     trunc_reg = stats.TruncatedLinearRegression(
@@ -301,7 +298,6 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
         "epochs": 5,
         "batch_size": -1,
         "var_lr": None,
-        "verbose": True,
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha, fit_intercept=False
@@ -398,7 +394,6 @@ def test_unknown_variance_truncated_regression_one_dimension():
         "trials": 1,
         "batch_size": 100,
         "var_lr": 1e-2,
-        "verbose": True,
         "step_lr_gamma": 1.0,
         "early_stopping": True,
     }
@@ -485,7 +480,6 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
         "optimizer": "lbfgs",
         "batch_size": -1,
         "var_lr": None,
-        "verbose": True,
         "num_samples": 5000,
     }
     unknown_trunc_reg = stats.TruncatedLinearRegression(args, phi, alpha)
@@ -560,7 +554,6 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
         "trials": 1,
         "batch_size": -1,
         "var_lr": None,
-        "verbose": True,
         "early_stopping": True,
         "iterations": 500,
         # 'lbfgs_lr': 2.0
@@ -639,7 +632,6 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
         "trials": 1,
         "batch_size": -1,
         "var_lr": None,
-        "verbose": True,
         "early_stopping": True,
         "iterations": 500,
     }
@@ -727,7 +719,6 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
         "batch_size": 100,
         "lr": 1e-1,
         # 'var_lr': 1e-2,
-        "verbose": True,
         "early_stopping": True,
         "iterations": 2500,
         "step_lr_gamma": 1.0,
@@ -810,7 +801,6 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
         "batch_size": 10,
         "iterations": 1000,
         "trials": 1,
-        "verbose": True,
     }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs,
@@ -906,7 +896,6 @@ def test_truncated_lasso_regression_one_dimension():
         "batch_size": 10,
         "iterations": 1000,
         "trials": 1,
-        "verbose": True,
     }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
@@ -998,7 +987,6 @@ def test_truncated_lasso_regression_ten_dimensions():
         "batch_size": 10,
         "iterations": 1000,
         "trials": 1,
-        "verbose": True,
     }
     trunc_reg = stats.TruncatedLassoRegression(
         train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)

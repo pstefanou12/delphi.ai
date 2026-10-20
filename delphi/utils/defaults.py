@@ -105,7 +105,6 @@ TRAINER_DEFAULTS = {
     "ema_decay": (float, 0.99),
     "tol": (float, 1e-3),
     "early_stopping": (bool, False),
-    "verbose": (bool, False),
     "disable_no_grad": (bool, False),
     "val_interval": (int | None, None, {"min": 1}),
     "patience": (int, float("inf"), {"min": 1}),

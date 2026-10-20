@@ -1,9 +1,13 @@
 # Author: pstefanou12@
 """Truncated NLL autograd functions for exponential family distributions."""
 
+import logging
+
 import torch as ch
 
 from delphi.truncated import sampling
+
+logger = logging.getLogger(__name__)
 
 
 class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-method
@@ -39,7 +43,7 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
 
         z, p_hat = sampling.rejection_sample(D, phi, num_samples)
         if p_hat < 0.01:
-            print(f"acceptance rate: {p_hat.item()}")
+            logger.warning(f"low acceptance rate: {p_hat.item()}")
 
         trunc_const = ch.log(p_hat + eps)
         ll = log_prob - trunc_const
@@ -96,7 +100,9 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
         # from saved samples, hiding theta's effect on where they came from.
         with ch.no_grad():
             z, _ = sampling.rejection_sample(dist(theta, dims), phi, num_samples)
-            return calc_suff_stat(z).T.cov()
+            # torch.cov returns a 0-d scalar for a single statistic, not a
+            # 1 x 1 matrix.
+            return ch.atleast_2d(calc_suff_stat(z).T.cov())
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
@@ -130,9 +136,9 @@ class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
         exp = exp_h(v, T, x)
         psi = phi.psi_k(x)
         loss = exp * pdf * psi
-        print(f"psi: {psi}")
-        print(f"exp: {exp}")
-        print(f"pdf: {pdf}")
+        logger.debug(f"psi: {psi}")
+        logger.debug(f"exp: {exp}")
+        logger.debug(f"pdf: {pdf}")
         ctx.save_for_backward(loss, loc_grad, cov_grad)
         ctx.dims = dims
         return loss / data.size(0)
@@ -143,8 +149,8 @@ class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
         loss, loc_grad, cov_grad = ctx.saved_tensors
         term_one = loc_grad * loss
         term_two = cov_grad.flatten(1) * loss
-        print(f"loc grad: {term_one.mean(0)}")
-        print(f"cov grad: {term_two.mean(0)}")
+        logger.debug(f"loc grad: {term_one.mean(0)}")
+        logger.debug(f"cov grad: {term_two.mean(0)}")
         return (
             ch.cat([term_two, term_one], dim=1) / cov_grad.size(0),
             None,

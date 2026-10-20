@@ -10,7 +10,6 @@ from torch import Tensor
 from torch.nn import CrossEntropyLoss, Softmax
 
 from delphi import configs
-from delphi.delphi_logger import delphiLogger
 from delphi.stats.linear_model import LinearModel
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
@@ -41,7 +40,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
             hyperparameters: hyperparameter dict
             fit_intercept: whether to fit an intercept term
         """
-        super().__init__(hyperparameters, logger=delphiLogger())
+        super().__init__(hyperparameters)
         self.fit_intercept = fit_intercept
         del self.criterion
 
@@ -87,7 +86,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
             self.hyperparameters, X, y
         )
 
-        self.trainer = Trainer(self, self.hyperparameters, self.logger)
+        self.trainer = Trainer(self, self.hyperparameters)
         self.trainer.train_model(self.train_loader, self.val_loader)
 
         return self

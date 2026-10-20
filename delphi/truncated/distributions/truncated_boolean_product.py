@@ -4,6 +4,8 @@
 from collections.abc import Callable
 from typing import Optional
 
+from torch import nn
+
 from delphi import configs
 from delphi.exponential_family import boolean_product
 from delphi.truncated.distributions import truncated_exponential_family_distributions
@@ -33,6 +35,15 @@ class TruncatedBooleanProduct(
             dims: Number of dimensions.
         """
         super().__init__(hyperparameters, phi, dims, alpha)
+
+    def _calc_emp_model(self):
+        """Initialize theta at the log-odds of the empirical success rate."""
+        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+        # A coordinate the set pins to 0 or 1 would otherwise give an
+        # infinite log-odds.
+        emp = dataset_s.mean(0).clamp(1e-6, 1 - 1e-6)
+        self.emp_theta = boolean_product.BooleanProduct.to_natural(emp)
+        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_p_(self):

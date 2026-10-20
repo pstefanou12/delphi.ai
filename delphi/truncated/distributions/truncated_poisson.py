@@ -4,6 +4,8 @@
 from collections.abc import Callable
 from typing import Optional
 
+from torch import nn
+
 from delphi import configs
 from delphi.exponential_family import poisson
 from delphi.truncated.distributions import truncated_exponential_family_distributions
@@ -33,6 +35,14 @@ class TruncatedPoisson(
             dims: Number of dimensions.
         """
         super().__init__(hyperparameters, phi, dims, alpha)
+
+    def _calc_emp_model(self):
+        """Initialize theta at the log of the empirical rate."""
+        dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
+        # A coordinate observed only at zero would otherwise give log(0).
+        emp = dataset_s.mean(0).clamp(min=1e-6)
+        self.emp_theta = poisson.Poisson.to_natural(emp)
+        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_lambda_(self):

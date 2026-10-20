@@ -18,7 +18,7 @@ from delphi import configs
 from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
 from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 
-logger = logging.getLogger("truncated-lqr")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
