@@ -26,7 +26,7 @@ def _recovers(
         target=distributions.Exponential(rate),
         phi=phi,
         dims=dims,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -271,7 +271,7 @@ def test_indistinguishable_pair():
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
         dims=1,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
         hyperparameters={
             "iterations": 2500,
@@ -283,3 +283,17 @@ def test_indistinguishable_pair():
             "scheduler": "fisher",
         },
     )
+
+
+def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(
+        distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
+    )
+    model = truncated_exponential.TruncatedExponential(
+        {"iterations": 10}, lambda z: z[:, 0] > 0.5, 1, sample.alpha
+    )
+    model.fit(sample.S)
+    # Rate 100 puts exp(-50) of its mass above 0.5.
+    with pytest.raises(ValueError, match="almost no mass on the truncation set"):
+        model.hessian(ch.Tensor([-100.0]))

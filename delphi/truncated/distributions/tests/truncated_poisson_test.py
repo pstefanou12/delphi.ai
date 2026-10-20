@@ -26,7 +26,7 @@ def _recovers(
         target=distributions.Poisson(rate),
         phi=phi,
         dims=dims,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: s.mean(0),
         hyperparameters=hyperparameters,
         dataset_size=dataset_size,
@@ -257,7 +257,7 @@ def test_indistinguishable_pair():
         ),
         phi=lambda z: (z[:, 0] >= 3) & (z[:, 0] <= 4),
         dims=1,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: s.mean(0),
         hyperparameters={
             "iterations": 2500,

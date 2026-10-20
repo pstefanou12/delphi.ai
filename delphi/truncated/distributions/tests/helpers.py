@@ -2,7 +2,7 @@
 """Shared helper utilities for delphi test modules."""
 
 from collections.abc import Callable
-from typing import NamedTuple, Optional, Protocol, TypeVar, cast
+from typing import Any, NamedTuple, Optional, Protocol, TypeVar, Union, cast
 
 import torch as ch
 from torch.distributions import Distribution, kl
@@ -60,27 +60,6 @@ def generate_truncated_distribution_dataset(
     alpha = num_accepted / num_sampled
 
     return TruncatedSample(S, alpha, ch.cat(drawn))
-
-
-def weibull_kl_divergence(
-    scale: ch.Tensor, other_scale: ch.Tensor, concentration: ch.Tensor
-) -> ch.Tensor:
-    """Return KL(Weibull(scale, k) || Weibull(other_scale, k)) per coordinate.
-
-    torch registers no KL for Weibull, and the shared-shape case has a closed
-    form: ``k log(l2/l1) + (l1/l2)^k - 1``. Checked against 4e6 Monte Carlo
-    draws to 3e-4.
-
-    Args:
-        scale: Scale of the first distribution.
-        other_scale: Scale of the second distribution.
-        concentration: Shape parameter, shared by both.
-
-    Returns:
-        Per-coordinate KL divergence.
-    """
-    ratio = scale / other_scale
-    return concentration * ch.log(1.0 / ratio) + ratio.pow(concentration) - 1.0
 
 
 # Generic because Weibull has no registered KL, so it scores bare tensors.
@@ -164,24 +143,58 @@ def assert_recovers(  # pylint: disable=too-many-arguments
             )
 
 
+class _Family(NamedTuple):
+    """How a family's estimates and naive estimate become distributions."""
+
+    suffixes: tuple[str, ...]
+    rebuild: Callable[..., Distribution]
+
+    def fitted(self, model: object, name: str) -> Distribution:
+        """Return the distribution an estimator of a fitted model describes."""
+        return self.rebuild(*(getattr(model, f"{name}_{s}") for s in self.suffixes))
+
+    def naive(self, estimate) -> Distribution:
+        """Return the distribution the naive estimate describes."""
+        return (
+            self.rebuild(*estimate)
+            if isinstance(estimate, tuple)
+            else self.rebuild(estimate)
+        )
+
+
+def _family(
+    target: Distribution,
+    parameter: Union[str, tuple[str, ...]],
+    rebuild: Optional[Callable[..., Distribution]],
+) -> _Family:
+    # By default the canonical parameter alone rebuilds the distribution,
+    # which the Distribution base signature does not express.
+    default = cast(Callable[..., Distribution], type(target))
+    suffixes = (parameter,) if isinstance(parameter, str) else parameter
+    return _Family(suffixes, rebuild or default)
+
+
 def assert_family_recovers(  # pylint: disable=too-many-arguments
     model_class: Callable[..., TruncatedModel],
     target: Distribution,
     phi: Oracle,
     dims: int,
-    parameter: str,
-    empirical: Callable[[ch.Tensor], ch.Tensor],
+    parameter: Union[str, tuple[str, ...]],
+    empirical: Callable[[ch.Tensor], Any],
     hyperparameters: dict,
     dataset_size: int = 10000,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    model_args: tuple = (),
+    rebuild: Optional[Callable[..., Distribution]] = None,
+    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl.kl_divergence,
 ) -> None:
     """Fit a family on truncated data and assert it recovers the target.
 
-    Covers families whose canonical parameter reconstructs the distribution on
-    its own, so ``type(target)(estimate)`` is the fitted distribution and
-    torch's registered KL scores it. A family needing a transform on the way
-    in, or carrying a second parameter, keeps its own fit in its test module.
+    By default ``type(target)(estimate)`` is the fitted distribution and
+    torch's registered KL scores it. ``rebuild`` and ``divergence`` cover a
+    family with known parameters, several estimates, or no registered KL. A
+    family needing a transform on the way in keeps its own fit.
 
     Args:
         model_class: Truncated model, called as
@@ -190,14 +203,19 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         phi: Truncation set oracle.
         dims: Number of dimensions.
         parameter: Attribute suffix holding the canonical estimate, so that
-            ``f"avg_{parameter}"`` names the averaged iterate.
-        empirical: Maps the truncated data to the naive estimate.
+            ``f"avg_{parameter}"`` names the averaged iterate, or several.
+        empirical: Maps the truncated data to the naive estimate, a tuple
+            when there are several.
         hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
         pass_alpha: Supply the measured survival mass to the model. False
             leaves the model to fall back on ``min_radius``, which is what a
             caller who cannot measure it gets.
         baseline_must_fail: Forwarded to ``assert_recovers``.
+        model_args: Known parameters, passed to the model before alpha.
+        rebuild: Maps the estimates to a distribution; ``type(target)`` by
+            default.
+        divergence: Scores a fitted distribution against the target.
 
     Raises:
         AssertionError: If any estimator exceeds its bound.
@@ -205,16 +223,14 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
     args = (sample.alpha,) if pass_alpha else ()
-    truncated = model_class(hyperparameters, phi, dims, *args)
+    truncated = model_class(hyperparameters, phi, dims, *model_args, *args)
     truncated.fit(sample.S)
 
-    # Each family here builds from its canonical parameter alone, which the
-    # Distribution base signature does not express.
-    family = cast(Callable[[ch.Tensor], Distribution], type(target))
+    family = _family(target, parameter, rebuild)
     assert_recovers(
-        estimate=lambda name: family(getattr(truncated, f"{name}_{parameter}")),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=family(empirical(sample.S)),
+        estimate=lambda name: family.fitted(truncated, name),
+        divergence=lambda fitted: divergence(fitted, target),
+        baseline=family.naive(empirical(sample.S)),
         baseline_must_fail=baseline_must_fail,
     )
 
@@ -283,10 +299,13 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     targets: tuple[Distribution, Distribution],
     phi: Oracle,
     dims: int,
-    parameter: str,
-    empirical: Callable[[ch.Tensor], ch.Tensor],
+    parameter: Union[str, tuple[str, ...]],
+    empirical: Callable[[ch.Tensor], Any],
     hyperparameters: dict,
     dataset_size: int = 10000,
+    model_args: tuple = (),
+    rebuild: Optional[Callable[..., Distribution]] = None,
+    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl.kl_divergence,
 ) -> None:
     """Fit two families truncated to one set and assert they come apart.
 
@@ -304,28 +323,28 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
         empirical: Maps a truncated sample to the naive estimate.
         hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
+        model_args: As ``assert_family_recovers``.
+        rebuild: As ``assert_family_recovers``.
+        divergence: As ``assert_family_recovers``.
 
     Raises:
         AssertionError: As ``assert_distinguishes``.
     """
-    family = cast(Callable[[ch.Tensor], Distribution], type(targets[0]))
+    family = _family(targets[0], parameter, rebuild)
     fits, naive = [], []
     for target in targets:
         ch.manual_seed(0)
         sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
-        truncated = model_class(hyperparameters, phi, dims, sample.alpha)
+        truncated = model_class(hyperparameters, phi, dims, *model_args, sample.alpha)
         truncated.fit(sample.S)
         fits.append(truncated)
-        naive.append(family(empirical(sample.S)))
+        naive.append(family.naive(empirical(sample.S)))
 
     for name in TOLERANCES:
         print(f"-- {name}")
         assert_distinguishes(
             targets=targets,
-            recovered=(
-                family(getattr(fits[0], f"{name}_{parameter}")),
-                family(getattr(fits[1], f"{name}_{parameter}")),
-            ),
+            recovered=(family.fitted(fits[0], name), family.fitted(fits[1], name)),
             naive=(naive[0], naive[1]),
-            divergence=kl.kl_divergence,
+            divergence=divergence,
         )

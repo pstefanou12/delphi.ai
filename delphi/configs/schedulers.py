@@ -208,6 +208,8 @@ class FisherLRConfig(pydantic.BaseModel):
     Attributes:
         fisher_mu: Strong-convexity constant, the smallest Hessian eigenvalue.
         fisher_smoothness: Smoothness constant, the largest eigenvalue.
+        fisher_refresh_every: Steps between re-measuring both at the current
+            iterate; 0 keeps the initial ones. Ignored when either is set.
     """
 
     fisher_mu: Optional[float] = pydantic.Field(
@@ -215,4 +217,7 @@ class FisherLRConfig(pydantic.BaseModel):
     )
     fisher_smoothness: Optional[float] = pydantic.Field(
         default=None, gt=0.0, serialization_alias="smoothness"
+    )
+    fisher_refresh_every: int = pydantic.Field(
+        default=100, ge=0, serialization_alias="refresh_every"
     )

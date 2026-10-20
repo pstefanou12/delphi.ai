@@ -36,7 +36,7 @@ def test_reports_every_section():
     ):
         assert heading in report
     for estimator in summary.ESTIMATORS:
-        assert f"{estimator}_lambda_" in report
+        assert f"{estimator}_rate_" in report
     assert "condition number" in report
 
 
@@ -46,12 +46,3 @@ def test_raises_before_fit():
     )
     with pytest.raises(RuntimeError, match="has not been fit"):
         model.summary()
-
-
-def test_skips_curvature_when_mass_is_too_small(monkeypatch):
-    # A threshold above any possible mass forces the branch that must not
-    # call the rejection sampler.
-    monkeypatch.setattr(summary, "MIN_MASS_FOR_HESSIAN", 2.0)
-    report = _fitted().summary()
-    assert "skipped" in report
-    assert "condition number" not in report

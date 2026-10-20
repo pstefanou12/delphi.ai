@@ -18,7 +18,7 @@ class TruncatedBooleanProduct(
 
     dist = boolean_product.BooleanProduct
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
-    estimate_suffixes = ("p_",)
+    estimate_suffixes = ("probs_",)
 
     def __init__(
         self,
@@ -47,22 +47,22 @@ class TruncatedBooleanProduct(
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     @property
-    def best_p_(self):
+    def best_probs_(self):
         """Return the best probability parameter estimate."""
         return boolean_product.BooleanProduct.to_canonical(self.best_params)
 
     @property
-    def final_p_(self):
+    def final_probs_(self):
         """Return the final probability parameter estimate."""
         return boolean_product.BooleanProduct.to_canonical(self.final_params)
 
     @property
-    def ema_p_(self):
+    def ema_probs_(self):
         """Return the EMA probability parameter estimate."""
         return boolean_product.BooleanProduct.to_canonical(self.ema_params)
 
     @property
-    def avg_p_(self):
+    def avg_probs_(self):
         """Return the averaged probability parameter estimate."""
         return boolean_product.BooleanProduct.to_canonical(self.avg_params)
 

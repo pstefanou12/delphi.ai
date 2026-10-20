@@ -6,18 +6,9 @@ standard errors or p-values, since neither analysis the library follows gives
 an asymptotic distribution for the estimate.
 """
 
-import torch as ch
-
 from delphi.optim.lr_scheduler import fisher
 
 ESTIMATORS = ("avg", "ema", "final", "best")
-
-# Draws backing the fitted model's own mass on the truncation set.
-MASS_DRAWS = 20000
-
-# Below this the Hessian's rejection sampler could need millions of draws per
-# accepted sample, so the curvature is skipped rather than risk a hang.
-MIN_MASS_FOR_HESSIAN = 1e-4
 
 # Longer vectors are cut to their first few entries.
 MAX_ENTRIES = 6
@@ -39,7 +30,7 @@ def render(model) -> str:
     """
     if model.trainer is None:
         raise RuntimeError(f"{type(model).__name__} has not been fit; call fit first.")
-    mass = _mass_on_set(model, model.avg_params)
+    mass = model.mass_on_set(model.avg_params)
     sections = [
         ("Model and data", _data(model)),
         ("Optimization", _optimization(model)),
@@ -110,30 +101,19 @@ def _curvature(model, mass: float) -> list[tuple[str, str]]:
     rows = [("mass on the truncation set", f"{mass:.4f}")]
     if model.alpha is not None:
         rows.append(("  against alpha", f"{model.alpha:.4f}"))
-    if mass < MIN_MASS_FOR_HESSIAN:
-        rows.append(("curvature", f"skipped: mass below {MIN_MASS_FOR_HESSIAN:g}"))
+    try:
+        mu, smoothness = fisher.FisherLR.spectrum(
+            model.hessian(model.avg_params), model.independent_coordinates
+        )
+    except ValueError as error:
+        rows.append(("curvature", f"skipped: {error}"))
         return rows
-    mu, smoothness = fisher.FisherLR.spectrum(
-        model.hessian(model.avg_params), model.independent_coordinates
-    )
     rows += [
         ("smallest curvature (mu)", f"{mu:.4e}"),
         ("largest curvature (L)", f"{smoothness:.4e}"),
         ("condition number (L / mu)", f"{smoothness / mu:.3e}" if mu > 0 else "inf"),
     ]
     return rows
-
-
-def _mass_on_set(model, theta: ch.Tensor) -> float:
-    """Return the fitted model's own mass on the truncation set.
-
-    Plain Monte Carlo rather than the rejection sampler, so a fit that put
-    almost no mass on the set reports a small number instead of hanging.
-    """
-    with ch.no_grad():
-        samples = model.dist(theta, model.dims).sample([MASS_DRAWS])
-        samples = samples.view(MASS_DRAWS, -1)
-        return float(model.phi(samples).float().mean())
 
 
 def _scalar(value) -> str:
