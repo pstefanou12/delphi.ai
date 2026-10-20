@@ -26,7 +26,7 @@ def _recovers(
         target=distributions.Exponential(rate),
         phi=phi,
         dims=dims,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -271,7 +271,7 @@ def test_indistinguishable_pair():
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
         dims=1,
-        parameter="lambda_",
+        parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
         hyperparameters={
             "iterations": 2500,

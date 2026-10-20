@@ -18,7 +18,7 @@ class TruncatedPoisson(
 
     dist = poisson.Poisson
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
-    estimate_suffixes = ("lambda_",)
+    estimate_suffixes = ("rate_",)
 
     def __init__(
         self,
@@ -46,22 +46,22 @@ class TruncatedPoisson(
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     @property
-    def best_lambda_(self):
+    def best_rate_(self):
         """Return the best rate parameter estimate."""
         return poisson.Poisson.to_canonical(self.best_params)
 
     @property
-    def final_lambda_(self):
+    def final_rate_(self):
         """Return the final rate parameter estimate."""
         return poisson.Poisson.to_canonical(self.final_params)
 
     @property
-    def ema_lambda_(self):
+    def ema_rate_(self):
         """Return the EMA rate parameter estimate."""
         return poisson.Poisson.to_canonical(self.ema_params)
 
     @property
-    def avg_lambda_(self):
+    def avg_rate_(self):
         """Return the averaged rate parameter estimate."""
         return poisson.Poisson.to_canonical(self.avg_params)
 

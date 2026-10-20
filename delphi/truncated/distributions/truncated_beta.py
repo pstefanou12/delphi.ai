@@ -19,7 +19,7 @@ class TruncatedBeta(
 
     dist = beta.Beta
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
-    estimate_suffixes = ("a_", "b_")
+    estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's a and b are coupled, so the Hessian is block-diagonal
     # and its spectrum needs eigenvalues rather than the diagonal.
     independent_coordinates = False
@@ -56,42 +56,42 @@ class TruncatedBeta(
         return ch.clamp(theta, min=-1.0 + 1e-6)
 
     @property
-    def best_a_(self):
+    def best_concentration1_(self):
         """Return the best first shape estimate."""
         return beta.Beta.to_canonical(self.best_params)[: self.dims]
 
     @property
-    def final_a_(self):
+    def final_concentration1_(self):
         """Return the final first shape estimate."""
         return beta.Beta.to_canonical(self.final_params)[: self.dims]
 
     @property
-    def ema_a_(self):
+    def ema_concentration1_(self):
         """Return the EMA first shape estimate."""
         return beta.Beta.to_canonical(self.ema_params)[: self.dims]
 
     @property
-    def avg_a_(self):
+    def avg_concentration1_(self):
         """Return the averaged first shape estimate."""
         return beta.Beta.to_canonical(self.avg_params)[: self.dims]
 
     @property
-    def best_b_(self):
+    def best_concentration0_(self):
         """Return the best second shape estimate."""
         return beta.Beta.to_canonical(self.best_params)[self.dims :]
 
     @property
-    def final_b_(self):
+    def final_concentration0_(self):
         """Return the final second shape estimate."""
         return beta.Beta.to_canonical(self.final_params)[self.dims :]
 
     @property
-    def ema_b_(self):
+    def ema_concentration0_(self):
         """Return the EMA second shape estimate."""
         return beta.Beta.to_canonical(self.ema_params)[self.dims :]
 
     @property
-    def avg_b_(self):
+    def avg_concentration0_(self):
         """Return the averaged second shape estimate."""
         return beta.Beta.to_canonical(self.avg_params)[self.dims :]
 

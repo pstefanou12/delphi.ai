@@ -36,7 +36,7 @@ def test_reports_every_section():
     ):
         assert heading in report
     for estimator in summary.ESTIMATORS:
-        assert f"{estimator}_lambda_" in report
+        assert f"{estimator}_rate_" in report
     assert "condition number" in report
 
 

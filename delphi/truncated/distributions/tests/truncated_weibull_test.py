@@ -70,7 +70,7 @@ def _recovers(
 
     mle = parent.pow(concentration).mean(0).pow(1.0 / concentration)
     helpers.assert_recovers(
-        estimate=lambda name: getattr(truncated, f"{name}_lambda_").flatten(),
+        estimate=lambda name: getattr(truncated, f"{name}_scale_").flatten(),
         divergence=lambda fitted: weibull_kl_divergence(fitted, mle, concentration),
         baseline=S.pow(concentration).mean(0).pow(1.0 / concentration).flatten(),
         baseline_must_fail=baseline_must_fail,
@@ -293,8 +293,8 @@ def test_indistinguishable_pair():
         helpers.assert_distinguishes(
             targets=scales,
             recovered=(
-                getattr(fits[0], f"{name}_lambda_").flatten(),
-                getattr(fits[1], f"{name}_lambda_").flatten(),
+                getattr(fits[0], f"{name}_scale_").flatten(),
+                getattr(fits[1], f"{name}_scale_").flatten(),
             ),
             naive=(naive[0], naive[1]),
             divergence=lambda a, b: weibull_kl_divergence(a, b, concentration),

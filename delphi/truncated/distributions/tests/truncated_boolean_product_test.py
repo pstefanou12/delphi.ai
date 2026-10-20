@@ -25,7 +25,7 @@ def _recovers(
         target=distributions.Bernoulli(probability),
         phi=phi,
         dims=dims,
-        parameter="p_",
+        parameter="probs_",
         empirical=lambda s: s.mean(0),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -179,7 +179,7 @@ def test_indistinguishable_pair():
         ),
         phi=lambda z: (z.sum(-1) >= 2) & (z.sum(-1) <= 3),
         dims=5,
-        parameter="p_",
+        parameter="probs_",
         empirical=lambda s: s.mean(0).clamp(1e-4, 1 - 1e-4),
         hyperparameters={
             "iterations": 2500,

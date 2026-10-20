@@ -32,7 +32,7 @@ def _recovers(
         target=distributions.Beta(first, second),
         phi=phi,
         dims=dims,
-        parameter=("a_", "b_"),
+        parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -157,7 +157,7 @@ def test_indistinguishable_pair():
         ),
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.75),
         dims=1,
-        parameter=("a_", "b_"),
+        parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
         hyperparameters={
             "iterations": 2500,
