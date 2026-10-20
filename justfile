@@ -49,11 +49,13 @@ pylint:
 typecheck:
     poetry run mypy delphi/
 
-# Run the test suite. Extra arguments are forwarded to pytest.
-# `just test -m "not slow"` skips the long fits; see the slow marker in
-# pyproject.toml.
+# Run the tests affected by local changes. pytest-testmon records the code
+# each test executes and reruns only tests whose code changed since the last
+# run; the first run, and every run in CI, runs the whole suite.
+# `--testmon-noselect` forces a full local run, and `-m "not slow"` skips the
+# long fits. Extra arguments are forwarded to pytest.
 test *ARGS:
-    poetry run pytest "$@"
+    if [ -n "${CI:-}" ]; then poetry run pytest "$@"; else poetry run pytest --testmon "$@"; fi
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:

@@ -51,6 +51,7 @@ pylint = "*"
 pytest = "*"
 pytest-cov = "*"
 ruff = "*"
+pytest-testmon = "^2.2"
 
 [build-system]
 requires = ["poetry-core"]
