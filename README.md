@@ -41,9 +41,7 @@ just hooks      # pre-push hooks running just check
 ## Truncated Distributions
 
 Each model is fit by projected stochastic gradient descent on the truncated
-negative log-likelihood, following Karatapanis, Kontonis and Tzamos, *Oracle
-Efficient Truncated Statistics* (ICLR 2025). All live in
-`delphi.truncated.distributions`.
+negative log-likelihood. All live in `delphi.truncated.distributions`.
 
 | Model | Module | Example |
 |---|---|---|
@@ -183,17 +181,6 @@ If you use delphi in your work, please cite it:
   year    = {2026},
 }
 ```
-
-and the papers behind the methods you use:
-
-- Karatapanis, Kontonis and Tzamos. *Oracle Efficient Truncated Statistics.*
-  ICLR 2025. The fitting procedure every truncated distribution uses.
-- Daskalakis, Gouleakis, Tzamos and Zampetakis. *Efficient Statistics, in High
-  Dimensions, from Truncated Samples.* FOCS 2018.
-  [arXiv:1809.03986](https://arxiv.org/abs/1809.03986). The truncated
-  multivariate normal.
-- Lee, Wibisono and Zampetakis. *Learning Exponential Families from Truncated
-  Samples.* NeurIPS 2023. Truncated exponential families in general.
 
 ## License
 

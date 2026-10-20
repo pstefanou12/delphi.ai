@@ -12,6 +12,25 @@ from delphi.truncated.distributions.tests import helpers, truncation_sets
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
+def pareto_kl_divergence(
+    fitted: distributions.Distribution, target: distributions.Distribution
+) -> ch.Tensor:
+    """Return KL between two Pareto distributions sharing a scale.
+
+    torch registers no Pareto KL. With a common scale the divergence depends
+    only on the tail indices: ``log(a1 / a2) + a2 / a1 - 1``.
+
+    Args:
+        fitted: First Pareto distribution.
+        target: Second Pareto distribution, with the same scale.
+
+    Returns:
+        Per-coordinate KL divergence.
+    """
+    first, second = fitted.alpha, target.alpha  # type: ignore[attr-defined]
+    return ch.log(first / second) + second / first - 1
+
+
 def _recovers(
     dims: int,
     scale: ch.Tensor,
@@ -33,7 +52,7 @@ def _recovers(
         baseline_must_fail=baseline_must_fail,
         model_args=(scale,),
         rebuild=functools.partial(distributions.Pareto, scale),
-        divergence=helpers.pareto_kl_divergence,
+        divergence=pareto_kl_divergence,
     )
 
 
@@ -214,5 +233,5 @@ def test_indistinguishable_pair():
         },
         model_args=(ch.Tensor([1.0]),),
         rebuild=functools.partial(distributions.Pareto, ch.Tensor([1.0])),
-        divergence=helpers.pareto_kl_divergence,
+        divergence=pareto_kl_divergence,
     )

@@ -62,27 +62,6 @@ def generate_truncated_distribution_dataset(
     return TruncatedSample(S, alpha, ch.cat(drawn))
 
 
-def weibull_kl_divergence(
-    scale: ch.Tensor, other_scale: ch.Tensor, concentration: ch.Tensor
-) -> ch.Tensor:
-    """Return KL(Weibull(scale, k) || Weibull(other_scale, k)) per coordinate.
-
-    torch registers no KL for Weibull, and the shared-shape case has a closed
-    form: ``k log(l2/l1) + (l1/l2)^k - 1``. Checked against 4e6 Monte Carlo
-    draws to 3e-4.
-
-    Args:
-        scale: Scale of the first distribution.
-        other_scale: Scale of the second distribution.
-        concentration: Shape parameter, shared by both.
-
-    Returns:
-        Per-coordinate KL divergence.
-    """
-    ratio = scale / other_scale
-    return concentration * ch.log(1.0 / ratio) + ratio.pow(concentration) - 1.0
-
-
 # Generic because Weibull has no registered KL, so it scores bare tensors.
 _FittedT = TypeVar("_FittedT")
 
@@ -162,23 +141,6 @@ def assert_recovers(  # pylint: disable=too-many-arguments
                 f"{name} worst coordinate {worst:.4f} exceeds {ceiling}, so the "
                 "error is concentrated rather than spread"
             )
-
-
-def pareto_kl_divergence(fitted: Distribution, target: Distribution) -> ch.Tensor:
-    """Return KL between two Pareto distributions sharing a scale.
-
-    torch registers no Pareto KL. With a common scale the divergence depends
-    only on the tail indices: ``log(a1 / a2) + a2 / a1 - 1``.
-
-    Args:
-        fitted: First Pareto distribution.
-        target: Second Pareto distribution, with the same scale.
-
-    Returns:
-        Per-coordinate KL divergence.
-    """
-    first, second = fitted.alpha, target.alpha  # type: ignore[attr-defined]
-    return ch.log(first / second) + second / first - 1
 
 
 class _Family(NamedTuple):

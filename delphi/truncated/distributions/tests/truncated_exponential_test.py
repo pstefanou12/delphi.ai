@@ -283,3 +283,17 @@ def test_indistinguishable_pair():
             "scheduler": "fisher",
         },
     )
+
+
+def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(
+        distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
+    )
+    model = truncated_exponential.TruncatedExponential(
+        {"iterations": 10}, lambda z: z[:, 0] > 0.5, 1, sample.alpha
+    )
+    model.fit(sample.S)
+    # Rate 100 puts exp(-50) of its mass above 0.5.
+    with pytest.raises(ValueError, match="rejection sampling would stall"):
+        model.hessian(ch.Tensor([-100.0]))

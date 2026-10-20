@@ -12,6 +12,12 @@ from delphi.truncated.distributions.tests import helpers, truncation_sets
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
+def _moments(s: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
+    mean, var = s.mean(0), s.var(0)
+    common = mean * (1 - mean) / var - 1
+    return mean * common, (1 - mean) * common
+
+
 def _recovers(
     dims: int,
     first: ch.Tensor,
@@ -27,7 +33,7 @@ def _recovers(
         phi=phi,
         dims=dims,
         parameter=("a_", "b_"),
-        empirical=truncated_beta.untruncated_mle,
+        empirical=_moments,
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
@@ -152,7 +158,7 @@ def test_indistinguishable_pair():
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.75),
         dims=1,
         parameter=("a_", "b_"),
-        empirical=truncated_beta.untruncated_mle,
+        empirical=_moments,
         hyperparameters={
             "iterations": 2500,
             "trials": 1,

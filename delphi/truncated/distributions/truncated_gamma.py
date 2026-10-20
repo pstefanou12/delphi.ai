@@ -19,7 +19,7 @@ class TruncatedGamma(
     """Model for truncated Gamma distributions with known shape.
 
     Attributes:
-        concentration (ch.Tensor): Known shape, one per coordinate.
+        shape (ch.Tensor): Known shape, one per coordinate.
     """
 
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
@@ -30,7 +30,7 @@ class TruncatedGamma(
         hyperparameters: dict,
         phi: Callable,
         dims: int,
-        concentration: ch.Tensor,
+        shape: ch.Tensor,
         alpha: Optional[float] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedGamma.
@@ -39,20 +39,20 @@ class TruncatedGamma(
             hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
-            concentration: Known shape, one per coordinate.
+            shape: Known shape, one per coordinate.
             alpha: Survival probability lower bound.
         """
         super().__init__(hyperparameters, phi, dims, alpha)
-        self.concentration = concentration
+        self.shape = shape
 
     def _build_distribution(self):
         """Bind the known shape into the distribution."""
-        return partial(gamma.Gamma, self.concentration), gamma.Gamma.calc_suff_stat
+        return partial(gamma.Gamma, self.shape), gamma.Gamma.calc_suff_stat
 
     def _calc_emp_model(self):
         """Initialize theta at the empirical rate, the MLE ``shape / mean(x)``."""
         dataset_s = self.train_loader_.dataset.S
-        self.emp_theta = gamma.Gamma.to_natural(self.concentration / dataset_s.mean(0))
+        self.emp_theta = gamma.Gamma.to_natural(self.shape / dataset_s.mean(0))
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):

@@ -14,7 +14,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 def _recovers(
     dims: int,
-    concentration: ch.Tensor,
+    shape: ch.Tensor,
     rate: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: dict,
@@ -23,23 +23,23 @@ def _recovers(
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_gamma.TruncatedGamma,
-        target=distributions.Gamma(concentration, rate),
+        target=distributions.Gamma(shape, rate),
         phi=phi,
         dims=dims,
         parameter="rate_",
-        empirical=lambda s: concentration / s.mean(0),
+        empirical=lambda s: shape / s.mean(0),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
-        model_args=(concentration,),
-        rebuild=functools.partial(distributions.Gamma, concentration),
+        model_args=(shape,),
+        rebuild=functools.partial(distributions.Gamma, shape),
     )
 
 
 def test_one_dimension():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
+        shape=ch.Tensor([2.0]),
         rate=ch.Tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
         hyperparameters={
@@ -55,16 +55,16 @@ def test_one_dimension():
 
 
 def test_two_dimensions():
-    concentration, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
+    shape, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Gamma(concentration, rate),
+        distributions.Gamma(shape, rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 50.0),
     )
     _recovers(
         dims=2,
-        concentration=concentration,
+        shape=shape,
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={
@@ -80,15 +80,15 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    concentration, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
+    shape, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.Gamma(concentration, rate),
+        distributions.Gamma(shape, rate),
         bounds=(-25.0, 25.0),
     )
     _recovers(
         dims=2,
-        concentration=concentration,
+        shape=shape,
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={
@@ -106,7 +106,7 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
+        shape=ch.Tensor([2.0]),
         rate=ch.Tensor([1.0]),
         phi=truncation_sets.identity,
         hyperparameters={
@@ -125,7 +125,7 @@ def test_one_dimension_identity():
 def test_ten_dimensions_identity():
     _recovers(
         dims=10,
-        concentration=ch.linspace(1.5, 3.0, 10),
+        shape=ch.linspace(1.5, 3.0, 10),
         rate=ch.linspace(0.5, 2.0, 10),
         phi=truncation_sets.identity,
         hyperparameters={
@@ -142,16 +142,16 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    concentration, rate = ch.Tensor([2.0]), ch.Tensor([1.0])
+    shape, rate = ch.Tensor([2.0]), ch.Tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Gamma(concentration, rate),
+        distributions.Gamma(shape, rate),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
     _recovers(
         dims=1,
-        concentration=concentration,
+        shape=shape,
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={
@@ -167,16 +167,16 @@ def test_one_dimension_small_mass():
 
 
 def test_ten_dimensions_sum_threshold():
-    concentration, rate = ch.linspace(1.5, 3.0, 10), ch.linspace(0.5, 2.0, 10)
+    shape, rate = ch.linspace(1.5, 3.0, 10), ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Gamma(concentration, rate),
+        distributions.Gamma(shape, rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
     _recovers(
         dims=10,
-        concentration=concentration,
+        shape=shape,
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={
