@@ -36,6 +36,7 @@ class TruncatedMultivariateNormal(
     independent_coordinates = False
 
     defaults = configs.TruncatedMultivariateNormalConfig
+    estimate_suffixes = ("loc_", "covariance_matrix_")
 
     def __init__(
         self,

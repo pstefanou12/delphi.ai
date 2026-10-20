@@ -23,6 +23,7 @@ class TruncatedWeibull(
     """
 
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    estimate_suffixes = ("lambda_",)
 
     def __init__(
         self,

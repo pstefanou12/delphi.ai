@@ -18,6 +18,7 @@ class TruncatedBooleanProduct(
 
     dist = boolean_product.BooleanProduct
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    estimate_suffixes = ("p_",)
 
     def __init__(
         self,

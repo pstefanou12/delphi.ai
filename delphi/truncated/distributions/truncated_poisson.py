@@ -18,6 +18,7 @@ class TruncatedPoisson(
 
     dist = poisson.Poisson
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    estimate_suffixes = ("lambda_",)
 
     def __init__(
         self,

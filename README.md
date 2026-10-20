@@ -105,6 +105,15 @@ moving average), `final_` (the last iterate) and `best_` (the iterate with the
 lowest validation loss). The averaged iterate is the one the convergence
 guarantee is about; `best_` is the least reliable of the four in our tests.
 
+**`model.summary()` reports how the fit went**: the data and survival mass,
+the optimizer, scheduler, steps, stop reason and final losses, all four
+estimates, how often the projection fired, the fitted model's own mass on the
+truncation set (a mismatch with `alpha` means the fit has gone wrong) and the
+curvature at the estimate. It has no standard errors or p-values: neither
+analysis this follows gives an asymptotic distribution for the estimate.
+Estimates are reported in the coordinates the model was fit in, so after
+standardizing, map them back as in the Quickstart.
+
 **Hyperparameters are a plain dict**, validated against a pydantic config.
 Keys the config does not declare are ignored with a warning, so a misspelled
 key is audible rather than silent.

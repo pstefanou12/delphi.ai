@@ -16,6 +16,8 @@ class TruncatedNormalKnownVariance(
 ):
     """Truncated normal distribution with known variance."""
 
+    estimate_suffixes = ("loc_",)
+
     def __init__(
         self,
         hyperparameters: dict,
