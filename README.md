@@ -162,7 +162,8 @@ logging.getLogger("delphi.trainer").setLevel(logging.WARNING)  # per module
 
 ```bash
 just check                 # ruff format, ruff check, pylint --errors-only, mypy
-just test                  # the full suite
+just test                  # tests affected by your changes; all of them in CI
+just test --testmon-noselect   # the full suite
 just test -m "not slow"    # skip fits over a minute
 just test <path> --log-cli-level=INFO   # show training logs
 just cov                   # branch coverage of delphi/

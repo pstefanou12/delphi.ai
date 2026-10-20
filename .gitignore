@@ -121,3 +121,6 @@ super.code-workspace
 # Claude
 CLAUDE.md
 .Claude
+
+# pytest-testmon's record of what each test executes.
+.testmondata*
