@@ -5,7 +5,11 @@ import pytest
 import torch as ch
 from torch import distributions
 
-from delphi.truncated.distributions import summary, truncated_exponential
+from delphi.truncated.distributions import (
+    summary,
+    truncated_exponential,
+    truncated_exponential_family_distributions,
+)
 from delphi.truncated.distributions.tests import helpers
 
 
@@ -51,7 +55,10 @@ def test_raises_before_fit():
 def test_skips_curvature_when_mass_is_too_small(monkeypatch):
     # A threshold above any possible mass forces the branch that must not
     # call the rejection sampler.
-    monkeypatch.setattr(summary, "MIN_MASS_FOR_HESSIAN", 2.0)
-    report = _fitted().summary()
+    model = _fitted()
+    monkeypatch.setattr(
+        truncated_exponential_family_distributions, "MIN_MASS_FOR_HESSIAN", 2.0
+    )
+    report = model.summary()
     assert "skipped" in report
     assert "condition number" not in report

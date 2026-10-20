@@ -22,6 +22,14 @@ DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distributio
 SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 
 
+# Below this the rejection sampler behind the Hessian could need millions of
+# draws per accepted sample, so hessian() refuses rather than risk a hang.
+MIN_MASS_FOR_HESSIAN = 1e-4
+
+# Draws backing mass_on_set.
+MASS_DRAWS = 20000
+
+
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
     distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
 ):
@@ -253,15 +261,42 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
         Returns:
             ``Cov[T(z)]`` over the truncated distribution, shaped (k, k).
+
+        Raises:
+            ValueError: If theta puts less than ``MIN_MASS_FOR_HESSIAN`` of
+                its mass on the truncation set.
         """
+        theta = self.emp_theta if theta is None else theta
+        mass = self.mass_on_set(theta)
+        if mass < MIN_MASS_FOR_HESSIAN:
+            raise ValueError(
+                f"theta puts {mass:.2e} of its mass on the truncation set, "
+                f"below {MIN_MASS_FOR_HESSIAN:g}; rejection sampling would stall."
+            )
         return losses.TruncatedExponentialFamilyDistributionNLL.hessian(
-            self.emp_theta if theta is None else theta,
+            theta,
             self.phi,
             self.dims,
             self.dist,
             self.calc_suff_stat,
             self.hyperparameters.num_samples,
         )
+
+    def mass_on_set(self, theta: ch.Tensor) -> float:
+        """Return the mass theta's distribution puts on the truncation set.
+
+        Plain Monte Carlo rather than the rejection sampler, so a theta with
+        almost no mass there returns a small number instead of stalling.
+
+        Args:
+            theta: Natural parameter to evaluate.
+
+        Returns:
+            Estimated probability of the truncation set.
+        """
+        with ch.no_grad():
+            samples = self.dist(theta, self.dims).sample([MASS_DRAWS])
+            return float(self.phi(samples.view(MASS_DRAWS, -1)).float().mean())
 
     def _initial_radius(self) -> float:
         """Return the NLL budget above the empirical initialization.

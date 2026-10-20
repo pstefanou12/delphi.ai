@@ -344,11 +344,15 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             kwargs.setdefault("max_lr", self.required_optimizer.param_groups[0]["lr"])
             kwargs["cycle_momentum"] = False
         elif scheduler_type is constants.SchedulerType.FISHER:
+            supplied = kwargs.keys() & {"mu", "smoothness"}
             # Skip the sampling round when the caller supplied both.
-            if kwargs.keys() < {"mu", "smoothness"}:
+            if supplied != {"mu", "smoothness"}:
                 mu, smoothness = self._hessian_spectrum()
                 kwargs.setdefault("mu", mu)
                 kwargs.setdefault("smoothness", smoothness)
+            # A constant the caller fixed is never overwritten by a refresh.
+            if not supplied:
+                kwargs["curvature"] = lambda: self._hessian_spectrum(current=True)
 
         return target(self.required_optimizer, **kwargs)
 
@@ -372,17 +376,20 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             )
         return horizon
 
-    def _hessian_spectrum(self) -> tuple[float, float]:
+    def _hessian_spectrum(self, current: bool = False) -> tuple[float, float]:
         """Return the curvature constants FisherLR decays by.
+
+        Args:
+            current: Measure at the current iterate rather than at the
+                model's default point, its initialization.
 
         Returns:
             Tuple of (mu, smoothness) from this model's Hessian.
 
         Raises:
             NotImplementedError: If the model cannot supply a Hessian.
+            ValueError: If the estimate has no positive curvature.
         """
-        # Once per fit: both papers state these as bounds over the feasible
-        # set, not per-iteration quantities.
         if not hasattr(self, "hessian"):
             raise NotImplementedError(
                 f"{type(self).__name__} does not implement hessian(), which "
@@ -390,9 +397,10 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 "set fisher_mu and fisher_smoothness explicitly instead."
             )
         # nn.Module.__getattr__ types every attribute as a Tensor.
-        hessian = cast(Callable[[], ch.Tensor], getattr(self, "hessian"))
+        hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))
+        estimate = hessian(getattr(self, "theta").detach()) if current else hessian()
         return fisher.FisherLR.spectrum(
-            hessian(), getattr(self, "independent_coordinates", True)
+            estimate, getattr(self, "independent_coordinates", True)
         )
 
     def _with_warmup(
