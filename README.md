@@ -56,6 +56,11 @@ negative log-likelihood. All live in `delphi.truncated.distributions`.
 | `TruncatedGamma` | [`truncated_gamma`](delphi/truncated/distributions/truncated_gamma.py) | |
 | `TruncatedPareto` | [`truncated_pareto`](delphi/truncated/distributions/truncated_pareto.py) | |
 | `TruncatedBeta` | [`truncated_beta`](delphi/truncated/distributions/truncated_beta.py) | |
+| `TruncatedLogNormal` | [`truncated_log_normal`](delphi/truncated/distributions/truncated_log_normal.py) | |
+| `TruncatedBinomial` | [`truncated_binomial`](delphi/truncated/distributions/truncated_binomial.py) | |
+| `TruncatedGeometric` | [`truncated_geometric`](delphi/truncated/distributions/truncated_geometric.py) | |
+| `TruncatedNegativeBinomial` | [`truncated_negative_binomial`](delphi/truncated/distributions/truncated_negative_binomial.py) | |
+| `TruncatedLaplace` | [`truncated_laplace`](delphi/truncated/distributions/truncated_laplace.py) | |
 
 ### Quickstart
 
