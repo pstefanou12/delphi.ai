@@ -128,10 +128,21 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("delphi.trainer").setLevel(logging.WARNING)  # per module
 ```
 
+## Install
+
+```bash
+git clone https://github.com/pstefanou12/delphi.ai.git
+cd delphi.ai
+just install    # poetry install --with dev
+just hooks      # pre-push hooks running just check
+```
+
+Requires [Poetry](https://python-poetry.org) and
+[`just`](https://github.com/casey/just).
+
 ## Development
 
 ```bash
-poetry install --with dev
 just check                 # ruff format, ruff check, pylint --errors-only, mypy
 just test                  # the full suite
 just test -m "not slow"    # skip fits over a minute

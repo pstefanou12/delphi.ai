@@ -94,8 +94,6 @@ class TruncatedModel(Protocol):
         """Fit the model to truncated data."""
 
 
-# The best iterate is left out: it is chosen by a validation
-# loss carrying Monte Carlo noise, and no guarantee covers it.
 TOLERANCES = {"ema": 1e-1, "avg": 0.15}
 
 # With nothing truncated the procedure starts at the MLE and should stay
