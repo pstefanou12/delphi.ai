@@ -11,6 +11,14 @@ from torch.distributions import Distribution
 _MIN_ACCEPTANCE_RATE = 1e-3
 _MAX_BLOCK = 100
 
+# Below this acceptance rate the sampler gives up: a distribution putting so
+# little mass on the set would otherwise run for hours instead of failing.
+MIN_ACCEPTANCE = 1e-4
+
+
+class SamplingBudgetExceeded(ValueError):
+    """Raised when rejection sampling accepts too rarely to finish."""
+
 
 def rejection_sample(
     dist: Distribution, phi: Callable, num_samples: int
@@ -31,7 +39,12 @@ def rejection_sample(
     Returns:
         Tuple of (samples, survival mass), where the mass estimates
         ``P(x in S)`` under dist.
+
+    Raises:
+        SamplingBudgetExceeded: If ``num_samples / MIN_ACCEPTANCE`` draws
+            pass without collecting ``num_samples``.
     """
+    budget = num_samples / MIN_ACCEPTANCE
     accepted_samples = []
     num_sampled = 0
     num_accepted = 0
@@ -42,6 +55,12 @@ def rejection_sample(
         accepted_samples.append(accepted)
         num_accepted += accepted.size(0)
         num_sampled += block
+        if num_accepted < num_samples and num_sampled >= budget:
+            raise SamplingBudgetExceeded(
+                f"accepted {num_accepted} of {num_sampled} draws, a rate of "
+                f"{num_accepted / num_sampled:.2e}, below {MIN_ACCEPTANCE:g}: "
+                "the distribution puts almost no mass on the truncation set."
+            )
         if num_accepted < num_samples:
             rate = max(num_accepted / num_sampled, _MIN_ACCEPTANCE_RATE)
             block = min(

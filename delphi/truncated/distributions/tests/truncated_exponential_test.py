@@ -295,5 +295,5 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     )
     model.fit(sample.S)
     # Rate 100 puts exp(-50) of its mass above 0.5.
-    with pytest.raises(ValueError, match="rejection sampling would stall"):
+    with pytest.raises(ValueError, match="almost no mass on the truncation set"):
         model.hessian(ch.Tensor([-100.0]))
