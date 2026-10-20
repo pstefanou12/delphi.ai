@@ -5,6 +5,7 @@ import abc
 from collections.abc import Callable
 import logging
 import math
+import time
 from typing import ClassVar, Generic, Optional
 
 import torch as ch
@@ -12,7 +13,7 @@ from torch import distributions as torch_distributions
 import torch.utils.data
 
 from delphi import configs, trainer
-from delphi.truncated.distributions import distributions, losses
+from delphi.truncated.distributions import distributions, losses, summary
 from delphi.utils import datasets
 
 # Called as dist(theta, dims) in losses.py on every step.
@@ -59,6 +60,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # A type, not a Callable: mypy reads a callable class attribute as a
     # method and drops the first argument.
     dist: ClassVar[Optional[type[torch_distributions.Distribution]]] = None
+
+    # Suffixes of the canonical estimates, so that f"avg_{suffix}" names
+    # one. Read by summary().
+    estimate_suffixes: ClassVar[tuple[str, ...]] = ()
 
     def __init__(
         self,
@@ -110,6 +115,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.trainer: Optional[trainer.Trainer] = None
         self.prev_theta: Optional[ch.Tensor] = None
         self.prev_loss: Optional[ch.Tensor] = None
+        self.n_samples_: Optional[int] = None
+        self.steps_: int = 0
+        self.projections_: int = 0
+        self.projection_distance_: float = 0.0
+        self.fit_seconds_: Optional[float] = None
         self.emp_theta: Optional[ch.Tensor] = None
         self.nll_init: Optional[ch.Tensor] = None
 
@@ -150,6 +160,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         )
 
         self.prev_best_loss = None
+        self.n_samples_ = S.size(0)
+        self.steps_, self.projections_, self.projection_distance_ = 0, 0, 0.0
+        started = time.perf_counter()
         self.radius_history = []
         self.loss_history = []
         self._calc_emp_model()
@@ -165,6 +178,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
             self.trainer = trainer.Trainer(self, self.hyperparameters)
             self.trainer.train_model(self.train_loader_, self.val_loader_)
+            self.steps_ += self.trainer.iterations
 
             current_loss = self.trainer.best_loss
             self.radius_history.append(self.radius)
@@ -206,6 +220,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 f"loss improved by: {self.prev_best_loss - current_loss:.6e}"
             )
 
+        self.fit_seconds_ = time.perf_counter() - started
         return self
 
     def _build_distribution(self) -> tuple[DistributionFactory, SufficientStatistic]:
@@ -358,7 +373,26 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 lambda_lo = lambda_mid
             else:
                 lambda_hi = lambda_mid
-        return (1.0 - lambda_lo) * emp + lambda_lo * theta.detach()
+        projected = (1.0 - lambda_lo) * emp + lambda_lo * theta.detach()
+        self.projections_ += 1
+        self.projection_distance_ += float((projected - theta.detach()).norm())
+        return projected
+
+    def summary(self) -> str:
+        """Return a plain-text report on how the fit went.
+
+        Covers the data, the optimization, the estimates, the fitted model's
+        own mass on the truncation set and the curvature at the estimate.
+        There are no standard errors or p-values: neither analysis this
+        follows gives an asymptotic distribution for the estimate.
+
+        Returns:
+            The report, ready to print.
+
+        Raises:
+            RuntimeError: If called before fit.
+        """
+        return summary.render(self)
 
     def forward(self, x):  # pylint: disable=unused-argument
         """Return the current theta parameter (input is unused).

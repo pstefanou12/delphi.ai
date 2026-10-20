@@ -23,6 +23,7 @@ class TruncatedMultivariateNormalKnownCovariance(
     """
 
     defaults = configs.TruncatedMultivariateNormalConfig
+    estimate_suffixes = ("loc_",)
 
     def __init__(
         self,

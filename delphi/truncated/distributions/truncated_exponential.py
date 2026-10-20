@@ -19,6 +19,7 @@ class TruncatedExponential(
 
     dist = exponential.Exponential
     defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    estimate_suffixes = ("lambda_",)
 
     def __init__(
         self,

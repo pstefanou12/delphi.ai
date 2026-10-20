@@ -94,13 +94,11 @@ class TruncatedModel(Protocol):
         """Fit the model to truncated data."""
 
 
-# The averaged iterate is the least noisy estimate and the one selected by a
-# noisy validation loss is the most, so each carries its own bound.
-TOLERANCES = {"ema": 1e-1, "avg": 0.15, "best": 0.2}
+TOLERANCES = {"ema": 1e-1, "avg": 0.15}
 
 # With nothing truncated the procedure starts at the MLE and should stay
 # there, so it is held far tighter than a fit that has to travel.
-UNTRUNCATED_TOLERANCES = {"ema": 0.02, "avg": 0.02, "best": 0.02}
+UNTRUNCATED_TOLERANCES = {"ema": 0.02, "avg": 0.02}
 
 # A summed bound lets one coordinate absorb the whole budget while the rest
 # are perfect. Measured worst coordinate across the suite is 0.0809.

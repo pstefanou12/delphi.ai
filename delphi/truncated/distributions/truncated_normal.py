@@ -10,6 +10,8 @@ from delphi.truncated.distributions import truncated_multivariate_normal
 class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal):
     """Truncated normal distribution with unknown variance."""
 
+    estimate_suffixes = ("loc_", "variance_")
+
     def __init__(
         self,
         hyperparameters: dict,

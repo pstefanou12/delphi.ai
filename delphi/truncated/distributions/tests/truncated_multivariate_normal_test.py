@@ -196,8 +196,7 @@ def test_ten_dimensions_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            # At 10 the validation-selected iterate drifts past 0.02.
-            "batch_size": 100,
+            "batch_size": 10,
             "num_samples": 10000,
             "optimizer": "sgd",
             "lr": 1e-2,
