@@ -107,8 +107,6 @@ def test_five_dimensions_random_polytope():
 
 
 def test_one_dimension_identity():
-    # phi admits everything, so the procedure should reduce to the
-    # untruncated MLE and the naive estimate is the right answer.
     _recovers(
         dims=1,
         probability=ch.Tensor([0.4]),
@@ -116,7 +114,7 @@ def test_one_dimension_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 100,
+            "batch_size": 10,
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
@@ -134,7 +132,7 @@ def test_ten_dimensions_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 100,
+            "batch_size": 10,
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,

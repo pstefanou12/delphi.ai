@@ -173,8 +173,6 @@ def test_two_dimensions_random_disc_union():
 
 
 def test_one_dimension_identity():
-    # phi admits everything, so the procedure should reduce to the
-    # untruncated MLE and the naive estimate is the right answer.
     _recovers(
         dims=1,
         concentration=ch.Tensor([2.0]),
@@ -183,7 +181,7 @@ def test_one_dimension_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
-            "batch_size": 100,
+            "batch_size": 10,
             "num_samples": 1000,
             "optimizer": "sgd",
             "lr": 1e-2,
@@ -202,6 +200,7 @@ def test_ten_dimensions_identity():
         hyperparameters={
             "iterations": 1500,
             "trials": 1,
+            # At 10 the validation-selected iterate drifts past 0.02.
             "batch_size": 100,
             "num_samples": 1000,
             "optimizer": "sgd",
