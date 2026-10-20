@@ -181,7 +181,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     dims: int,
     parameter: Union[str, tuple[str, ...]],
     empirical: Callable[[ch.Tensor], Any],
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     dataset_size: int = 10000,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
@@ -198,7 +198,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters, phi, dims, alpha)``.
+            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle.
         dims: Number of dimensions.
@@ -223,7 +223,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
     args = (sample.alpha,) if pass_alpha else ()
-    truncated = model_class(hyperparameters, phi, dims, *model_args, *args)
+    truncated = model_class(hyperparameters or {}, phi, dims, *model_args, *args)
     truncated.fit(sample.S)
 
     family = _family(target, parameter, rebuild)
@@ -301,7 +301,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     dims: int,
     parameter: Union[str, tuple[str, ...]],
     empirical: Callable[[ch.Tensor], Any],
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     dataset_size: int = 10000,
     model_args: tuple = (),
     rebuild: Optional[Callable[..., Distribution]] = None,
@@ -315,7 +315,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters, phi, dims, alpha)``.
+            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
         targets: The two untruncated distributions.
         phi: The one truncation set both are cut to.
         dims: Number of dimensions.
@@ -335,7 +335,9 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     for target in targets:
         ch.manual_seed(0)
         sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
-        truncated = model_class(hyperparameters, phi, dims, *model_args, sample.alpha)
+        truncated = model_class(
+            hyperparameters or {}, phi, dims, *model_args, sample.alpha
+        )
         truncated.fit(sample.S)
         fits.append(truncated)
         naive.append(family.naive(empirical(sample.S)))

@@ -22,7 +22,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     covariance_matrix: ch.Tensor,
     phi: helpers.Oracle,
     dataset_size: int,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     tolerances: Optional[dict[str, float]] = None,
@@ -46,7 +46,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
     args = (alpha,) if pass_alpha else ()
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        hyperparameters, phi, dims, covariance_matrix, *args
+        hyperparameters or {}, phi, dims, covariance_matrix, *args
     )
     truncated.fit(S)
 
@@ -69,13 +69,7 @@ def test_two_dimensions():
         covariance_matrix=2 * ch.eye(2),
         phi=lambda x: x[:, 0] > 0,
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 10000,
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1, "num_samples": 10000},
     )
 
 
@@ -85,13 +79,7 @@ def test_two_dimensions_crescent():
         covariance_matrix=2 * ch.eye(2),
         phi=truncation_sets.crescent(2.0, 6.0, 0.0, math.pi),
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -101,13 +89,7 @@ def test_two_dimensions_triangle():
         covariance_matrix=2 * ch.eye(2),
         phi=truncation_sets.triangle([[0.0, 0.0], [4.0, 1.0], [1.0, 4.0]]),
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -123,13 +105,7 @@ def test_five_dimensions_random_half_space():
         covariance_matrix=covariance_matrix,
         phi=calibrated.phi,
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -157,16 +133,9 @@ def test_ten_dimensions():
     def phi_standardised(x):
         return x[:, 0] > (0 - emp_loc[0, 0]) / true_scale[0]
 
-    hyperparameters = {
-        "epochs": 2,
-        "trials": 1,
-        "batch_size": 1,
-        "num_samples": 1000,
-        "optimizer": "sgd",
-        "lr": 1e-2,
-    }
+    hyperparameters = {"epochs": 2, "batch_size": 1}
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        hyperparameters, phi_standardised, dims, scaled_covariance, alpha
+        hyperparameters or {}, phi_standardised, dims, scaled_covariance, alpha
     )
     truncated.fit((S - emp_loc) / true_scale)
 
@@ -186,14 +155,7 @@ def test_one_dimension_identity():
         covariance_matrix=2 * ch.eye(1),
         phi=truncation_sets.identity,
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 10000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -205,14 +167,7 @@ def test_ten_dimensions_identity():
         covariance_matrix=2 * ch.eye(10),
         phi=truncation_sets.identity,
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 10000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -233,14 +188,7 @@ def test_one_dimension_small_mass():
         covariance_matrix=covariance_matrix,
         phi=calibrated.phi,
         dataset_size=10000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 10000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"batch_size": 1, "num_samples": 10000, "lr": 1e-1},
     )
 
 
@@ -260,14 +208,7 @@ def test_ten_dimensions_sum_threshold():
         covariance_matrix=covariance_matrix,
         phi=calibrated.phi,
         dataset_size=5000,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 10000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"batch_size": 1, "num_samples": 10000, "lr": 1e-1},
         # The validation-selected iterate measures 0.5327 here while the two
         # averaged ones hold at 0.0190 and 0.0192, so this set scores only
         # those two.

@@ -25,6 +25,10 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         relative_loss_tol: Relative loss improvement threshold between phases.
         loss_increase_tol: Loss increase threshold for detecting overshoot.
         project: Enable per-step sublevel-set projection.
+
+    The training defaults are the values the test suite settled on across
+    families: 2500 iterations at a learning rate of 1e-2 under the Fisher
+    schedule, with 1000 rejection samples per gradient step.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore")
@@ -32,13 +36,16 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     batch_size: int = 10
     tol: float = pydantic.Field(default=1e-1, ge=0.0)
     record_params_every: int = pydantic.Field(default=1, ge=1)
-    epochs: Optional[int] = pydantic.Field(default=1, ge=1)
+    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
+    iterations: Optional[int] = pydantic.Field(default=2500, ge=1)
+    lr: float = pydantic.Field(default=1e-2, gt=0.0)
+    scheduler: Optional[str] = "fisher"
 
     eps: float = pydantic.Field(default=1e-5, gt=0.0)
     min_radius: float = pydantic.Field(default=3.0, ge=0.0)
     max_radius: float = pydantic.Field(default=10.0, ge=0.0)
     rate: float = pydantic.Field(default=1.1, gt=1.0)
-    num_samples: int = pydantic.Field(default=10000, ge=1)
+    num_samples: int = pydantic.Field(default=1000, ge=1)
     max_phases: int = pydantic.Field(default=1, ge=1)
     loss_convergence_tol: float = pydantic.Field(default=1e-3, ge=0.0)
     relative_loss_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
@@ -59,15 +66,14 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     def resolve_epochs_iterations(
         self,
     ) -> "TruncatedExponentialFamilyDistributionConfig":
-        """Clear the default epochs when iterations is explicitly provided.
+        """Clear the default iterations when epochs is explicitly provided.
 
-        The trainer uses exactly one stopping criterion. When the user
-        supplies iterations, the per-phase epochs default is cleared so
-        the trainer stops on iterations instead.
+        The trainer uses exactly one stopping criterion, so a caller choosing
+        epochs gets epochs rather than both.
         """
         if (
-            "iterations" in self.model_fields_set
-            and "epochs" not in self.model_fields_set
+            "epochs" in self.model_fields_set
+            and "iterations" not in self.model_fields_set
         ):
-            object.__setattr__(self, "epochs", None)
+            object.__setattr__(self, "iterations", None)
         return self

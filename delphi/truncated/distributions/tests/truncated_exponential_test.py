@@ -2,6 +2,7 @@
 """Tests for the truncated exponential distribution."""
 
 import functools
+from typing import Optional
 
 import pytest
 import torch as ch
@@ -17,7 +18,7 @@ def _recovers(
     dims: int,
     rate: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
@@ -39,14 +40,7 @@ def test_one_dimension():
         dims=1,
         rate=ch.Tensor([1.0]),
         phi=lambda z: z > 1,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -61,14 +55,6 @@ def test_two_dimensions():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -83,14 +69,7 @@ def test_twenty_dimensions():
         dims=20,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"iterations": 1500, "lr": 1e-1},
     )
 
 
@@ -105,14 +84,6 @@ def test_two_dimensions_random_half_space():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -129,14 +100,7 @@ def test_two_dimensions_random_ellipsoid():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 5000,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"iterations": 5000, "lr": 1e-1},
     )
 
 
@@ -145,14 +109,7 @@ def test_one_dimension_identity():
         dims=1,
         rate=ch.Tensor([1.0]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -163,14 +120,7 @@ def test_ten_dimensions_identity():
         dims=10,
         rate=ch.linspace(1.0, 2.0, 10),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -190,14 +140,7 @@ def test_ten_dimensions_sum_threshold():
         dims=10,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"lr": 1e-1},
     )
 
 
@@ -215,14 +158,6 @@ def test_one_dimension_small_mass():
         dims=1,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -239,21 +174,14 @@ def test_ten_dimensions_norm_threshold():
         dims=10,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"lr": 1e-1},
     )
 
 
 def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         truncated_exponential.TruncatedExponential(
-            {"iterations": 10, "trials": 1, "batch_size": 10},
+            {"iterations": 10},
             truncation_sets.identity,
             1,
             alpha=1.0,
@@ -273,15 +201,6 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -291,7 +210,10 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
         distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
     )
     model = truncated_exponential.TruncatedExponential(
-        {"iterations": 10}, lambda z: z[:, 0] > 0.5, 1, sample.alpha
+        {"iterations": 10},
+        lambda z: z[:, 0] > 0.5,
+        1,
+        sample.alpha,
     )
     model.fit(sample.S)
     # Rate 100 puts exp(-50) of its mass above 0.5.

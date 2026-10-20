@@ -2,6 +2,7 @@
 """Tests for the truncated gamma (known concentration) distribution."""
 
 import functools
+from typing import Optional
 
 import torch as ch
 from torch import distributions
@@ -17,7 +18,7 @@ def _recovers(
     concentration: ch.Tensor,
     rate: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
@@ -42,15 +43,6 @@ def test_one_dimension():
         concentration=ch.Tensor([2.0]),
         rate=ch.Tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -67,15 +59,6 @@ def test_two_dimensions():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -91,15 +74,6 @@ def test_two_dimensions_random_half_space():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -109,14 +83,7 @@ def test_one_dimension_identity():
         concentration=ch.Tensor([2.0]),
         rate=ch.Tensor([1.0]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -128,14 +95,7 @@ def test_ten_dimensions_identity():
         concentration=ch.linspace(1.5, 3.0, 10),
         rate=ch.linspace(0.5, 2.0, 10),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -154,15 +114,6 @@ def test_one_dimension_small_mass():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -179,15 +130,6 @@ def test_ten_dimensions_sum_threshold():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
 
 
@@ -202,15 +144,6 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="rate_",
         empirical=lambda s: 2.0 / s.mean(0),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
         model_args=(ch.Tensor([2.0]),),
         rebuild=functools.partial(distributions.Gamma, ch.Tensor([2.0])),
     )

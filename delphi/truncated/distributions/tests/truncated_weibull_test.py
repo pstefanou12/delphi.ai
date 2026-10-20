@@ -2,6 +2,7 @@
 """Tests for the truncated Weibull distribution."""
 
 import functools
+from typing import Optional
 
 import torch as ch
 from torch import distributions
@@ -38,7 +39,7 @@ def _recovers(
     concentration: ch.Tensor,
     scale: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
@@ -64,7 +65,7 @@ def _recovers(
     )
     args = (alpha,) if pass_alpha else ()
     truncated = truncated_weibull.TruncatedWeibull(
-        hyperparameters, phi, dims, concentration, *args
+        hyperparameters or {}, phi, dims, concentration, *args
     )
     truncated.fit(S)
 
@@ -83,14 +84,7 @@ def test_one_dimension():
         concentration=ch.Tensor([2.0]),
         scale=ch.Tensor([1.0]),
         phi=lambda z: z > 1.5,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500, "batch_size": 1},
     )
 
 
@@ -100,14 +94,6 @@ def test_two_dimensions():
         concentration=ch.Tensor([1.0, 1.0]),
         scale=ch.Tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -117,14 +103,7 @@ def test_two_dimensions_differing_shapes():
         concentration=ch.Tensor([2.0, 3.0]),
         scale=ch.Tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 100,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 100},
     )
 
 
@@ -134,14 +113,6 @@ def test_twenty_dimensions_differing_shapes():
         concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4),
         scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4),
         phi=lambda z: z[:, 0] > 1.0,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -157,14 +128,6 @@ def test_two_dimensions_random_half_space():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -180,14 +143,6 @@ def test_two_dimensions_random_disc_union():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -197,14 +152,7 @@ def test_one_dimension_identity():
         concentration=ch.Tensor([2.0]),
         scale=ch.Tensor([1.0]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -216,14 +164,7 @@ def test_ten_dimensions_identity():
         concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
         scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -244,14 +185,6 @@ def test_one_dimension_small_mass():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -271,15 +204,7 @@ def test_indistinguishable_pair():
             distributions.Weibull(scale, concentration), phi, 10000
         )
         truncated = truncated_weibull.TruncatedWeibull(
-            {
-                "iterations": 2500,
-                "trials": 1,
-                "batch_size": 10,
-                "num_samples": 1000,
-                "optimizer": "sgd",
-                "lr": 1e-2,
-                "scheduler": "fisher",
-            },
+            {},
             phi,
             1,
             concentration,

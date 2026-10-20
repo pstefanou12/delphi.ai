@@ -2,6 +2,7 @@
 """Tests for the truncated Poisson distribution."""
 
 import functools
+from typing import Optional
 
 import torch as ch
 from torch import distributions
@@ -16,7 +17,7 @@ def _recovers(
     dims: int,
     rate: ch.Tensor,
     phi: helpers.Oracle,
-    hyperparameters: dict,
+    hyperparameters: Optional[dict] = None,
     dataset_size: int = 10000,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
@@ -40,14 +41,7 @@ def test_one_dimension():
         dims=1,
         rate=ch.Tensor([1.0]),
         phi=lambda z: z > 1,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -65,14 +59,7 @@ def test_two_dimensions():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -88,14 +75,6 @@ def test_twenty_dimensions():
         dims=20,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -104,14 +83,7 @@ def test_two_dimensions_triangle():
         dims=2,
         rate=ch.Tensor([1.0, 2.0]),
         phi=truncation_sets.triangle([[-0.5, -0.5], [3.0, 0.5], [0.5, 3.0]]),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -126,14 +98,7 @@ def test_two_dimensions_random_half_space():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 1,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"batch_size": 1},
     )
 
 
@@ -148,14 +113,6 @@ def test_five_dimensions_random_polytope():
         dims=5,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
         dataset_size=5000,
     )
 
@@ -165,14 +122,7 @@ def test_one_dimension_identity():
         dims=1,
         rate=ch.Tensor([1.0]),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -183,14 +133,7 @@ def test_ten_dimensions_identity():
         dims=10,
         rate=ch.linspace(1.0, 3.0, 10),
         phi=truncation_sets.identity,
-        hyperparameters={
-            "iterations": 1500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
+        hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -210,14 +153,7 @@ def test_ten_dimensions_sum_threshold():
         dims=10,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-1,
-        },
+        hyperparameters={"lr": 1e-1},
     )
 
 
@@ -235,14 +171,6 @@ def test_one_dimension_small_mass():
         dims=1,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-        },
     )
 
 
@@ -259,13 +187,4 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="rate_",
         empirical=lambda s: s.mean(0),
-        hyperparameters={
-            "iterations": 2500,
-            "trials": 1,
-            "batch_size": 10,
-            "num_samples": 1000,
-            "optimizer": "sgd",
-            "lr": 1e-2,
-            "scheduler": "fisher",
-        },
     )
