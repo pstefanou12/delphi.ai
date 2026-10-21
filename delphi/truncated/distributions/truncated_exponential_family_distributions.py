@@ -26,11 +26,6 @@ SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 MASS_DRAWS = 20000
 
 
-def _admit_all(z: ch.Tensor) -> ch.Tensor:
-    """Return membership for every sample, the untruncated case."""
-    return ch.ones(z.size(0), dtype=ch.bool)
-
-
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
     distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
 ):
@@ -73,10 +68,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # Suffixes of the canonical estimates, so that f"avg_{suffix}" names
     # one. Read by summary().
     estimate_suffixes: ClassVar[tuple[str, ...]] = ()
-
-    # Set by a family whose MLE has no closed form: its _calc_emp_model gives
-    # a rough start, and _warm_start refines it to the untruncated MLE.
-    needs_warm_start: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -121,19 +112,19 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         # Attributes initialized during fit.
         self.train_loader_: Optional[torch.utils.data.DataLoader] = None
         self.val_loader_: Optional[torch.utils.data.DataLoader] = None
-        self.prev_best_loss: Optional[ch.Tensor] = None
         self.radius_history: Optional[list[float]] = None
         self.loss_history: Optional[list[ch.Tensor]] = None
         self.radius: Optional[float] = None
         self.trainer: Optional[trainer.Trainer] = None
-        self.prev_theta: Optional[ch.Tensor] = None
-        self.prev_loss: Optional[ch.Tensor] = None
         self.n_samples_: Optional[int] = None
         self.steps_: int = 0
         self.projections_: int = 0
         self.projection_distance_: float = 0.0
         self.fit_seconds_: Optional[float] = None
         self.emp_theta: Optional[ch.Tensor] = None
+        # The projection's anchor, set once the start point is final.
+        self.nll_init: Optional[float] = None
+        self._projections_before_phase = 0
         self.nll_init: Optional[ch.Tensor] = None
 
     def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
@@ -164,6 +155,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.hyperparameters.num_samples,
             self.hyperparameters.eps,
         ]
+        self.warm_start_criterion = losses.untruncated_exponential_family_nll
+        self.warm_start_criterion_params = [self.dims, self.dist]
+        self.warm_start_hessian = self._untruncated_hessian
 
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             self.hyperparameters,
@@ -172,99 +166,70 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             {"calc_suff_stat": self.calc_suff_stat},
         )
 
-        self.prev_best_loss = None
         self.n_samples_ = S.size(0)
         self.steps_, self.projections_, self.projection_distance_ = 0, 0, 0.0
+        self.nll_init = None
         started = time.perf_counter()
-        self.radius_history = []
-        self.loss_history = []
         self._calc_emp_model()
-        if self.needs_warm_start:
-            self._warm_start()
-        self.nll_init = self._compute_nll(self.emp_theta)
-        self.radius = self._initial_radius()
-
-        phase = 0
-        while phase < self.hyperparameters.max_phases:
-            phase += 1
-            self.logger.info(f"\n{'=' * 60}")
-            self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
-            self.logger.info(f"\n{'=' * 60}")
-
-            self.trainer = trainer.Trainer(self, self.hyperparameters)
-            self.trainer.train_model(self.train_loader_, self.val_loader_)
-            self.steps_ += self.trainer.iterations
-
-            current_loss = self.trainer.best_loss
-            self.radius_history.append(self.radius)
-            self.loss_history.append(current_loss)
-
-            self.best_params, self.best_loss = (
-                self.trainer.best_params,
-                self.trainer.best_loss,
-            )
-            self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
-            self.final_params, self.final_loss = (
-                self.trainer.final_params,
-                self.trainer.final_loss,
-            )
-            self.ema_params = self.trainer.ema_params
-            self.avg_params = self.trainer.avg_params
-
-            should_stop, reason = self._check_convergence()
-
-            if should_stop:
-                self.logger.info(f"\n{'=' * 60}")
-                self.logger.info(f"procedure converged: {reason}")
-                self.logger.info(
-                    f"final radius: {self.radius:.4f}, final loss: {current_loss:.6f}"
-                )
-                self.logger.info(f"total phases: {phase}")
-                self.logger.info(f"\n{'=' * 60}")
-                break
-
-            # Expand radius for next phase
-            self.prev_best_loss = current_loss
-            old_radius = self.radius
-            self.radius = min(
-                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
-            )
-
-            self.logger.info(
-                f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
-                f"loss improved by: {self.prev_best_loss - current_loss:.6e}"
-            )
-
+        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer.fit(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.trainer)
         self.fit_seconds_ = time.perf_counter() - started
         return self
 
-    def _warm_start(self) -> None:
-        """Refine the initialization to the untruncated MLE.
-
-        With phi admitting every sample, the truncated NLL is the untruncated
-        one, so the existing trainer solves for its minimizer: one routine for
-        every family whose MLE has no closed form. It runs before nll_init,
-        which anchors the projection, so the projection is off meanwhile.
-        """
-        saved = (self.phi, self.criterion_params, self.hyperparameters)
-        self.phi = _admit_all
-        self.criterion_params = [self.phi, *saved[1][1:]]
-        self.hyperparameters = saved[2].model_copy(
-            update={
-                "project": False,
-                "iterations": saved[2].warm_start_iterations,
-                "epochs": None,
-            }
-        )
-        try:
-            warm = trainer.Trainer(self, self.hyperparameters)
-            warm.train_model(self.train_loader_, self.val_loader_)
-            refined = warm.avg_params
-        finally:
-            self.phi, self.criterion_params, self.hyperparameters = saved
-        self.emp_theta = self._constraints(refined.detach().clone())
+    def warm_start_end_hook(self, result: trainer.RunResult) -> None:
+        """Start the procedure from the warm start's averaged iterate."""
+        if result.avg_params is None:
+            raise RuntimeError("the warm start recorded no iterates.")
+        self.emp_theta = self._constraints(result.avg_params.detach().clone())
         with ch.no_grad():
             self._write_theta(self.emp_theta)
+        self.logger.info(
+            f"warm start stopped on {result.stop_reason} after "
+            f"{result.iterations} iterations"
+        )
+
+    def pretrain_procedure_hook(self) -> None:
+        """Anchor the projection at the start point, with its first budget."""
+        self.nll_init = self._compute_nll(self.emp_theta)
+        self.radius = self._initial_radius()
+        self.radius_history = [self.radius]
+        self._projections_before_phase = self.projections_
+
+    def next_phase_hook(self, result: trainer.RunResult) -> bool:
+        """Widen the projection budget, unless it is already the right one.
+
+        With alpha known the budget is log(1 / alpha), whose sublevel set
+        holds the truth (Karatapanis et al., 2025), so there is no next phase.
+        Without it the budget is a guess, widened by ``rate`` up to
+        ``max_radius``, which bounds the number of phases. A budget the phase
+        never projected onto constrained nothing, so widening it would only
+        rerun the same fit.
+        """
+        if self.alpha is not None or self.radius >= self.hyperparameters.max_radius:
+            return False
+        if self.projections_ == self._projections_before_phase:
+            return False
+        self._projections_before_phase = self.projections_
+        previous = self.radius
+        self.radius = min(
+            self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
+        )
+        self.radius_history.append(self.radius)
+        self.logger.info(
+            f"widening the projection budget {previous:.4f} -> {self.radius:.4f} "
+            f"after best loss {float(result.best_loss):.6f}"
+        )
+        return True
+
+    def _adopt_results(self, procedure: trainer.Trainer) -> None:
+        """Take the estimates from the last phase, and totals over all phases."""
+        self.best_params, self.best_loss = procedure.best_params, procedure.best_loss
+        self.final_params = procedure.final_params
+        self.final_loss = procedure.final_loss
+        self.ema_params, self.avg_params = procedure.ema_params, procedure.avg_params
+        self.steps_ = sum(phase.iterations for phase in procedure.phases)
+        self.loss_history = [phase.best_loss for phase in procedure.phases]
 
     def _build_distribution(self) -> tuple[DistributionFactory, SufficientStatistic]:
         """Return the distribution factory and its sufficient statistic.
@@ -311,6 +276,28 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.hyperparameters.num_samples,
         )
 
+    def _untruncated_hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+        """Return the Hessian of the warm-start criterion, the untruncated NLL.
+
+        In natural parameters it is ``Cov[T(z)]`` under the untruncated
+        distribution, which autograd gives exactly from the training data.
+
+        Args:
+            theta: Point to evaluate at; defaults to the current iterate.
+
+        Returns:
+            The Hessian, shaped (k, k).
+        """
+        point = (self.theta if theta is None else theta).detach()
+        samples = self.train_loader_.dataset.S
+
+        def nll(candidate: ch.Tensor) -> ch.Tensor:
+            return losses.untruncated_exponential_family_nll(
+                candidate, samples, self.dims, self.dist
+            )
+
+        return ch.autograd.functional.hessian(nll, point)
+
     def mass_on_set(self, theta: ch.Tensor) -> float:
         """Return the mass theta's distribution puts on the truncation set.
 
@@ -339,44 +326,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         if self.alpha is not None:
             return math.log(1.0 / self.alpha)
         return self.hyperparameters.min_radius
-
-    def _check_convergence(self):
-        """Determine if the entire training procedure should stop.
-
-        Returns:
-            Tuple of (should_stop, reason) where should_stop is a bool and
-            reason is a string label for the convergence criterion, or None
-            if convergence has not been reached.
-        """
-        current_loss = self.trainer.best_loss
-
-        # Criterion 1: Reached maximum radius
-        if self.radius >= self.hyperparameters.max_radius:
-            return True, "max_radius_reached"
-
-        # Criterion 2: Loss improvement is negligible
-        if self.prev_best_loss is not None:
-            loss_improvement = self.prev_best_loss - current_loss
-
-            if abs(loss_improvement) < self.hyperparameters.loss_convergence_tol:
-                return True, f"loss_improvement_small (Δloss={loss_improvement:.6e})"
-
-            # Relative threshold
-            relative_improvement = abs(loss_improvement) / (
-                abs(self.prev_best_loss) + 1e-10
-            )
-            if relative_improvement < self.hyperparameters.relative_loss_tol:
-                return True, f"relative_improvement_small ({relative_improvement:.6e})"
-
-        # Criterion 3: Loss is increasing (suggests we've passed optimum)
-        if self.prev_best_loss is not None and current_loss > self.prev_best_loss:
-            if (
-                current_loss - self.prev_best_loss
-                > self.hyperparameters.loss_increase_tol
-            ):
-                return True, "loss_increasing"
-
-        return False, None
 
     @property
     def nll_threshold(self) -> float:
@@ -480,7 +429,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         """
         with ch.no_grad():
             self._write_theta(self._constraints(self.theta))
-            if self.hyperparameters.project:
+            # Before nll_init is set, as during a warm start, there is no
+            # sublevel set to project onto.
+            if self.hyperparameters.project and self.nll_init is not None:
                 proj_theta = self._project_onto_sublevel_set(self.theta)
                 self._write_theta(self._constraints(proj_theta))
 

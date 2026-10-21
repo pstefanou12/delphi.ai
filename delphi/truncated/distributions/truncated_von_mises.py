@@ -18,9 +18,8 @@ class TruncatedVonMises(
     """Model for truncated von Mises distributions."""
 
     dist = von_mises.VonMises
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("loc_", "concentration_")
-    needs_warm_start = True
     # Each coordinate's two natural parameters are coupled.
     independent_coordinates = False
 

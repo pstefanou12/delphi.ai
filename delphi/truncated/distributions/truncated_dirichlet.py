@@ -18,9 +18,8 @@ class TruncatedDirichlet(
     """Model for truncated Dirichlet distributions."""
 
     dist = dirichlet.Dirichlet
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("concentration_",)
-    needs_warm_start = True
     # The categories share one normalizer, so they are coupled.
     independent_coordinates = False
 

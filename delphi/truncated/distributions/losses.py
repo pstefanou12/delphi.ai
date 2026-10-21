@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Truncated NLL autograd functions for exponential family distributions."""
 
+from collections.abc import Callable
 import logging
 
 import torch as ch
@@ -103,6 +104,26 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
             # torch.cov returns a 0-d scalar for a single statistic, not a
             # 1 x 1 matrix.
             return ch.atleast_2d(calc_suff_stat(z).T.cov())
+
+
+def untruncated_exponential_family_nll(
+    theta: ch.Tensor, data: ch.Tensor, dims: int, dist: Callable
+) -> ch.Tensor:
+    """Return the untruncated NLL, exactly, through torch's own log_prob.
+
+    The warm-start criterion: it ignores the truncation, so it needs no
+    sampling, and autograd differentiates it.
+
+    Args:
+        theta: Natural parameters.
+        data: Batch whose first ``dims`` columns are the samples.
+        dims: Number of dimensions.
+        dist: Maps ``(theta, dims)`` to the family's distribution.
+
+    Returns:
+        The mean negative log-likelihood of the batch.
+    """
+    return -dist(theta, dims).log_prob(data[:, :dims]).mean()
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method

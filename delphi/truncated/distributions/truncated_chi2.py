@@ -18,9 +18,8 @@ class TruncatedChi2(
     """Model for truncated chi-squared distributions."""
 
     dist = chi2.Chi2
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("df_",)
-    needs_warm_start = True
 
     def __init__(
         self,

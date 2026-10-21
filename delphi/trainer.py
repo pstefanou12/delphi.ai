@@ -1,13 +1,14 @@
 # Author: pstefanou12@
 """Module used for training models."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import copy
+import dataclasses
 import logging
 import os
 import random
 from time import time
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 from cox.store import Store
 import numpy as np
@@ -21,6 +22,28 @@ from delphi.delphi import delphi
 from delphi.utils import constants as consts
 from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
 from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
+
+
+@dataclasses.dataclass(frozen=True)
+class RunResult:  # pylint: disable=too-many-instance-attributes
+    """Everything one training run produced.
+
+    A procedure's warm start and each of its phases is one run; the model's
+    hooks receive this record to decide what to adopt and what comes next.
+    """
+
+    best_params: Optional[ch.Tensor]
+    final_params: Optional[ch.Tensor]
+    ema_params: Optional[ch.Tensor]
+    avg_params: Optional[ch.Tensor]
+    best_loss: Optional[ch.Tensor]
+    final_loss: Optional[ch.Tensor]
+    train_losses: ch.Tensor
+    val_losses: ch.Tensor
+    grad_norms: ch.Tensor
+    iterations: int
+    epochs: int
+    stop_reason: Optional[StopReason]
 
 
 class Trainer:  # pylint: disable=too-many-instance-attributes
@@ -44,6 +67,21 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.logger: logging.Logger = logging.getLogger(__name__)
         self.store: Optional[Store] = store
 
+        # The criterion of the stage being trained, or None for the model's own.
+        self._stage_criterion: Optional[tuple[Callable, list]] = None
+        self._stage_hessian: Optional[Callable[..., ch.Tensor]] = None
+        self.result: Optional[RunResult] = None
+        self.warm_start_result: Optional[RunResult] = None
+        self.phases: list[RunResult] = []
+        self.procedure_stop_reason: Optional[str] = None
+        self._reset_run_state()
+
+    def _reset_run_state(self) -> None:
+        """Clear the state of one run, so the trainer can run again.
+
+        ``train_model`` stacks its histories into tensors when it finishes, so
+        a warm start or a further phase needs this first.
+        """
         self.epoch: int = 0
         self.iterations: int = 0
         # Store procedure history in lists to avoid torch.cat overhead.
@@ -102,9 +140,13 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         return closure
 
+    def _stage_args(self) -> tuple:
+        """Return the stage's criterion arguments, or none for the model's own."""
+        return self._stage_criterion or ()
+
     def _forward_loss(self, batch) -> ch.Tensor:
         """Compute forward pass + regularization and return the scalar loss."""
-        loss = self.model.compute_loss(batch)
+        loss = self.model.compute_loss(batch, *self._stage_args())
         if loss.ndim > 0:
             loss = loss.sum()
         return loss + self.model.regularize(batch)
@@ -236,7 +278,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         Delegates to ``model.compute_val_loss(batch)`` so subclasses can
         override train and val loss separately.
         """
-        loss = self.model.compute_val_loss(batch)
+        loss = self.model.compute_val_loss(batch, *self._stage_args())
         if loss.ndim > 0:
             loss = loss.sum(0)
         self.val_losses.append(loss)
@@ -757,7 +799,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             except TypeError:
                 self.dataset_size = None  # IterableDataset has no len().
 
-        self.model.make_optimizer_and_schedule(checkpoint)
+        self.model.make_optimizer_and_schedule(checkpoint, self._stage_hessian)
         self.logger.info(f"training: {self.model}\n{self.hyperparameters}")
 
         if (
@@ -849,6 +891,129 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.grad_norms = ch.tensor(self.grad_norms)  # type: ignore[assignment]
 
         self.model.post_training_hook()
+        self.result = RunResult(
+            best_params=self.best_params,
+            final_params=self.final_params,
+            ema_params=self.ema_params,
+            avg_params=self.avg_params,
+            best_loss=self.best_loss,
+            final_loss=self.final_loss,
+            train_losses=cast(ch.Tensor, self.train_losses),
+            val_losses=cast(ch.Tensor, self.val_losses),
+            grad_norms=cast(ch.Tensor, self.grad_norms),
+            iterations=self.iterations,
+            epochs=self.epoch,
+            stop_reason=self.stop_reason,
+        )
+
+    def fit(
+        self, train_loader: Optional[DataLoader], val_loader: Optional[DataLoader]
+    ) -> RunResult:
+        """Run the procedure: an optional warm start, then phases until done.
+
+        Each phase is a run of ``train_model`` from the current parameters.
+        Phases end at ``max_phases``, when the phase loss criteria fire, or
+        when the model's ``next_phase_hook`` reports nothing left to change;
+        by default it does, so a model without phases trains once.
+
+        Args:
+            train_loader: DataLoader for the training set.
+            val_loader: DataLoader for the validation set.
+
+        Returns:
+            The last phase's result.
+        """
+        if self.hyperparameters.warm_start_enabled:
+            self.warm_start_result = self._warm_start(train_loader, val_loader)
+        self.model.pretrain_procedure_hook()
+        self.phases, self.procedure_stop_reason = [], None
+        while self.procedure_stop_reason is None:
+            self._reset_run_state()
+            self.logger.info(f"phase {len(self.phases) + 1}")
+            self.train_model(train_loader, val_loader)
+            result = cast(RunResult, self.result)
+            self.phases.append(result)
+            self.procedure_stop_reason = self._phase_stop_reason(result)
+        self.logger.info(
+            f"procedure stopped after {len(self.phases)} phase(s): "
+            f"{self.procedure_stop_reason}"
+        )
+        return cast(RunResult, self.result)
+
+    def _warm_start(
+        self, train_loader: Optional[DataLoader], val_loader: Optional[DataLoader]
+    ) -> RunResult:
+        """Train the model's warm-start criterion under the warm-start config.
+
+        The model builds its optimizer and scheduler from its own config, which
+        it shares with the trainer, so both take the stage's for the run.
+
+        Raises:
+            ValueError: If the model defines no warm-start criterion.
+        """
+        if self.model.warm_start_criterion is None:
+            raise ValueError(
+                f"{self.model} has a warm-start budget but no warm_start_criterion."
+            )
+        main = self.hyperparameters
+        stage = main.warm_start_overlay()
+        self.hyperparameters = self.model.hyperparameters = cast(Any, stage)
+        self._stage_criterion = (
+            self.model.warm_start_criterion,
+            self.model.warm_start_criterion_params,
+        )
+        self._stage_hessian = self.model.warm_start_hessian
+        if (
+            self._stage_hessian is None
+            and getattr(stage, "scheduler", None) == "fisher"
+        ):
+            raise ValueError(
+                f"{self.model} warm-starts under the fisher scheduler but has "
+                "no warm_start_hessian; its hessian belongs to the main criterion."
+            )
+        try:
+            self._reset_run_state()
+            self.logger.info("warm start")
+            self.train_model(train_loader, val_loader)
+        finally:
+            self.hyperparameters = self.model.hyperparameters = cast(Any, main)
+            self._stage_criterion, self._stage_hessian = None, None
+        result = cast(RunResult, self.result)
+        self.model.warm_start_end_hook(result)
+        return result
+
+    def _phase_stop_reason(self, result: RunResult) -> Optional[str]:
+        """Return why the procedure stops after this phase, or None.
+
+        The model's hook is asked last, so that when it prepares a next
+        phase, that phase runs.
+        """
+        hp = self.hyperparameters
+        if hp.max_phases is not None and len(self.phases) >= hp.max_phases:
+            return "max_phases"
+        if len(self.phases) > 1:
+            previous, current = self.phases[-2].best_loss, result.best_loss
+            if previous is not None and current is not None:
+                improvement = float(previous - current)
+                if (
+                    hp.phase_loss_tol is not None
+                    and abs(improvement) < hp.phase_loss_tol
+                ):
+                    return f"phase_loss_converged (improvement {improvement:.3e})"
+                relative = abs(improvement) / (abs(float(previous)) + 1e-10)
+                if (
+                    hp.phase_relative_loss_tol is not None
+                    and relative < hp.phase_relative_loss_tol
+                ):
+                    return f"phase_relative_loss_converged ({relative:.3e})"
+                if (
+                    hp.phase_loss_increase_tol is not None
+                    and -improvement > hp.phase_loss_increase_tol
+                ):
+                    return f"phase_loss_increasing ({-improvement:.3e})"
+        if not self.model.next_phase_hook(result):
+            return "no_next_phase"
+        return None
 
     def eval_model(self, loader: DataLoader, store: Store = None):
         """Evaluate the model on a held-out set and return metrics.

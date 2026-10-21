@@ -124,9 +124,10 @@ works; there is nothing to subclass.
 
 **`alpha` is optional.** It is the survival mass, the fraction of the
 population inside the set, and it sizes the region the optimizer is kept in.
-Omit it if you cannot measure it, and the `min_radius` hyperparameter is used
-instead. `alpha=1` is rejected: with nothing truncated there is nothing to
-correct, so fit the distribution directly.
+Omit it if you cannot measure it: the budget then starts at `min_radius` and
+grows by a factor of `rate` per phase, while the projection still binds, up to
+`max_radius`. `alpha=1` is rejected: with nothing truncated there is nothing
+to correct, so fit the distribution directly.
 
 **The Fisher schedule is the default.** It sets the step size from the
 Hessian of the truncated likelihood, starting at `1 / L` and decaying as

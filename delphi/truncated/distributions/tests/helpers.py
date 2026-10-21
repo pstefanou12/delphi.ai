@@ -190,7 +190,7 @@ def untruncated_mle(
     truncation, with one step after it, stands in for the closed form.
 
     Args:
-        model_class: Truncated model setting ``needs_warm_start``.
+        model_class: Truncated model whose config enables the warm start.
         dims: Number of dimensions.
         *model_args: Known parameters, passed to the model.
 
@@ -200,7 +200,10 @@ def untruncated_mle(
     """
 
     def estimate(sample: ch.Tensor) -> Any:
-        untruncated = model_class({"iterations": 1}, _admit_all, dims, *model_args)
+        # The warm start is the estimate; one phase of one step completes the fit.
+        untruncated = model_class(
+            {"iterations": 1, "max_phases": 1}, _admit_all, dims, *model_args
+        )
         untruncated.fit(sample)
         family = cast(
             type[exponential_family_distribution.ExponentialFamilyDistribution],

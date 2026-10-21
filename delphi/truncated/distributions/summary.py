@@ -66,11 +66,19 @@ def _optimization(model) -> list[tuple[str, str]]:
         ("optimizer", f"{hyperparameters.optimizer}, lr {hyperparameters.lr:g}"),
         ("scheduler", hyperparameters.scheduler or "constant"),
         ("steps", f"{model.steps_} over {len(model.radius_history)} phase(s)"),
-        ("stop reason", str(trainer.stop_reason)),
+        (
+            "stop reason",
+            f"{trainer.procedure_stop_reason}; last phase {trainer.stop_reason}",
+        ),
         ("wall time", f"{model.fit_seconds_:.2f}s"),
         ("final train loss", _scalar(trainer.train_losses[-1])),
         ("final validation loss", _scalar(trainer.final_loss)),
     ]
+    warm = trainer.warm_start_result
+    if warm is not None:
+        rows.insert(
+            3, ("warm start", f"{warm.iterations} steps, stopped on {warm.stop_reason}")
+        )
     if len(grad_norms):
         rows.append(("final gradient norm", f"{float(grad_norms[-1]):.4e}"))
     if hyperparameters.project:

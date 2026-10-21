@@ -17,9 +17,8 @@ class TruncatedContinuousBernoulli(
     """Model for truncated continuous Bernoulli distributions."""
 
     dist = continuous_bernoulli.ContinuousBernoulli
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
-    needs_warm_start = True
 
     def __init__(
         self,

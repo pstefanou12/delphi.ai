@@ -15,7 +15,66 @@ from delphi.configs.dataset import DatasetConfig
 from delphi.configs.optimizers import OptimizerConfig
 
 
-class TrainerConfig(pydantic.BaseModel):
+class WarmStartConfig(pydantic.BaseModel):
+    """Configuration of the warm start, a training stage before the main run.
+
+    Setting ``warm_start_iterations`` or ``warm_start_epochs`` enables it.
+    Each field overrides the main run's field of the same unprefixed name for
+    the stage; one left as None inherits the main run's value.
+
+    Attributes:
+        warm_start_iterations: Stage budget in iterations.
+        warm_start_epochs: Stage budget in epochs.
+        warm_start_tol: Stage convergence tolerance.
+        warm_start_early_stopping: Stage early stopping.
+        warm_start_patience: Stage early-stopping patience in epochs.
+        warm_start_grad_tol: Stage gradient norm threshold for stopping.
+        warm_start_loss_tol: Stage epoch-level loss improvement tolerance.
+    """
+
+    warm_start_iterations: Optional[int] = pydantic.Field(
+        default=None, ge=1, serialization_alias="iterations"
+    )
+    warm_start_epochs: Optional[int] = pydantic.Field(
+        default=None, ge=1, serialization_alias="epochs"
+    )
+    warm_start_tol: Optional[float] = pydantic.Field(
+        default=None, ge=0.0, serialization_alias="tol"
+    )
+    warm_start_early_stopping: Optional[bool] = pydantic.Field(
+        default=None, serialization_alias="early_stopping"
+    )
+    warm_start_patience: Optional[int] = pydantic.Field(
+        default=None, ge=1, serialization_alias="patience"
+    )
+    warm_start_grad_tol: Optional[float] = pydantic.Field(
+        default=None, ge=0.0, serialization_alias="grad_tol"
+    )
+    warm_start_loss_tol: Optional[float] = pydantic.Field(
+        default=None, serialization_alias="loss_tol"
+    )
+
+    @property
+    def warm_start_enabled(self) -> bool:
+        """Return whether a warm-start budget is set."""
+        return (
+            self.warm_start_iterations is not None or self.warm_start_epochs is not None
+        )
+
+    @pydantic.model_validator(mode="after")
+    def check_one_warm_start_budget(self):
+        """Reject a warm start given both an iteration and an epoch budget."""
+        if (
+            self.warm_start_iterations is not None
+            and self.warm_start_epochs is not None
+        ):
+            raise ValueError(
+                "set at most one of warm_start_iterations and warm_start_epochs."
+            )
+        return self
+
+
+class TrainerConfig(WarmStartConfig):
     """Configuration for the Trainer.
 
     Attributes:
@@ -43,6 +102,14 @@ class TrainerConfig(pydantic.BaseModel):
             0 disables recording.
         checkpoint_dir: Directory for on-disk best-model checkpoints.
         checkpoint_every: Epoch frequency for periodic checkpoints; 0 disables.
+        max_phases: Cap on training phases; None leaves the model's
+            ``next_phase_hook`` to end them.
+        phase_loss_tol: Stop between phases when the best loss improves by
+            less than this; None disables it.
+        phase_relative_loss_tol: As phase_loss_tol, relative to the previous
+            phase's best loss; None disables it.
+        phase_loss_increase_tol: Stop between phases when the best loss rises
+            by more than this; None disables it.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore")
@@ -69,6 +136,26 @@ class TrainerConfig(pydantic.BaseModel):
     record_params_every: int = pydantic.Field(default=0, ge=0)
     checkpoint_dir: Optional[str] = None
     checkpoint_every: int = pydantic.Field(default=0, ge=0)
+    max_phases: Optional[int] = pydantic.Field(default=None, ge=1)
+    phase_loss_tol: Optional[float] = pydantic.Field(default=1e-3, ge=0.0)
+    phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
+    phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
+
+    def warm_start_overlay(self) -> "TrainerConfig":
+        """Return this config with the warm-start section applied.
+
+        Returns:
+            A copy whose stage-overridable fields take the section's values.
+        """
+        update = self.model_dump(
+            by_alias=True, include=set(WarmStartConfig.model_fields), exclude_none=True
+        )
+        # The trainer stops on exactly one budget, so the stage's replaces both.
+        if self.warm_start_iterations is not None:
+            update["epochs"] = None
+        if self.warm_start_epochs is not None:
+            update["iterations"] = None
+        return self.model_copy(update=update)
 
 
 class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):

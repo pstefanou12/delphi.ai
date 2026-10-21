@@ -66,13 +66,10 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h: Optional["ExpH"] = None
-        self.prev_best_loss = None
         self.radius_history = None
         self.loss_history = None
         self.radius = None
         self.trainer = None
-        self.prev_theta = None
-        self.prev_loss = None
 
     def fit(self, S: ch.Tensor):
         """Fit the model to the observed (truncated) samples S.
@@ -108,76 +105,28 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.exp_h = ExpH(emp_loc, emp_cov)
         self.criterion_params = [self.phi, self.exp_h, self.dims]
 
-        # Initialize tracking
-        self.prev_best_loss = None
-        self.radius_history = []
-        self.loss_history = []
-        # Initialize radius and parameters
         self._calc_emp_model()
-        self.radius = self.hyperparameters.min_radius
-
-        phase = 0
-        while phase < self.hyperparameters.max_phases:
-            phase += 1
-            self.logger.info(f"\n{'=' * 60}")
-            self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
-            self.logger.info(f"\n{'=' * 60}")
-
-            self.trainer = trainer.Trainer(self, self.hyperparameters)
-            self.trainer.train_model(self.train_loader_, self.val_loader_)
-
-            # Update tracking
-            current_loss = self.trainer.best_loss
-            self.radius_history.append(self.radius)
-            self.loss_history.append(current_loss)
-
-            # TODO: pstefanou12@ - _reparameterize_canon_form is defined only on
-            # UnknownTruncationMultivariateNormalUnknownCovariance, so these calls
-            # raise AttributeError at runtime. Its body also assumes theta packs
-            # [T.flatten(), v], whereas this class's theta is just v, so the
-            # known-covariance conversion is probably loc = covariance_matrix @ theta.
-            # Needs a decision before it can be written; see the summary.
-            self.best_params, self.best_loss = (
-                self._reparameterize_canon_form(self.trainer.best_params),  # type: ignore[operator]
-                self.trainer.best_loss,
-            )
-            self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
-            self.final_params, self.final_loss = (
-                self._reparameterize_canon_form(self.trainer.final_params),  # type: ignore[operator]
-                self.trainer.final_loss,
-            )
-            self.ema_params = self._reparameterize_canon_form(  # type: ignore[operator]
-                self.trainer.ema_params
-            )
-            self.avg_params = self._reparameterize_canon_form(  # type: ignore[operator]
-                self.trainer.avg_params
-            )
-
-            should_stop, reason = self._check_convergence()
-
-            if should_stop:
-                self.logger.info(f"\n{'=' * 60}")
-                self.logger.info(f"procedure converged: {reason}")
-                self.logger.info(
-                    f"final radius: {self.radius:.4f}, final loss: {current_loss:.6f}"
-                )
-                self.logger.info(f"total phases: {phase}")
-                self.logger.info(f"\n{'=' * 60}")
-                break
-
-            # Expand radius for next phase
-            self.prev_best_loss = current_loss
-            old_radius = self.radius
-            self.radius = min(
-                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
-            )
-
-            self.logger.info(
-                f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
-                f"loss improved by: {self.prev_best_loss - current_loss:.6e}"
-            )
-
+        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer.fit(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.trainer)
         return self
+
+    def pretrain_procedure_hook(self) -> None:
+        """Start the projection ball at min_radius."""
+        self.radius = self.hyperparameters.min_radius
+        self.radius_history = [self.radius]
+
+    def _adopt_results(self, procedure: trainer.Trainer) -> None:
+        """Take the last phase's estimates in canonical form."""
+        super()._adopt_results(procedure)
+        # TODO: pstefanou12@ - _reparameterize_canon_form is defined only on
+        # UnknownTruncationMultivariateNormalUnknownCovariance, so these calls
+        # raise AttributeError at runtime. Its body also assumes theta packs
+        # [T.flatten(), v], whereas this class's theta is just v, so the
+        # known-covariance conversion is probably loc = covariance_matrix @ theta.
+        # Needs a decision before it can be written; see the summary.
+        for name in ("best_params", "final_params", "ema_params", "avg_params"):
+            setattr(self, name, self._reparameterize_canon_form(getattr(self, name)))  # type: ignore[operator]
 
     def forward(self, x):
         """Return concatenated inverse covariance and natural mean parameters."""
@@ -229,13 +178,10 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h: Optional["ExpH"] = None
-        self.prev_best_loss = None
         self.radius_history = None
         self.loss_history = None
         self.radius = None
         self.trainer = None
-        self.prev_theta = None
-        self.prev_loss = None
         self.emp_T: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
         self.emp_v: Optional[ch.Tensor] = None
 
@@ -273,66 +219,22 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.exp_h = ExpH(emp_loc, emp_cov)
         self.criterion_params = [self.phi, self.exp_h, self.dims]
 
-        # Initialize tracking
-        self.prev_best_loss = None
-        self.radius_history = []
-        self.loss_history = []
-        # Initialize radius and parameters
         self._calc_emp_model()
-        self.radius = self.hyperparameters.min_radius
-
-        phase = 0
-        while phase < self.hyperparameters.max_phases:
-            phase += 1
-            self.logger.info(f"\n{'=' * 60}")
-            self.logger.info(f"phase {phase}: training with radius={self.radius:.4f}")
-            self.logger.info(f"\n{'=' * 60}")
-
-            self.trainer = trainer.Trainer(self, self.hyperparameters)
-            self.trainer.train_model(self.train_loader_, self.val_loader_)
-
-            # Update tracking
-            current_loss = self.trainer.best_loss
-            self.radius_history.append(self.radius)
-            self.loss_history.append(current_loss)
-
-            self.best_params, self.best_loss = (
-                self._reparameterize_canon_form(self.trainer.best_params),
-                self.trainer.best_loss,
-            )
-            self.prev_theta, self.prev_loss = self.best_params.clone(), self.best_loss
-            self.final_params, self.final_loss = (
-                self._reparameterize_canon_form(self.trainer.final_params),
-                self.trainer.final_loss,
-            )
-            self.ema_params = self._reparameterize_canon_form(self.trainer.ema_params)
-            self.avg_params = self._reparameterize_canon_form(self.trainer.avg_params)
-
-            should_stop, reason = self._check_convergence()
-
-            if should_stop:
-                self.logger.info(f"\n{'=' * 60}")
-                self.logger.info(f"procedure converged: {reason}")
-                self.logger.info(
-                    f"final radius: {self.radius:.4f}, final loss: {current_loss:.6f}"
-                )
-                self.logger.info(f"total phases: {phase}")
-                self.logger.info(f"\n{'=' * 60}")
-                break
-
-            # Expand radius for next phase
-            self.prev_best_loss = current_loss
-            old_radius = self.radius
-            self.radius = min(
-                self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
-            )
-
-            self.logger.info(
-                f"expanding radius: {old_radius:.4f} -> {self.radius:.4f}, "
-                f"loss improved by: {self.prev_best_loss - current_loss:.6e}"
-            )
-
+        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer.fit(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.trainer)
         return self
+
+    def pretrain_procedure_hook(self) -> None:
+        """Start the projection ball at min_radius."""
+        self.radius = self.hyperparameters.min_radius
+        self.radius_history = [self.radius]
+
+    def _adopt_results(self, procedure: trainer.Trainer) -> None:
+        """Take the last phase's estimates in canonical form."""
+        super()._adopt_results(procedure)
+        for name in ("best_params", "final_params", "ema_params", "avg_params"):
+            setattr(self, name, self._reparameterize_canon_form(getattr(self, name)))
 
     def _calc_emp_model(self):
         """Calculate empirical natural parameters and register T and v."""

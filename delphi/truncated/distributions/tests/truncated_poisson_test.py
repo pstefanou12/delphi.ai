@@ -188,3 +188,31 @@ def test_indistinguishable_pair():
         parameter="rate_",
         empirical=lambda s: s.mean(0),
     )
+
+
+def test_phases_widen_a_budget_too_small_for_the_fit():
+    target = distributions.Poisson(ch.Tensor([3.0]))
+
+    def phi(z):
+        return z[:, 0] >= 4
+
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(target, phi, 10000)
+    # Without alpha the budget is min_radius, here far below the log(1 / alpha)
+    # of 1.04 the fit needs, so one phase is pinned near the naive start.
+    hyperparameters = {"min_radius": 0.05, "rate": 2.0, "iterations": 500}
+    fits = {}
+    for label, cap in (("one phase", {"max_phases": 1}), ("phases", {})):
+        ch.manual_seed(1)
+        model = truncated_poisson.TruncatedPoisson(hyperparameters | cap, phi, 1)
+        fits[label] = model.fit(sample.S)
+
+    def divergence(model):
+        fitted = distributions.Poisson(model.avg_rate_)
+        return float(distributions.kl.kl_divergence(fitted, target).sum())
+
+    assert divergence(fits["one phase"]) > 0.1
+    assert divergence(fits["phases"]) < 0.01
+    assert len(fits["phases"].trainer.phases) > 1
+    # It ends on its own, once a budget no longer binds.
+    assert fits["phases"].trainer.procedure_stop_reason == "no_next_phase"
