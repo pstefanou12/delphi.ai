@@ -55,7 +55,9 @@ typecheck:
 # `--testmon-noselect` forces a full local run, and `-m "not slow"` skips the
 # long fits. Extra arguments are forwarded to pytest.
 test *ARGS:
-    if [ -n "${CI:-}" ]; then poetry run pytest "$@"; else poetry run pytest --testmon "$@"; fi
+    # Python 3.14's default sys.monitoring core credits a line only to the
+    # first test that runs it, so testmon would miss most dependencies.
+    if [ -n "${CI:-}" ]; then poetry run pytest "$@"; else COVERAGE_CORE=ctrace poetry run pytest --testmon "$@"; fi
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:
