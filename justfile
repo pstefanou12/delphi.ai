@@ -49,15 +49,16 @@ pylint:
 typecheck:
     poetry run mypy delphi/
 
-# Run the tests affected by local changes. pytest-testmon records the code
-# each test executes and reruns only tests whose code changed since the last
-# run; the first run, and every run in CI, runs the whole suite.
-# `--testmon-noselect` forces a full local run, and `-m "not slow"` skips the
-# long fits. Extra arguments are forwarded to pytest.
+# Run the tests affected by local changes, one per core. pytest-testmon
+# records the code each test executes and reruns only tests whose code changed
+# since the last run; the first run, and every run in CI, runs the whole suite.
+# `--testmon-noselect` forces a full local run, `-m "not slow"` skips the long
+# fits, and `-n 0` runs serially, which `-s` needs. Extra arguments are
+# forwarded to pytest.
 test *ARGS:
     # Python 3.14's default sys.monitoring core credits a line only to the
     # first test that runs it, so testmon would miss most dependencies.
-    if [ -n "${CI:-}" ]; then poetry run pytest "$@"; else COVERAGE_CORE=ctrace poetry run pytest --testmon "$@"; fi
+    if [ -n "${CI:-}" ]; then poetry run pytest -n auto --dist worksteal "$@"; else COVERAGE_CORE=ctrace poetry run pytest --testmon -n auto --dist worksteal "$@"; fi
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:
