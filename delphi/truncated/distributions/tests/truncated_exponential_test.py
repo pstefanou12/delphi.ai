@@ -8,6 +8,7 @@ import pytest
 import torch as ch
 from torch import distributions
 
+import delphi.oracle
 from delphi.truncated.distributions import truncated_exponential
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -108,7 +109,7 @@ def test_one_dimension_identity():
     _recovers(
         dims=1,
         rate=ch.Tensor([1.0]),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
@@ -119,7 +120,7 @@ def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 2.0, 10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
@@ -182,7 +183,7 @@ def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         truncated_exponential.TruncatedExponential(
             {"iterations": 10},
-            truncation_sets.identity,
+            delphi.oracle.Identity(),
             1,
             alpha=1.0,
         )

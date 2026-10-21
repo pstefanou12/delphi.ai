@@ -5,7 +5,6 @@ import abc
 from collections.abc import Callable
 import logging
 import math
-import time
 from typing import ClassVar, Generic, Optional
 
 import torch as ch
@@ -112,20 +111,18 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         # Attributes initialized during fit.
         self.train_loader_: Optional[torch.utils.data.DataLoader] = None
         self.val_loader_: Optional[torch.utils.data.DataLoader] = None
-        self.radius_history: Optional[list[float]] = None
-        self.loss_history: Optional[list[ch.Tensor]] = None
         self.radius: Optional[float] = None
         self.trainer: Optional[trainer.Trainer] = None
+        self.procedure: Optional[trainer.ProcedureResult] = None
         self.n_samples_: Optional[int] = None
-        self.steps_: int = 0
-        self.projections_: int = 0
-        self.projection_distance_: float = 0.0
-        self.fit_seconds_: Optional[float] = None
         self.emp_theta: Optional[ch.Tensor] = None
         # The projection's anchor, set once the start point is final.
         self.nll_init: Optional[float] = None
-        self._projections_before_phase = 0
-        self.nll_init: Optional[ch.Tensor] = None
+        # Running totals, and their values when the current run began, so
+        # run_metrics reports each run's own.
+        self._projections, self._projection_distance = 0, 0.0
+        self._run_start = (0, 0.0)
+        self._previous_phase_loss: Optional[float] = None
 
     def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.
@@ -167,69 +164,101 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         )
 
         self.n_samples_ = S.size(0)
-        self.steps_, self.projections_, self.projection_distance_ = 0, 0, 0.0
-        self.nll_init = None
-        started = time.perf_counter()
+        self._projections, self._projection_distance = 0, 0.0
+        self.nll_init, self._previous_phase_loss = None, None
         self._calc_emp_model()
         self.trainer = trainer.Trainer(self, self.hyperparameters)
-        self.trainer.fit(self.train_loader_, self.val_loader_)
-        self._adopt_results(self.trainer)
-        self.fit_seconds_ = time.perf_counter() - started
+        self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.procedure)
         return self
 
-    def warm_start_end_hook(self, result: trainer.RunResult) -> None:
+    def post_warm_start_hook(self, result: trainer.RunResult) -> None:
         """Start the procedure from the warm start's averaged iterate."""
         if result.avg_params is None:
             raise RuntimeError("the warm start recorded no iterates.")
         self.emp_theta = self._constraints(result.avg_params.detach().clone())
         with ch.no_grad():
             self._write_theta(self.emp_theta)
-        self.logger.info(
-            f"warm start stopped on {result.stop_reason} after "
-            f"{result.iterations} iterations"
-        )
 
-    def pretrain_procedure_hook(self) -> None:
+    def pre_phases_hook(self) -> None:
         """Anchor the projection at the start point, with its first budget."""
         self.nll_init = self._compute_nll(self.emp_theta)
         self.radius = self._initial_radius()
-        self.radius_history = [self.radius]
-        self._projections_before_phase = self.projections_
 
-    def next_phase_hook(self, result: trainer.RunResult) -> bool:
-        """Widen the projection budget, unless it is already the right one.
+    def pretrain_hook(self) -> None:
+        """Mark where this run's projection counts begin."""
+        self._run_start = (self._projections, self._projection_distance)
+
+    def run_metrics(self) -> dict:
+        """Return the budget the run used and how often it projected."""
+        return {
+            "radius": self.radius,
+            "projections": self._projections - self._run_start[0],
+            "projection_distance": self._projection_distance - self._run_start[1],
+        }
+
+    def post_phase_hook(self, result: trainer.RunResult) -> tuple[bool, Optional[str]]:
+        """Widen the projection budget, or say why the procedure is done.
 
         With alpha known the budget is log(1 / alpha), whose sublevel set
-        holds the truth (Karatapanis et al., 2025), so there is no next phase.
+        holds the truth (Karatapanis et al., 2025), so one phase suffices.
         Without it the budget is a guess, widened by ``rate`` up to
-        ``max_radius``, which bounds the number of phases. A budget the phase
-        never projected onto constrained nothing, so widening it would only
-        rerun the same fit.
+        ``max_radius``. A budget the phase never projected onto constrained
+        nothing, so widening it would only rerun the same fit, and widening
+        stops once it no longer improves the loss.
         """
-        if self.alpha is not None or self.radius >= self.hyperparameters.max_radius:
-            return False
-        if self.projections_ == self._projections_before_phase:
-            return False
-        self._projections_before_phase = self.projections_
+        if self.alpha is not None:
+            return True, "alpha_known"
+        if result.metrics["projections"] == 0:
+            return True, "budget_not_binding"
+        stop, reason = self._phase_loss_converged(result)
+        if stop:
+            return stop, reason
+        if self.radius >= self.hyperparameters.max_radius:
+            return True, "max_radius"
         previous = self.radius
         self.radius = min(
             self.radius * self.hyperparameters.rate, self.hyperparameters.max_radius
         )
-        self.radius_history.append(self.radius)
         self.logger.info(
-            f"widening the projection budget {previous:.4f} -> {self.radius:.4f} "
-            f"after best loss {float(result.best_loss):.6f}"
+            f"widening the projection budget {previous:.4f} -> {self.radius:.4f}"
         )
-        return True
+        return False, None
 
-    def _adopt_results(self, procedure: trainer.Trainer) -> None:
-        """Take the estimates from the last phase, and totals over all phases."""
-        self.best_params, self.best_loss = procedure.best_params, procedure.best_loss
-        self.final_params = procedure.final_params
-        self.final_loss = procedure.final_loss
-        self.ema_params, self.avg_params = procedure.ema_params, procedure.avg_params
-        self.steps_ = sum(phase.iterations for phase in procedure.phases)
-        self.loss_history = [phase.best_loss for phase in procedure.phases]
+    def _phase_loss_converged(
+        self, result: trainer.RunResult
+    ) -> tuple[bool, Optional[str]]:
+        """Compare this phase's best loss with the previous phase's."""
+        previous, self._previous_phase_loss = (
+            self._previous_phase_loss,
+            None if result.best_loss is None else float(result.best_loss),
+        )
+        current = self._previous_phase_loss
+        if previous is None or current is None:
+            return False, None
+        hp = self.hyperparameters
+        improvement = previous - current
+        if hp.phase_loss_tol is not None and abs(improvement) < hp.phase_loss_tol:
+            return True, f"phase_loss_converged ({improvement:.3e})"
+        relative = abs(improvement) / (abs(previous) + 1e-10)
+        if (
+            hp.phase_relative_loss_tol is not None
+            and relative < hp.phase_relative_loss_tol
+        ):
+            return True, f"phase_relative_loss_converged ({relative:.3e})"
+        if (
+            hp.phase_loss_increase_tol is not None
+            and -improvement > hp.phase_loss_increase_tol
+        ):
+            return True, f"phase_loss_increasing ({-improvement:.3e})"
+        return False, None
+
+    def _adopt_results(self, result: trainer.ProcedureResult) -> None:
+        """Take the estimates from the last phase."""
+        final = result.final
+        self.best_params, self.best_loss = final.best_params, final.best_loss
+        self.final_params, self.final_loss = final.final_params, final.final_loss
+        self.ema_params, self.avg_params = final.ema_params, final.avg_params
 
     def _build_distribution(self) -> tuple[DistributionFactory, SufficientStatistic]:
         """Return the distribution factory and its sufficient statistic.
@@ -387,8 +416,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             else:
                 lambda_hi = lambda_mid
         projected = (1.0 - lambda_lo) * emp + lambda_lo * theta.detach()
-        self.projections_ += 1
-        self.projection_distance_ += float((projected - theta.detach()).norm())
+        self._projections += 1
+        self._projection_distance += float((projected - theta.detach()).norm())
         return projected
 
     def summary(self) -> str:

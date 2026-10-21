@@ -28,6 +28,25 @@ class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods
         """
 
 
+class Identity(oracle):  # pylint: disable=too-few-public-methods
+    """Oracle admitting every sample: nothing is truncated.
+
+    Survival mass is 1, so a procedure given this set has nothing to correct
+    for and reduces to the untruncated MLE.
+    """
+
+    def __call__(self, x: ch.Tensor) -> ch.Tensor:
+        """Return membership for every sample.
+
+        Args:
+            x: Samples of shape (n, dims).
+
+        Returns:
+            Mask over the batch, all true.
+        """
+        return ch.ones(x.size(0), dtype=ch.bool)
+
+
 class UnknownGaussian(oracle):  # pylint: disable=too-many-instance-attributes
     """
     Oracle for an unknown Gaussian distribution estimated via Hermite polynomial expansion.

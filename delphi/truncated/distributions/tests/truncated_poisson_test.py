@@ -7,6 +7,7 @@ from typing import Optional
 import torch as ch
 from torch import distributions
 
+import delphi.oracle
 from delphi.truncated.distributions import truncated_poisson
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -121,7 +122,7 @@ def test_one_dimension_identity():
     _recovers(
         dims=1,
         rate=ch.Tensor([1.0]),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
@@ -132,7 +133,7 @@ def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 3.0, 10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
@@ -213,6 +214,6 @@ def test_phases_widen_a_budget_too_small_for_the_fit():
 
     assert divergence(fits["one phase"]) > 0.1
     assert divergence(fits["phases"]) < 0.01
-    assert len(fits["phases"].trainer.phases) > 1
+    assert len(fits["phases"].procedure.phases) > 1
     # It ends on its own, once a budget no longer binds.
-    assert fits["phases"].trainer.procedure_stop_reason == "no_next_phase"
+    assert fits["phases"].procedure.stop_reason == "budget_not_binding"

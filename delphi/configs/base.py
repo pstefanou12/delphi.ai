@@ -54,13 +54,6 @@ class WarmStartConfig(pydantic.BaseModel):
         default=None, serialization_alias="loss_tol"
     )
 
-    @property
-    def warm_start_enabled(self) -> bool:
-        """Return whether a warm-start budget is set."""
-        return (
-            self.warm_start_iterations is not None or self.warm_start_epochs is not None
-        )
-
     @pydantic.model_validator(mode="after")
     def check_one_warm_start_budget(self):
         """Reject a warm start given both an iteration and an epoch budget."""
@@ -103,13 +96,7 @@ class TrainerConfig(WarmStartConfig):
         checkpoint_dir: Directory for on-disk best-model checkpoints.
         checkpoint_every: Epoch frequency for periodic checkpoints; 0 disables.
         max_phases: Cap on training phases; None leaves the model's
-            ``next_phase_hook`` to end them.
-        phase_loss_tol: Stop between phases when the best loss improves by
-            less than this; None disables it.
-        phase_relative_loss_tol: As phase_loss_tol, relative to the previous
-            phase's best loss; None disables it.
-        phase_loss_increase_tol: Stop between phases when the best loss rises
-            by more than this; None disables it.
+            ``post_phase_hook`` to end them.
     """
 
     model_config = pydantic.ConfigDict(extra="ignore")
@@ -137,9 +124,6 @@ class TrainerConfig(WarmStartConfig):
     checkpoint_dir: Optional[str] = None
     checkpoint_every: int = pydantic.Field(default=0, ge=0)
     max_phases: Optional[int] = pydantic.Field(default=None, ge=1)
-    phase_loss_tol: Optional[float] = pydantic.Field(default=1e-3, ge=0.0)
-    phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
-    phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
 
     def warm_start_overlay(self) -> "TrainerConfig":
         """Return this config with the warm-start section applied.

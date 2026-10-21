@@ -28,12 +28,12 @@ def render(model) -> str:
     Raises:
         RuntimeError: If the model has not been fit.
     """
-    if model.trainer is None:
+    if model.procedure is None:
         raise RuntimeError(f"{type(model).__name__} has not been fit; call fit first.")
     mass = model.mass_on_set(model.avg_params)
     sections = [
         ("Model and data", _data(model)),
-        ("Optimization", _optimization(model)),
+        ("Optimization", _optimization(model.procedure)),
         ("Estimates", _estimates(model)),
         ("Truncation and curvature at the averaged estimate", _curvature(model, mass)),
     ]
@@ -55,40 +55,35 @@ def _data(model) -> list[tuple[str, str]]:
         ("dimensions", str(model.dims)),
         ("observed samples", str(model.n_samples_)),
         ("survival mass (alpha)", alpha),
-        ("final radius", f"{model.radius:.4f}"),
+        ("final radius", f"{model.procedure.final.metrics['radius']:.4f}"),
     ]
 
 
-def _optimization(model) -> list[tuple[str, str]]:
-    hyperparameters, trainer = model.hyperparameters, model.trainer
-    grad_norms = trainer.grad_norms
+def _optimization(procedure) -> list[tuple[str, str]]:
+    final = procedure.final
+    config = final.config
     rows = [
-        ("optimizer", f"{hyperparameters.optimizer}, lr {hyperparameters.lr:g}"),
-        ("scheduler", hyperparameters.scheduler or "constant"),
-        ("steps", f"{model.steps_} over {len(model.radius_history)} phase(s)"),
-        (
-            "stop reason",
-            f"{trainer.procedure_stop_reason}; last phase {trainer.stop_reason}",
-        ),
-        ("wall time", f"{model.fit_seconds_:.2f}s"),
-        ("final train loss", _scalar(trainer.train_losses[-1])),
-        ("final validation loss", _scalar(trainer.final_loss)),
+        ("optimizer", f"{config.optimizer}, lr {config.lr:g}"),
+        ("scheduler", config.scheduler or "constant"),
+        ("steps", f"{procedure.iterations} over {len(procedure.phases)} phase(s)"),
+        ("stop reason", f"{procedure.stop_reason}; last phase {final.stop_reason}"),
+        ("wall time", f"{procedure.seconds:.2f}s"),
+        ("final train loss", _scalar(final.train_losses[-1])),
+        ("final validation loss", _scalar(final.final_loss)),
     ]
-    warm = trainer.warm_start_result
+    warm = procedure.warm_start
     if warm is not None:
         rows.insert(
             3, ("warm start", f"{warm.iterations} steps, stopped on {warm.stop_reason}")
         )
-    if len(grad_norms):
-        rows.append(("final gradient norm", f"{float(grad_norms[-1]):.4e}"))
-    if hyperparameters.project:
-        mean = model.projection_distance_ / max(model.projections_, 1)
-        share = 100.0 * model.projections_ / max(model.steps_, 1)
+    if len(final.grad_norms):
+        rows.append(("final gradient norm", f"{float(final.grad_norms[-1]):.4e}"))
+    if config.project:
+        count = sum(procedure.series("projections"))
+        mean = sum(procedure.series("projection_distance")) / max(count, 1)
+        share = 100.0 * count / max(procedure.iterations, 1)
         rows.append(
-            (
-                "projections",
-                f"{model.projections_} ({share:.1f}% of steps), mean move {mean:.4f}",
-            )
+            ("projections", f"{count} ({share:.1f}% of steps), mean move {mean:.4f}")
         )
     else:
         rows.append(("projections", "disabled"))

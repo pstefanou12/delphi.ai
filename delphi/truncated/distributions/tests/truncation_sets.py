@@ -203,21 +203,6 @@ def spiral_band(
     return phi
 
 
-def identity(z: ch.Tensor) -> ch.Tensor:
-    """Return membership for every sample.
-
-    Survival mass is 1, so a procedure given this set has nothing to correct
-    for and should reduce to the untruncated MLE.
-
-    Args:
-        z: Samples to test.
-
-    Returns:
-        Mask over the batch, all true.
-    """
-    return ch.ones(z.size(0), dtype=ch.bool)
-
-
 def sum_threshold(threshold: float) -> helpers.Oracle:
     """Return membership in a lower bound on the coordinate sum.
 

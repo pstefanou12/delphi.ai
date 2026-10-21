@@ -21,6 +21,12 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         batch_size: Mini-batch size for training.
         num_samples: Monte Carlo samples drawn per NLL evaluation.
         project: Enable per-step sublevel-set projection.
+        phase_loss_tol: Stop widening the budget when a phase improves the
+            best loss by less than this; None disables it.
+        phase_relative_loss_tol: As phase_loss_tol, relative to the previous
+            phase's best loss; None disables it.
+        phase_loss_increase_tol: Stop widening the budget when a phase raises
+            the best loss by more than this; None disables it.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -43,6 +49,9 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     rate: float = pydantic.Field(default=1.1, gt=1.0)
     num_samples: int = pydantic.Field(default=1000, ge=1)
     project: bool = True
+    phase_loss_tol: Optional[float] = pydantic.Field(default=1e-3, ge=0.0)
+    phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
+    phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
 
     @pydantic.model_validator(mode="after")
     def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":

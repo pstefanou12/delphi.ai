@@ -47,11 +47,14 @@ def test_leaves_the_truncation_and_settings_alone():
     assert model.phi is _phi
     assert model.criterion_params[0] is _phi
     assert model.hyperparameters.iterations == 1
-    assert model.trainer.warm_start_result.iterations == 1000
+    assert model.procedure.warm_start.iterations == 1000
 
 
 def test_families_without_a_closed_form_warm_start_by_default():
     model = truncated_chi2.TruncatedChi2({}, _phi, 1)
-    assert model.hyperparameters.warm_start_enabled
-    off = truncated_chi2.TruncatedChi2({"warm_start_iterations": None}, _phi, 1)
-    assert not off.hyperparameters.warm_start_enabled
+    assert model.hyperparameters.warm_start_iterations == 1000
+    sample = _sample()
+    off = truncated_chi2.TruncatedChi2(
+        {"iterations": 1, "warm_start_iterations": None}, _phi, 1, sample.alpha
+    )
+    assert off.fit(sample.S).procedure.warm_start is None

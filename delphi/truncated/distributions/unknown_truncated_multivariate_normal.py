@@ -66,8 +66,6 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h: Optional["ExpH"] = None
-        self.radius_history = None
-        self.loss_history = None
         self.radius = None
         self.trainer = None
 
@@ -107,18 +105,17 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
 
         self._calc_emp_model()
         self.trainer = trainer.Trainer(self, self.hyperparameters)
-        self.trainer.fit(self.train_loader_, self.val_loader_)
-        self._adopt_results(self.trainer)
+        self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.procedure)
         return self
 
-    def pretrain_procedure_hook(self) -> None:
+    def pre_phases_hook(self) -> None:
         """Start the projection ball at min_radius."""
         self.radius = self.hyperparameters.min_radius
-        self.radius_history = [self.radius]
 
-    def _adopt_results(self, procedure: trainer.Trainer) -> None:
+    def _adopt_results(self, result: trainer.ProcedureResult) -> None:
         """Take the last phase's estimates in canonical form."""
-        super()._adopt_results(procedure)
+        super()._adopt_results(result)
         # TODO: pstefanou12@ - _reparameterize_canon_form is defined only on
         # UnknownTruncationMultivariateNormalUnknownCovariance, so these calls
         # raise AttributeError at runtime. Its body also assumes theta packs
@@ -178,8 +175,6 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.train_loader_ = None
         self.val_loader_ = None
         self.exp_h: Optional["ExpH"] = None
-        self.radius_history = None
-        self.loss_history = None
         self.radius = None
         self.trainer = None
         self.emp_T: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
@@ -221,18 +216,17 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
 
         self._calc_emp_model()
         self.trainer = trainer.Trainer(self, self.hyperparameters)
-        self.trainer.fit(self.train_loader_, self.val_loader_)
-        self._adopt_results(self.trainer)
+        self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
+        self._adopt_results(self.procedure)
         return self
 
-    def pretrain_procedure_hook(self) -> None:
+    def pre_phases_hook(self) -> None:
         """Start the projection ball at min_radius."""
         self.radius = self.hyperparameters.min_radius
-        self.radius_history = [self.radius]
 
-    def _adopt_results(self, procedure: trainer.Trainer) -> None:
+    def _adopt_results(self, result: trainer.ProcedureResult) -> None:
         """Take the last phase's estimates in canonical form."""
-        super()._adopt_results(procedure)
+        super()._adopt_results(result)
         for name in ("best_params", "final_params", "ema_params", "avg_params"):
             setattr(self, name, self._reparameterize_canon_form(getattr(self, name)))
 

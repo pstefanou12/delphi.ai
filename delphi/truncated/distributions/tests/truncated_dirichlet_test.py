@@ -12,6 +12,7 @@ import pytest
 import torch as ch
 from torch import distributions
 
+import delphi.oracle
 from delphi.truncated.distributions import truncated_dirichlet
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -66,7 +67,7 @@ def test_three_categories_triangle():
 def test_three_categories_identity():
     _recovers(
         concentration=ch.Tensor([2.0, 3.0, 4.0]),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -75,7 +76,7 @@ def test_three_categories_identity():
 def test_ten_categories_identity():
     _recovers(
         concentration=ch.linspace(1.0, 5.0, 10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
     )

@@ -8,6 +8,7 @@ import torch as ch
 from torch.distributions import Distribution, kl
 
 from delphi.exponential_family import exponential_family_distribution
+import delphi.oracle
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
 # Read through .nonzero(), so a bool, int or float return all work.
@@ -202,7 +203,10 @@ def untruncated_mle(
     def estimate(sample: ch.Tensor) -> Any:
         # The warm start is the estimate; one phase of one step completes the fit.
         untruncated = model_class(
-            {"iterations": 1, "max_phases": 1}, _admit_all, dims, *model_args
+            {"iterations": 1, "max_phases": 1},
+            delphi.oracle.Identity(),
+            dims,
+            *model_args,
         )
         untruncated.fit(sample)
         family = cast(
@@ -214,10 +218,6 @@ def untruncated_mle(
         return canonical if count == 1 else canonical.chunk(count)
 
     return estimate
-
-
-def _admit_all(z: ch.Tensor) -> ch.Tensor:
-    return ch.ones(z.size(0), dtype=ch.bool)
 
 
 def assert_family_recovers(  # pylint: disable=too-many-arguments

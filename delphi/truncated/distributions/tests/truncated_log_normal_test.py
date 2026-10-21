@@ -8,6 +8,7 @@ import torch as ch
 from torch import distributions
 from torch.distributions import kl
 
+import delphi.oracle
 from delphi.truncated.distributions import truncated_log_normal
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -113,7 +114,7 @@ def test_one_dimension_identity():
         dims=1,
         loc=ch.Tensor([0.0]),
         scale=ch.Tensor([1.0]),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
     )
@@ -124,7 +125,7 @@ def test_ten_dimensions_identity():
         dims=10,
         loc=ch.linspace(-0.5, 0.5, 10),
         scale=ch.linspace(0.5, 1.0, 10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
     )

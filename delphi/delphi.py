@@ -576,30 +576,39 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
     def post_training_hook(self) -> None:
         """Hook called after the full training procedure completes."""
 
-    def warm_start_end_hook(self, result: "trainer.RunResult") -> None:  # pylint: disable=unused-argument
-        """Hook called with the warm start's result, to adopt it.
+    def post_warm_start_hook(self, result: "trainer.RunResult") -> None:  # pylint: disable=unused-argument
+        """Hook called with the warm start's record, to adopt its result.
 
         Args:
-            result: Everything the warm-start run produced.
+            result: The warm-start run.
         """
 
-    def pretrain_procedure_hook(self) -> None:
-        """Hook called once after the warm start and before the first phase."""
+    def pre_phases_hook(self) -> None:
+        """Hook called once after any warm start, before the first phase."""
 
-    def next_phase_hook(self, result: "trainer.RunResult") -> bool:  # pylint: disable=unused-argument
-        """Prepare the next phase, or report that there is none.
+    def post_phase_hook(
+        self, result: "trainer.RunResult"
+    ) -> tuple[bool, Optional[str]]:  # pylint: disable=unused-argument
+        """Decide whether the procedure stops after a phase, and prepare the next.
 
         A phase changes the problem, such as a projection budget, and
         training resumes from the current parameters. A model that never
         changes its problem keeps this default and trains in one phase.
 
         Args:
-            result: Everything the phase just finished produced.
+            result: The phase just finished.
 
         Returns:
-            True if another phase should run.
+            Tuple of (stop, reason), as ``should_stop``.
         """
-        return False
+        return True, "single phase"
+
+    def run_metrics(self) -> dict:
+        """Return algorithm-specific facts about the run that just finished.
+
+        Recorded in that run's ``RunResult.metrics``. Defaults to none.
+        """
+        return {}
 
     def description(
         self, stage: str, epoch: int, step: int, loss_meter: helpers.AverageMeter
