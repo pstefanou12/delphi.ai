@@ -18,8 +18,8 @@ from delphi.configs.distributions.truncated.exponential_family import (
 from delphi.configs.distributions.truncated.multivariate_normal import (
     TruncatedMultivariateNormalConfig,
 )
-from delphi.configs.distributions.truncated.unknown_truncation_normal import (
-    UnknownTruncationNormalConfig,
+from delphi.configs.distributions.truncated.unknown_truncation_multivariate_normal import (
+    UnknownTruncationMultivariateNormalConfig,
 )
 from delphi.configs.optimizers import (
     AdamConfig,
@@ -87,7 +87,7 @@ __all__ = [
     "TruncatedProbitRegressionConfig",
     "TruncatedRegressionConfig",
     "TruncatedRegressionFieldsConfig",
-    "UnknownTruncationNormalConfig",
+    "UnknownTruncationMultivariateNormalConfig",
     "WarmupConfig",
     "_ConfigT",
 ]

@@ -80,9 +80,9 @@ Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 | Model | Module | Example |
 |---|---|---|
 | `UnknownTruncationMultivariateNormal` | [`unknown_truncated_multivariate_normal`](delphi/truncated/distributions/unknown_truncated_multivariate_normal.py) | |
-| `UnknownTruncationMultivariateNormalKnownCovariance` | [`unknown_truncated_multivariate_normal`](delphi/truncated/distributions/unknown_truncated_multivariate_normal.py) | |
+| `UnknownTruncationMultivariateNormalKnownCovariance` | [`unknown_truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/unknown_truncated_multivariate_normal_known_covariance.py) | |
 | `UnknownTruncationNormal` | [`unknown_truncated_normal`](delphi/truncated/distributions/unknown_truncated_normal.py) | |
-| `UnknownTruncationNormalKnownVariance` | [`unknown_truncated_normal`](delphi/truncated/distributions/unknown_truncated_normal.py) | |
+| `UnknownTruncationNormalKnownVariance` | [`unknown_truncated_normal_known_variance`](delphi/truncated/distributions/unknown_truncated_normal_known_variance.py) | |
 
 ### Quickstart
 

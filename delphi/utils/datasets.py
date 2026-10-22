@@ -5,7 +5,8 @@ Currently supported datasets:
 - CIFAR-10 (:class:`delphi.datasets.CIFAR`)
 """
 
-from typing import Union
+from collections.abc import Sized
+from typing import Union, cast
 
 import numpy as np
 import torch as ch
@@ -504,6 +505,36 @@ class UnknownTruncationMultivariateNormalDataset(ch.utils.data.Dataset):
     def __getitem__(self, idx):
         """Return a (dummy, rows) pair; idx may be a list, for a whole batch."""
         return [ch.empty([]), self.data[idx]]
+
+
+def batch_loader(
+    dataset: ch.utils.data.Dataset, batch_size: int, shuffle: bool
+) -> ch.utils.data.DataLoader:
+    """Return a loader that fetches each batch with one index.
+
+    A plain DataLoader fetches rows one at a time and stacks them, which made
+    a full-batch step over ten thousand rows take a tenth of a second. Any
+    dataset whose ``__getitem__`` accepts a list of indices can use this.
+
+    Args:
+        dataset: The dataset, indexable by a list of indices.
+        batch_size: Rows per batch.
+        shuffle: Draw the rows in random order.
+
+    Returns:
+        The loader.
+    """
+    sized = cast(Sized, dataset)
+    sampler: ch.utils.data.Sampler = (
+        ch.utils.data.RandomSampler(sized)
+        if shuffle
+        else ch.utils.data.SequentialSampler(sized)
+    )
+    return ch.utils.data.DataLoader(
+        dataset,
+        sampler=ch.utils.data.BatchSampler(sampler, batch_size, drop_last=False),
+        batch_size=None,
+    )
 
 
 DATASETS = {
