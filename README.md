@@ -74,6 +74,7 @@ negative log-likelihood. All live in `delphi.truncated.distributions`.
 | `TruncatedHalfNormal` | [`truncated_half_normal`](delphi/truncated/distributions/truncated_half_normal.py) | |
 | `TruncatedInverseGamma` | [`truncated_inverse_gamma`](delphi/truncated/distributions/truncated_inverse_gamma.py) | |
 | `TruncatedMultinomial` | [`truncated_multinomial`](delphi/truncated/distributions/truncated_multinomial.py) | |
+| `TruncatedRayleigh` | [`truncated_rayleigh`](delphi/truncated/distributions/truncated_rayleigh.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
