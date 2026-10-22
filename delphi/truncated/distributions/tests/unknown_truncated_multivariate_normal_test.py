@@ -190,7 +190,7 @@ def test_recovers_the_set():
 
 
 @pytest.mark.parametrize("known_covariance", [False, True])
-def test_terms_are_the_papers_objective(known_covariance):
+def test_terms_are_the_papers_objective(known_covariance: bool) -> None:
     """Each row's term is exp(h(u, B; z)) N(0, I; z) psi_k(z), equation (5)."""
     target = distributions.MultivariateNormal(ch.zeros(2), CORRELATED)
     sample = _sample(target, _two_half_spaces, 2000)
@@ -206,19 +206,19 @@ def test_terms_are_the_papers_objective(known_covariance):
             )
         )
     model.fit(sample.S)
-    train = model.frame_.to_frame(sample.S.double())
-    # The frame of the known-covariance model whitens by the truth, so the
-    # sample's moments there are not (0, I), and h reads them explicitly.
-    mean, second = train.mean(0), (train.T @ train) / len(train)
-    if not known_covariance:
-        mean, second = ch.zeros(2).double(), ch.eye(2).double()
-    z = train[:50]
+    # The frame centers the sample, and whitens it unless the covariance is
+    # known, when B = I makes the second moment drop out of h.
+    mean, second = ch.zeros(2).double(), ch.eye(2).double()
+    assert model.frame_ is not None and model.expansion_ is not None
+    assert model.emp_theta is not None
+    z = model.frame_.to_frame(sample.S.double())[:50]
     psi = model.expansion_(z).clamp(min=0.0)
     statistic, offset = model._statistic(z)  # pylint: disable=protected-access
     rows = ch.cat([statistic, offset[:, None], psi[:, None]], dim=1)
     ch.manual_seed(3)
+    start = model.emp_theta.double()
     theta = model._project(  # pylint: disable=protected-access
-        model.emp_theta.double() + 0.1 * ch.randn(model.emp_theta.numel())
+        start + 0.1 * ch.randn(start.numel(), dtype=ch.float64)
     )
     u, precision = model._natural(theta)  # pylint: disable=protected-access
 
@@ -232,9 +232,6 @@ def test_terms_are_the_papers_objective(known_covariance):
         ch.zeros(2, dtype=z.dtype), ch.eye(2, dtype=z.dtype)
     )
     expected = h.exp() * reference.log_prob(z).exp() * psi
-    if known_covariance:
-        # With B = I the trace and the frame's mean drop out of h exactly.
-        expected = (-(z @ u)).exp() * psi
 
     ch.testing.assert_close(losses.unknown_truncation_terms(theta, rows), expected)
 
