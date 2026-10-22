@@ -11,7 +11,7 @@ from abc import ABC
 import torch as ch
 from torch.distributions.multivariate_normal import MultivariateNormal
 
-from delphi.polynomials import NormalizedProbabilistHermitePolynomial
+from delphi.torchnomials import hermite
 from delphi.utils.helpers import cov
 
 
@@ -75,7 +75,9 @@ class UnknownGaussian(oracle):  # pylint: disable=too-many-instance-attributes
         self._d = int(s.shape[1])
         self._k = k
 
-        self.herm_poly = NormalizedProbabilistHermitePolynomial(self._k, self._d)
+        self.herm_poly = hermite.NormalizedProbabilistHermitePolynomial(
+            self._k, self._d
+        )
         self._c_v = self._compute_hermite_coefficients(s)  # pylint: disable=invalid-name
         self._dist = None
 
@@ -84,7 +86,7 @@ class UnknownGaussian(oracle):  # pylint: disable=too-many-instance-attributes
         Compute c_v = E_D[H_V(z)] where H_V evaluated at standardized samples from s.
         s should be samples *from the truncated set* (i.e., only samples x in s).
         """
-        h_vals = self.herm_poly.h_v(s)  # shape (n, num_indices)
+        h_vals = self.herm_poly(s)  # shape (n, num_indices)
         return h_vals.mean(dim=0)
 
     def psi_k(self, x):
@@ -92,7 +94,7 @@ class UnknownGaussian(oracle):  # pylint: disable=too-many-instance-attributes
         Evaluate psi approximation on x (tensor shape (n,d)).
         Returns (n, 1) tensor with values ~[0,1].
         """
-        h_vals = self.herm_poly.h_v(x)  # (n, num_indices)
+        h_vals = self.herm_poly(x)  # (n, num_indices)
         expansion = (self._c_v * h_vals).sum(dim=1)  # (n,)
         return ch.clamp(expansion, min=0)[..., None]
 
