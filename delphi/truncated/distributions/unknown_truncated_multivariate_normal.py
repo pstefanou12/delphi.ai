@@ -38,23 +38,26 @@ from delphi import configs, trainer
 import delphi.oracle
 from delphi.torchnomials import hermite
 from delphi.truncated.distributions import distributions, losses
+from delphi.utils import datasets
 
 # Sizes the projection set when the caller gives no survival mass. A smaller
 # mass only widens the set, so this errs towards not cutting off the truth.
 DEFAULT_ALPHA = 0.01
 
 
-def _row_loader(rows: ch.Tensor, batch_size: int, shuffle: bool) -> data.DataLoader:
+def _row_loader(
+    dataset: datasets.UnknownTruncationNormalDataset, batch_size: int, shuffle: bool
+) -> data.DataLoader:
     """Return a loader yielding batches of rows, each fetched in one index.
 
     A plain DataLoader fetches and stacks rows one at a time, which made a
     full-batch step over ten thousand rows take a tenth of a second.
     """
     sampler: data.Sampler = (
-        data.RandomSampler(rows) if shuffle else data.SequentialSampler(rows)
+        data.RandomSampler(dataset) if shuffle else data.SequentialSampler(dataset)
     )
     return data.DataLoader(
-        data.TensorDataset(ch.empty(len(rows), 0), rows),
+        dataset,
         sampler=data.BatchSampler(sampler, batch_size, drop_last=False),
         batch_size=None,
     )
@@ -145,7 +148,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             )
         self.dims = dims
         self.alpha = alpha
-        self.criterion = losses.unknown_truncation_objective
+        self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
         self.theta = nn.Parameter(ch.zeros(self._num_params()))
 
         self.frame_: Optional[Frame] = None
@@ -225,17 +228,17 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         )
         self._resolve_projection_set()
 
-        rows = self._make_rows(descent_part, S.dtype)
-        self._rows = rows
+        train = self._make_dataset(descent_part, S.dtype)
+        self._rows = train.data
         self.train_loader_ = _row_loader(
-            rows,
-            self.hyperparameters.batch_size or len(rows),
+            train,
+            self.hyperparameters.batch_size or len(train),
             self.hyperparameters.shuffle,
         )
         self.val_loader_ = None
         if len(val_part) > 0:
-            val_rows = self._make_rows(val_part, S.dtype)
-            self.val_loader_ = _row_loader(val_rows, len(val_rows), shuffle=False)
+            val = self._make_dataset(val_part, S.dtype)
+            self.val_loader_ = _row_loader(val, len(val), shuffle=False)
 
         emp_theta = self._initial_theta().to(S.dtype)
         self.emp_theta = emp_theta
@@ -260,7 +263,9 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         num_hermite = int(self.hyperparameters.hermite_fraction * train.size(0))
         return train[:num_hermite], train[num_hermite:], shuffled[:num_val]
 
-    def _make_rows(self, x: ch.Tensor, dtype: ch.dtype) -> ch.Tensor:
+    def _make_dataset(
+        self, x: ch.Tensor, dtype: ch.dtype
+    ) -> datasets.UnknownTruncationNormalDataset:
         """Return the rows ``[T(z), c(z), psi_k(z)]`` for samples x.
 
         ``psi_k`` is clipped at zero as Theorem 4 defines it, which also keeps
@@ -270,7 +275,9 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         z = frame.to_frame(x)
         statistic, offset = self._statistic(z)
         psi = expansion(z).clamp(min=0.0)
-        return ch.cat([statistic, offset[:, None], psi[:, None]], dim=1).to(dtype)
+        return datasets.UnknownTruncationNormalDataset(
+            statistic.to(dtype), offset.to(dtype), psi.to(dtype)
+        )
 
     def _resolve_projection_set(self) -> None:
         """Size the projection set D from the config, else from alpha.
@@ -312,9 +319,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         rows = self._rows
         if theta is None or rows is None:
             raise RuntimeError("the estimator has not been fit.")
-        statistic = rows[:, : theta.numel()]
-        terms = losses.unknown_truncation_terms(theta.detach(), rows)
-        return statistic.T @ (terms[:, None] * statistic) / rows.size(0)
+        return losses.UnknownTruncationMultivariateNormalNLL.hessian(theta, rows)
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
         """Project the iterate onto D, as Algorithm 1 does after every step."""

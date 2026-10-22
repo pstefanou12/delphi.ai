@@ -479,6 +479,33 @@ class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
         ]
 
 
+class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
+    """Samples of a normal under unknown truncation, as the objective's rows.
+
+    Each row is ``[T(z), c(z), psi_k(z)]`` for one whitened sample z,
+    computed once here, so a step only evaluates
+    ``psi_k(z) exp(<theta, T(z)> + c(z))``; the Hermite expansion is never
+    re-evaluated during the descent.
+    """
+
+    def __init__(self, statistic: ch.Tensor, offset: ch.Tensor, psi: ch.Tensor):
+        """Initialize from the precomputed pieces of each row.
+
+        Args:
+            statistic: ``T(z)``, shaped (n, p).
+            offset: ``c(z)``, shaped (n,).
+            psi: ``psi_k(z)``, shaped (n,).
+        """
+        self.data = ch.cat([statistic, offset[:, None], psi[:, None]], dim=1)
+
+    def __len__(self):
+        return self.data.size(0)
+
+    def __getitem__(self, idx):
+        """Return a (dummy, rows) pair; idx may be a list, for a whole batch."""
+        return [ch.empty([]), self.data[idx]]
+
+
 DATASETS = {
     "imagenet": ImageNet,
     "cifar": CIFAR,

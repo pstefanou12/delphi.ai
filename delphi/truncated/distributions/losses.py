@@ -162,41 +162,62 @@ class ExponentialFamilyDistributionNLL:
         )
 
 
-def unknown_truncation_terms(theta: ch.Tensor, rows: ch.Tensor) -> ch.Tensor:
-    """Return the per-sample terms of the unknown-truncation objective.
+class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
+    ch.autograd.Function
+):
+    """Objective of the normal under unknown truncation, with its gradient.
 
-    Each row is ``[T(z), c(z), psi_k(z)]`` for one sample, and its term is
-    ``psi_k(z) exp(<theta, T(z)> + c(z))``: Kontonis et al. (2019)'s
-    ``exp(h(u, B; z)) N(0, I; z) psi_k(z)``, written so that it is affine in
-    theta inside the exponential.
-
-    Args:
-        theta: Free natural parameters, shaped (p,).
-        rows: Shaped (n, p + 2).
-
-    Returns:
-        Shaped (n,).
+    Kontonis et al. (2019)'s equation (5), the convex surrogate whose
+    minimizer recovers the Gaussian; named like its siblings. Each row of
+    ``data`` is ``[T(z), c(z), psi_k(z)]`` for one whitened sample, and its
+    term is ``psi_k(z) exp(<theta, T(z)> + c(z))``, which is
+    ``exp(h(u, B; z)) N(0, I; z) psi_k(z)`` written to be affine in theta
+    inside the exponential.
     """
-    num_params = theta.numel()
-    statistic, offset, psi = (
-        rows[:, :num_params],
-        rows[:, num_params],
-        rows[:, num_params + 1],
-    )
-    return psi * ch.exp(statistic @ theta + offset)
 
+    @staticmethod
+    def terms(theta: ch.Tensor, data: ch.Tensor) -> ch.Tensor:
+        """Return each row's term of the objective.
 
-def unknown_truncation_objective(theta: ch.Tensor, rows: ch.Tensor) -> ch.Tensor:
-    """Return the sample mean of ``unknown_truncation_terms``.
+        Args:
+            theta: Free natural parameters, shaped (p,).
+            data: Rows shaped (n, p + 2).
 
-    Its gradient on a batch is an unbiased estimate of the gradient of the
-    objective, the step ``v`` of Algorithm 1.
+        Returns:
+            Shaped (n,).
+        """
+        num_params = theta.numel()
+        statistic, offset, psi = (
+            data[:, :num_params],
+            data[:, num_params],
+            data[:, num_params + 1],
+        )
+        return psi * ch.exp(statistic @ theta + offset)
 
-    Args:
-        theta: Free natural parameters, shaped (p,).
-        rows: Shaped (n, p + 2).
+    @staticmethod
+    def forward(ctx, theta, data):  # pylint: disable=arguments-differ
+        """Return the mean term over the batch."""
+        terms = UnknownTruncationMultivariateNormalNLL.terms(theta, data)
+        ctx.save_for_backward(terms, data[:, : theta.numel()])
+        return terms.mean()
 
-    Returns:
-        Scalar estimate of the objective.
-    """
-    return unknown_truncation_terms(theta, rows).mean()
+    @staticmethod
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the gradient ``E[T(z) term(z)]``, the step of Algorithm 1."""
+        terms, statistic = ctx.saved_tensors
+        return grad_output * (statistic * terms[:, None]).mean(0), None
+
+    @staticmethod
+    def hessian(theta: ch.Tensor, data: ch.Tensor) -> ch.Tensor:
+        """Return the Hessian ``E[term(z) T(z) T(z)^T]``, PSD as Claim 1 says.
+
+        Args:
+            theta: Point to evaluate at, shaped (p,).
+            data: Rows shaped (n, p + 2).
+
+        Returns:
+            Shaped (p, p).
+        """
+        statistic = data[:, : theta.numel()]
+        terms = UnknownTruncationMultivariateNormalNLL.terms(theta.detach(), data)
+        return statistic.T @ (terms[:, None] * statistic) / data.size(0)
