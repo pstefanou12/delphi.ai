@@ -229,7 +229,7 @@ def test_known_truncated_regression_higher_dimensions():
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_[..., None]]
+        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_.flatten()]
     ) * ch.sqrt(NOISE_VAR)
     print(f"estimated weights: {w_}")
     known_mse_loss = mse_loss(gt_, w_.flatten())
@@ -299,7 +299,7 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
         "batch_size": -1,
         "var_lr": None,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha, fit_intercept=False
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -397,7 +397,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
         "step_lr_gamma": 1.0,
         "early_stopping": True,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -482,7 +482,7 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
         "var_lr": None,
         "num_samples": 5000,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(args, phi, alpha)
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(args, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
         [
@@ -558,7 +558,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
         "iterations": 500,
         # 'lbfgs_lr': 2.0
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi, alpha, fit_intercept=False
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc)
@@ -635,7 +635,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
         "early_stopping": True,
         "iterations": 500,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs, phi, alpha)
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(train_kwargs, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
         [
@@ -723,7 +723,7 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
         "iterations": 2500,
         "step_lr_gamma": 1.0,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -1059,7 +1059,7 @@ def test_truncated_dependent_regression():
         "tol": 1e-1,
         "c_gamma": 2.0,
     }
-    trunc_lds = stats.TruncatedLinearRegression(
+    trunc_lds = stats.LegacyTruncatedLinearRegression(
         train_kwargs,
         phi,
         train_kwargs["alpha"],

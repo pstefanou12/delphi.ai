@@ -1,6 +1,9 @@
 # Author: pstefanou12@
-"""
-Truncated Linear Regression.
+"""Truncated linear regression with unknown variance or dependent data.
+
+The flag-driven estimator these paths shared with known-variance regression
+before ``TruncatedLinearModel``; known variance has moved onto that base as
+``truncated_linear_regression.TruncatedLinearRegression``.
 """
 
 import math
@@ -19,13 +22,14 @@ from delphi.utils.datasets import make_train_and_val
 from delphi.utils.helpers import Bounds
 
 
-class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
+class LegacyTruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     LinearModel[configs.TruncatedRegressionFieldsConfig]
 ):
     """Truncated linear regression via projected SGD on the truncated log-likelihood.
 
-    Supports known noise variance, unknown noise variance, and temporal
-    dependence. Requires a truncation oracle and survival probability alpha.
+    Supports unknown noise variance and temporal dependence, and known
+    variance for the dependent path; independent data with known variance
+    belongs to ``TruncatedLinearRegression``. Requires a truncation oracle and survival probability alpha.
 
     The parameters are registered during fit and depend on the variant, so
     only one of the first two groups exists on any instance.
@@ -55,7 +59,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed=0,
     ):
-        """Initialize TruncatedLinearRegression.
+        """Initialize LegacyTruncatedLinearRegression.
 
         Args:
             hyperparameters: hyperparameter dict

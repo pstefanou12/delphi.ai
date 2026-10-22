@@ -15,7 +15,9 @@ import torch as ch
 from torch import linalg as LA
 
 from delphi import configs
-from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
+from delphi.stats.legacy_truncated_linear_regression import (
+    LegacyTruncatedLinearRegression,
+)
 from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 
 logger = logging.getLogger(__name__)
@@ -149,7 +151,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if X.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", X.size(0))
 
-        self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+        self.trunc_lds_phase_one = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
             self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
@@ -191,7 +193,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if U.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", U.size(0))
 
-        self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+        self.trunc_lds_phase_two = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
             self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
@@ -393,7 +395,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             feat_concat = ch.cat([XU_concat, XX_concat])
             y_concat = ch.cat([Yu, Yx])
 
-            self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+            self.trunc_lds_phase_three = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
                 self._lds_hyperparameters(),
                 self.hyperparameters.phi,
                 self.hyperparameters.alpha,
