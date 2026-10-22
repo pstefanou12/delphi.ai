@@ -1,5 +1,9 @@
 # Author: pstefanou12@
-"""Truncated NLL autograd functions for exponential family distributions."""
+"""Losses for the truncated distributions.
+
+The truncated NLL of an exponential family, its untruncated counterpart for
+the warm start, and the objective of the unknown-truncation normal.
+"""
 
 from collections.abc import Callable
 import logging
@@ -158,57 +162,41 @@ class ExponentialFamilyDistributionNLL:
         )
 
 
-class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
-    ch.autograd.Function
-):
-    """Negative population log likelihood for multivariate normal with unknown truncation.
+def unknown_truncation_terms(theta: ch.Tensor, rows: ch.Tensor) -> ch.Tensor:
+    """Return the per-sample terms of the unknown-truncation objective.
 
-    Calculates the population log-likelihood for the current batch in forward,
-    then calculates its gradient in backward.
+    Each row is ``[T(z), c(z), psi_k(z)]`` for one sample, and its term is
+    ``psi_k(z) exp(<theta, T(z)> + c(z))``: Kontonis et al. (2019)'s
+    ``exp(h(u, B; z)) N(0, I; z) psi_k(z)``, written so that it is affine in
+    theta inside the exponential.
+
+    Args:
+        theta: Free natural parameters, shaped (p,).
+        rows: Shaped (n, p + 2).
+
+    Returns:
+        Shaped (n,).
     """
+    num_params = theta.numel()
+    statistic, offset, psi = (
+        rows[:, :num_params],
+        rows[:, num_params],
+        rows[:, num_params + 1],
+    )
+    return psi * ch.exp(statistic @ theta + offset)
 
-    @staticmethod
-    def forward(ctx, theta, data, phi, exp_h, dims):  # pylint: disable=invalid-name,arguments-differ,too-many-arguments,too-many-positional-arguments
-        """Compute population log-likelihood.
 
-        Args:
-            theta: Current reparameterized mean and covariance matrix estimates
-                concatenated.
-            data: Precomputed gradient values for both the mean and covariance
-                matrix.
-            phi: Oracle object for learning truncation set.
-            exp_h: Helper class for calculating exponential in the gradient.
-            dims: The dimension number.
-        """
-        T = theta[: dims**2].view(dims, dims)  # pylint: disable=invalid-name
-        v = theta[dims**2 :]
-        x = data[:, :dims].view(data.size(0), dims)
-        pdf = data[:, dims][..., None]
-        loc_grad = data[:, dims + 1 : dims + dims + 1].view(data.size(0), dims)
-        cov_grad = data[:, dims + dims + 1 :].view(data.size(0), dims, dims)
-        exp = exp_h(v, T, x)
-        psi = phi.psi_k(x)
-        loss = exp * pdf * psi
-        logger.debug(f"psi: {psi}")
-        logger.debug(f"exp: {exp}")
-        logger.debug(f"pdf: {pdf}")
-        ctx.save_for_backward(loss, loc_grad, cov_grad)
-        ctx.dims = dims
-        return loss / data.size(0)
+def unknown_truncation_objective(theta: ch.Tensor, rows: ch.Tensor) -> ch.Tensor:
+    """Return the sample mean of ``unknown_truncation_terms``.
 
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradients of NLL w.r.t. theta."""
-        loss, loc_grad, cov_grad = ctx.saved_tensors
-        term_one = loc_grad * loss
-        term_two = cov_grad.flatten(1) * loss
-        logger.debug(f"loc grad: {term_one.mean(0)}")
-        logger.debug(f"cov grad: {term_two.mean(0)}")
-        return (
-            ch.cat([term_two, term_one], dim=1) / cov_grad.size(0),
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+    Its gradient on a batch is an unbiased estimate of the gradient of the
+    objective, the step ``v`` of Algorithm 1.
+
+    Args:
+        theta: Free natural parameters, shaped (p,).
+        rows: Shaped (n, p + 2).
+
+    Returns:
+        Scalar estimate of the objective.
+    """
+    return unknown_truncation_terms(theta, rows).mean()

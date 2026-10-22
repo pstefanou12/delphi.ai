@@ -9,7 +9,6 @@ from typing import Union
 
 import numpy as np
 import torch as ch
-from torch.distributions.multivariate_normal import MultivariateNormal
 import torch.linalg as LA
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import datasets
@@ -18,7 +17,6 @@ from delphi import cifar_models, configs, imagenet_models
 from delphi.utils import data_augmentation as da
 from delphi.utils import folder, helpers
 from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import cov
 
 ###
 # Computer Vision Datasets: (all subclassed from dataset)
@@ -479,53 +477,6 @@ class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
             ch.empty([]),
             self.data[idx],
         ]
-
-
-class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
-    """Dataset for normal distribution samples with unknown truncation."""
-
-    def __init__(self, S):  # pylint: disable=invalid-name
-        """Initialize with samples S, computing gradients for loc and covariance."""
-        self.S = S  # pylint: disable=invalid-name
-        # samples
-        self._loc = self.S.mean(0)
-        self._covariance_matrix = cov(self.S)
-        # compute gradients
-        # M = MultivariateNormal(self._loc, self._covariance_matrix)
-        self.pdf = ch.exp(
-            MultivariateNormal(
-                ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))
-            ).log_prob(self.S)
-        )[..., None]
-        # self.pdf = ch.exp(M.log_prob(self.S))[...,None]
-
-        self.loc_grad = self._loc - self.S
-        self.cov_grad = 0.5 * (
-            ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1))
-            - self._covariance_matrix
-            - self._loc[..., None] @ self._loc[None, ...]
-        ).flatten(1)
-
-        self.data = ch.cat([self.S, self.pdf, self.loc_grad, self.cov_grad], dim=1)
-
-    def __len__(self):
-        return self.S.size(0)
-
-    def __getitem__(self, idx):
-        """
-        :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
-        """
-        return [ch.empty([]), self.data[idx]]
-
-    @property
-    def loc(self):
-        """Return a clone of the location (mean) parameter."""
-        return self._loc.clone()
-
-    @property
-    def covariance_matrix(self):
-        """Return a clone of the covariance matrix."""
-        return self._covariance_matrix.clone()
 
 
 DATASETS = {

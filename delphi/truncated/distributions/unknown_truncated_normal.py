@@ -1,7 +1,5 @@
 # Author: pstefanou12@
-"""Truncated normal distribution without oracle access (unknown truncation set)."""
-
-# pylint: disable=duplicate-code
+"""Univariate normal estimation from samples truncated to an unknown set."""
 
 from typing import Optional
 
@@ -10,88 +8,67 @@ import torch as ch
 from delphi.truncated.distributions import unknown_truncated_multivariate_normal
 
 
+class UnknownTruncationNormal(
+    unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal
+):
+    """Mean and standard deviation of a normal truncated to an unknown set."""
+
+    estimate_suffixes = ("loc_", "scale_")
+
+    def __init__(self, hyperparameters: dict, alpha: Optional[float] = None):
+        """Initialize UnknownTruncationNormal.
+
+        Args:
+            hyperparameters: Hyperparameter dict.
+            alpha: Survival mass of the set in (0, 1), if known.
+        """
+        super().__init__(hyperparameters, 1, alpha)
+
+    @property
+    def best_scale_(self) -> ch.Tensor:
+        """Standard deviation at the best validation loss, as torch.Normal's scale."""
+        return self.best_covariance_matrix_.diagonal().sqrt()
+
+    @property
+    def final_scale_(self) -> ch.Tensor:
+        """Standard deviation at the last iterate, as torch.Normal's scale."""
+        return self.final_covariance_matrix_.diagonal().sqrt()
+
+    @property
+    def ema_scale_(self) -> ch.Tensor:
+        """Standard deviation at the moving average, as torch.Normal's scale."""
+        return self.ema_covariance_matrix_.diagonal().sqrt()
+
+    @property
+    def avg_scale_(self) -> ch.Tensor:
+        """Standard deviation at the averaged iterate, as torch.Normal's scale."""
+        return self.avg_covariance_matrix_.diagonal().sqrt()
+
+    def __str__(self):
+        """Return a human-readable name for this distribution."""
+        return "normal distribution under unknown truncation"
+
+
 class UnknownTruncationNormalKnownVariance(
     unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalKnownCovariance
 ):
-    """Truncated normal distribution with known variance and unknown truncation.
+    """Mean of a normal with known variance truncated to an unknown set."""
 
-    Inherits all constructor arguments from
-    UnknownTruncationMultivariateNormalKnownCovariance:
-        args (Parameters): hyperparameter object
-        k (int): number of nearest neighbors for oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-        covariance_matrix (Optional[Tensor]): known covariance matrix
-    """
+    def __init__(
+        self,
+        hyperparameters: dict,
+        covariance_matrix: ch.Tensor,
+        alpha: Optional[float] = None,
+    ):
+        """Initialize UnknownTruncationNormalKnownVariance.
 
-    def __str__(self):
-        """Return a human-readable name for this distribution."""
-        return (
-            "truncated normal distribution with unknown truncation and known variance"
-        )
-
-
-class UnknownTruncatedNormalUnknownVariance(
-    unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalUnknownCovariance
-):
-    """Truncated normal distribution with unknown variance and unknown truncation.
-
-    Inherits all constructor arguments from
-    UnknownTruncationMultivariateNormalUnknownCovariance:
-        args (Parameters): hyperparameter object
-        k (int): number of nearest neighbors for oracle
-        alpha (float): survival probability lower bound
-        dims (int): number of dimensions
-    """
-
-    @property
-    def best_variance_(self):
-        """Best variance estimate based on lowest training loss."""
-        return self.best_params[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def final_variance_(self):
-        """Final variance estimate at the end of training."""
-        self.final_params[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def ema_variance_(self):
-        """Exponential moving-average variance estimate."""
-        return self.ema_params[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def avg_variance_(self):
-        """Running-average variance estimate."""
-        return self.avg_params[: self.dims**2].view(self.dims, self.dims)
+        Args:
+            hyperparameters: Hyperparameter dict.
+            covariance_matrix: Known variance as a 1x1 matrix.
+            alpha: Survival mass of the set in (0, 1), if known.
+        """
+        super().__init__(hyperparameters, 1, covariance_matrix, alpha)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
-        return "truncated normal distribution with unknown truncation"
-
-
-def UnknownTruncationNormal(  # pylint: disable=invalid-name
-    args,
-    k: int,
-    alpha: float,
-    dims: int,
-    variance: Optional[ch.Tensor] = None,
-):
-    """Factory function for unknown-truncation normal distributions.
-
-    Returns a known-variance model if variance is provided,
-    otherwise returns an unknown-variance model.
-
-    Args:
-        args: Hyperparameter dict or Pydantic config.
-        k: Number of nearest neighbors for the oracle.
-        alpha: Survival probability lower bound.
-        dims: Number of dimensions.
-        variance: Known variance; if None, variance is estimated.
-
-    Returns:
-        UnknownTruncationNormalKnownVariance if variance is provided, else
-        UnknownTruncatedNormalUnknownVariance.
-    """
-    if variance is not None:
-        return UnknownTruncationNormalKnownVariance(args, k, alpha, dims, variance)
-    return UnknownTruncatedNormalUnknownVariance(args, k, alpha, dims)
+        return "normal distribution with known variance under unknown truncation"
