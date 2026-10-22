@@ -12,6 +12,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
+- [Truncated Regression](#truncated-regression)
 - [Architecture](#architecture)
   - [The trainer](#the-trainer)
   - [Models](#models)
@@ -240,6 +241,76 @@ truth and only the mean is learned, which leaves less to estimate. Both
 estimators degrade as the survival mass falls, which `alpha` does not change:
 here it only sizes the region the descent is kept in.
 
+## Truncated Regression
+
+A linear model observed through a truncation set: `y = w^T x + b + e` with
+`e ~ N(0, sigma^2)` and `sigma^2` known, where a sample `(x, y)` is seen only
+if `phi(y)` admits it. Ordinary least squares on such a sample is biased
+toward the set. `stats.TruncatedLinearRegression` implements Daskalakis,
+Gouleakis, Tzamos and Zampetakis (2020), "Computationally and Statistically
+Efficient Truncated Regression":
+
+1. **Normalize.** The design matrix, intercept column included, is divided by
+   `B sqrt(d + 1)` for its largest entry `B`, so every row has norm at most 1.
+   The estimates are reported in the original units.
+2. **Project onto `D_{r,B}`** (Definition 2): the weights `w` with
+   `sum_i ((y_i - w^T x_i) / sigma)^2 x_i x_i^T <= r sum_i x_i x_i^T` and,
+   optionally, `||w|| <= B`. On it the truncated negative log-likelihood is
+   strongly convex and the stochastic gradient has bounded variance, and it
+   holds the truth with high probability for `r* = 4 log(2 / alpha) + 7`, the
+   default. The paper projects with the ellipsoid method; here a point
+   outside is moved along the segment to the OLS fit, which anchors the set,
+   until it re-enters it, so no convex solver is needed.
+3. **Projected SGD without replacement.** One shuffled pass, one sample per
+   step, from OLS (or zero, `start="zero"`) projected onto the set. Each
+   gradient is `x (E[z | phi] - y) / sigma^2` at the current prediction, with
+   `E[z | phi]` estimated by rejection sampling `num_samples` draws of the
+   noise against `phi`. Steps decay as `1 / (L + mu t)`, the paper's
+   `1 / (lambda t)`, with `mu` and `L` read off the Hessian at the start.
+4. **Average the iterates.** `coef_` and `intercept_` are the average of
+   every iterate, as in the paper; `ema_`, `final_` and `best_` variants are
+   also kept.
+
+```python
+import torch as ch
+
+from delphi import stats
+
+ch.manual_seed(0)
+
+# The paper's experiment: w = 1 in ten dimensions, observed only where y > 4.
+X = ch.randn(20000, 10)
+y = X @ ch.ones(10, 1) + 0.5 + ch.randn(20000, 1)
+
+
+def phi(z):
+    return z > 4.0
+
+
+kept = phi(y).flatten()
+alpha = kept.float().mean().item()
+
+model = stats.TruncatedLinearRegression({}, phi, alpha, noise_var=1.0)
+model.fit(X[kept], y[kept])
+
+model.coef_, model.intercept_          # the averaged iterate
+model.ols_coef_, model.ols_intercept_  # least squares on the same sample
+print(model.summary())
+```
+
+**`phi` sees the response.** It receives latents shaped `(n, m, 1)` and
+returns a mask over them; any set works, a union of intervals included.
+`alpha` is the survival probability, which sets `r*`.
+
+**More passes, less noise.** The defaults are the paper's single pass;
+`epochs` runs more, reshuffling each time and continuing the step decay, and
+`avg_burn_in` drops the early iterates from the average. A non-SGD optimizer
+runs without the step schedule unless one is set.
+
+The unknown-variance, lasso and linear-dynamical-system estimators have not
+moved to this design yet: `stats.LegacyTruncatedLinearRegression` keeps the
+first and last behind its `noise_var=None` and `dependent=True` flags.
+
 ## Architecture
 
 delphi separates *how a model is fit*, which the trainer owns, from *what is
@@ -301,6 +372,17 @@ The truncated distributions add two layers on top of this:
   that widen its budget. The family adds its starting point
   (`_calc_emp_model`), the domain of its parameters (`_constraints`) and its
   estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
+
+The truncated linear models follow the same pattern.
+`delphi/stats/linear_model.py`'s `LinearModel` owns the prediction
+`h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
+`best_` estimates of `coef_` and `intercept_`.
+`delphi/stats/truncated_linear_model.py`'s `TruncatedLinearModel` adds the
+oracle, the truncated NLL (`losses.TruncatedLinearModelNLL`, whose gradient
+`E[s(e) | phi] - s(z - h)` needs only the noise's `log_prob`), its Hessian,
+the projection in `step_post_hook` and `summary()`. A model supplies its
+noise, its untruncated fit and its projection set
+(`delphi/stats/projection_sets.py`).
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
 ones: `Identity`, which admits every sample, and `RecoveredSet`, the set an
