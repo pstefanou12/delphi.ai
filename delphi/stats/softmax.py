@@ -28,7 +28,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
         criterion: Cross-entropy loss function.
     """
 
-    # Created by register_parameter in pretrain_hook, which mypy cannot see.
+    # Created by register_parameter in pre_phase_hook, which mypy cannot see.
     weight: ch.nn.Parameter
 
     defaults = configs.SoftmaxRegressionConfig
@@ -91,7 +91,7 @@ class SoftmaxRegression(  # pylint: disable=too-many-instance-attributes,abstrac
 
         return self
 
-    def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
+    def pre_phase_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up model weight parameter before training."""
         weight = ch.nn.Parameter(ch.randn(self.k, self.d))
         self.register_parameter("weight", weight)

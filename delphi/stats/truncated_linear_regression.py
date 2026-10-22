@@ -199,7 +199,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         )
         return self
 
-    def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
+    def pre_phase_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.

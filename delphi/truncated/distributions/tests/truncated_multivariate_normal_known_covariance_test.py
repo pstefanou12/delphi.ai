@@ -9,6 +9,7 @@ import torch as ch
 from torch import distributions
 from torch.distributions import kl
 
+import delphi.oracle
 from delphi.truncated.distributions import (
     truncated_multivariate_normal_known_covariance,
 )
@@ -153,7 +154,7 @@ def test_one_dimension_identity():
     _recovers(
         dims=1,
         covariance_matrix=2 * ch.eye(1),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         dataset_size=5000,
         hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,
@@ -165,7 +166,7 @@ def test_ten_dimensions_identity():
     _recovers(
         dims=10,
         covariance_matrix=2 * ch.eye(10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         dataset_size=5000,
         hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,

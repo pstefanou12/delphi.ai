@@ -7,6 +7,7 @@ from typing import Optional
 import torch as ch
 from torch import distributions
 
+import delphi.oracle
 from delphi.truncated.distributions import truncated_beta
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -70,7 +71,7 @@ def test_one_dimension_identity():
         dims=1,
         first=ch.Tensor([2.0]),
         second=ch.Tensor([3.0]),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
@@ -82,7 +83,7 @@ def test_ten_dimensions_identity():
         dims=10,
         first=ch.linspace(1.5, 3.0, 10),
         second=ch.linspace(2.0, 4.0, 10),
-        phi=truncation_sets.identity,
+        phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,

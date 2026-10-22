@@ -16,15 +16,17 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         min_radius: Initial NLL budget above the empirical initialization
             for the sublevel-set projection (phase 1).
         max_radius: Maximum NLL budget; the procedure stops when reached.
-        rate: Multiplicative budget expansion factor per phase.
+        rate: Multiplicative budget expansion factor per phase, applied
+            only when alpha is unknown.
         batch_size: Mini-batch size for training.
         num_samples: Monte Carlo samples drawn per NLL evaluation.
-        max_phases: Maximum number of radius-expansion phases.
-        loss_convergence_tol: Absolute loss improvement threshold for
-            stopping between phases.
-        relative_loss_tol: Relative loss improvement threshold between phases.
-        loss_increase_tol: Loss increase threshold for detecting overshoot.
         project: Enable per-step sublevel-set projection.
+        phase_loss_tol: Stop widening the budget when a phase improves the
+            best loss by less than this; None disables it.
+        phase_relative_loss_tol: As phase_loss_tol, relative to the previous
+            phase's best loss; None disables it.
+        phase_loss_increase_tol: Stop widening the budget when a phase raises
+            the best loss by more than this; None disables it.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -46,11 +48,10 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     max_radius: float = pydantic.Field(default=10.0, ge=0.0)
     rate: float = pydantic.Field(default=1.1, gt=1.0)
     num_samples: int = pydantic.Field(default=1000, ge=1)
-    max_phases: int = pydantic.Field(default=1, ge=1)
-    loss_convergence_tol: float = pydantic.Field(default=1e-3, ge=0.0)
-    relative_loss_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
-    loss_increase_tol: float = pydantic.Field(default=float("inf"), ge=0.0)
     project: bool = True
+    phase_loss_tol: Optional[float] = pydantic.Field(default=1e-3, ge=0.0)
+    phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
+    phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
 
     @pydantic.model_validator(mode="after")
     def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":
@@ -77,3 +78,17 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         ):
             object.__setattr__(self, "iterations", None)
         return self
+
+
+class WarmStartedExponentialFamilyDistributionConfig(
+    TruncatedExponentialFamilyDistributionConfig
+):
+    """Configuration for families whose untruncated MLE has no closed form.
+
+    Their rough start is refined to the untruncated MLE first, by a warm
+    start of ``warm_start_iterations`` steps.
+    """
+
+    warm_start_iterations: Optional[int] = pydantic.Field(
+        default=1000, ge=1, serialization_alias="iterations"
+    )

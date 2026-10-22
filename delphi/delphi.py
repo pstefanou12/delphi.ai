@@ -4,7 +4,7 @@
 from collections.abc import Callable
 import inspect
 import random
-from typing import ClassVar, Generic, Optional, cast
+from typing import TYPE_CHECKING, ClassVar, Generic, Optional, cast
 
 import numpy as np
 import pydantic
@@ -15,6 +15,9 @@ import torch.optim.lr_scheduler
 from delphi import configs
 from delphi.optim.lr_scheduler import fisher, inverse_time
 from delphi.utils import constants, helpers
+
+if TYPE_CHECKING:
+    from delphi import trainer
 
 # Each torch class paired with the config section whose aliases name its
 # keyword arguments.
@@ -112,6 +115,12 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         self.criterion: Optional[Callable] = None
         self.criterion_params: list = []
+        # The objective of the warm start, which runs only when the config
+        # sets a warm-start budget: a criterion with its parameters bound.
+        self.warm_start_criterion: Optional[Callable] = None
+        # The warm-start criterion's Hessian, which the fisher scheduler needs
+        # during the stage; ``hessian`` belongs to the main criterion.
+        self.warm_start_hessian: Optional[Callable[..., ch.Tensor]] = None
         self.model: Optional[ch.nn.Module] = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
         self.optimizers: dict[str, torch.optim.Optimizer] = {}
@@ -136,7 +145,9 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         return [{"params": list(self.parameters())}]
 
     def make_optimizer_and_schedule(
-        self, checkpoint: Optional[dict] = None
+        self,
+        checkpoint: Optional[dict] = None,
+        hessian: Optional[Callable[..., ch.Tensor]] = None,
     ) -> tuple[torch.optim.Optimizer, Optional[torch.optim.lr_scheduler.LRScheduler]]:
         """Create and store the optimizer and learning-rate scheduler.
 
@@ -146,6 +157,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         Args:
             checkpoint: Optional dict containing optimizer/scheduler state to restore.
+            hessian: The trained criterion's Hessian, for a stage whose
+                criterion is not the model's own; ``self.hessian`` by default.
 
         Returns:
             Tuple of (optimizer, scheduler).
@@ -156,7 +169,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         self.optimizer.register_step_pre_hook(self.step_pre_hook)
         self.optimizer.register_step_post_hook(self.step_post_hook)
 
-        self.schedule = self._create_scheduler()
+        self.schedule = self._create_scheduler(hessian)
 
         if checkpoint:
             self._load_checkpoint(checkpoint)
@@ -307,8 +320,14 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         accepted = inspect.signature(target).parameters
         return {k: v for k, v in shared.items() if k in accepted and v is not None}
 
-    def _create_scheduler(self) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
-        """Create and return the configured learning-rate scheduler, or None."""
+    def _create_scheduler(
+        self, hessian: Optional[Callable[..., ch.Tensor]] = None
+    ) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
+        """Create and return the configured learning-rate scheduler, or None.
+
+        Args:
+            hessian: As ``make_optimizer_and_schedule``.
+        """
         if self.hyperparameters.constant:
             return None
 
@@ -319,14 +338,19 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         if scheduler_type not in SCHEDULER_SECTIONS:
             raise ValueError(f"Unsupported scheduler: {scheduler_type}")
 
-        base_schedule = self._build_scheduler(scheduler_type)
+        base_schedule = self._build_scheduler(scheduler_type, hessian)
         return self._with_warmup(base_schedule)
 
-    def _build_scheduler(self, scheduler_type: constants.SchedulerType):
+    def _build_scheduler(
+        self,
+        scheduler_type: constants.SchedulerType,
+        hessian: Optional[Callable[..., ch.Tensor]] = None,
+    ):
         """Build a scheduler from its config section.
 
         Args:
             scheduler_type: Key into ``SCHEDULER_SECTIONS``.
+            hessian: As ``make_optimizer_and_schedule``.
 
         Returns:
             The constructed scheduler.
@@ -347,12 +371,14 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             supplied = kwargs.keys() & {"mu", "smoothness"}
             # Skip the sampling round when the caller supplied both.
             if supplied != {"mu", "smoothness"}:
-                mu, smoothness = self._hessian_spectrum()
+                mu, smoothness = self._hessian_spectrum(hessian=hessian)
                 kwargs.setdefault("mu", mu)
                 kwargs.setdefault("smoothness", smoothness)
             # A constant the caller fixed is never overwritten by a refresh.
             if not supplied:
-                kwargs["curvature"] = lambda: self._hessian_spectrum(current=True)
+                kwargs["curvature"] = lambda: self._hessian_spectrum(
+                    current=True, hessian=hessian
+                )
 
         return target(self.required_optimizer, **kwargs)
 
@@ -376,12 +402,17 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             )
         return horizon
 
-    def _hessian_spectrum(self, current: bool = False) -> tuple[float, float]:
+    def _hessian_spectrum(
+        self,
+        current: bool = False,
+        hessian: Optional[Callable[..., ch.Tensor]] = None,
+    ) -> tuple[float, float]:
         """Return the curvature constants FisherLR decays by.
 
         Args:
             current: Measure at the current iterate rather than at the
                 model's default point, its initialization.
+            hessian: As ``make_optimizer_and_schedule``.
 
         Returns:
             Tuple of (mu, smoothness) from this model's Hessian.
@@ -390,14 +421,15 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             NotImplementedError: If the model cannot supply a Hessian.
             ValueError: If the estimate has no positive curvature.
         """
-        if not hasattr(self, "hessian"):
+        if hessian is None and not hasattr(self, "hessian"):
             raise NotImplementedError(
                 f"{type(self).__name__} does not implement hessian(), which "
                 f"the {constants.SchedulerType.FISHER.value} scheduler needs; "
                 "set fisher_mu and fisher_smoothness explicitly instead."
             )
-        # nn.Module.__getattr__ types every attribute as a Tensor.
-        hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))
+        if hessian is None:
+            # nn.Module.__getattr__ types every attribute as a Tensor.
+            hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))
         estimate = hessian(getattr(self, "theta").detach()) if current else hessian()
         return fisher.FisherLR.spectrum(
             estimate, getattr(self, "independent_coordinates", True)
@@ -524,8 +556,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             return optimizer.step(closure)  # type: ignore[return-value]
         return optimizer.step()  # type: ignore[return-value]
 
-    def pretrain_hook(self) -> None:
-        """Hook called before the training procedure begins."""
+    def pre_phase_hook(self) -> None:
+        """Hook called before each phase, once its run is seeded."""
 
     def step_pre_hook(
         self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict
@@ -541,7 +573,38 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Hook called after each complete pass through the dataset."""
 
     def post_training_hook(self) -> None:
-        """Hook called after the full training procedure completes."""
+        """Hook called once, after the full training procedure completes."""
+
+    def post_warm_start_hook(self, result: "trainer.RunResult") -> None:  # pylint: disable=unused-argument
+        """Hook called with the warm start's record, to adopt its result.
+
+        Args:
+            result: The warm-start run.
+        """
+
+    def post_phase_hook(
+        self, result: "trainer.RunResult"
+    ) -> tuple[bool, Optional[str]]:  # pylint: disable=unused-argument
+        """Decide whether the procedure stops after a phase, and prepare the next.
+
+        A phase changes the problem, such as a projection budget, and
+        training resumes from the current parameters. A model that never
+        changes its problem keeps this default and trains in one phase.
+
+        Args:
+            result: The phase just finished.
+
+        Returns:
+            Tuple of (stop, reason), as ``should_stop``.
+        """
+        return True, "single phase"
+
+    def run_metrics(self) -> dict:
+        """Return algorithm-specific facts about the run that just finished.
+
+        Recorded in that run's ``RunResult.metrics``. Defaults to none.
+        """
+        return {}
 
     def description(
         self, stage: str, epoch: int, step: int, loss_meter: helpers.AverageMeter
@@ -553,15 +616,17 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Return the regularization term to add to the loss. Defaults to zero."""
         return ch.tensor(0.0)
 
-    def compute_loss(self, batch) -> ch.Tensor:
+    def compute_loss(self, batch, criterion: Optional[Callable] = None) -> ch.Tensor:
         """Compute the loss for a single batch.
 
         Override to implement custom forward and loss logic. The default
         implementation unpacks ``batch`` as ``(inp, targ)`` and evaluates
-        ``self.criterion``.
+        the criterion.
 
         Args:
             batch: A single batch from the DataLoader.
+            criterion: The stage's criterion, its parameters bound; by
+                default ``self.criterion`` with ``self.criterion_params``.
 
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
@@ -569,9 +634,13 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         inp, targ = batch
         pred = self(inp)
         pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)
+        if criterion is not None:
+            return criterion(*pred_args, targ)
         return self.required_criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
 
-    def compute_val_loss(self, batch) -> ch.Tensor:
+    def compute_val_loss(
+        self, batch, criterion: Optional[Callable] = None
+    ) -> ch.Tensor:
         """Compute the validation loss for a single batch.
 
         Defaults to ``compute_loss``. Override to use a different metric
@@ -579,11 +648,12 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         Args:
             batch: A single batch from the validation DataLoader.
+            criterion: As ``compute_loss``.
 
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
         """
-        return self.compute_loss(batch)
+        return self.compute_loss(batch, criterion)
 
     def train_batch(self, batch) -> Optional[dict]:
         """Run a full training update for one batch.

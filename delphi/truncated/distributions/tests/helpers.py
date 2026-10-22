@@ -7,6 +7,10 @@ from typing import Any, NamedTuple, Optional, Protocol, TypeVar, Union, cast
 import torch as ch
 from torch.distributions import Distribution, kl
 
+from delphi.exponential_family import exponential_family_distribution
+import delphi.oracle
+from delphi.truncated.distributions import truncated_exponential_family_distributions
+
 # Read through .nonzero(), so a bool, int or float return all work.
 Oracle = Callable[[ch.Tensor], ch.Tensor]
 
@@ -172,6 +176,50 @@ def _family(
     default = cast(Callable[..., Distribution], type(target))
     suffixes = (parameter,) if isinstance(parameter, str) else parameter
     return _Family(suffixes, rebuild or default)
+
+
+def untruncated_mle(
+    model_class: type[
+        truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
+    ],
+    dims: int,
+    *model_args: Any,
+) -> Callable[[ch.Tensor], Any]:
+    """Return the naive estimator for a family whose MLE has no closed form.
+
+    The naive estimate is the MLE that ignores the truncation, the baseline
+    every recovery test must beat. A family with a closed form passes it as
+    ``empirical`` directly; for the rest, the model's warm start computes it,
+    so a fit that ignores the truncation, with one step after it, stands in.
+
+    Args:
+        model_class: Truncated model whose config enables the warm start.
+        dims: Number of dimensions.
+        *model_args: Known parameters, passed to the model.
+
+    Returns:
+        Maps a sample to its canonical estimates, a tuple when there are
+        several, as ``empirical`` expects.
+    """
+
+    def estimate(sample: ch.Tensor) -> Any:
+        # The warm start is the estimate; one phase of one step completes the fit.
+        untruncated = model_class(
+            {"iterations": 1, "max_phases": 1},
+            delphi.oracle.Identity(),
+            dims,
+            *model_args,
+        )
+        untruncated.fit(sample)
+        family = cast(
+            type[exponential_family_distribution.ExponentialFamilyDistribution],
+            model_class.dist,
+        )
+        canonical = family.to_canonical(untruncated.emp_theta).detach()
+        count = len(model_class.estimate_suffixes)
+        return canonical if count == 1 else canonical.chunk(count)
+
+    return estimate
 
 
 def assert_family_recovers(  # pylint: disable=too-many-arguments

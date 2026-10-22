@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Truncated NLL autograd functions for exponential family distributions."""
 
+from collections.abc import Callable
 import logging
 
 import torch as ch
@@ -103,6 +104,58 @@ class TruncatedExponentialFamilyDistributionNLL(  # pylint: disable=abstract-met
             # torch.cov returns a 0-d scalar for a single statistic, not a
             # 1 x 1 matrix.
             return ch.atleast_2d(calc_suff_stat(z).T.cov())
+
+
+class ExponentialFamilyDistributionNLL:
+    """Untruncated negative log likelihood for exponential family distributions.
+
+    The warm start's criterion. Its log-partition is in closed form in the
+    family's ``log_prob``, so autograd differentiates it exactly and it needs
+    no hand-written backward, unlike the truncated NLL, whose normalizer is a
+    Monte Carlo estimate. ``apply`` and ``hessian`` mirror that class.
+    """
+
+    @staticmethod
+    def apply(
+        theta: ch.Tensor, data: ch.Tensor, dims: int, dist: Callable
+    ) -> ch.Tensor:
+        """Return each sample's term of the batch's mean NLL.
+
+        Each term carries the 1 / batch size, as the other criteria's do, so
+        the trainer's sum over the batch is the mean.
+
+        Args:
+            theta: Natural parameters.
+            data: Batch whose first ``dims`` columns are the samples.
+            dims: Number of dimensions.
+            dist: Maps ``(theta, dims)`` to the family's distribution.
+
+        Returns:
+            One term per sample, shaped (batch,).
+        """
+        return -dist(theta, dims).log_prob(data[:, :dims]) / data.size(0)
+
+    @staticmethod
+    def hessian(
+        theta: ch.Tensor, data: ch.Tensor, dims: int, dist: Callable
+    ) -> ch.Tensor:
+        """Return the Hessian of the mean NLL, ``Cov[T(z)]`` in natural parameters.
+
+        Args:
+            theta: Point to evaluate at.
+            data: Samples, shaped (n, dims) or wider.
+            dims: Number of dimensions.
+            dist: Maps ``(theta, dims)`` to the family's distribution.
+
+        Returns:
+            The Hessian, shaped (k, k).
+        """
+        return ch.autograd.functional.hessian(
+            lambda point: ExponentialFamilyDistributionNLL.apply(
+                point, data, dims, dist
+            ).sum(),
+            theta.detach(),
+        )
 
 
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
