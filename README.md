@@ -194,7 +194,9 @@ set is not too complex, by the algorithm of Kontonis, Tzamos and Zampetakis
 (2019), "Efficient Truncated Statistics with Unknown Truncation". It whitens
 the sample, estimates the degree-`degree` Hermite expansion of a function that
 mixes the set with the Gaussian, and minimizes a convex objective built from it
-by projected stochastic gradient descent. These models take no `phi`:
+by projected L-BFGS over the whole sample (the paper uses SGD, whose
+heavy-tailed minibatch gradients stalled above the minimum in ten dimensions).
+These models take no `phi`:
 
 ```python
 import torch as ch

@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Configuration model for the normal distribution under unknown truncation."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 import pydantic
 
@@ -13,7 +13,16 @@ class UnknownTruncationNormalConfig(DelphiConfig):
 
     Kontonis, Tzamos and Zampetakis (2019), Algorithm 1: a degree-``degree``
     Hermite expansion of the weighted indicator of the set, then projected
-    stochastic gradient descent on the convex objective it defines.
+    descent on the convex objective it defines.
+
+    The descent defaults to full-batch L-BFGS rather than the paper's SGD.
+    Each term is an exponential of a quadratic, so minibatch gradients are
+    heavy-tailed: on a ten-dimensional ball, SGD in batches of 100 ended
+    above its starting objective, at KL 0.53 against 0.19 at the minimizer.
+    The objective is a fixed average over the descent's samples, smooth and
+    well conditioned (condition number about 7 there), so L-BFGS reaches its
+    minimizer in a few steps. Converged steps repeat the minimizer, so the
+    averaged and moving-average estimates agree with it.
 
     Attributes:
         degree: Total degree k of the Hermite expansion. The basis has
@@ -33,11 +42,20 @@ class UnknownTruncationNormalConfig(DelphiConfig):
 
     model_config = pydantic.ConfigDict(extra="ignore")
 
-    batch_size: int = 100
+    # None is the whole descent sample.
+    batch_size: Optional[int] = pydantic.Field(default=None, ge=1)  # type: ignore[assignment]
     val: float = pydantic.Field(default=0.1, ge=0.0, le=1.0)
     record_params_every: int = pydantic.Field(default=1, ge=1)
-    iterations: Optional[int] = pydantic.Field(default=2000, ge=1)
-    scheduler: Optional[str] = "fisher"
+    iterations: Optional[int] = pydantic.Field(default=100, ge=1)
+    optimizer: str = "lbfgs"
+    lr: float = pydantic.Field(default=1.0, gt=0.0)
+    scheduler: Optional[str] = None
+    lbfgs_max_iter: int = pydantic.Field(
+        default=50, ge=1, serialization_alias="max_iter"
+    )
+    lbfgs_line_search_fn: Optional[Literal["strong_wolfe"]] = pydantic.Field(
+        default="strong_wolfe", serialization_alias="line_search_fn"
+    )
 
     degree: int = pydantic.Field(default=10, ge=1)
     hermite_fraction: float = pydantic.Field(default=0.5, gt=0.0, lt=1.0)

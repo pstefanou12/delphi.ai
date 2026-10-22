@@ -16,8 +16,9 @@ sample means ``E_{N_S}[H_V]`` (Theorem 4). The objective
 is convex in the natural parameters ``(u, B) = (Sigma^-1 mu, Sigma^-1)``
 (Claim 1), and with the exact ``psi`` its minimizer is the truth (Claim 2).
 Algorithm 1 minimizes it by projected stochastic gradient descent from the
-empirical moments and averages the iterates; Theorem 6 then recovers the set
-as ``{N(0, I) psi_k / N(mu_hat, Sigma_hat) > 1 / 2}``.
+empirical moments; here full-batch L-BFGS minimizes the same sample average
+(see ``UnknownTruncationNormalConfig``). Theorem 6 then recovers the set as
+``{N(0, I) psi_k / N(mu_hat, Sigma_hat) > 1 / 2}``.
 
 ``h`` is affine in ``(u, B)``, so every per-sample term is
 ``psi_k(x) exp(<theta, T(x)> + c(x))`` with ``T`` and ``c`` fixed once the frame
@@ -41,6 +42,22 @@ from delphi.truncated.distributions import distributions, losses
 # Sizes the projection set when the caller gives no survival mass. A smaller
 # mass only widens the set, so this errs towards not cutting off the truth.
 DEFAULT_ALPHA = 0.01
+
+
+def _row_loader(rows: ch.Tensor, batch_size: int, shuffle: bool) -> data.DataLoader:
+    """Return a loader yielding batches of rows, each fetched in one index.
+
+    A plain DataLoader fetches and stacks rows one at a time, which made a
+    full-batch step over ten thousand rows take a tenth of a second.
+    """
+    sampler: data.Sampler = (
+        data.RandomSampler(rows) if shuffle else data.SequentialSampler(rows)
+    )
+    return data.DataLoader(
+        data.TensorDataset(ch.empty(len(rows), 0), rows),
+        sampler=data.BatchSampler(sampler, batch_size, drop_last=False),
+        batch_size=None,
+    )
 
 
 class Frame(NamedTuple):
@@ -208,18 +225,15 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
 
         rows = self._make_rows(descent_part, S.dtype)
         self._rows = rows
-        self.train_loader_ = data.DataLoader(
-            data.TensorDataset(ch.empty(len(rows), 0), rows),
-            batch_size=self.hyperparameters.batch_size,
-            shuffle=self.hyperparameters.shuffle,
+        self.train_loader_ = _row_loader(
+            rows,
+            self.hyperparameters.batch_size or len(rows),
+            self.hyperparameters.shuffle,
         )
         self.val_loader_ = None
         if len(val_part) > 0:
             val_rows = self._make_rows(val_part, S.dtype)
-            self.val_loader_ = data.DataLoader(
-                data.TensorDataset(ch.empty(len(val_rows), 0), val_rows),
-                batch_size=len(val_rows),
-            )
+            self.val_loader_ = _row_loader(val_rows, len(val_rows), shuffle=False)
 
         emp_theta = self._initial_theta().to(S.dtype)
         self.emp_theta = emp_theta
