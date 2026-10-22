@@ -116,7 +116,7 @@ class TruncatedProbitRegression(  # pylint: disable=too-many-instance-attributes
             self.emp_weight = ch.nn.Parameter(self.emp_weight)
         self.register_parameter("weight", self.emp_weight)
 
-    def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
+    def pre_phase_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Projection set radius.

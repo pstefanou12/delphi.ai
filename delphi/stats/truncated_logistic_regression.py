@@ -140,7 +140,7 @@ class TruncatedLogisticRegression(  # pylint: disable=too-many-instance-attribut
             self.emp_weight = ch.randn(self.K, self.D)  # pylint: disable=attribute-defined-outside-init
         self.register_parameter("weight", ch.nn.Parameter(self.emp_weight.clone()))
 
-    def pretrain_hook(self):
+    def pre_phase_hook(self):
         """
         Set up empirical model and projection set before training.
 

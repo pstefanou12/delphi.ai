@@ -1,6 +1,8 @@
 # Author: pstefanou12@
 """Tests for the trainer's procedure: the warm start and the phases."""
 
+import functools
+
 import pytest
 import torch as ch
 from torch.utils import data
@@ -98,8 +100,7 @@ def test_a_warm_start_budget_without_a_criterion_raises():
 
 def test_the_warm_start_trains_its_own_criterion_and_hands_over_its_record():
     model = _phased(warm_start_iterations=100)
-    model.warm_start_criterion = _squared_error
-    model.warm_start_criterion_params = [7.0]
+    model.warm_start_criterion = functools.partial(_squared_error, offset=7.0)
     result = _fit(model)
     (warm,) = model.warm_start_results
     assert warm is result.warm_start

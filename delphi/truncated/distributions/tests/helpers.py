@@ -187,8 +187,10 @@ def untruncated_mle(
 ) -> Callable[[ch.Tensor], Any]:
     """Return the naive estimator for a family whose MLE has no closed form.
 
-    The model's warm start is the untruncated MLE, so a fit that ignores the
-    truncation, with one step after it, stands in for the closed form.
+    The naive estimate is the MLE that ignores the truncation, the baseline
+    every recovery test must beat. A family with a closed form passes it as
+    ``empirical`` directly; for the rest, the model's warm start computes it,
+    so a fit that ignores the truncation, with one step after it, stands in.
 
     Args:
         model_class: Truncated model whose config enables the warm start.

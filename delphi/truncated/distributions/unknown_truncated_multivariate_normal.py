@@ -104,12 +104,13 @@ class UnknownTruncationMultivariateNormalKnownCovariance(  # pylint: disable=too
         self.criterion_params = [self.phi, self.exp_h, self.dims]
 
         self._calc_emp_model()
+        self.radius = None
         self.trainer = trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         self._adopt_results(self.procedure)
         return self
 
-    def pre_phases_hook(self) -> None:
+    def _start_projection(self) -> None:
         """Start the projection ball at min_radius."""
         self.radius = self.hyperparameters.min_radius
 
@@ -215,12 +216,13 @@ class UnknownTruncationMultivariateNormalUnknownCovariance(  # pylint: disable=t
         self.criterion_params = [self.phi, self.exp_h, self.dims]
 
         self._calc_emp_model()
+        self.radius = None
         self.trainer = trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         self._adopt_results(self.procedure)
         return self
 
-    def pre_phases_hook(self) -> None:
+    def _start_projection(self) -> None:
         """Start the projection ball at min_radius."""
         self.radius = self.hyperparameters.min_radius
 

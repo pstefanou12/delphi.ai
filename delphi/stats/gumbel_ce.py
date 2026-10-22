@@ -35,7 +35,7 @@ class GumbelCEModel(  # pylint: disable=abstract-method
         super().__init__(hyperparameters)
         self.d, self.k = d, k  # pylint: disable=invalid-name
 
-    def pretrain_hook(self):  # pylint: disable=attribute-defined-outside-init
+    def pre_phase_hook(self):  # pylint: disable=attribute-defined-outside-init
         """Set up model parameters before training."""
         self.model.data = self.weight
         self.model.requires_grad = True

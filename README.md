@@ -11,6 +11,10 @@ set, delphi recovers the distribution as it was before truncation.
 - [Truncated Distributions](#truncated-distributions)
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
+- [Architecture](#architecture)
+  - [The trainer](#the-trainer)
+  - [Models](#models)
+  - [Adding a distribution](#adding-a-distribution)
 - [Development](#development)
 - [Citing](#citing)
 - [License](#license)
@@ -168,6 +172,85 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("delphi.trainer").setLevel(logging.WARNING)  # per module
 ```
+
+## Architecture
+
+delphi separates *how a model is fit*, which the trainer owns, from *what is
+fit*, which each model describes.
+
+### The trainer
+
+`delphi/trainer.py` fits any model built on the `delphi` base class
+(`delphi/delphi.py`). Its one entry point, `Trainer.train_model`, runs a
+**procedure**:
+
+1. **An optional warm start.** If the config sets a budget,
+   `warm_start_iterations` or `warm_start_epochs`, the trainer first trains
+   the model's `warm_start_criterion`. `warm_start_`-prefixed settings
+   override the main run's stop criteria for this stage only. Its result is
+   handed to the model's `post_warm_start_hook`.
+2. **Phases.** Each phase trains the model's own `criterion` from the current
+   parameters, with a fresh optimizer and scheduler. After each one, the
+   model's `post_phase_hook` either stops the procedure, giving a reason, or
+   changes the problem for the next phase, such as widening a projection
+   budget. `max_phases` caps the number. A model that never changes its
+   problem keeps the default hook and trains once.
+
+Each run, warm start or phase, is one **stage**: a config, a criterion and
+that criterion's Hessian, which the Fisher learning-rate schedule sizes its
+steps from. `train_model` returns a `ProcedureResult` with the warm start,
+the phases in order and why the procedure stopped. Each run is a `RunResult`
+holding the config it ran under, its loss, gradient and iterate histories,
+its stop reason and wall time, and any `metrics` the model reports through
+`run_metrics`. The best, final, moving-average and averaged estimates are
+computed from the iterates.
+
+Within a run the trainer steps the optimizer and records every iterate. It
+stops on the first of the iteration or epoch budget, the gradient or loss
+tolerances, patience, or the model's own `should_stop`.
+
+### Models
+
+A model subclasses `delphi` and supplies:
+
+| piece | role |
+|---|---|
+| `defaults` | its pydantic config class |
+| `criterion`, `criterion_params` | the loss the phases train |
+| `hessian()` | the criterion's curvature, needed by the Fisher schedule |
+| `warm_start_criterion`, `warm_start_hessian` | the warm start's loss, its parameters bound, and its curvature |
+| `pre_phase_hook`, `post_phase_hook` | prepare each phase; decide after it whether another runs |
+| `post_warm_start_hook`, `post_training_hook` | adopt the warm start's result; finish after the whole procedure |
+| `step_post_hook`, `run_metrics` | act after each step (e.g. project); report facts about a run |
+
+The truncated distributions add two layers on top of this:
+
+- **`delphi/exponential_family/<family>.py`** wraps the torch distribution in
+  natural parameters: its sufficient statistic `T(x)`, `to_natural`,
+  `to_canonical` and `log_prob`.
+- **`delphi/truncated/distributions/truncated_<family>.py`** is the model. It
+  subclasses `TruncatedExponentialFamilyDistribution`, which supplies the
+  truncated NLL, its Hessian, the sublevel-set projection and the phases
+  that widen its budget. The family adds its starting point
+  (`_calc_emp_model`), the domain of its parameters (`_constraints`) and its
+  estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
+
+Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
+ones: `Identity`, which admits every sample, and `UnknownGaussian`, which is
+estimated from the data.
+
+### Adding a distribution
+
+1. Write the family class in `delphi/exponential_family/`, and check
+   `<T(x), theta> + log h(x) - log_prob(x)` is constant across samples.
+2. Write the truncated model. If the untruncated MLE has a closed form,
+   `_calc_emp_model` returns it. If not, it returns a rough start and the
+   family's config enables the warm start
+   (`WarmStartedExponentialFamilyDistributionConfig`), which refines that
+   start to the untruncated MLE.
+3. Test it with `helpers.assert_family_recovers` and
+   `helpers.assert_family_distinguishes`, as the existing
+   `truncated_*_test.py` modules do.
 
 ## Development
 

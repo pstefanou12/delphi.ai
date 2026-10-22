@@ -128,14 +128,16 @@ class ProcedureResult:
 class Stage:
     """What one run trains: its config, criterion and the criterion's Hessian.
 
-    A criterion of None is the model's own, with its own ``hessian``.
+    A criterion of None is the model's own, with its own ``hessian``; any
+    other has its parameters bound. ``pre_hook`` runs once the run is seeded,
+    before it builds its optimizer.
     """
 
     name: str
     config: configs.TrainerConfig
     criterion: Optional[Callable] = None
-    criterion_params: list = dataclasses.field(default_factory=list)
     hessian: Optional[Callable[..., ch.Tensor]] = None
+    pre_hook: Optional[Callable[[], None]] = None
 
 
 class Trainer:  # pylint: disable=too-many-instance-attributes
@@ -271,7 +273,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self._warm_start_stage(), train_loader, val_loader, rand_seed, store
             )
             self.model.post_warm_start_hook(warm_start)
-        self.model.pre_phases_hook()
         phases, reason = self._train_phases(
             train_loader, val_loader, rand_seed, store, checkpoint
         )
@@ -310,7 +311,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             name="warm start",
             config=config,
             criterion=self.model.warm_start_criterion,
-            criterion_params=self.model.warm_start_criterion_params,
             hessian=self.model.warm_start_hessian,
         )
 
@@ -329,7 +329,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
         phases: list[RunResult] = []
         while True:
-            stage = Stage(name=f"phase {len(phases) + 1}", config=self.hyperparameters)
+            stage = Stage(
+                name=f"phase {len(phases) + 1}",
+                config=self.hyperparameters,
+                pre_hook=self.model.pre_phase_hook,
+            )
             run = self._run_stage(
                 stage, train_loader, val_loader, rand_seed, store, checkpoint
             )
@@ -373,16 +377,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.hyperparameters = self.model.hyperparameters = cast(Any, stage.config)
         try:
             self.logger.info(stage.name)
-            self._train_until_stopped(
-                train_loader, val_loader, rand_seed, store, checkpoint
-            )
+            self._run_epochs(train_loader, val_loader, rand_seed, store, checkpoint)
         finally:
             self.hyperparameters = self.model.hyperparameters = cast(Any, main)
             self._stage = None
         self.result = self._finish_run(stage)
         return self.result
 
-    def _train_until_stopped(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def _run_epochs(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         train_loader: Optional[DataLoader],
         val_loader: Optional[DataLoader],
@@ -401,7 +403,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self.scaler = ch.cuda.amp.GradScaler()
 
         self.t_start = time()
-        self.model.pretrain_hook()
+        if self._stage is not None and self._stage.pre_hook is not None:
+            self._stage.pre_hook()
 
         # Record dataset size for algorithms that need it (e.g. mini-batch ELBO).
         if train_loader is not None:
@@ -698,7 +701,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """Return the stage's criterion arguments, or none for the model's own."""
         if self._stage is None or self._stage.criterion is None:
             return ()
-        return self._stage.criterion, self._stage.criterion_params
+        return (self._stage.criterion,)
 
     def _optimizer_step(self) -> None:
         """Perform the optimizer step, handling AMP and grad clipping."""

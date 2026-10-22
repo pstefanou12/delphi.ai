@@ -3,6 +3,7 @@
 
 import abc
 from collections.abc import Callable
+import functools
 import logging
 import math
 from typing import ClassVar, Generic, Optional
@@ -152,8 +153,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.hyperparameters.num_samples,
             self.hyperparameters.eps,
         ]
-        self.warm_start_criterion = losses.untruncated_exponential_family_nll
-        self.warm_start_criterion_params = [self.dims, self.dist]
+        self.warm_start_criterion = functools.partial(
+            losses.ExponentialFamilyDistributionNLL.apply,
+            dims=self.dims,
+            dist=self.dist,
+        )
         self.warm_start_hessian = self._untruncated_hessian
 
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
@@ -165,7 +169,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
         self.n_samples_ = S.size(0)
         self._projections, self._projection_distance = 0, 0.0
-        self.nll_init, self._previous_phase_loss = None, None
+        self.nll_init, self.radius, self._previous_phase_loss = None, None, None
         self._calc_emp_model()
         self.trainer = trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
@@ -174,20 +178,21 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     def post_warm_start_hook(self, result: trainer.RunResult) -> None:
         """Start the procedure from the warm start's averaged iterate."""
-        if result.avg_params is None:
-            raise RuntimeError("the warm start recorded no iterates.")
+        # The config requires record_params_every >= 1, so there are iterates.
         self.emp_theta = self._constraints(result.avg_params.detach().clone())
         with ch.no_grad():
             self._write_theta(self.emp_theta)
 
-    def pre_phases_hook(self) -> None:
+    def pre_phase_hook(self) -> None:
+        """Start the projection before the first phase; mark each phase's counts."""
+        if self.radius is None:
+            self._start_projection()
+        self._run_start = (self._projections, self._projection_distance)
+
+    def _start_projection(self) -> None:
         """Anchor the projection at the start point, with its first budget."""
         self.nll_init = self._compute_nll(self.emp_theta)
         self.radius = self._initial_radius()
-
-    def pretrain_hook(self) -> None:
-        """Mark where this run's projection counts begin."""
-        self._run_start = (self._projections, self._projection_distance)
 
     def run_metrics(self) -> dict:
         """Return the budget the run used and how often it projected."""
@@ -306,26 +311,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         )
 
     def _untruncated_hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the Hessian of the warm-start criterion, the untruncated NLL.
-
-        In natural parameters it is ``Cov[T(z)]`` under the untruncated
-        distribution, which autograd gives exactly from the training data.
-
-        Args:
-            theta: Point to evaluate at; defaults to the current iterate.
-
-        Returns:
-            The Hessian, shaped (k, k).
-        """
-        point = (self.theta if theta is None else theta).detach()
-        samples = self.train_loader_.dataset.S
-
-        def nll(candidate: ch.Tensor) -> ch.Tensor:
-            return losses.untruncated_exponential_family_nll(
-                candidate, samples, self.dims, self.dist
-            )
-
-        return ch.autograd.functional.hessian(nll, point)
+        """Return the Hessian of the warm-start criterion, as ``hessian`` does."""
+        theta = self.emp_theta if theta is None else theta
+        return losses.ExponentialFamilyDistributionNLL.hessian(
+            theta, self.train_loader_.dataset.S, self.dims, self.dist
+        )
 
     def mass_on_set(self, theta: ch.Tensor) -> float:
         """Return the mass theta's distribution puts on the truncation set.

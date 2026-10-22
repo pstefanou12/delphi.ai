@@ -488,7 +488,7 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
         top1.update(prec1, batch[0].size(0))
         top5.update(prec5, batch[0].size(0))
 
-    def pretrain_hook(self):
+    def pre_phase_hook(self):
         """Reset metrics before training starts."""
         self.reset_metrics()
 

@@ -116,9 +116,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         self.criterion: Optional[Callable] = None
         self.criterion_params: list = []
         # The objective of the warm start, which runs only when the config
-        # sets a warm-start budget.
+        # sets a warm-start budget: a criterion with its parameters bound.
         self.warm_start_criterion: Optional[Callable] = None
-        self.warm_start_criterion_params: list = []
         # The warm-start criterion's Hessian, which the fisher scheduler needs
         # during the stage; ``hessian`` belongs to the main criterion.
         self.warm_start_hessian: Optional[Callable[..., ch.Tensor]] = None
@@ -557,8 +556,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             return optimizer.step(closure)  # type: ignore[return-value]
         return optimizer.step()  # type: ignore[return-value]
 
-    def pretrain_hook(self) -> None:
-        """Hook called before the training procedure begins."""
+    def pre_phase_hook(self) -> None:
+        """Hook called before each phase, once its run is seeded."""
 
     def step_pre_hook(
         self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict
@@ -574,7 +573,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Hook called after each complete pass through the dataset."""
 
     def post_training_hook(self) -> None:
-        """Hook called after the full training procedure completes."""
+        """Hook called once, after the full training procedure completes."""
 
     def post_warm_start_hook(self, result: "trainer.RunResult") -> None:  # pylint: disable=unused-argument
         """Hook called with the warm start's record, to adopt its result.
@@ -582,9 +581,6 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Args:
             result: The warm-start run.
         """
-
-    def pre_phases_hook(self) -> None:
-        """Hook called once after any warm start, before the first phase."""
 
     def post_phase_hook(
         self, result: "trainer.RunResult"
@@ -620,12 +616,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Return the regularization term to add to the loss. Defaults to zero."""
         return ch.tensor(0.0)
 
-    def compute_loss(
-        self,
-        batch,
-        criterion: Optional[Callable] = None,
-        criterion_params: Optional[list] = None,
-    ) -> ch.Tensor:
+    def compute_loss(self, batch, criterion: Optional[Callable] = None) -> ch.Tensor:
         """Compute the loss for a single batch.
 
         Override to implement custom forward and loss logic. The default
@@ -634,25 +625,21 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
         Args:
             batch: A single batch from the DataLoader.
-            criterion: The stage's criterion; ``self.criterion`` by default.
-            criterion_params: The stage's criterion parameters;
-                ``self.criterion_params`` by default.
+            criterion: The stage's criterion, its parameters bound; by
+                default ``self.criterion`` with ``self.criterion_params``.
 
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
         """
-        if criterion is None:
-            criterion, criterion_params = self.required_criterion, self.criterion_params
         inp, targ = batch
         pred = self(inp)
         pred_args = pred if isinstance(pred, (tuple, list)) else (pred,)
-        return criterion(*pred_args, targ, *(criterion_params or []))
+        if criterion is not None:
+            return criterion(*pred_args, targ)
+        return self.required_criterion(*pred_args, targ, *self.criterion_params)  # pylint: disable=not-callable
 
     def compute_val_loss(
-        self,
-        batch,
-        criterion: Optional[Callable] = None,
-        criterion_params: Optional[list] = None,
+        self, batch, criterion: Optional[Callable] = None
     ) -> ch.Tensor:
         """Compute the validation loss for a single batch.
 
@@ -662,12 +649,11 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Args:
             batch: A single batch from the validation DataLoader.
             criterion: As ``compute_loss``.
-            criterion_params: As ``compute_loss``.
 
         Returns:
             Loss tensor (scalar or vector; the trainer handles reduction).
         """
-        return self.compute_loss(batch, criterion, criterion_params)
+        return self.compute_loss(batch, criterion)
 
     def train_batch(self, batch) -> Optional[dict]:
         """Run a full training update for one batch.

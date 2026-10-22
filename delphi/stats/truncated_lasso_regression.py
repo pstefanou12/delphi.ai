@@ -25,7 +25,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     probability alpha.
     """
 
-    # Created by register_parameter in pretrain_hook, which mypy cannot see.
+    # Created by register_parameter in pre_phase_hook, which mypy cannot see.
     weight: nn.Parameter
 
     defaults = configs.TruncatedLassoRegressionConfig
@@ -128,7 +128,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         )
         return self
 
-    def pretrain_hook(self):
+    def pre_phase_hook(self):
         """Set up empirical model and projection set before training."""
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.
