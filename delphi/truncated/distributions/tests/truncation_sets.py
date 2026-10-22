@@ -135,12 +135,11 @@ def triangle(vertices: Sequence[Sequence[float]]) -> helpers.Oracle:
 def sierpinski(level: int) -> helpers.Oracle:
     """Return membership in a Sierpinski triangle on the unit base.
 
-    Kontonis et al. (2019)'s Figure 1 set: non-convex, with holes at every
-    scale, inside the triangle with vertices (0, 0), (1, 0) and
-    (1/2, sqrt(3)/2). A point belongs when, at each of ``level`` halvings,
-    it falls in one of the three corner triangles rather than the removed
-    middle one, which in barycentric coordinates means one coordinate is at
-    least 1/2.
+    Non-convex, with holes at every scale, inside the triangle with vertices
+    (0, 0), (1, 0) and (1/2, sqrt(3)/2). A point belongs when, at each of
+    ``level`` halvings, it falls in one of the three corner triangles rather
+    than the removed middle one, which in barycentric coordinates means one
+    coordinate is at least 1/2.
 
     Args:
         level: Number of halvings; level 0 is the whole triangle.
