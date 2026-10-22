@@ -49,7 +49,7 @@ def _data(model, avg) -> list[tuple[str, str]]:
         ("observed samples", str(model.n_samples_)),
         ("noise", str(model.noise)),
         ("survival mass (alpha)", f"{model.alpha:.4f}"),
-        ("mass on the set at the estimate", f"{model.mass_on_set(avg):.4f}"),
+        ("mass on the set at estimate", f"{model.mass_on_set(avg):.4f}"),
     ]
 
 
