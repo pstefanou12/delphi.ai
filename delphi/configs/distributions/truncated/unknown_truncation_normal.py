@@ -25,17 +25,23 @@ class UnknownTruncationNormalConfig(DelphiConfig):
     averaged and moving-average estimates agree with it.
 
     Attributes:
-        degree: Total degree k of the Hermite expansion; when None, the
-            largest whose basis has at most ``max_terms`` terms, up to
-            ``max_degree``. The bias of the expansion falls slowly with k,
-            and on 20000 samples raising it kept paying: a two-dimensional
-            half-space went from KL 0.087 at degree 10 to 0.009 at 100, and
-            a half-line from 0.052 at 20 to 0.008 at 200, each fit within
-            seconds. Past about degree 100 in two dimensions the
-            coefficients' sampling noise overtook the bias.
-        max_terms: Term budget that sizes the default degree: 200 in one
-            dimension, 124 in two, 34 in three, 5 in ten.
-        max_degree: Cap on the default degree.
+        degree: Total degree k of the Hermite expansion. Any degree is
+            honored, with a warning when its basis has more terms than there
+            are samples to estimate them. When None, the largest whose basis
+            fits ``max_terms``, up to ``max_degree``. The expansion's bias
+            falls with k, but each coefficient adds its own sampling noise:
+            on 9000 coefficient samples, a two-dimensional half-space went
+            from KL 0.087 at degree 10 to 0.009 at 100 (5151 terms), then
+            rose to 0.013 at 128 (8385 terms), where the noise overtook the
+            bias. More samples move that point: a four-dimensional ball went
+            from 0.121 to 0.092 at degree 26 with four times the samples.
+        max_terms: Term budget that sizes the default degree; None is the
+            number of samples estimating the coefficients, about one term
+            per sample. With 20000 samples that is 9000: degree 1200 (the
+            cap) in one dimension, 132 in two, 35 in three, 19 in four and 6
+            in ten.
+        max_degree: Cap on the default degree. A half-line and an interval
+            were still improving at 1200, and no larger degree was measured.
         hermite_fraction: Share of the training samples that estimate the
             Hermite coefficients. The rest drive the descent, which the
             paper draws independently of the expansion.
@@ -65,8 +71,8 @@ class UnknownTruncationNormalConfig(DelphiConfig):
     )
 
     degree: Optional[int] = pydantic.Field(default=None, ge=1)
-    max_terms: int = pydantic.Field(default=8000, ge=2)
-    max_degree: int = pydantic.Field(default=200, ge=1)
+    max_terms: Optional[int] = pydantic.Field(default=None, ge=2)
+    max_degree: int = pydantic.Field(default=1200, ge=1)
     hermite_fraction: float = pydantic.Field(default=0.5, gt=0.0, lt=1.0)
     min_precision: Optional[float] = pydantic.Field(default=None, gt=0.0)
     max_precision: Optional[float] = pydantic.Field(default=None, gt=0.0)

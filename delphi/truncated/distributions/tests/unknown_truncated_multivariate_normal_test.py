@@ -18,6 +18,7 @@ from torch import distributions
 from torch.distributions import kl
 
 import delphi.oracle
+from delphi.torchnomials import hermite
 from delphi.truncated.distributions import losses, unknown_truncated_multivariate_normal
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 from delphi.utils import datasets
@@ -190,19 +191,17 @@ def test_higher_dimensional_half_space(dims: int):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Hermite bias in four dimensions: the default degree (18) fits a ball "
-        "off the mean to KL 0.162 against 0.700 naive, over the 0.1 bound."
-    ),
-)
+@pytest.mark.slow
 def test_four_dimensional_ball_off_the_mean():
+    # The Hermite bias needs degree here, and degree needs samples: on
+    # 20000 the fit reached KL 0.162 at degree 18 and 0.121 at 26; on 80000
+    # the default degree, 27, clears the bound. Naive scores 0.69.
     _recovers(
         ch.linspace(-0.5, 0.5, 4),
         _correlated(4, 4),
         lambda z: (z - 0.3).norm(dim=-1) < 2.0,
         known_covariance=False,
+        dataset_size=80000,
     )
 
 
@@ -483,3 +482,31 @@ def test_estimates_need_a_fit():
     )
     with pytest.raises(RuntimeError, match="fit"):
         _ = model.avg_loc_
+
+
+def test_default_degree_follows_the_sample():
+    target = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(
+        target, _two_half_spaces, 4000
+    )
+    model = _model(False, 2, ch.eye(2), hyperparameters={"iterations": 1})
+    model.fit(sample.S)
+    assert model.expansion_ is not None
+    # 10% validation, then half of the rest estimates the coefficients.
+    coefficient_samples = 4000 - int(0.1 * 4000)
+    coefficient_samples = int(0.5 * coefficient_samples)
+    expected = hermite.largest_degree(2, coefficient_samples, 1200)
+    assert model.expansion_.basis.degree == expected
+    assert hermite.num_terms(expected, 2) <= coefficient_samples
+
+
+def test_an_explicit_degree_beyond_the_sample_warns():
+    target = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(
+        target, _two_half_spaces, 400
+    )
+    model = _model(False, 2, ch.eye(2), hyperparameters={"iterations": 1, "degree": 40})
+    with pytest.warns(UserWarning, match="more than"):
+        model.fit(sample.S)

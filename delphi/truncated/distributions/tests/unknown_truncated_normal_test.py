@@ -10,7 +10,6 @@ difficulty is where the set sits relative to the mean.
 
 from typing import Optional
 
-import pytest
 import torch as ch
 from torch import distributions
 from torch.distributions import kl
@@ -82,15 +81,10 @@ def test_interval():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "An interval one standard deviation wide, wholly beside the mean, "
-        "keeps 30% of the mass and little of its shape: the fit reaches KL "
-        "0.128 against 1.053 naive, over the 0.1 bound."
-    ),
-)
 def test_interval_beside_the_mean():
+    # One standard deviation wide and wholly beside the mean, it keeps 30% of
+    # the mass and little of its shape: degree 200 left KL 0.155, the
+    # default 1200 reaches 0.073, against 1.053 naive.
     _recovers(
         distributions.Normal(ch.tensor([-0.5]), ch.tensor([2.0])),
         lambda z: (z[:, 0] > 0.0) & (z[:, 0] < 2.0),

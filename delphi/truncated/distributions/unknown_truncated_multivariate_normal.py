@@ -28,6 +28,7 @@ is: the descent precomputes them and trains on the rows ``[T, c, psi_k]``.
 import abc
 import math
 from typing import NamedTuple, Optional, cast
+import warnings
 
 import torch as ch
 from torch import distributions as torch_distributions
@@ -219,10 +220,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             )
         hermite_part, descent_part, val_part = self._split(S)
         frame = self._make_frame(ch.cat([hermite_part, descent_part]))
-        hp = self.hyperparameters
-        degree = hp.degree or hermite.largest_degree(
-            self.dims, hp.max_terms, hp.max_degree
-        )
+        degree = self._degree(len(hermite_part))
         basis = hermite.NormalizedProbabilistHermitePolynomial(degree, self.dims)
         self.frame_ = frame
         self.expansion_ = hermite.HermiteExpansion.from_samples(
@@ -251,6 +249,28 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         self.best_params, self.final_params = final.best_params, final.final_params
         self.ema_params, self.avg_params = final.ema_params, final.avg_params
         return self
+
+    def _degree(self, num_samples: int) -> int:
+        """Return the expansion's degree for a coefficient sample of this size.
+
+        Each coefficient is a sample mean over these samples, so a basis with
+        more terms than samples adds more noise than the extra degree removes
+        bias; the default stays within one term per sample.
+        """
+        hp = self.hyperparameters
+        if hp.degree is None:
+            return hermite.largest_degree(
+                self.dims, hp.max_terms or num_samples, hp.max_degree
+            )
+        terms = hermite.num_terms(hp.degree, self.dims)
+        if terms > num_samples:
+            warnings.warn(
+                f"a degree-{hp.degree} basis has {terms} terms, more than the "
+                f"{num_samples} samples that estimate them; its sampling noise "
+                "may outweigh the bias the degree removes.",
+                stacklevel=3,
+            )
+        return hp.degree
 
     def _split(self, S: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor, ch.Tensor]:  # pylint: disable=invalid-name
         """Shuffle S into the expansion's, the descent's and the validation part.

@@ -150,13 +150,11 @@ to correct, so fit the distribution directly.
 **The Fisher schedule is the default.** It sets the step size from the
 Hessian of the truncated likelihood, starting at `1 / L` and decaying as
 `1 / (L + mu t)`, and re-measures both as the fit moves, so neither needs
-tuning. In the example above, a constant rate (`"scheduler": None`) ends at KL
-0.026 from the truth after the same 2500 steps, against 0.002.
+tuning. Pass `"scheduler": None` for a constant rate.
 
 **Standardize multivariate normals first.** Fit on `(S - mean) / std` with
 `phi` composed with the inverse transform, as above, and map the estimates
-back. On the example above, fitting the raw data instead ends at KL 0.27
-after the same 2500 steps, against 0.002.
+back: the raw data's scale slows the descent.
 
 **Use the `avg_` estimates.** Every model exposes four: `avg_` (the mean of
 the iterates after a burn-in, set by `avg_burn_in`), `ema_` (a bias-corrected
@@ -194,8 +192,7 @@ set is not too complex, by the algorithm of Kontonis, Tzamos and Zampetakis
 (2019), "Efficient Truncated Statistics with Unknown Truncation". It whitens
 the sample, estimates the degree-`degree` Hermite expansion of a function that
 mixes the set with the Gaussian, and minimizes a convex objective built from it
-by projected L-BFGS over the whole sample (the paper uses SGD, whose
-heavy-tailed minibatch gradients stalled above the minimum in ten dimensions).
+by projected L-BFGS over the whole sample (the paper uses SGD).
 These models take no `phi`:
 
 ```python
@@ -212,7 +209,7 @@ inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
 S = population[inside][:20000]
 
 model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-    {}, dims=2  # the defaults: degree 124, the largest within 8000 terms
+    {}, dims=2  # the defaults: here degree 132, sized from the sample
 )
 model.fit(S)
 
@@ -220,31 +217,28 @@ model.fit(S)
 recovered = model.truncation_set()
 ```
 
-| | mean | covariance | KL from truth |
-|---|---|---|---|
-| truth | (0, 0) | [[1, 0], [0, 1]] | 0 |
-| sample mean and covariance | (0.506, 0.512) | [[0.490, 0.004], [0.004, 0.477]] | 0.469 |
-| recovered | (−0.010, 0.070) | [[1.019, 0.037], [0.037, 0.926]] | 0.005 |
+| | mean | covariance |
+|---|---|---|
+| truth | (0, 0) | [[1, 0], [0, 1]] |
+| sample mean and covariance | (0.506, 0.512) | [[0.490, 0.004], [0.004, 0.477]] |
+| recovered | (−0.010, 0.069) | [[1.024, 0.036], [0.036, 0.928]] |
 
-`recovered` disagrees with the true set on 3% of the population.
-
-**The degree sets the accuracy.** The expansion of a set's indicator converges
-slowly, and at a fixed degree the estimate keeps a bias that more samples do
-not remove; the paper's bound shrinks as `degree ** (-1 / 4)`. A degree-k basis
-in d dimensions has `C(k + d, d)` coefficients, so by default the degree is the
-largest whose basis has at most `max_terms` (8000) terms, capped at
-`max_degree` (200): 200 in one dimension, 124 in two, 34 in three, 5 in ten.
-Low dimensions gain the most. On 20000 samples, a half-space through the mode
-went from KL 0.087 at degree 10 to 0.009 at degree 100, after which the
-coefficients' sampling noise overtook the shrinking bias. In ten dimensions the
-basis outgrows the samples before the bias falls far.
+**The degree sets the accuracy, and the sample sets the degree.** The
+expansion of a set's indicator converges slowly, and at a fixed degree the
+estimate keeps a bias that more samples do not remove; the paper's bound
+shrinks as `degree ** (-1 / 4)`. Each of the basis's `C(k + d, d)`
+coefficients is a sample mean, though, so past about one coefficient per
+sample their noise outweighs the bias the degree removes. By default the
+degree is the largest whose basis has no more terms than there are samples
+estimating the coefficients (half the training sample), capped at 1200. With
+20000 samples that is 1200 in one dimension, 132 in two, 35 in three, 19 in
+four and 6 in ten, so more data buys more degree. Any `degree` can be set
+explicitly, with a warning when its basis outgrows the sample.
 
 **Know the covariance if you can.** With it, the sample is whitened by the
-truth and only the mean is learned; the test suite's fits then land at KL
-0.001 to 0.008 in two and three dimensions (0.025 on a ten-dimensional ball,
-at degree 5), where the unknown-covariance ones land at 0.005 to 0.012. Both
-degrade as the survival mass falls, which `alpha` does not change: here it
-only sizes the region the descent is kept in.
+truth and only the mean is learned, which leaves less to estimate. Both
+estimators degrade as the survival mass falls, which `alpha` does not change:
+here it only sizes the region the descent is kept in.
 
 ## Architecture
 
