@@ -1,9 +1,8 @@
 # Author: pstefanou12@
 """Tests for the univariate normal under unknown truncation.
 
-In one dimension the Hermite basis has only ``k + 1`` terms, so the
-unknown-variance fits afford degree 20, where degree 10 leaves a KL of
-about 0.1 on both sets.
+In one dimension the Hermite basis has only ``k + 1`` terms, so the default
+degree is the cap, 200; degree 10 left a KL of about 0.1 on both sets.
 """
 
 from typing import Optional
@@ -68,7 +67,6 @@ def test_half_line():
         distributions.Normal(ch.zeros(1), ch.ones(1)),
         lambda z: z[:, 0] > 0.0,
         known_variance=False,
-        hyperparameters={"degree": 20},
     )
 
 
@@ -77,7 +75,6 @@ def test_interval():
         distributions.Normal(ch.zeros(1), ch.ones(1)),
         lambda z: (z[:, 0] > -0.5) & (z[:, 0] < 1.5),
         known_variance=False,
-        hyperparameters={"degree": 20},
     )
 
 

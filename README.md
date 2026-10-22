@@ -212,7 +212,7 @@ inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
 S = population[inside][:20000]
 
 model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-    {"degree": 10}, dims=2
+    {}, dims=2  # the defaults: degree 124, the largest within 8000 terms
 )
 model.fit(S)
 
@@ -224,21 +224,25 @@ recovered = model.truncation_set()
 |---|---|---|---|
 | truth | (0, 0) | [[1, 0], [0, 1]] | 0 |
 | sample mean and covariance | (0.506, 0.512) | [[0.490, 0.004], [0.004, 0.477]] | 0.469 |
-| recovered | (0.185, 0.246) | [[0.852, 0.018], [0.018, 0.787]] | 0.067 |
+| recovered | (−0.010, 0.070) | [[1.019, 0.037], [0.037, 0.926]] | 0.005 |
 
-`recovered` disagrees with the true set on 7% of the population.
+`recovered` disagrees with the true set on 3% of the population.
 
-**The degree sets the accuracy, not the sample size.** The expansion of a set's
-indicator converges slowly, and at a fixed degree the estimate keeps a bias
-that more samples do not remove; the paper's bound shrinks as
-`degree ** (-1 / 4)`. Raising it costs samples instead: a degree-k basis in d
-dimensions has `C(k + d, d)` coefficients to estimate, the one of multi-index
-`V` with variance up to `poly(1 / alpha) 5 ** |V| / n` (Lemma 8). Degree 16 in two dimensions or 20 in one is cheap;
-degree 6 in ten dimensions is already 8008 coefficients.
+**The degree sets the accuracy.** The expansion of a set's indicator converges
+slowly, and at a fixed degree the estimate keeps a bias that more samples do
+not remove; the paper's bound shrinks as `degree ** (-1 / 4)`. A degree-k basis
+in d dimensions has `C(k + d, d)` coefficients, so by default the degree is the
+largest whose basis has at most `max_terms` (8000) terms, capped at
+`max_degree` (200): 200 in one dimension, 124 in two, 34 in three, 5 in ten.
+Low dimensions gain the most. On 20000 samples, a half-space through the mode
+went from KL 0.087 at degree 10 to 0.009 at degree 100, after which the
+coefficients' sampling noise overtook the shrinking bias. In ten dimensions the
+basis outgrows the samples before the bias falls far.
 
 **Know the covariance if you can.** With it, the sample is whitened by the
 truth and only the mean is learned; the test suite's fits then land at KL
-0.01 to 0.05 where the unknown-covariance ones land at 0.05 to 0.08. Both
+0.001 to 0.008 in two and three dimensions (0.025 on a ten-dimensional ball,
+at degree 5), where the unknown-covariance ones land at 0.005 to 0.012. Both
 degrade as the survival mass falls, which `alpha` does not change: here it
 only sizes the region the descent is kept in.
 

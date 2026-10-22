@@ -214,9 +214,11 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             )
         hermite_part, descent_part, val_part = self._split(S)
         frame = self._make_frame(ch.cat([hermite_part, descent_part]))
-        basis = hermite.NormalizedProbabilistHermitePolynomial(
-            self.hyperparameters.degree, self.dims
+        hp = self.hyperparameters
+        degree = hp.degree or hermite.largest_degree(
+            self.dims, hp.max_terms, hp.max_degree
         )
+        basis = hermite.NormalizedProbabilistHermitePolynomial(degree, self.dims)
         self.frame_ = frame
         self.expansion_ = hermite.HermiteExpansion.from_samples(
             basis, frame.to_frame(hermite_part)

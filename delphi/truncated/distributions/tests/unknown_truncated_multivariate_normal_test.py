@@ -4,8 +4,8 @@
 None of these fits sees the truncation set. The estimator's error at a fixed
 Hermite degree k does not vanish with the sample size: the degree-k
 expansion of the weighted indicator is biased, by ``O(k ** (-1 / 4))`` in
-Kontonis et al. (2019)'s bound. The tests therefore fix the degree, and the
-tolerances are the suite's usual ones, which every fit here clears.
+Kontonis et al. (2019)'s bound. The fits use the default degree, the largest
+within the term budget, and the tolerances are the suite's usual ones.
 """
 
 from typing import Optional
@@ -116,25 +116,22 @@ def test_known_covariance_three_dimensional_polytope():
 
 
 def test_known_covariance_ten_dimensional_ball():
-    # Degree 6 in ten dimensions is 8008 terms; degree 4 leaves KL 0.05.
     _recovers(
         ch.zeros(10),
         ch.eye(10),
         lambda z: (z - 0.5).norm(dim=-1) < 3.0,
         known_covariance=True,
-        hyperparameters={"degree": 6},
     )
 
 
 def test_half_space():
     # The boundary runs through the mode, the hardest place for a
-    # polynomial to approximate a jump: degree 10 leaves KL 0.09 to 0.10.
+    # polynomial to approximate a jump.
     _recovers(
         ch.zeros(2),
         ch.eye(2),
         truncation_sets.coordinate_threshold(0, 0.0),
         known_covariance=False,
-        hyperparameters={"degree": 16},
     )
 
 
@@ -157,7 +154,6 @@ def test_three_dimensional_polytope():
         ch.eye(3),
         truncation_sets.random_polytope(0, 3, 3, 0.5),
         known_covariance=False,
-        hyperparameters={"degree": 12},
     )
 
 
@@ -170,7 +166,7 @@ def test_recovers_the_set():
     )
     model.fit(sample.S)
     ch.manual_seed(1)
-    population = target.sample([100000])
+    population = target.sample([20000])
     inside = _two_half_spaces(population)
 
     # The same rule with the sample's own moments in place of the fit, which
@@ -185,8 +181,10 @@ def test_recovers_the_set():
     error = float((model.truncation_set()(population) != inside).float().mean())
     print(f"naive rule error: {naive_error:.4f}, fitted rule error: {error:.4f}")
 
-    assert naive_error > 0.1
-    assert error <= 0.1
+    # At the default degree even the naive rule gets most of the set (0.080);
+    # recovering the Gaussian is what cuts the error to 0.029.
+    assert error <= 0.05
+    assert error <= naive_error / 2
 
 
 @pytest.mark.parametrize("known_covariance", [False, True])
