@@ -5,11 +5,11 @@ Currently supported datasets:
 - CIFAR-10 (:class:`delphi.datasets.CIFAR`)
 """
 
-from typing import Union
+from collections.abc import Sized
+from typing import Union, cast
 
 import numpy as np
 import torch as ch
-from torch.distributions.multivariate_normal import MultivariateNormal
 import torch.linalg as LA
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import datasets
@@ -18,7 +18,6 @@ from delphi import cifar_models, configs, imagenet_models
 from delphi.utils import data_augmentation as da
 from delphi.utils import folder, helpers
 from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
-from delphi.utils.helpers import cov
 
 ###
 # Computer Vision Datasets: (all subclassed from dataset)
@@ -481,51 +480,61 @@ class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
         ]
 
 
-class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
-    """Dataset for normal distribution samples with unknown truncation."""
+class UnknownTruncationMultivariateNormalDataset(ch.utils.data.Dataset):
+    """Samples of a normal under unknown truncation, as the objective's rows.
 
-    def __init__(self, S):  # pylint: disable=invalid-name
-        """Initialize with samples S, computing gradients for loc and covariance."""
-        self.S = S  # pylint: disable=invalid-name
-        # samples
-        self._loc = self.S.mean(0)
-        self._covariance_matrix = cov(self.S)
-        # compute gradients
-        # M = MultivariateNormal(self._loc, self._covariance_matrix)
-        self.pdf = ch.exp(
-            MultivariateNormal(
-                ch.zeros(self.S.size(1)), ch.eye(self.S.size(1))
-            ).log_prob(self.S)
-        )[..., None]
-        # self.pdf = ch.exp(M.log_prob(self.S))[...,None]
+    Each row is ``[T(z), c(z), psi_k(z)]`` for one whitened sample z,
+    computed once here, so a step only evaluates
+    ``psi_k(z) exp(<theta, T(z)> + c(z))``; the Hermite expansion is never
+    re-evaluated during the descent.
+    """
 
-        self.loc_grad = self._loc - self.S
-        self.cov_grad = 0.5 * (
-            ch.bmm(self.S.unsqueeze(2), self.S.unsqueeze(1))
-            - self._covariance_matrix
-            - self._loc[..., None] @ self._loc[None, ...]
-        ).flatten(1)
+    def __init__(self, statistic: ch.Tensor, offset: ch.Tensor, psi: ch.Tensor):
+        """Initialize from the precomputed pieces of each row.
 
-        self.data = ch.cat([self.S, self.pdf, self.loc_grad, self.cov_grad], dim=1)
+        Args:
+            statistic: ``T(z)``, shaped (n, p).
+            offset: ``c(z)``, shaped (n,).
+            psi: ``psi_k(z)``, shaped (n,).
+        """
+        self.data = ch.cat([statistic, offset[:, None], psi[:, None]], dim=1)
 
     def __len__(self):
-        return self.S.size(0)
+        return self.data.size(0)
 
     def __getitem__(self, idx):
-        """
-        :returns: (sample, sample pdf, sample mean coeffcient, sample covariance matrix coeffcient)
-        """
+        """Return a (dummy, rows) pair; idx may be a list, for a whole batch."""
         return [ch.empty([]), self.data[idx]]
 
-    @property
-    def loc(self):
-        """Return a clone of the location (mean) parameter."""
-        return self._loc.clone()
 
-    @property
-    def covariance_matrix(self):
-        """Return a clone of the covariance matrix."""
-        return self._covariance_matrix.clone()
+def batch_loader(
+    dataset: ch.utils.data.Dataset, batch_size: int, shuffle: bool
+) -> ch.utils.data.DataLoader:
+    """Return a loader that fetches each batch with one index.
+
+    A plain DataLoader fetches rows one at a time and stacks them, which made
+    a full-batch step over ten thousand rows take a tenth of a second. Any
+    dataset whose ``__getitem__`` accepts a list of indices can use this.
+
+    Args:
+        dataset: The dataset, indexable by a list of indices.
+        batch_size: Rows per batch.
+        shuffle: Draw the rows in random order.
+
+    Returns:
+        The loader.
+    """
+    sized = cast(Sized, dataset)
+    sampler: ch.utils.data.Sampler = (
+        ch.utils.data.RandomSampler(sized)
+        if shuffle
+        else ch.utils.data.SequentialSampler(sized)
+    )
+    return ch.utils.data.DataLoader(
+        dataset,
+        sampler=ch.utils.data.BatchSampler(sampler, batch_size, drop_last=False),
+        batch_size=None,
+    )
 
 
 DATASETS = {

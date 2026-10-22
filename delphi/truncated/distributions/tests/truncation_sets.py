@@ -132,6 +132,42 @@ def triangle(vertices: Sequence[Sequence[float]]) -> helpers.Oracle:
     return phi
 
 
+def sierpinski(level: int) -> helpers.Oracle:
+    """Return membership in a Sierpinski triangle on the unit base.
+
+    Non-convex, with holes at every scale, inside the triangle with vertices
+    (0, 0), (1, 0) and (1/2, sqrt(3)/2). A point belongs when, at each of
+    ``level`` halvings, it falls in one of the three corner triangles rather
+    than the removed middle one, which in barycentric coordinates means one
+    coordinate is at least 1/2.
+
+    Args:
+        level: Number of halvings; level 0 is the whole triangle.
+
+    Returns:
+        Oracle over the first two coordinates of a batch.
+    """
+    height = math.sqrt(3.0) / 2.0
+
+    def phi(z: ch.Tensor) -> ch.Tensor:
+        # Barycentric weights of the corners (1/2, h), (1, 0) and (0, 0).
+        top = z[:, 1] / height
+        right = z[:, 0] - top / 2.0
+        weights = ch.stack([top, right, 1.0 - top - right], dim=1)
+        inside = (weights >= 0.0).all(dim=1)
+        for _ in range(level):
+            corner = weights.argmax(dim=1)
+            inside &= weights.gather(1, corner[:, None]).squeeze(1) >= 0.5
+            # Zoom into that corner: its weight maps [1/2, 1] onto [0, 1].
+            weights = 2.0 * weights
+            weights.scatter_(
+                1, corner[:, None], weights.gather(1, corner[:, None]) - 1.0
+            )
+        return inside
+
+    return phi
+
+
 def checkerboard(cell_size: float) -> helpers.Oracle:
     """Return membership in the even cells of a square grid.
 

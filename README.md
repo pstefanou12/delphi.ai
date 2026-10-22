@@ -11,6 +11,7 @@ set, delphi recovers the distribution as it was before truncation.
 - [Truncated Distributions](#truncated-distributions)
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
+  - [Unknown truncation](#unknown-truncation)
 - [Architecture](#architecture)
   - [The trainer](#the-trainer)
   - [Models](#models)
@@ -73,6 +74,15 @@ negative log-likelihood. All live in `delphi.truncated.distributions`.
 | `TruncatedHalfNormal` | [`truncated_half_normal`](delphi/truncated/distributions/truncated_half_normal.py) | |
 | `TruncatedInverseGamma` | [`truncated_inverse_gamma`](delphi/truncated/distributions/truncated_inverse_gamma.py) | |
 | `TruncatedMultinomial` | [`truncated_multinomial`](delphi/truncated/distributions/truncated_multinomial.py) | |
+
+Without a membership oracle, see [Unknown truncation](#unknown-truncation):
+
+| Model | Module | Example |
+|---|---|---|
+| `UnknownTruncationMultivariateNormal` | [`unknown_truncated_multivariate_normal`](delphi/truncated/distributions/unknown_truncated_multivariate_normal.py) | |
+| `UnknownTruncationMultivariateNormalKnownCovariance` | [`unknown_truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/unknown_truncated_multivariate_normal_known_covariance.py) | |
+| `UnknownTruncationNormal` | [`unknown_truncated_normal`](delphi/truncated/distributions/unknown_truncated_normal.py) | |
+| `UnknownTruncationNormalKnownVariance` | [`unknown_truncated_normal_known_variance`](delphi/truncated/distributions/unknown_truncated_normal_known_variance.py) | |
 
 ### Quickstart
 
@@ -140,13 +150,11 @@ to correct, so fit the distribution directly.
 **The Fisher schedule is the default.** It sets the step size from the
 Hessian of the truncated likelihood, starting at `1 / L` and decaying as
 `1 / (L + mu t)`, and re-measures both as the fit moves, so neither needs
-tuning. In the example above, a constant rate (`"scheduler": None`) ends at KL
-0.026 from the truth after the same 2500 steps, against 0.002.
+tuning. Pass `"scheduler": None` for a constant rate.
 
 **Standardize multivariate normals first.** Fit on `(S - mean) / std` with
 `phi` composed with the inverse transform, as above, and map the estimates
-back. On the example above, fitting the raw data instead ends at KL 0.27
-after the same 2500 steps, against 0.002.
+back: the raw data's scale slows the descent.
 
 **Use the `avg_` estimates.** Every model exposes four: `avg_` (the mean of
 the iterates after a burn-in, set by `avg_burn_in`), `ema_` (a bias-corrected
@@ -176,6 +184,61 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("delphi.trainer").setLevel(logging.WARNING)  # per module
 ```
+
+### Unknown truncation
+
+When the set cannot be queried at all, a normal can still be recovered if the
+set is not too complex, by the algorithm of Kontonis, Tzamos and Zampetakis
+(2019), "Efficient Truncated Statistics with Unknown Truncation". It whitens
+the sample, estimates the degree-`degree` Hermite expansion of a function that
+mixes the set with the Gaussian, and minimizes a convex objective built from it
+by projected L-BFGS over the whole sample (the paper uses SGD).
+These models take no `phi`:
+
+```python
+import torch as ch
+from torch import distributions
+
+from delphi.truncated.distributions import unknown_truncated_multivariate_normal
+
+ch.manual_seed(0)
+
+# Observed only where x0 > -0.5 and x1 > -0.5; the fit is never told so.
+population = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2)).sample([50000])
+inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
+S = population[inside][:20000]
+
+model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
+    {}, dims=2  # the defaults: here degree 132, sized from the sample
+)
+model.fit(S)
+
+# The set the fit implies, as a membership oracle.
+recovered = model.truncation_set()
+```
+
+| | mean | covariance |
+|---|---|---|
+| truth | (0, 0) | [[1, 0], [0, 1]] |
+| sample mean and covariance | (0.506, 0.512) | [[0.490, 0.004], [0.004, 0.477]] |
+| recovered | (−0.010, 0.069) | [[1.024, 0.036], [0.036, 0.928]] |
+
+**The degree sets the accuracy, and the sample sets the degree.** The
+expansion of a set's indicator converges slowly, and at a fixed degree the
+estimate keeps a bias that more samples do not remove; the paper's bound
+shrinks as `degree ** (-1 / 4)`. Each of the basis's `C(k + d, d)`
+coefficients is a sample mean, though, so past about one coefficient per
+sample their noise outweighs the bias the degree removes. By default the
+degree is the largest whose basis has no more terms than there are samples
+estimating the coefficients (half the training sample), capped at 1200. With
+20000 samples that is 1200 in one dimension, 132 in two, 35 in three, 19 in
+four and 6 in ten, so more data buys more degree. Any `degree` can be set
+explicitly, with a warning when its basis outgrows the sample.
+
+**Know the covariance if you can.** With it, the sample is whitened by the
+truth and only the mean is learned, which leaves less to estimate. Both
+estimators degrade as the survival mass falls, which `alpha` does not change:
+here it only sizes the region the descent is kept in.
 
 ## Architecture
 
@@ -240,8 +303,9 @@ The truncated distributions add two layers on top of this:
   estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
-ones: `Identity`, which admits every sample, and `UnknownGaussian`, which is
-estimated from the data.
+ones: `Identity`, which admits every sample, and `RecoveredSet`, the set an
+unknown-truncation fit implies. The Hermite polynomials that fit uses live
+in `delphi/torchnomials/`.
 
 ### Polynomials
 

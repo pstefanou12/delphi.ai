@@ -1,5 +1,9 @@
 # Author: pstefanou12@
-"""Truncated NLL autograd functions for exponential family distributions."""
+"""Losses for the truncated distributions.
+
+The truncated NLL of an exponential family, its untruncated counterpart for
+the warm start, and the objective of the unknown-truncation normal.
+"""
 
 from collections.abc import Callable
 import logging
@@ -161,54 +165,59 @@ class ExponentialFamilyDistributionNLL:
 class UnknownTruncationMultivariateNormalNLL(  # pylint: disable=abstract-method
     ch.autograd.Function
 ):
-    """Negative population log likelihood for multivariate normal with unknown truncation.
+    """Objective of the normal under unknown truncation, with its gradient.
 
-    Calculates the population log-likelihood for the current batch in forward,
-    then calculates its gradient in backward.
+    Kontonis et al. (2019)'s equation (5), the convex surrogate whose
+    minimizer recovers the Gaussian; named like its siblings. Each row of
+    ``data`` is ``[T(z), c(z), psi_k(z)]`` for one whitened sample, and its
+    term is ``psi_k(z) exp(<theta, T(z)> + c(z))``, which is
+    ``exp(h(u, B; z)) N(0, I; z) psi_k(z)`` written to be affine in theta
+    inside the exponential.
     """
 
     @staticmethod
-    def forward(ctx, theta, data, phi, exp_h, dims):  # pylint: disable=invalid-name,arguments-differ,too-many-arguments,too-many-positional-arguments
-        """Compute population log-likelihood.
+    def terms(theta: ch.Tensor, data: ch.Tensor) -> ch.Tensor:
+        """Return each row's term of the objective.
 
         Args:
-            theta: Current reparameterized mean and covariance matrix estimates
-                concatenated.
-            data: Precomputed gradient values for both the mean and covariance
-                matrix.
-            phi: Oracle object for learning truncation set.
-            exp_h: Helper class for calculating exponential in the gradient.
-            dims: The dimension number.
+            theta: Free natural parameters, shaped (p,).
+            data: Rows shaped (n, p + 2).
+
+        Returns:
+            Shaped (n,).
         """
-        T = theta[: dims**2].view(dims, dims)  # pylint: disable=invalid-name
-        v = theta[dims**2 :]
-        x = data[:, :dims].view(data.size(0), dims)
-        pdf = data[:, dims][..., None]
-        loc_grad = data[:, dims + 1 : dims + dims + 1].view(data.size(0), dims)
-        cov_grad = data[:, dims + dims + 1 :].view(data.size(0), dims, dims)
-        exp = exp_h(v, T, x)
-        psi = phi.psi_k(x)
-        loss = exp * pdf * psi
-        logger.debug(f"psi: {psi}")
-        logger.debug(f"exp: {exp}")
-        logger.debug(f"pdf: {pdf}")
-        ctx.save_for_backward(loss, loc_grad, cov_grad)
-        ctx.dims = dims
-        return loss / data.size(0)
+        num_params = theta.numel()
+        statistic, offset, psi = (
+            data[:, :num_params],
+            data[:, num_params],
+            data[:, num_params + 1],
+        )
+        return psi * ch.exp(statistic @ theta + offset)
 
     @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradients of NLL w.r.t. theta."""
-        loss, loc_grad, cov_grad = ctx.saved_tensors
-        term_one = loc_grad * loss
-        term_two = cov_grad.flatten(1) * loss
-        logger.debug(f"loc grad: {term_one.mean(0)}")
-        logger.debug(f"cov grad: {term_two.mean(0)}")
-        return (
-            ch.cat([term_two, term_one], dim=1) / cov_grad.size(0),
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+    def forward(ctx, theta, data):  # pylint: disable=arguments-differ
+        """Return the mean term over the batch."""
+        terms = UnknownTruncationMultivariateNormalNLL.terms(theta, data)
+        ctx.save_for_backward(terms, data[:, : theta.numel()])
+        return terms.mean()
+
+    @staticmethod
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the gradient ``E[T(z) term(z)]``, the step of Algorithm 1."""
+        terms, statistic = ctx.saved_tensors
+        return grad_output * (statistic * terms[:, None]).mean(0), None
+
+    @staticmethod
+    def hessian(theta: ch.Tensor, data: ch.Tensor) -> ch.Tensor:
+        """Return the Hessian ``E[term(z) T(z) T(z)^T]``, PSD as Claim 1 says.
+
+        Args:
+            theta: Point to evaluate at, shaped (p,).
+            data: Rows shaped (n, p + 2).
+
+        Returns:
+            Shaped (p, p).
+        """
+        statistic = data[:, : theta.numel()]
+        terms = UnknownTruncationMultivariateNormalNLL.terms(theta.detach(), data)
+        return statistic.T @ (terms[:, None] * statistic) / data.size(0)

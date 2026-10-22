@@ -1,30 +1,30 @@
 # Author: pstefanou12@
-"""Membership oracle for unknown truncation.
+"""Stateful truncation sets.
 
 A known truncation set is a predicate the caller supplies as a plain
-callable. This oracle is the exception: it is not given but estimated from
-the data with a Hermite expansion, so it carries state.
+callable. The sets here carry state: ``Identity`` admits everything, and
+``RecoveredSet`` is not given but estimated from samples drawn inside it.
 """
 
 from abc import ABC
+import copy
+from typing import Optional
 
 import torch as ch
-from torch.distributions.multivariate_normal import MultivariateNormal
+from torch import distributions as torch_distributions
 
-from delphi.polynomials import NormalizedProbabilistHermitePolynomial
-from delphi.utils.helpers import cov
+from delphi.torchnomials import hermite
+import delphi.transformations.transformation
 
 
 class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods
-    """
-    Oracle for data sets.
-    """
+    """Base class for stateful truncation sets."""
 
     def __call__(self, x):
-        """
-        Membership oracle.
+        """Return membership of each sample.
+
         Args:
-            x: samples to check membership
+            x: Samples to check membership of.
         """
 
 
@@ -47,88 +47,149 @@ class Identity(oracle):  # pylint: disable=too-few-public-methods
         return ch.ones(x.size(0), dtype=ch.bool)
 
 
-class UnknownGaussian(oracle):  # pylint: disable=too-many-instance-attributes
-    """
-    Oracle for an unknown Gaussian distribution estimated via Hermite polynomial expansion.
+class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
+    """A truncation set recovered from samples drawn inside it.
+
+    Kontonis et al. (2019), Theorem 6. Fit to samples from a law ``D``
+    supported on the set S, the probabilist Hermite expansion ``psi_k``
+    estimates ``dD / dN(0, I)``, which is ``1_S p / (alpha N(0, I))`` for the
+    untruncated density p. Given a fitted ``p``, the ratio
+    ``psi_k N(0, I) / p`` approximates ``1_S / alpha``: ``1 / alpha`` on the
+    set and zero off it. Any fitted distribution with a ``log_prob`` serves.
+
+    The paper thresholds the ratio at one half. When alpha is small, that
+    sits next to the outside level, where the expansion's ringing crosses
+    it: a Sierpinski set at 2% mass came back wrong on 24% of the
+    population. Here the threshold is half the ratio's median over the
+    fitting samples, all inside S, which estimates the midpoint between the
+    two levels without knowing alpha; the same set came back wrong on 6%.
+
+    Usage::
+
+        recovered = RecoveredSet(degree, standardization).fit(samples)
+        inside = recovered.given(fitted_distribution)(points)
+
+    Attributes:
+        degree: Degree of the Hermite expansion.
+        transformation: Coordinates the expansion is fit in; the identity
+            when None.
+        polynomial: The fitted expansion, set by fit.
+        distribution: The fitted distribution in those coordinates, set by
+            ``given``.
+        threshold: The membership threshold on the ratio, set by ``given``.
     """
 
-    def __init__(self, k, s):  # pylint: disable=invalid-name
-        """
+    def __init__(
+        self,
+        degree: int,
+        transformation: Optional[
+            delphi.transformations.transformation.Transformation
+        ] = None,
+    ):
+        """Initialize an unfit set estimate.
+
         Args:
-            k: maximum Hermite polynomial degree
-            s (torch.Tensor): whitened sample set of shape (n, d), assumed N(0, I)
+            degree: Degree of the Hermite expansion.
+            transformation: Fitted change of coordinates to expand in.
         """
-        self.emp_loc = s.mean(0)
-        self.emp_cov = cov(s)
+        self.degree = degree
+        self.transformation = transformation
+        self.polynomial: Optional[hermite.Hermite] = None
+        self.distribution: Optional[torch_distributions.Distribution] = None
+        self.threshold: Optional[float] = None
+        # The fitting samples, in the expansion's coordinates, which set the
+        # threshold once a distribution is given.
+        self._samples: Optional[ch.Tensor] = None
 
-        # verify that the s is whitened to N(0, I)
-        if (
-            ch.norm(self.emp_loc - ch.zeros(s.size(1))) >= 1e-3
-            or ch.norm(self.emp_cov - ch.eye(s.size(1))) >= 1e-3
-        ):
-            raise ValueError(
-                f"input dataset must be whitened (eg. N(O, I)). \n"
-                f" dataset mean: {self.emp_loc}, covariance matrix: {self.emp_cov}"
-            )
+    def fit(self, samples: ch.Tensor) -> "RecoveredSet":
+        """Fit the expansion to samples from inside the set.
 
-        self._emp_dist = MultivariateNormal(self.emp_loc, self.emp_cov)
-        self._d = int(s.shape[1])
-        self._k = k
+        Args:
+            samples: Samples of shape (n, dims), in original coordinates.
 
-        self.herm_poly = NormalizedProbabilistHermitePolynomial(self._k, self._d)
-        self._c_v = self._compute_hermite_coefficients(s)  # pylint: disable=invalid-name
-        self._dist = None
-
-    def _compute_hermite_coefficients(self, s):  # pylint: disable=invalid-name
+        Returns:
+            self.
         """
-        Compute c_v = E_D[H_V(z)] where H_V evaluated at standardized samples from s.
-        s should be samples *from the truncated set* (i.e., only samples x in s).
+        z = self.transform(samples)
+        self.polynomial = hermite.Hermite(self.degree, z.size(1), prob=True, norm=True)
+        self.polynomial.fit(z)
+        self._samples = z
+        return self
+
+    def given(self, distribution: torch_distributions.Distribution) -> "RecoveredSet":
+        """Return a copy that decides membership against a fitted distribution.
+
+        Args:
+            distribution: The fitted untruncated distribution, in the
+                transformation's coordinates.
+
+        Returns:
+            The bound copy.
+
+        Raises:
+            RuntimeError: If called before fit.
         """
-        h_vals = self.herm_poly.h_v(s)  # shape (n, num_indices)
-        return h_vals.mean(dim=0)
+        if self._samples is None:
+            raise RuntimeError("the recovered set has not been fit.")
+        bound = copy.copy(self)
+        bound.distribution = distribution
+        bound.threshold = 0.5 * float(bound.ratio(self._samples).median())
+        return bound
 
-    def psi_k(self, x):
+    def transform(self, x: ch.Tensor) -> ch.Tensor:
+        """Return x in the expansion's coordinates, in float64."""
+        if self.transformation is None:
+            return x.to(ch.float64)
+        return self.transformation.transform(x)
+
+    def weighted_indicator(self, z: ch.Tensor) -> ch.Tensor:
+        """Return ``psi_k``, clipped at zero as Theorem 4 defines it.
+
+        Args:
+            z: Points of shape (n, dims), in the expansion's coordinates.
+
+        Returns:
+            Shaped (n,).
+
+        Raises:
+            RuntimeError: If called before fit.
         """
-        Evaluate psi approximation on x (tensor shape (n,d)).
-        Returns (n, 1) tensor with values ~[0,1].
+        if self.polynomial is None:
+            raise RuntimeError("the recovered set has not been fit.")
+        return self.polynomial(z).clamp(min=0.0)
+
+    def ratio(self, z: ch.Tensor) -> ch.Tensor:
+        """Return ``psi_k N(0, I) / p``, which approximates ``1_S / alpha``.
+
+        Args:
+            z: Points of shape (n, dims), in the expansion's coordinates.
+
+        Returns:
+            Shaped (n,).
+
+        Raises:
+            RuntimeError: If no fitted distribution has been given.
         """
-        h_vals = self.herm_poly.h_v(x)  # (n, num_indices)
-        expansion = (self._c_v * h_vals).sum(dim=1)  # (n,)
-        return ch.clamp(expansion, min=0)[..., None]
+        if self.distribution is None:
+            raise RuntimeError("membership needs a fitted distribution; call given.")
+        reference = torch_distributions.MultivariateNormal(
+            ch.zeros(z.size(1), dtype=z.dtype), ch.eye(z.size(1), dtype=z.dtype)
+        )
+        log_ratio = reference.log_prob(z) - self.distribution.log_prob(z)
+        return self.weighted_indicator(z) * log_ratio.exp()
 
-    def __call__(self, x):
-        """Return membership indicator using learned distribution ratio and psi approximation."""
-        if self._dist is None:
-            raise ValueError("must learn underlying distribution for membership oracle")
+    def __call__(self, x: ch.Tensor) -> ch.Tensor:
+        """Return membership in the recovered set.
 
-        ratio = ch.exp(self._emp_dist.log_prob(x) - self._dist.log_prob(x))[:, None]
-        return ((ratio * self.psi_k(x)) > 0.5).float()
+        Args:
+            x: Samples of shape (n, dims), in original coordinates.
 
-    @property
-    def emp_dist(self):
-        """Return the empirical distribution."""
-        return self._emp_dist
+        Returns:
+            Boolean mask over the batch.
 
-    @property
-    def dist(self):
-        """Return the learned distribution."""
-        return self._dist
-
-    @dist.setter
-    def dist(self, dist_):
-        """Set the learned distribution."""
-        self._dist = dist_
-
-    @property
-    def c_v(self):  # pylint: disable=invalid-name
-        """Return the Hermite coefficients."""
-        return self._c_v
-
-    @property
-    def d(self):
-        """Return the dimensionality."""
-        return self._d
-
-    def __str__(self):
-        """Return string representation."""
-        return "unknown gaussian"
+        Raises:
+            RuntimeError: If no fitted distribution has been given.
+        """
+        if self.threshold is None:
+            raise RuntimeError("membership needs a fitted distribution; call given.")
+        return self.ratio(self.transform(x)) > self.threshold
