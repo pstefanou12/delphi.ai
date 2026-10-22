@@ -46,7 +46,9 @@ DEFAULT_ALPHA = 0.01
 
 
 def _row_loader(
-    dataset: datasets.UnknownTruncationNormalDataset, batch_size: int, shuffle: bool
+    dataset: datasets.UnknownTruncationMultivariateNormalDataset,
+    batch_size: int,
+    shuffle: bool,
 ) -> data.DataLoader:
     """Return a loader yielding batches of rows, each fetched in one index.
 
@@ -265,7 +267,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
 
     def _make_dataset(
         self, x: ch.Tensor, dtype: ch.dtype
-    ) -> datasets.UnknownTruncationNormalDataset:
+    ) -> datasets.UnknownTruncationMultivariateNormalDataset:
         """Return the rows ``[T(z), c(z), psi_k(z)]`` for samples x.
 
         ``psi_k`` is clipped at zero as Theorem 4 defines it, which also keeps
@@ -275,7 +277,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         z = frame.to_frame(x)
         statistic, offset = self._statistic(z)
         psi = expansion(z).clamp(min=0.0)
-        return datasets.UnknownTruncationNormalDataset(
+        return datasets.UnknownTruncationMultivariateNormalDataset(
             statistic.to(dtype), offset.to(dtype), psi.to(dtype)
         )
 

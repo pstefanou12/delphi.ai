@@ -400,7 +400,7 @@ def _descent_rows() -> tuple[ch.Tensor, ch.Tensor]:
     model.fit(sample.S)
     assert model.train_loader_ is not None and model.emp_theta is not None
     dataset = model.train_loader_.dataset
-    assert isinstance(dataset, datasets.UnknownTruncationNormalDataset)
+    assert isinstance(dataset, datasets.UnknownTruncationMultivariateNormalDataset)
     return dataset.data, model.emp_theta + 0.05
 
 

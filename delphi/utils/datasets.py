@@ -479,7 +479,7 @@ class TruncatedExponentialDistributionDataset(ch.utils.data.Dataset):
         ]
 
 
-class UnknownTruncationNormalDataset(ch.utils.data.Dataset):
+class UnknownTruncationMultivariateNormalDataset(ch.utils.data.Dataset):
     """Samples of a normal under unknown truncation, as the objective's rows.
 
     Each row is ``[T(z), c(z), psi_k(z)]`` for one whitened sample z,
