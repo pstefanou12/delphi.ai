@@ -127,3 +127,12 @@ class TruncatedGammaUnknownConcentrationConfig(
         default=250, ge=1, serialization_alias="iterations"
     )
     precondition: bool = True
+
+
+class TruncatedWishartConfig(TruncatedGammaUnknownConcentrationConfig):
+    """Configuration for the truncated Wishart.
+
+    Its ``log det X`` and ``X`` couple as the Gamma's ``log x`` and ``x`` do,
+    and it reduces to that Gamma for a one-by-one matrix. Fewer, larger
+    steps also matter more here: torch's Wishart sampler dominates a step.
+    """
