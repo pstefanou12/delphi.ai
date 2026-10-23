@@ -107,3 +107,23 @@ class TruncatedInverseGaussianConfig(TruncatedExponentialFamilyDistributionConfi
     """
 
     precondition: bool = True
+
+
+class TruncatedGammaUnknownConcentrationConfig(
+    WarmStartedExponentialFamilyDistributionConfig
+):
+    """Configuration for the truncated Gamma with unknown shape.
+
+    Cut to an upper tail, ``log x`` and ``x`` are so correlated that the
+    Hessian's condition number reaches several hundred, so steps are
+    preconditioned. A preconditioned step of ten samples moves far along the
+    ridge where shape and rate grow together, which drove a two-dimensional
+    fit onto its clamp, so batches are a hundred, over fewer steps.
+    """
+
+    batch_size: int = 100
+    iterations: Optional[int] = pydantic.Field(default=1000, ge=1)
+    warm_start_iterations: Optional[int] = pydantic.Field(
+        default=250, ge=1, serialization_alias="iterations"
+    )
+    precondition: bool = True
