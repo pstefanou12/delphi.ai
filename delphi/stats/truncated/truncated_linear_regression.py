@@ -15,8 +15,9 @@ import torch as ch
 import torch.distributions
 
 from delphi import configs
-from delphi.stats import linear_model, projection_sets
-from delphi.stats.truncated_linear_model import TruncatedLinearModel
+from delphi.stats import linear_model
+from delphi.stats.truncated import projection_sets
+from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 
 
 class TruncatedLinearRegression(

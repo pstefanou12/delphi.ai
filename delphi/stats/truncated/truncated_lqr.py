@@ -15,7 +15,7 @@ import torch as ch
 from torch import linalg as LA
 
 from delphi import configs
-from delphi.stats.legacy_truncated_linear_regression import (
+from delphi.stats.truncated.legacy_truncated_linear_regression import (
     LegacyTruncatedLinearRegression,
 )
 from delphi.utils.helpers import calc_spectral_norm, calc_thickness

@@ -8,8 +8,8 @@ import torch.distributions
 import torch.nn
 
 from delphi import configs
-from delphi.stats import losses
 from delphi.stats.linear_model import LinearModel
+from delphi.stats.truncated import losses
 from delphi.utils import helpers
 
 mse_loss = torch.nn.MSELoss()

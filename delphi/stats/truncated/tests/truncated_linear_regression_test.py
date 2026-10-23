@@ -9,7 +9,7 @@ import pytest
 import torch as ch
 
 from delphi import stats
-from delphi.stats import losses, projection_sets
+from delphi.stats.truncated import losses, projection_sets
 
 
 @dataclasses.dataclass(frozen=True)

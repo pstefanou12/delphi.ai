@@ -12,7 +12,8 @@ import torch as ch
 from torch import nn
 
 from delphi import configs, trainer
-from delphi.stats import linear_model, losses
+from delphi.stats import linear_model
+from delphi.stats.truncated import losses
 from delphi.utils import datasets
 
 

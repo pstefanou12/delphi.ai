@@ -17,7 +17,8 @@ import torch.distributions
 import torch.utils.data
 
 from delphi import configs
-from delphi.stats import linear_model, losses, projection_sets, summary
+from delphi.stats import linear_model, summary
+from delphi.stats.truncated import losses, projection_sets
 import delphi.trainer
 from delphi.utils import datasets
 

@@ -16,7 +16,11 @@ from torch import Tensor, nn
 
 from delphi import configs
 from delphi.stats.linear_model import LinearModel
-from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
+from delphi.stats.truncated.losses import (
+    SwitchGrad,
+    TruncatedMSE,
+    TruncatedUnknownVarianceMSE,
+)
 from delphi.trainer import Trainer
 from delphi.utils.datasets import make_train_and_val
 from delphi.utils.helpers import Bounds
