@@ -562,7 +562,13 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
     def step_pre_hook(
         self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict
     ) -> None:  # pylint: disable=unused-argument
-        """Hook called after .backward() but before the optimizer step."""
+        """Hook called when optimizer.step is entered, before it runs.
+
+        On the trainer's standard path the step is ``optimizer.step(closure)``
+        and the closure zeroes and recomputes the gradient after this hook,
+        so a gradient written here is discarded. Transform gradients with a
+        tensor hook (``Tensor.register_hook``), which runs inside backward.
+        """
 
     def step_post_hook(
         self, optimizer: torch.optim.Optimizer, args: tuple, kwargs: dict

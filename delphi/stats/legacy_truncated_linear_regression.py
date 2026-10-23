@@ -227,6 +227,11 @@ class LegacyTruncatedLinearRegression(  # pylint: disable=too-many-instance-attr
             ]
         else:
             self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
+            if self.dependent:
+                # A tensor hook runs after backward, inside optimizer.step's
+                # closure; a step pre-hook runs before the closure's
+                # zero_grad and backward, which discard what it writes.
+                self.weight.register_hook(self.precondition)
 
     def calc_emp_model(self) -> None:  # pylint: disable=attribute-defined-outside-init
         """
@@ -296,6 +301,10 @@ class LegacyTruncatedLinearRegression(  # pylint: disable=too-many-instance-attr
 
         # Assign results from the procedure to instance variables.
         else:
+            if self.weight.size(1) > 1:
+                # The trainer records the weight flattened; rows index inputs.
+                best_params = best_params.reshape(self.weight.shape)
+                final_params = final_params.reshape(self.weight.shape)
             if self.fit_intercept:
                 self.best_coef = best_params[:-1] / self.beta
                 self.best_intercept = best_params[-1]
@@ -427,12 +436,9 @@ class LegacyTruncatedLinearRegression(  # pylint: disable=too-many-instance-attr
 
         return X @ self.weight
 
-    def step_pre_hook(self, optimizer, args, kwargs):
-        """Pre-step hook for gradient modification."""
-        if self.dependent:
-            self.weight.grad = self.Sigma.inverse() @ self.weight.grad  # pylint: disable=no-member
-
-        return args, kwargs
+    def precondition(self, grad: ch.Tensor) -> ch.Tensor:
+        """Return Sigma^-1 grad, the SON-SG step direction for dependent data."""
+        return ch.linalg.solve(self.Sigma, grad)  # pylint: disable=no-member,not-callable
 
     def step_post_hook(self, optimizer, args, kwargs):
         """Post-step hook for parameter projection."""
