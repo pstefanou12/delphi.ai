@@ -179,3 +179,41 @@ def test_small_mass():
             target_alpha=(0.008, 0.02),
         ),
     )
+
+
+@pytest.mark.slow
+def test_indistinguishable_pair():
+    # Inside a box around X* the density is close to exp(<G, X>) for G the
+    # gradient of log p at X*, which is (df - 3) / 2 X*^-1 - scale^-1 / 2.
+    # Raising df while subtracting the same multiple of X*^-1 from the
+    # natural matrix keeps G, so the box hides df 5 from df 9, 0.42 apart.
+    first = _wishart(ch.Tensor([5.0]), _SCALE)
+    center = 5.0 * _SCALE
+    shift = 2.0
+    second = wishart.Wishart(
+        first.theta
+        + ch.cat([ch.Tensor([shift]), -shift * wishart.to_vech(center.inverse())]),
+        3,
+    )
+    point = wishart.to_vech(center)
+    # Half a standard deviation of each vech entry under the first target:
+    # Var(X_ij) = df (scale_ij^2 + scale_ii scale_jj).
+    variance = 5.0 * (
+        wishart.to_vech(_SCALE) ** 2
+        + wishart.to_vech(ch.outer(_SCALE.diagonal(), _SCALE.diagonal()))
+    )
+    half_width = 0.5 * variance.sqrt()
+
+    def phi(z):
+        return ((z - point).abs() <= half_width).all(-1)
+
+    helpers.assert_family_distinguishes(
+        model_class=truncated_wishart.TruncatedWishart,
+        targets=(first, second),
+        phi=phi,
+        dims=2,
+        parameter=("df_", "covariance_matrix_"),
+        empirical=_untruncated_mle,
+        rebuild=_wishart,
+        divergence=_kl,
+    )
