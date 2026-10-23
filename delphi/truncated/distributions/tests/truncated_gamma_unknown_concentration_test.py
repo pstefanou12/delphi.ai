@@ -4,6 +4,7 @@
 import functools
 from typing import Optional
 
+import pytest
 import torch as ch
 from torch import distributions
 
@@ -125,3 +126,15 @@ def test_indistinguishable_pair():
         parameter=("concentration_", "rate_"),
         empirical=helpers.untruncated_mle(_MODEL, 1),
     )
+
+
+@pytest.mark.slow
+def test_twenty_dimensions_small_mass():
+    concentration, rate = ch.linspace(1.5, 5.0, 20), ch.linspace(0.5, 2.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        distributions.Gamma(concentration, rate),
+        target_alpha=(0.008, 0.02),
+        bounds=(0.0, 1000.0),
+    )
+    _recovers(dims=20, concentration=concentration, rate=rate, phi=calibrated.phi)

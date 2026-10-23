@@ -7,8 +7,6 @@ from delphi.exponential_family import inverse_gaussian
 from delphi.truncated.distributions import truncated_inverse_gaussian
 from delphi.truncated.distributions.tests import helpers
 
-_FAMILY = inverse_gaussian.InverseGaussian
-
 
 def _phi(z):
     return z[:, 0] > 1.5
@@ -16,7 +14,9 @@ def _phi(z):
 
 def _sample():
     ch.manual_seed(0)
-    target = _FAMILY(_FAMILY.to_natural(ch.Tensor([1.0, 2.0])), 1)
+    target = inverse_gaussian.InverseGaussian(
+        inverse_gaussian.InverseGaussian.to_natural(ch.Tensor([1.0, 2.0])), 1
+    )
     return helpers.generate_truncated_distribution_dataset(target, _phi, 1000)
 
 

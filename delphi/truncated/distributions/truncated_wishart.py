@@ -27,7 +27,9 @@ class TruncatedWishart(
     """
 
     dist = wishart.Wishart
-    defaults = configs.TruncatedWishartConfig
+    # A one-by-one Wishart is the two-parameter Gamma, whose log x and x couple
+    # as log det X and X do.
+    defaults = configs.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("df_", "covariance_matrix_")
     # Every statistic shares the log determinant, so the Hessian is dense.
     independent_coordinates = False
@@ -73,14 +75,14 @@ class TruncatedWishart(
 
     def _constraints(self, theta):
         """Keep df above ``size - 1`` and the matrix part negative definite."""
-        values, vectors = ch.linalg.eigh(wishart.from_vech(theta[1:]))  # pylint: disable=not-callable
+        values, vectors = ch.linalg.eigh(helpers.unvech(theta[1:], self.size))  # pylint: disable=not-callable
         matrix = vectors @ ch.diag_embed(values.clamp(max=-1e-6)) @ vectors.mT
-        return ch.cat([theta[:1].clamp(min=-1.0 + 1e-6), wishart.to_vech(matrix)])
+        return ch.cat([theta[:1].clamp(min=-1.0 + 1e-6), helpers.vech(matrix)])
 
     def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
         """Split theta's canonical form into df and the scale matrix."""
         canonical = wishart.Wishart.to_canonical(theta)
-        return canonical[0], wishart.from_vech(canonical[1:])
+        return canonical[0], helpers.unvech(canonical[1:], self.size)
 
     @property
     def best_df_(self):

@@ -360,9 +360,16 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def _whitened(
         hessian: Callable[..., ch.Tensor], factor: ch.Tensor
     ) -> Callable[..., ch.Tensor]:
-        """Return ``hessian`` in the coordinates ``factor`` whitens."""
+        """Return ``hessian`` in the coordinates ``factor`` whitens.
+
+        For ``C = L L^T`` and ``theta = L^{-T} psi``, the chain rule gives
+        the Hessian in psi as ``L^{-1} H L^{-T}``; it is the identity where
+        ``H = C``, so its spectrum measures how far C is from H.
+        """
 
         def whitened(theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+            # Two triangular solves: L^{-1} H, then L^{-1} (L^{-1} H)^T, since
+            # H is symmetric.
             left = ch.linalg.solve_triangular(factor, hessian(theta), upper=False)  # pylint: disable=not-callable
             return ch.linalg.solve_triangular(factor, left.T, upper=False)  # pylint: disable=not-callable
 

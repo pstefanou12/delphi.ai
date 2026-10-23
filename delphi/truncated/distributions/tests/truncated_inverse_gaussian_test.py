@@ -4,8 +4,8 @@
 import functools
 from typing import Optional
 
+import pytest
 import torch as ch
-from torch import distributions
 
 from delphi.exponential_family import inverse_gaussian
 import delphi.oracle
@@ -14,33 +14,12 @@ from delphi.truncated.distributions.tests import helpers, truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
-_FAMILY = inverse_gaussian.InverseGaussian
 
-
-def _wald(loc: ch.Tensor, concentration: ch.Tensor) -> _FAMILY:
-    return _FAMILY(_FAMILY.to_natural(ch.cat([loc, concentration])), loc.numel())
-
-
-def _kl(
-    fitted: distributions.Distribution, target: distributions.Distribution
-) -> ch.Tensor:
-    """Return the per-coordinate KL, which torch does not register.
-
-    ``(log(l1 / l2) + l2 / l1 - 1) / 2 + l2 (m1 - m2)^2 / (2 m1 m2^2)`` for
-    means m and shapes l, checked against 2e6 Monte Carlo draws to 7e-4.
-    """
-    assert isinstance(fitted, _FAMILY) and isinstance(target, _FAMILY)
-    loc, concentration = fitted.loc, fitted.concentration
-    other_loc, other_concentration = target.loc, target.concentration
-    ratio = other_concentration / concentration
-    return 0.5 * (-ch.log(ratio) + ratio - 1.0) + other_concentration * (
-        loc - other_loc
-    ) ** 2 / (2.0 * loc * other_loc**2)
-
-
-def _mle(s: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
-    loc = s.mean(0)
-    return loc, 1.0 / (1.0 / s - 1.0 / loc).mean(0)
+def _wald(loc: ch.Tensor, concentration: ch.Tensor) -> inverse_gaussian.InverseGaussian:
+    return inverse_gaussian.InverseGaussian(
+        inverse_gaussian.InverseGaussian.to_natural(ch.cat([loc, concentration])),
+        loc.numel(),
+    )
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -58,12 +37,13 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         phi=phi,
         dims=dims,
         parameter=("loc_", "concentration_"),
-        empirical=_mle,
+        empirical=helpers.untruncated_mle(
+            truncated_inverse_gaussian.TruncatedInverseGaussian, dims
+        ),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_wald,
-        divergence=_kl,
     )
 
 
@@ -152,7 +132,20 @@ def test_indistinguishable_pair():
         phi=lambda z: (z[:, 0] > 0.5) & (z[:, 0] < 1.5),
         dims=1,
         parameter=("loc_", "concentration_"),
-        empirical=_mle,
+        empirical=helpers.untruncated_mle(
+            truncated_inverse_gaussian.TruncatedInverseGaussian, 1
+        ),
         rebuild=_wald,
-        divergence=_kl,
     )
+
+
+@pytest.mark.slow
+def test_twenty_dimensions_small_mass():
+    loc, concentration = ch.linspace(0.5, 2.0, 20), ch.linspace(1.0, 5.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        _wald(loc, concentration),
+        target_alpha=(0.008, 0.02),
+        bounds=(0.0, 400.0),
+    )
+    _recovers(dims=20, loc=loc, concentration=concentration, phi=calibrated.phi)

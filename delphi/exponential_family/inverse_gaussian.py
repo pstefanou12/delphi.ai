@@ -2,7 +2,6 @@
 """Inverse Gaussian (Wald) distribution in natural parameterization."""
 
 import math
-from typing import Optional
 
 import torch as ch
 from torch.distributions import constraints
@@ -28,13 +27,24 @@ class InverseGaussian(exponential_family_distribution.ExponentialFamilyDistribut
     }
     support = constraints.positive
 
-    def __init__(
-        self, theta: ch.Tensor, dims: int, validate_args: Optional[bool] = None
-    ):
+    def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""
         self.dims = dims
         self.loc, self.concentration = InverseGaussian.to_canonical(theta).split(dims)
-        super().__init__(self.loc.shape, validate_args=validate_args)
+        super().__init__(self.loc.shape)
+
+    @property
+    def _natural_params(self) -> tuple[ch.Tensor, ch.Tensor]:
+        """Return the natural parameters, read by torch's Bregman KL."""
+        return (
+            -self.concentration / (2.0 * self.loc**2),
+            -self.concentration / 2.0,
+        )
+
+    def _log_normalizer(self, *natural):
+        """Return ``-2 sqrt(eta_x eta_inv) - log(-2 eta_inv) / 2``."""
+        first, second = natural
+        return -2.0 * ch.sqrt(first * second) - 0.5 * ch.log(-2.0 * second)
 
     @property
     def mean(self) -> ch.Tensor:
@@ -53,9 +63,7 @@ class InverseGaussian(exponential_family_distribution.ExponentialFamilyDistribut
             loc = self.loc.expand(shape)
             concentration = self.concentration.expand(shape)
             spread = loc * ch.randn(shape, dtype=loc.dtype, device=loc.device) ** 2
-            # The larger root, since the smaller one loses every digit to
-            # cancellation when spread dwarfs the concentration; their product
-            # is loc^2.
+            # The smaller root cancels catastrophically; it is loc^2 / larger.
             larger = loc + loc / (2.0 * concentration) * (
                 spread + ch.sqrt(4.0 * concentration * spread + spread**2)
             )

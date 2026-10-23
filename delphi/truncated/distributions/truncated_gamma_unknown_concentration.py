@@ -11,15 +11,13 @@ from delphi import configs
 from delphi.exponential_family import gamma_unknown_concentration
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
-_FAMILY = gamma_unknown_concentration.GammaUnknownConcentration
-
 
 class TruncatedGammaUnknownConcentration(
     truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
 ):
     """Model for truncated Gamma distributions with unknown shape and rate."""
 
-    dist = _FAMILY
+    dist = gamma_unknown_concentration.GammaUnknownConcentration
     defaults = configs.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration_", "rate_")
     # Each coordinate's shape and rate are coupled.
@@ -46,8 +44,10 @@ class TruncatedGammaUnknownConcentration(
         """Start at the moment estimate, refined by the warm start."""
         dataset_s = self.train_loader_.dataset.S
         mean, var = dataset_s.mean(0), dataset_s.var(0)
-        self.emp_theta = _FAMILY.to_natural(
-            ch.cat([mean**2 / var, mean / var]).clamp(min=1e-3)
+        self.emp_theta = (
+            gamma_unknown_concentration.GammaUnknownConcentration.to_natural(
+                ch.cat([mean**2 / var, mean / var]).clamp(min=1e-3)
+            )
         )
         self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
 
@@ -62,7 +62,11 @@ class TruncatedGammaUnknownConcentration(
 
     def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
         """Split theta's canonical form into the shape and the rate."""
-        concentration, rate = _FAMILY.to_canonical(theta).split(self.dims)
+        concentration, rate = (
+            gamma_unknown_concentration.GammaUnknownConcentration.to_canonical(
+                theta
+            ).split(self.dims)
+        )
         return concentration, rate
 
     @property

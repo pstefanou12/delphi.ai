@@ -7,7 +7,6 @@ from typing import Any, NamedTuple, Optional, Protocol, TypeVar, Union, cast
 import torch as ch
 from torch.distributions import Distribution, kl
 
-from delphi.exponential_family import exponential_family_distribution
 import delphi.oracle
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -64,6 +63,16 @@ def generate_truncated_distribution_dataset(
     alpha = num_accepted / num_sampled
 
     return TruncatedSample(S, alpha, ch.cat(drawn))
+
+
+def kl_divergence(p: Distribution, q: Distribution) -> ch.Tensor:
+    """Return torch's KL(p || q), detached.
+
+    A family torch has no closed form for falls back on its Bregman
+    divergence of ``_log_normalizer`` over ``_natural_params``, which keeps
+    the autograd graph it differentiated.
+    """
+    return kl.kl_divergence(p, q).detach()
 
 
 # Generic because Weibull has no registered KL, so it scores bare tensors.
@@ -185,15 +194,15 @@ def untruncated_mle(
     dims: int,
     *model_args: Any,
 ) -> Callable[[ch.Tensor], Any]:
-    """Return the naive estimator for a family whose MLE has no closed form.
+    """Return the naive estimator: the MLE that ignores the truncation.
 
-    The naive estimate is the MLE that ignores the truncation, the baseline
-    every recovery test must beat. A family with a closed form passes it as
-    ``empirical`` directly; for the rest, the model's warm start computes it,
-    so a fit that ignores the truncation, with one step after it, stands in.
+    It is the baseline every recovery test must beat. The model computes it
+    as its start point, by a closed form or by its warm start, so a fit that
+    ignores the truncation, with one step after it, stands in, and its start
+    is read back through the model's own estimate properties.
 
     Args:
-        model_class: Truncated model whose config enables the warm start.
+        model_class: Truncated model.
         dims: Number of dimensions.
         *model_args: Known parameters, passed to the model.
 
@@ -203,7 +212,7 @@ def untruncated_mle(
     """
 
     def estimate(sample: ch.Tensor) -> Any:
-        # The warm start is the estimate; one phase of one step completes the fit.
+        # The start is the estimate; one phase of one step completes the fit.
         untruncated = model_class(
             {"iterations": 1, "max_phases": 1},
             delphi.oracle.Identity(),
@@ -211,13 +220,12 @@ def untruncated_mle(
             *model_args,
         )
         untruncated.fit(sample)
-        family = cast(
-            type[exponential_family_distribution.ExponentialFamilyDistribution],
-            model_class.dist,
+        untruncated.best_params = untruncated.emp_theta
+        estimates = tuple(
+            getattr(untruncated, f"best_{suffix}").detach()
+            for suffix in model_class.estimate_suffixes
         )
-        canonical = family.to_canonical(untruncated.emp_theta).detach()
-        count = len(model_class.estimate_suffixes)
-        return canonical if count == 1 else canonical.chunk(count)
+        return estimates[0] if len(estimates) == 1 else estimates
 
     return estimate
 
@@ -235,7 +243,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     baseline_must_fail: bool = True,
     model_args: tuple = (),
     rebuild: Optional[Callable[..., Distribution]] = None,
-    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl.kl_divergence,
+    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl_divergence,
 ) -> None:
     """Fit a family on truncated data and assert it recovers the target.
 
@@ -353,7 +361,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     dataset_size: int = 10000,
     model_args: tuple = (),
     rebuild: Optional[Callable[..., Distribution]] = None,
-    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl.kl_divergence,
+    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl_divergence,
 ) -> None:
     """Fit two families truncated to one set and assert they come apart.
 

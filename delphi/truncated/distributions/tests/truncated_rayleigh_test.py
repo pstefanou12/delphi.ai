@@ -4,8 +4,8 @@
 import functools
 from typing import Optional
 
+import pytest
 import torch as ch
-from torch import distributions
 
 from delphi.exponential_family import rayleigh
 import delphi.oracle
@@ -17,22 +17,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 def _rayleigh(scale: ch.Tensor) -> rayleigh.Rayleigh:
     return rayleigh.Rayleigh(rayleigh.Rayleigh.to_natural(scale), scale.numel())
-
-
-def _kl(
-    fitted: distributions.Distribution, target: distributions.Distribution
-) -> ch.Tensor:
-    """Return the per-coordinate KL, ``2 log(s2 / s1) + (s1 / s2)^2 - 1``.
-
-    torch registers no KL for its Weibull, which Rayleigh subclasses. The
-    mean is proportional to the scale, so their ratios agree.
-    """
-    ratio = fitted.mean / target.mean
-    return -2.0 * ch.log(ratio) + ratio**2 - 1.0
-
-
-def _mle(s: ch.Tensor) -> ch.Tensor:
-    return ch.sqrt((s**2).mean(0) / 2.0)
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -49,12 +33,11 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         phi=phi,
         dims=dims,
         parameter="scale_",
-        empirical=_mle,
+        empirical=helpers.untruncated_mle(truncated_rayleigh.TruncatedRayleigh, dims),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_rayleigh,
-        divergence=_kl,
     )
 
 
@@ -133,7 +116,18 @@ def test_indistinguishable_pair():
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.2),
         dims=1,
         parameter="scale_",
-        empirical=_mle,
+        empirical=helpers.untruncated_mle(truncated_rayleigh.TruncatedRayleigh, 1),
         rebuild=_rayleigh,
-        divergence=_kl,
     )
+
+
+@pytest.mark.slow
+def test_twenty_dimensions_small_mass():
+    scale = ch.linspace(0.5, 2.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        _rayleigh(scale),
+        target_alpha=(0.008, 0.02),
+        bounds=(0.0, 400.0),
+    )
+    _recovers(dims=20, scale=scale, phi=calibrated.phi)

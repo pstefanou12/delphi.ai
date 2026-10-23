@@ -21,6 +21,16 @@ class Rayleigh(
         self.dims = dims
         super().__init__(ch.sqrt(-1.0 / theta), ch.full_like(theta, 2.0))
 
+    @property
+    def _natural_params(self) -> tuple[ch.Tensor]:
+        """Return the natural parameter, read by torch's Bregman KL."""
+        return (-1.0 / self.scale**2,)
+
+    def _log_normalizer(self, *natural):
+        """Return ``-log(-2 theta)``, which is ``log(scale^2)``."""
+        (theta,) = natural
+        return -ch.log(-2.0 * theta)
+
     @staticmethod
     def calc_suff_stat(x: ch.Tensor) -> ch.Tensor:
         """Return ``x^2``."""

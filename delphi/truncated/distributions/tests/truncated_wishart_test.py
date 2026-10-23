@@ -10,12 +10,12 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
 
 from delphi.exponential_family import wishart
 import delphi.oracle
 from delphi.truncated.distributions import truncated_wishart
 from delphi.truncated.distributions.tests import helpers, truncation_sets
+from delphi.utils import helpers as helpers_lib
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -23,44 +23,8 @@ _SCALE = ch.Tensor([[2.0, 0.5], [0.5, 1.0]])
 
 
 def _wishart(df: ch.Tensor, scale: ch.Tensor) -> wishart.Wishart:
-    canonical = ch.cat([ch.atleast_1d(df), wishart.to_vech(scale)])
+    canonical = ch.cat([ch.atleast_1d(df), helpers_lib.vech(scale)])
     return wishart.Wishart(wishart.Wishart.to_natural(canonical), canonical.numel() - 1)
-
-
-def _kl(
-    fitted: distributions.Distribution, target: distributions.Distribution
-) -> ch.Tensor:
-    """Return the KL, which torch does not register, for df n and scale V.
-
-    ``n1 / 2 (tr(V2^-1 V1) - p) + n2 / 2 log(|V2| / |V1|)
-    + log G_p(n2 / 2) - log G_p(n1 / 2) + (n1 - n2) / 2 psi_p(n1 / 2)``,
-    checked against 4e5 Monte Carlo draws to 2e-3.
-    """
-    assert isinstance(fitted, wishart.Wishart)
-    assert isinstance(target, wishart.Wishart)
-    df, other_df = fitted.df, target.df
-    scale, other_scale = fitted.covariance_matrix, target.covariance_matrix
-    size = scale.size(-1)
-    offsets = ch.arange(size, dtype=scale.dtype) / 2.0
-    return (
-        0.5 * df * (ch.linalg.solve(other_scale, scale).trace() - size)  # pylint: disable=not-callable
-        + 0.5 * other_df * (ch.logdet(other_scale) - ch.logdet(scale))
-        + ch.mvlgamma(other_df / 2.0, size)
-        - ch.mvlgamma(df / 2.0, size)
-        + 0.5 * (df - other_df) * ch.digamma(df / 2.0 - offsets).sum()
-    )
-
-
-def _untruncated_mle(sample: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
-    size = wishart.side(sample.size(1))
-    # The warm start is the estimate; one phase of one step completes the fit.
-    model = truncated_wishart.TruncatedWishart(
-        {"iterations": 1, "max_phases": 1}, delphi.oracle.Identity(), size
-    )
-    model.fit(sample)
-    assert model.emp_theta is not None
-    df, scale = model._canonical(model.emp_theta)  # pylint: disable=protected-access
-    return df.detach(), scale.detach()
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -77,12 +41,13 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         phi=phi,
         dims=scale.size(0),
         parameter=("df_", "covariance_matrix_"),
-        empirical=_untruncated_mle,
+        empirical=helpers.untruncated_mle(
+            truncated_wishart.TruncatedWishart, scale.size(0)
+        ),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_wishart,
-        divergence=_kl,
     )
 
 
@@ -109,7 +74,7 @@ def test_first_diagonal_threshold():
 
 def test_determinant_threshold():
     def phi(z):
-        return ch.linalg.det(wishart.from_vech(z)) > 60.0  # pylint: disable=not-callable
+        return ch.linalg.det(helpers_lib.unvech(z, 2)) > 60.0  # pylint: disable=not-callable
 
     _recovers(df=ch.Tensor([5.0]), scale=_SCALE, phi=phi)
 
@@ -183,24 +148,21 @@ def test_small_mass():
 
 @pytest.mark.slow
 def test_indistinguishable_pair():
-    # Inside a box around X* the density is close to exp(<G, X>) for G the
-    # gradient of log p at X*, which is (df - 3) / 2 X*^-1 - scale^-1 / 2.
-    # Raising df while subtracting the same multiple of X*^-1 from the
-    # natural matrix keeps G, so the box hides df 5 from df 9, 0.42 apart.
+    # Shifting theta by s (1, -vech(X*^-1)) keeps grad log p at X*, so a
+    # small box around X* hides df 5 from df 9.
     first = _wishart(ch.Tensor([5.0]), _SCALE)
     center = 5.0 * _SCALE
     shift = 2.0
     second = wishart.Wishart(
         first.theta
-        + ch.cat([ch.Tensor([shift]), -shift * wishart.to_vech(center.inverse())]),
+        + ch.cat([ch.Tensor([shift]), -shift * helpers_lib.vech(center.inverse())]),
         3,
     )
-    point = wishart.to_vech(center)
-    # Half a standard deviation of each vech entry under the first target:
+    point = helpers_lib.vech(center)
     # Var(X_ij) = df (scale_ij^2 + scale_ii scale_jj).
     variance = 5.0 * (
-        wishart.to_vech(_SCALE) ** 2
-        + wishart.to_vech(ch.outer(_SCALE.diagonal(), _SCALE.diagonal()))
+        helpers_lib.vech(_SCALE) ** 2
+        + helpers_lib.vech(ch.outer(_SCALE.diagonal(), _SCALE.diagonal()))
     )
     half_width = 0.5 * variance.sqrt()
 
@@ -213,7 +175,25 @@ def test_indistinguishable_pair():
         phi=phi,
         dims=2,
         parameter=("df_", "covariance_matrix_"),
-        empirical=_untruncated_mle,
+        empirical=helpers.untruncated_mle(truncated_wishart.TruncatedWishart, 2),
         rebuild=_wishart,
-        divergence=_kl,
+    )
+
+
+@pytest.mark.slow
+def test_six_by_six_small_mass():
+    # Twenty-one vech entries, so a sample lives in twenty-one dimensions.
+    df = ch.Tensor([10.0])
+    off_diagonal = ch.full((5,), 0.3)
+    scale = ch.eye(6) + ch.diag(off_diagonal, 1) + ch.diag(off_diagonal, -1)
+    _recovers(
+        df=df,
+        scale=scale,
+        phi=_calibrated(
+            truncation_sets.sum_threshold,
+            df,
+            scale,
+            bounds=(0.0, 2000.0),
+            target_alpha=(0.008, 0.02),
+        ),
     )
