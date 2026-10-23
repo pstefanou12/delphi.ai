@@ -27,6 +27,9 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
             phase's best loss; None disables it.
         phase_loss_increase_tol: Stop widening the budget when a phase raises
             the best loss by more than this; None disables it.
+        precondition: Multiply each phase's gradient by the inverse
+            covariance of ``T(x)`` over the sample, for families whose
+            sufficient statistics are strongly correlated.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -52,6 +55,7 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     phase_loss_tol: Optional[float] = pydantic.Field(default=1e-3, ge=0.0)
     phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
     phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
+    precondition: bool = False
 
     @pydantic.model_validator(mode="after")
     def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":
