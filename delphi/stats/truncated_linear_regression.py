@@ -1,450 +1,124 @@
 # Author: pstefanou12@
-"""
-Truncated Linear Regression.
+"""Truncated linear regression with known noise variance.
+
+Daskalakis, Gouleakis, Tzamos and Zampetakis, "Computationally and
+Statistically Efficient Truncated Regression" (COLT 2019): projected SGD
+without replacement on the truncated NLL, kept in the set D_{r,B} of their
+Definition 2, returning the averaged iterate.
 """
 
+from collections.abc import Callable
 import math
-from typing import Callable, Optional, cast
-import warnings
+from typing import Optional, Union
 
-from scipy.linalg import lstsq
 import torch as ch
-from torch import Tensor, nn
+import torch.distributions
 
 from delphi import configs
-from delphi.stats.linear_model import LinearModel
-from delphi.stats.losses import SwitchGrad, TruncatedMSE, TruncatedUnknownVarianceMSE
-from delphi.trainer import Trainer
-from delphi.utils.datasets import make_train_and_val
-from delphi.utils.helpers import Bounds
+from delphi.stats import linear_model, projection_sets
+from delphi.stats.truncated_linear_model import TruncatedLinearModel
 
 
-class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes,too-many-public-methods
-    LinearModel[configs.TruncatedRegressionFieldsConfig]
+class TruncatedLinearRegression(
+    TruncatedLinearModel[configs.TruncatedLinearRegressionConfig]
 ):
-    """Truncated linear regression via projected SGD on the truncated log-likelihood.
+    """Truncated linear regression with known noise variance.
 
-    Supports known noise variance, unknown noise variance, and temporal
-    dependence. Requires a truncation oracle and survival probability alpha.
-
-    The parameters are registered during fit and depend on the variant, so
-    only one of the first two groups exists on any instance.
+    ``y = w^T x + b + e`` with ``e ~ N(0, noise_var)``, observed only where
+    ``phi(y)``. The descent starts at OLS (or zero) projected onto D_{r,B},
+    which OLS anchors.
 
     Attributes:
-        v: Natural parameter, when noise_var is unknown.
-        lambda_: Inverse noise variance, when noise_var is unknown.
-        weight: Regression weight, when noise_var is known.
-        Sigma_0: Initial covariance estimate; dependent data only.
-        Sigma: Running covariance estimate; dependent data only.
+        noise_var: The known noise variance.
     """
 
-    v: nn.Parameter
-    lambda_: nn.Parameter
-    weight: nn.Parameter
-    Sigma_0: ch.Tensor  # pylint: disable=invalid-name
-    Sigma: ch.Tensor  # pylint: disable=invalid-name
+    defaults = configs.TruncatedLinearRegressionConfig
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         hyperparameters: dict,
         phi: Callable,
         alpha: float,
+        *,
+        noise_var: Union[float, ch.Tensor],
         fit_intercept: bool = True,
-        noise_var: Optional[ch.Tensor] = None,
-        dependent: bool = False,
-        emp_weight: Optional[ch.Tensor] = None,
-        rand_seed=0,
+        rand_seed: int = 0,
     ):
         """Initialize TruncatedLinearRegression.
 
         Args:
-            hyperparameters: hyperparameter dict
-            phi (Callable): oracle object for the truncated regression model
-            alpha (float): survival probability for the truncated regression model
-            fit_intercept (bool): whether to fit an intercept term
-            noise_var (Tensor): known noise variance; if None, it is estimated
-            dependent (bool): whether the dataset has temporal dependence
-            emp_weight (Tensor): optional empirical weight initialization
-            rand_seed (int): random seed for reproducibility
-        """
-        # The two variants carry different defaults, so pick the config class
-        # before delphi.__init__ validates the dict against it.
-        self.defaults = (
-            configs.TruncatedLinearDynamicalSystemConfig
-            if dependent
-            else configs.TruncatedRegressionConfig
-        )
-        super().__init__(hyperparameters, emp_weight=emp_weight)
-        # dependent and s live here rather than on LinearModel: this is the
-        # only estimator that uses them, and they are truncation concepts.
-        self.dependent = dependent
-        self.s: Optional[ch.Tensor] = None  # pylint: disable=invalid-name
-        if dependent:
-            # defaults was set to the dynamical-system config above, so c_s
-            # and c_eta are present; they exist on no other config.
-            lds = cast(
-                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
-            )
-            self.hyperparameters.lr = (2 / alpha) ** lds.c_eta
-            self.s = lds.c_s * (ch.sqrt(ch.log(Tensor([1 / alpha]))) + 1)
-        self.phi = phi
-        self.alpha = alpha
-        self.fit_intercept = fit_intercept
-        self.noise_var = noise_var
-        self.rand_seed = rand_seed
-        if self.dependent:
-            assert self.noise_var is not None, (
-                "if linear dynamical system, noise variance must be known"
-            )
-
-        del self.criterion
-        del self.criterion_params
-        if self.dependent:
-            self.criterion = SwitchGrad.apply
-        elif self.noise_var is None:
-            self.criterion = TruncatedUnknownVarianceMSE.apply
-        else:
-            self.criterion = TruncatedMSE.apply
-            self.criterion_params = [
-                self.phi,
-                self.noise_var,
-                self.hyperparameters.num_samples,
-                self.hyperparameters.eps,
-            ]
-
-        self.coef, self.intercept = None, None
-
-    @property
-    def required_survival_threshold(self) -> ch.Tensor:
-        """Return the survival threshold s, which only dependent data has.
-
-        Returns:
-            The survival threshold computed in ``__init__``.
+            hyperparameters: Hyperparameter dict.
+            phi: Truncation oracle over responses shaped (n, m, 1).
+            alpha: Survival probability in (0, 1].
+            noise_var: The known noise variance, a positive scalar.
+            fit_intercept: Whether to fit an intercept.
+            rand_seed: Seed applied at the start of every run.
 
         Raises:
-            RuntimeError: If this model was not constructed with
-                ``dependent=True``.
+            ValueError: If noise_var is not a positive scalar.
         """
-        if self.s is None:
-            raise RuntimeError(
-                "s is only computed for dependent data; "
-                "construct the model with dependent=True."
+        super().__init__(hyperparameters, phi, alpha, fit_intercept, rand_seed)
+        noise_var = float(ch.as_tensor(noise_var))
+        if noise_var <= 0.0:
+            raise ValueError(f"noise_var must be positive; got {noise_var}.")
+        self.noise_var = noise_var
+
+    @property
+    def noise(self) -> torch.distributions.Distribution:
+        """Gaussian noise with the known variance."""
+        return torch.distributions.Normal(
+            ch.zeros(1), ch.full((1,), math.sqrt(self.noise_var))
+        )
+
+    def untruncated_fit(self, design: ch.Tensor, targ: ch.Tensor) -> ch.Tensor:
+        """Return the OLS weight."""
+        return ch.linalg.lstsq(design, targ).solution  # pylint: disable=not-callable
+
+    def build_projection_set(
+        self, design: ch.Tensor, targ: ch.Tensor
+    ) -> projection_sets.ProjectionSet:
+        """Return D_{r,B}, anchored at OLS and widened to contain it.
+
+        Raises:
+            ValueError: If OLS lies outside the ball of radius weight_bound.
+        """
+        hp = self.hyperparameters
+        r = (
+            projection_sets.ResidualSpectralSet.paper_radius(self.alpha)
+            if hp.r is None
+            else hp.r
+        )
+        ols = self.required_untruncated_weight
+        if hp.weight_bound is not None and float(ols.norm()) > hp.weight_bound:
+            raise ValueError(
+                f"OLS has norm {float(ols.norm()):.4f} in the normalized "
+                f"coordinates, outside weight_bound {hp.weight_bound}."
             )
-        return self.s
-
-    def fit(  # pylint: disable=attribute-defined-outside-init
-        self,
-        X: Tensor,
-        y: Tensor,  # pylint: disable=invalid-name
-    ):
-        """
-        Train truncated linear regression model by running PSGD on the truncated negative
-        population log likelihood.
-
-        Args:
-            X (torch.Tensor): input feature covariates num_samples by dims
-            y (torch.Tensor): dependent variable predictions num_samples by 1
-        """
-        assert isinstance(X, Tensor), (
-            f"X is type: {type(X)}. expected type torch.Tensor."
+        projection = projection_sets.ResidualSpectralSet(
+            design, targ, self.noise_var, r, ols, hp.weight_bound
         )
-        assert isinstance(y, Tensor), (
-            f"y is type: {type(y)}. expected type torch.Tensor."
-        )
-        assert X.size(0) > X.size(1), (
-            "number of dimensions, larger than number of samples. "
-            "procedure expects matrix with size num samples by num feature dimensions."
-        )
-        assert y.dim() == 2 and y.size(1) <= X.size(1), (
-            f"y is size: {y.size()}. expecting y tensor to have y.size(1) < X.size(1)."
-        )
-        if self.noise_var is not None:
-            assert self.noise_var.size(0) == y.size(1), (
-                f"noise var size is: {self.noise_var.size(0)}. "
-                f"y size is: {y.size(1)}. "
-                "expecting noise_var.size(0) == y.size(1)"
+        at_ols = projection.spectral_radius(ols)
+        if at_ols > r:
+            self.logger.warning(
+                f"OLS lies outside D_{{r,B}} (lambda_max {at_ols:.4f} > r = "
+                f"{r:.4f}); widening r to contain it."
             )
+            projection.r = at_ols
+        return projection
 
-        if self.dependent:
-            lds = cast(
-                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
-            )
-            self.criterion_params = [
-                self.phi,
-                lds.c_gamma,
-                self.alpha,
-                X.size(0),
-                self.noise_var,
-                self.hyperparameters.num_samples,
-                self.hyperparameters.eps,
-            ]
-
-        k = X.size(1)
-        # Normalization factor: B * sqrt(k).
-        # Compute B as the maximum L-inf norm across all samples.
-        B = X.norm(dim=1, p=float("inf")).max()  # pylint: disable=invalid-name
-        self.beta = B * (k**0.5)
-        X = X / self.beta  # pylint: disable=invalid-name
-
-        # Add one feature column to X when fitting an intercept.
-        if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
-
-        self.train_loader, self.val_loader = make_train_and_val(
-            self.hyperparameters, X, y
+    @property
+    def ols_coef_(self) -> ch.Tensor:
+        """Coefficients of the OLS fit to the truncated sample."""
+        return linear_model.require_fitted(
+            self.coefficients(self.required_untruncated_weight.flatten())[0],
+            "ols_coef_",
         )
-        self.trainer = Trainer(self, self.hyperparameters)
-        self.trainer.train_model(
-            self.train_loader, self.val_loader, rand_seed=self.rand_seed
-        )
-        return self
-
-    def pre_phase_hook(self):  # pylint: disable=attribute-defined-outside-init
-        """Set up empirical model and projection set before training."""
-        self.calc_emp_model()
-        # Use OLS as an empirical estimate to define the projection set.
-        self.radius = self.hyperparameters.r * self.base_radius
-        # Empirical estimates for the projection set.
-        # Generate noise variance radius bounds when variance is unknown.
-        if self.noise_var is None:
-            lower_bound = self.emp_noise_var / (8 * (5 + 2 * math.log(1 / self.alpha)))
-            self.var_bounds = Bounds(lower_bound, self.emp_noise_var + self.radius)
-
-            lambda_ = self.emp_noise_var.clone().inverse()
-            v = self.emp_weight * lambda_
-            self.register_parameter("v", nn.Parameter(v))
-            self.register_parameter("lambda_", nn.Parameter(lambda_))
-
-            self.criterion_params = [
-                self.lambda_,
-                self.phi,
-                self.hyperparameters.num_samples,
-                self.hyperparameters.eps,
-            ]
-        else:
-            self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
-
-    def calc_emp_model(self) -> None:  # pylint: disable=attribute-defined-outside-init
-        """
-        Calculate empirical estimates for a truncated linear model. Assigns
-        estimates to a Linear layer. By default calculates OLS for truncated linear
-        regression.
-        """
-        X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
-        coef_, _, self.rank_, self.singular_ = lstsq(X, y)
-        self.ols_coef_ = Tensor(coef_)
-        self.emp_noise_var = ch.var(Tensor(X @ coef_) - y, dim=0)[..., None]
-
-        if self.emp_weight is None:
-            self.emp_weight = self.ols_coef_
-
-        if self.dependent:
-
-            def calc_sigma_0(mat):  # pylint: disable=invalid-name
-                """Calculate the sum of outer products."""
-                return ch.bmm(
-                    mat.view(mat.size(0), mat.size(1), 1),
-                    mat.view(mat.size(0), 1, mat.size(1)),
-                ).sum(0)
-
-            XXT_sum = calc_sigma_0(X)  # pylint: disable=invalid-name
-            Sigma_0 = (  # pylint: disable=invalid-name
-                1 / (self.required_survival_threshold * len(X))
-            ) * XXT_sum
-            self.register_buffer("Sigma_0", Sigma_0)
-            assert ch.det(self.Sigma_0) != 0, "Sigma_0 is singular and non-invertible"  # pylint: disable=no-member
-            self.register_buffer("Sigma", self.Sigma_0.clone())  # pylint: disable=no-member
-
-    def post_training_hook(self):  # pylint: disable=too-many-branches,attribute-defined-outside-init
-        """Process and store results after training completes."""
-        if self.hyperparameters.r is not None:
-            self.hyperparameters.r *= self.hyperparameters.rate
-        best_params = self.trainer.best_params
-        final_params = self.trainer.final_params
-        if self.hyperparameters.r is not None:
-            self.hyperparameters.r *= self.hyperparameters.rate
-        # Remove model from the computation graph.
-        if self.noise_var is None:
-            v = self.v.data
-            lambda_ = self.lambda_.data
-
-            self.final_variance = 1.0 / lambda_
-            self.final_weight = v * self.final_variance
-
-            if self.fit_intercept:
-                best_lambda_ = best_params[-1]
-                self.best_variance = 1 / best_lambda_
-                self.best_coef = (best_params[:-2] * self.best_variance) / self.beta
-                self.best_intercept = best_params[-2] * self.best_variance
-                final_lambda_ = final_params[-1]
-                self.final_variance = 1 / final_lambda_
-                self.final_coef = (final_params[:-2] * self.final_variance) / self.beta
-                self.final_intercept = final_params[-2] * self.final_variance
-                self.emp_weight /= self.beta
-            else:
-                best_lambda_ = best_params[-1]
-                self.best_variance = 1 / best_lambda_
-                self.best_coef = (best_params[:-1] * self.best_variance) / self.beta
-                final_lambda_ = final_params[-1]
-                self.final_variance = 1 / final_lambda_
-                self.final_coef = (final_params[:-1] * self.final_variance) / self.beta
-                self.emp_weight /= self.beta
-
-        # Assign results from the procedure to instance variables.
-        else:
-            if self.fit_intercept:
-                self.best_coef = best_params[:-1] / self.beta
-                self.best_intercept = best_params[-1]
-                self.final_coef = final_params[:-1] / self.beta
-                self.final_intercept = final_params[-1]
-                self.emp_weight /= self.beta
-            else:
-                self.best_coef = best_params[:] / self.beta
-                self.final_coef = final_params[:] / self.beta
-                self.emp_weight /= self.beta
-
-    def predict(self, X: Tensor):  # pylint: disable=invalid-name
-        """Make predictions with regression estimates."""
-        assert self.coef is not None, "must fit model before using predict method"
-        if self.fit_intercept:
-            return X @ self.coef + self.intercept
-        return X @ self.coef
-
-    def loss(self, X: Tensor, y: Tensor) -> Tensor:  # pylint: disable=invalid-name
-        """Compute loss for given inputs."""
-        with ch.no_grad():
-            return self.required_criterion(  # pylint: disable=not-callable
-                self.predict(X), y, *self.criterion_params
-            )
-
-    def emp_nll(self, X: Tensor, y: Tensor) -> Tensor:  # pylint: disable=invalid-name
-        """Compute empirical negative log-likelihood."""
-        if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
-        with ch.no_grad():
-            return self.required_criterion(  # pylint: disable=not-callable
-                X @ self.required_emp_weight, y, *self.criterion_params
-            )
 
     @property
-    def best_coef_(self):
-        """Best coefficient from training."""
-        return self.best_coef
+    def ols_intercept_(self) -> Optional[ch.Tensor]:
+        """Intercept of the OLS fit to the truncated sample."""
+        return self.coefficients(self.required_untruncated_weight.flatten())[1]
 
-    @property
-    def best_intercept_(self):
-        """Best intercept from training."""
-        if self.fit_intercept:
-            return self.best_intercept
-        warnings.warn("intercept not fit, check inputs.")
-        return None
-
-    @property
-    def final_coef_(self):
-        """Final coefficient from training."""
-        return self.final_coef
-
-    @property
-    def final_intercept_(self):
-        """Final intercept from training."""
-        if self.fit_intercept:
-            return self.final_intercept
-        warnings.warn("intercept not fit, check inputs.")
-        return None
-
-    @property
-    def coef_(self):
-        """Regression coefficient weights."""
-        return self.best_coef.clone()
-
-    @property
-    def intercept_(self):
-        """Regression intercept."""
-        if self.best_intercept:
-            return self.best_intercept.clone()
-        warnings.warn("intercept not fit, check args input.")
-        return None
-
-    @property
-    def best_variance_(self):
-        """
-        Noise variance prediction for linear regression with
-        unknown noise variance algorithm.
-        """
-        if self.noise_var is None:
-            return self.best_variance
-        warnings.warn(
-            "no variance prediction because regression with known variance was run"
-        )
-        return None
-
-    @property
-    def final_variance_(self):
-        """
-        Noise variance prediction for linear regression with
-        unknown noise variance algorithm.
-        """
-        if self.noise_var is None:
-            return self.final_variance
-        warnings.warn(
-            "no variance prediction because regression with known variance was run"
-        )
-        return None
-
-    @property
-    def ols_coef_(self):
-        """OLS empirical estimates for coefficients."""
-        return self._ols_coef_
-
-    @ols_coef_.setter
-    def ols_coef_(self, value):
-        """Set OLS empirical estimates for coefficients."""
-        self._ols_coef_ = value
-
-    @property
-    def ols_intercept_(self):
-        """OLS empirical estimates for intercept."""
-        return self.trunc_reg.emp_bias.clone()
-
-    @property
-    def ols_variance_(self):
-        """OLS empirical estimates for noise variance."""
-        return self.trunc_reg.emp_var.clone()
-
-    def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
-        """Forward pass through the model."""
-        if self.noise_var is None:
-            return X @ self.v * 1.0 / self.lambda_
-
-        if self.dependent:
-            self.Sigma += ch.bmm(  # pylint: disable=no-member,invalid-name
-                X.view(X.size(0), X.size(1), 1), X.view(X.size(0), 1, X.size(1))
-            ).mean(0)
-
-        return X @ self.weight
-
-    def step_pre_hook(self, optimizer, args, kwargs):
-        """Pre-step hook for gradient modification."""
-        if self.dependent:
-            self.weight.grad = self.Sigma.inverse() @ self.weight.grad  # pylint: disable=no-member
-
-        return args, kwargs
-
-    def step_post_hook(self, optimizer, args, kwargs):
-        """Post-step hook for parameter projection."""
-        if self.noise_var is None:
-            # Project model parameters back to the feasible domain.
-            var = 1.0 / self.lambda_
-            self.lambda_.data = 1.0 / ch.clamp(
-                var, self.var_bounds.lower, self.var_bounds.upper
-            )
-        return args, kwargs
-
-    def parameters_(self):
-        """Return parameter groups for optimizer."""
-        if self.noise_var is None and self.hyperparameters.var_lr is not None:
-            return [
-                {"params": self.v, "lr": self.hyperparameters.lr},
-                {"params": self.lambda_, "lr": self.hyperparameters.var_lr},
-            ]
-        return super().parameters(recurse=True)
+    def __str__(self):
+        """Return a human-readable name for this model."""
+        return "truncated linear regression, known variance"

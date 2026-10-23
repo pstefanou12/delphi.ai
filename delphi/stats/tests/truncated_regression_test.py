@@ -229,7 +229,7 @@ def test_known_truncated_regression_higher_dimensions():
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_[..., None]]
+        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_.flatten()]
     ) * ch.sqrt(NOISE_VAR)
     print(f"estimated weights: {w_}")
     known_mse_loss = mse_loss(gt_, w_.flatten())
@@ -299,7 +299,7 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
         "batch_size": -1,
         "var_lr": None,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha, fit_intercept=False
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -397,7 +397,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
         "step_lr_gamma": 1.0,
         "early_stopping": True,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -482,7 +482,7 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
         "var_lr": None,
         "num_samples": 5000,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(args, phi, alpha)
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(args, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
         [
@@ -558,7 +558,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
         "iterations": 500,
         # 'lbfgs_lr': 2.0
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi, alpha, fit_intercept=False
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc)
@@ -635,7 +635,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
         "early_stopping": True,
         "iterations": 500,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(train_kwargs, phi, alpha)
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(train_kwargs, phi, alpha)
     unknown_trunc_reg.fit(x_trunc, y_trunc)
     w_ = ch.cat(
         [
@@ -723,7 +723,7 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
         "iterations": 2500,
         "step_lr_gamma": 1.0,
     }
-    unknown_trunc_reg = stats.TruncatedLinearRegression(
+    unknown_trunc_reg = stats.LegacyTruncatedLinearRegression(
         train_kwargs, phi_emp_scale, alpha
     )
     unknown_trunc_reg.fit(x_trunc, y_trunc_emp_scale)
@@ -1004,15 +1004,10 @@ def test_truncated_lasso_regression_ten_dimensions():
     assert trunc_mse_loss <= 1e-1, msg
 
 
-# TODO: pstefanou12@ - truncated_linear_regression.py:421 multiplies by a
-# weight that the dependent path never assigns.
-# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
-# backward, so weight.grad is still None when Sigma.inverse() needs it.
-# Applying the transform needs to move relative to the closure.
-# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
-# backward, so weight.grad is still None when Sigma.inverse() needs it.
-# Applying the transform needs to move relative to the closure.
-@pytest.mark.skip(reason="dependent path reaches Tensor @ None in step_pre_hook")
+# TODO: pstefanou12@ - ols_coef_ keeps the intercept row and the 1 / beta
+# scale, so A - ols_coef_ fails on shape; compare against an OLS fit of A
+# alone. The fit itself runs now that Sigma^-1 reaches the step.
+@pytest.mark.skip(reason="ols_coef_ is (d + 1, d) and unscaled; see TODO")
 def test_truncated_dependent_regression():
     ch.manual_seed(seed)
     D = 10  # number of dimensions for A_{*} matrix
@@ -1059,7 +1054,7 @@ def test_truncated_dependent_regression():
         "tol": 1e-1,
         "c_gamma": 2.0,
     }
-    trunc_lds = stats.TruncatedLinearRegression(
+    trunc_lds = stats.LegacyTruncatedLinearRegression(
         train_kwargs,
         phi,
         train_kwargs["alpha"],
@@ -1081,3 +1076,39 @@ def test_truncated_dependent_regression():
     assert trunc_spec_norm <= emp_spec_norm, (
         f"truncated spectral norm {trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}"
     )
+
+
+def test_dependent_step_is_preconditioned_by_sigma():
+    """SON-SG's step is -lr Sigma^-1 grad, with Sigma updated by the batch."""
+    ch.manual_seed(seed)
+    dims, num_samples = 3, 200
+    X = ch.randn(num_samples, dims)
+    Y = X @ (0.5 * ch.eye(dims)) + ch.randn(num_samples, dims)
+
+    def phi(x):
+        return x.norm(dim=-1, keepdim=True) <= 10.0
+
+    model = stats.LegacyTruncatedLinearRegression(
+        {"iterations": 1, "num_samples": 10},
+        phi,
+        0.9,
+        noise_var=ch.eye(dims),
+        dependent=True,
+    ).fit(X, Y)
+    model.trainer._reset_run_state()  # pylint: disable=protected-access
+    inp, targ = next(iter(model.train_loader))
+    start, sigma = model.weight.detach().clone(), model.Sigma.clone()  # pylint: disable=no-member
+
+    ch.manual_seed(1)
+    model.trainer.train_step((inp, targ))
+    step = model.weight.detach() - start
+
+    sigma = sigma + ch.einsum("ni,nj->ij", inp, inp) / inp.size(0)
+    weight = start.clone().requires_grad_()
+    ch.manual_seed(1)
+    loss = model.required_criterion(inp @ weight, targ, *model.criterion_params)  # pylint: disable=not-callable
+    (plain,) = ch.autograd.grad(loss.sum(), weight)
+    lr = model.optimizer.param_groups[0]["lr"]
+    expected = -lr * ch.linalg.solve(sigma, plain)  # pylint: disable=not-callable
+    assert ch.allclose(step, expected, atol=1e-5), (step, expected)
+    assert not ch.allclose(step, -lr * plain, atol=1e-5)

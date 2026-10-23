@@ -79,6 +79,118 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
         return -grad_pred / targ.size(0), None, None, None, None, None
 
 
+def noise_score(noise: torch.distributions.Distribution, e: ch.Tensor) -> ch.Tensor:
+    """Return the noise's score, ``-grad_e log D_N(e)``, at each draw.
+
+    Args:
+        noise: Noise distribution D_N, with a differentiable ``log_prob``.
+        e: Noise values, its event dimension last.
+
+    Returns:
+        The score, shaped as ``e``.
+    """
+    with ch.enable_grad():
+        e = e.detach().requires_grad_()
+        (grad,) = ch.autograd.grad(noise.log_prob(e).sum(), e)
+    return -grad
+
+
+def _truncated_noise(pred, phi, noise, num_samples):
+    """Draw noise for each prediction and mark the draws phi keeps.
+
+    Args:
+        pred: Predictions h_W(x), shaped (n, k).
+        phi: Truncation oracle over latents shaped (n, num_samples, k).
+        noise: Noise distribution D_N, with batch shape (k,).
+        num_samples: Draws per prediction.
+
+    Returns:
+        Tuple of the draws, shaped (n, num_samples, k), and a float mask
+        shaped (n, num_samples, 1).
+    """
+    e = noise.sample((pred.size(0), num_samples))
+    kept = phi(pred[:, None, :] + e)
+    return e, kept.reshape(pred.size(0), num_samples, 1).float()
+
+
+class TruncatedLinearModelNLL(ch.autograd.Function):  # pylint: disable=abstract-method
+    """Truncated NLL of a linear model whose latent response is observed.
+
+    For ``z = h_W(x) + e`` with ``e ~ D_N``, observed only where ``phi(z)``,
+    the per-sample loss is ``-log D_N(z - h) + log P(phi | h)``. Its gradient
+    in ``h`` is ``E[s(e) | phi] - s(z - h)`` for the noise score ``s``, and
+    the expectation is estimated by rejection sampling ``e`` against phi, so
+    any noise distribution with a differentiable ``log_prob`` serves.
+    """
+
+    @staticmethod
+    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
+        ctx,
+        pred,
+        targ,
+        phi,
+        noise,
+        num_samples=1000,
+        eps=1e-5,
+    ):
+        """Compute the batch-mean truncated NLL.
+
+        Args:
+            pred: Predictions h_W(x), shaped (n, k).
+            targ: Observed latents z, shaped (n, k).
+            phi: Truncation oracle over latents shaped (n, num_samples, k).
+            noise: Noise distribution D_N, with batch shape (k,).
+            num_samples: Rejection-sampling draws per prediction.
+            eps: Floor on the accepted fraction, so a prediction phi rejects
+                entirely contributes a finite loss.
+        """
+        e, kept = _truncated_noise(pred, phi, noise, num_samples)
+        accepted = kept.sum(1)
+        conditional_score = (kept * noise_score(noise, e)).sum(1) / (accepted + eps)
+        observed_score = noise_score(noise, targ - pred)
+        ctx.save_for_backward(conditional_score - observed_score)
+        log_mass = ch.log(accepted / num_samples + eps).sum(-1)
+        nll = -noise.log_prob(targ - pred).sum(-1) + log_mass
+        return nll.mean()
+
+    @staticmethod
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the gradient in pred."""
+        (grad,) = ctx.saved_tensors
+        return grad_output * grad / grad.size(0), None, None, None, None, None
+
+    @staticmethod
+    def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        pred, design, phi, noise, num_samples=1000, eps=1e-5
+    ):
+        """Return the batch-mean Hessian of the NLL in the weight.
+
+        Uses ``Cov[s(e) | phi]`` per sample, the exact curvature in h when
+        the score's Jacobian is constant, as for Gaussian noise.
+
+        Args:
+            pred: Predictions h_W(x), shaped (n, k).
+            design: Design matrix x, shaped (n, d).
+            phi: As ``forward``.
+            noise: As ``forward``.
+            num_samples: As ``forward``.
+            eps: As ``forward``.
+
+        Returns:
+            The Hessian for the weight of shape (d, k) flattened row-major,
+            shaped (d * k, d * k).
+        """
+        with ch.no_grad():
+            e, kept = _truncated_noise(pred, phi, noise, num_samples)
+            score = noise_score(noise, e)
+            weights = kept / (kept.sum(1, keepdim=True) + eps)
+            centered = score - (weights * score).sum(1, keepdim=True)
+            cov = ch.einsum("nma,nmb->nab", weights * centered, centered)
+            hess = ch.einsum("ni,nj,nab->iajb", design, design, cov)
+            size = design.size(1) * pred.size(1)
+            return hess.reshape(size, size) / pred.size(0)
+
+
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):  # pylint: disable=abstract-method
     """MLE for truncated Gaussian regression with unknown noise variance.
 
