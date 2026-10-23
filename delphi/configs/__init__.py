@@ -13,6 +13,7 @@ from delphi.configs.base import DelphiConfig, TrainerConfig, WarmStartConfig, _C
 from delphi.configs.dataset import DatasetConfig
 from delphi.configs.distributions.truncated.exponential_family import (
     TruncatedExponentialFamilyDistributionConfig,
+    TruncatedInverseGaussianConfig,
     WarmStartedExponentialFamilyDistributionConfig,
 )
 from delphi.configs.distributions.truncated.multivariate_normal import (
@@ -76,6 +77,7 @@ __all__ = [
     "TrainerConfig",
     "TruncatedClassificationConfig",
     "TruncatedExponentialFamilyDistributionConfig",
+    "TruncatedInverseGaussianConfig",
     "WarmStartConfig",
     "WarmStartedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",

@@ -48,6 +48,11 @@ just hooks      # pre-push hooks running just check
 
 Each model is fit by projected stochastic gradient descent on the truncated
 negative log-likelihood. All live in `delphi.truncated.distributions`.
+Families whose sufficient statistics are strongly correlated on the
+truncation set, such as the inverse Gaussian's `x` and `1 / x`, set
+`precondition`: each step of the fit multiplies the gradient by the inverse
+covariance of the sufficient statistics over the observed sample, the
+truncated NLL's Hessian at the truth.
 
 | Model | Module | Example |
 |---|---|---|
@@ -75,6 +80,7 @@ negative log-likelihood. All live in `delphi.truncated.distributions`.
 | `TruncatedInverseGamma` | [`truncated_inverse_gamma`](delphi/truncated/distributions/truncated_inverse_gamma.py) | |
 | `TruncatedMultinomial` | [`truncated_multinomial`](delphi/truncated/distributions/truncated_multinomial.py) | |
 | `TruncatedRayleigh` | [`truncated_rayleigh`](delphi/truncated/distributions/truncated_rayleigh.py) | |
+| `TruncatedInverseGaussian` | [`truncated_inverse_gaussian`](delphi/truncated/distributions/truncated_inverse_gaussian.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
