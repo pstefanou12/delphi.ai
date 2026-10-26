@@ -3,6 +3,7 @@
 Helper code (functions, classes, etc.)
 """
 
+import math
 import pprint
 from typing import NamedTuple
 
@@ -152,33 +153,46 @@ def vech_size(dims: int) -> int:
     return dims * (dims + 1) // 2
 
 
+def vech_side(size: int) -> int:
+    """Return the side of the matrix whose ``vech`` has ``size`` entries.
+
+    Args:
+        size: Length of the lower triangle, as ``vech_size`` returns.
+
+    Returns:
+        The side length, inverting ``vech_size``.
+    """
+    return int(round((math.sqrt(8 * size + 1) - 1) / 2))
+
+
 def vech(matrix: ch.Tensor) -> ch.Tensor:
     """Return the lower triangle of a symmetric matrix as a vector.
 
     Args:
-        matrix: Symmetric matrix of shape (dims, dims).
+        matrix: Symmetric matrix of shape (..., dims, dims).
 
     Returns:
-        Vector of length ``vech_size(dims)``.
+        Vectors of shape (..., ``vech_size(dims)``).
     """
     rows, cols = ch.tril_indices(matrix.size(-1), matrix.size(-1))
-    return matrix[rows, cols]
+    return matrix[..., rows, cols]
 
 
 def unvech(vector: ch.Tensor, dims: int) -> ch.Tensor:
     """Rebuild a symmetric matrix from its lower triangle.
 
     Args:
-        vector: Lower triangle, as produced by ``vech``.
+        vector: Lower triangle, as produced by ``vech``, shaped (..., size).
         dims: Side length of the matrix.
 
     Returns:
-        Symmetric matrix of shape (dims, dims).
+        Symmetric matrices of shape (..., dims, dims).
     """
     rows, cols = ch.tril_indices(dims, dims)
-    matrix = ch.zeros(dims, dims, dtype=vector.dtype, device=vector.device)
-    matrix[rows, cols] = vector
-    return matrix + matrix.T - ch.diag(ch.diag(matrix))
+    matrix = vector.new_zeros(vector.shape[:-1] + (dims, dims))
+    matrix[..., rows, cols] = vector
+    matrix[..., cols, rows] = vector
+    return matrix
 
 
 def type_of_script():

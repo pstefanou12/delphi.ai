@@ -15,6 +15,12 @@ from delphi.configs.distributions.truncated.exponential_family import (
     TruncatedExponentialFamilyDistributionConfig,
     WarmStartedExponentialFamilyDistributionConfig,
 )
+from delphi.configs.distributions.truncated.gamma_unknown_concentration import (
+    TruncatedGammaUnknownConcentrationConfig,
+)
+from delphi.configs.distributions.truncated.inverse_gaussian import (
+    TruncatedInverseGaussianConfig,
+)
 from delphi.configs.distributions.truncated.multivariate_normal import (
     TruncatedMultivariateNormalConfig,
 )
@@ -76,6 +82,8 @@ __all__ = [
     "TrainerConfig",
     "TruncatedClassificationConfig",
     "TruncatedExponentialFamilyDistributionConfig",
+    "TruncatedGammaUnknownConcentrationConfig",
+    "TruncatedInverseGaussianConfig",
     "WarmStartConfig",
     "WarmStartedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",

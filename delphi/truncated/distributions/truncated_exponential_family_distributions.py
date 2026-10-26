@@ -124,6 +124,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self._projections, self._projection_distance = 0, 0.0
         self._run_start = (0, 0.0)
         self._previous_phase_loss: Optional[float] = None
+        # The inverse curvature each step multiplies the gradient by, when
+        # the config asks for preconditioning; set per run.
+        self._preconditioner: Optional[ch.Tensor] = None
+        self._gradient_hook: Optional[ch.utils.hooks.RemovableHandle] = None
 
     def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.
@@ -170,6 +174,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.n_samples_ = S.size(0)
         self._projections, self._projection_distance = 0, 0.0
         self.nll_init, self.radius, self._previous_phase_loss = None, None, None
+        # _calc_emp_model registers a fresh theta, which needs its own hook.
+        self._gradient_hook = None
         self._calc_emp_model()
         self.trainer = trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
@@ -309,6 +315,69 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.calc_suff_stat,
             self.hyperparameters.num_samples,
         )
+
+    def make_optimizer_and_schedule(
+        self,
+        checkpoint: Optional[dict] = None,
+        hessian: Optional[Callable[..., ch.Tensor]] = None,
+    ):
+        """Build the optimizer and schedule, preconditioned if configured.
+
+        With ``precondition`` set, every step of a phase moves by
+        ``C^{-1} g`` rather than ``g``, for ``C`` the covariance of ``T(x)``
+        over the observed sample, which estimates the truncated NLL's Hessian
+        at the truth without sampling. That is plain SGD after the change of
+        variables ``theta = L^{-T} psi`` for ``C = L L^T``, so the Fisher
+        schedule reads the spectrum of ``L^{-1} H L^{-T}``, near the identity
+        where ``C`` is accurate. A warm start, which passes its own
+        ``hessian``, is not preconditioned: its curvature at a rough start
+        can be far from the optimum's, and a step scaled by it left the
+        Wishart's domain at once.
+
+        Args:
+            checkpoint: As the base class.
+            hessian: As the base class.
+
+        Returns:
+            Tuple of (optimizer, scheduler).
+        """
+        self._preconditioner = None
+        if getattr(self.hyperparameters, "precondition", False) and hessian is None:
+            factor = ch.linalg.cholesky(self._empirical_hessian())  # pylint: disable=not-callable
+            self._preconditioner = ch.cholesky_inverse(factor)
+            hessian = self._whitened(self.hessian, factor)
+            # A tensor hook rather than step_pre_hook, which runs before
+            # optimizer.step's closure recomputes the gradient.
+            if self._gradient_hook is None:
+                self._gradient_hook = self.theta.register_hook(self._precondition)
+        return super().make_optimizer_and_schedule(checkpoint, hessian)
+
+    def _empirical_hessian(self) -> ch.Tensor:
+        """Return the covariance of ``T(x)`` over the training sample."""
+        return ch.atleast_2d(self.train_loader_.dataset.S_grad.T.cov())
+
+    @staticmethod
+    def _whitened(
+        hessian: Callable[..., ch.Tensor], factor: ch.Tensor
+    ) -> Callable[..., ch.Tensor]:
+        """Return ``hessian`` in the coordinates ``factor`` whitens.
+
+        For ``C = L L^T`` and ``theta = L^{-T} psi``, the chain rule gives
+        the Hessian in psi as ``L^{-1} H L^{-T}``; it is the identity where
+        ``H = C``, so its spectrum measures how far C is from H.
+        """
+
+        def whitened(theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+            # Two triangular solves: L^{-1} H, then L^{-1} (L^{-1} H)^T, since
+            # H is symmetric.
+            left = ch.linalg.solve_triangular(factor, hessian(theta), upper=False)  # pylint: disable=not-callable
+            return ch.linalg.solve_triangular(factor, left.T, upper=False)  # pylint: disable=not-callable
+
+        return whitened
+
+    def _precondition(self, grad: ch.Tensor) -> ch.Tensor:
+        """Return the gradient times the run's preconditioner, if it has one."""
+        return grad if self._preconditioner is None else self._preconditioner @ grad
 
     def _untruncated_hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the Hessian of the warm-start criterion, as ``hessian`` does."""
