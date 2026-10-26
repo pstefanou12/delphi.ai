@@ -51,9 +51,8 @@ from delphi.configs.stats.truncated.lqr import TruncatedLQRConfig
 from delphi.configs.stats.truncated.regression import (
     TruncatedLassoRegressionConfig,
     TruncatedLinearDynamicalSystemConfig,
-    TruncatedLinearRegressionConfig,
     TruncatedRegressionConfig,
-    TruncatedRegressionFieldsConfig,
+    TruncatedUnknownVarianceRegressionConfig,
 )
 
 __all__ = [
@@ -83,12 +82,11 @@ __all__ = [
     "TruncatedLassoRegressionConfig",
     "TruncatedLinearDynamicalSystemConfig",
     "TruncatedLinearModelConfig",
-    "TruncatedLinearRegressionConfig",
     "TruncatedLogisticRegressionConfig",
     "TruncatedMultivariateNormalConfig",
     "TruncatedProbitRegressionConfig",
     "TruncatedRegressionConfig",
-    "TruncatedRegressionFieldsConfig",
+    "TruncatedUnknownVarianceRegressionConfig",
     "UnknownTruncationMultivariateNormalConfig",
     "WarmupConfig",
     "_ConfigT",

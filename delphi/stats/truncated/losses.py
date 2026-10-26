@@ -10,40 +10,25 @@ import torch.nn
 
 from delphi.utils import helpers
 
-softmax = torch.nn.Softmax(dim=1)
 gumbel = torch.distributions.Gumbel(0, 1)
 
-
-def Test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
-    """Check which gradient to take at timestep t.
-
-    Args:
-        mu: Current conditional mean for LDS.
-        phi: Oracle.
-        c_gamma: Constant.
-        alpha: Survival probability.
-        T: Number of timesteps in dataset.
-    """
-    M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
-        ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0))
-    )
-
-    # Threshold constant.
-    gamma = (alpha / 2) ** c_gamma
-
-    # Number of samples.
-    k = int((4 / gamma) * math.log(T))
-    stacked = mu.repeat(k, 1, 1)
-    noise = M.sample(stacked.size()[:-1])
-    ci = stacked + noise
-    p = phi(ci).float().mean(0)
-    # Check whether the probability that a sample falls within the
-    # truncation set is greater than the survival probability.
-    return p >= (2 * gamma)
+# Draws per sample a TruncatedMSE estimate may take to collect min_accepted;
+# a sample whose survival mass is below min_accepted / MAX_DRAWS_PER_SAMPLE
+# keeps what it has.
+MAX_DRAWS_PER_SAMPLE = 1_000_000
+# Caps one round's draws across the batch, bounding its memory.
+MAX_DRAWS_PER_ROUND = 10_000_000
 
 
 class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated mean squared error loss for regression with known noise variance."""
+    """Truncated NLL of regression with known noise variance.
+
+    Per sample, ``(y - h)^2 / (2 sigma^2) + log P(h + e in S)`` with
+    ``e ~ N(0, sigma^2)``; its gradient in h is ``(E[z | S] - y) / sigma^2``
+    for ``z ~ N(h, sigma^2)``, estimated from rejection-sampled draws at the
+    sample's own h. ``phi`` may return a survival probability rather than a
+    mask, in which case each draw is kept with that probability.
+    """
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
@@ -53,142 +38,133 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
         phi,
         noise_var,
         num_samples=1000,
-        eps=1e-10,  # pylint: disable=invalid-name
-    ):
-        """Compute truncated MSE loss."""
-        stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
-        noise = (noise_var**0.5) * ch.randn_like(stacked)
-        noised = stacked + noise
-
-        mask = phi(noised).float()
-        z = (mask * noised).sum(dim=1) / (mask.sum(dim=1) + eps)
-        P_hat = mask.mean(dim=1).clamp_min(eps)  # pylint: disable=invalid-name
-
-        ctx.save_for_backward(targ, z, noise_var)
-        quadratic_loss = -0.5 * (pred - targ).pow(2) / noise_var
-        trunc_const = ch.log(P_hat + eps)
-
-        return -(quadratic_loss - trunc_const) / pred.size(0)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated MSE w.r.t. pred."""
-        targ, z, noise_var = ctx.saved_tensors
-
-        grad_pred = (targ - z) / noise_var
-        return -grad_pred / targ.size(0), None, None, None, None, None
-
-
-def noise_score(noise: torch.distributions.Distribution, e: ch.Tensor) -> ch.Tensor:
-    """Return the noise's score, ``-grad_e log D_N(e)``, at each draw.
-
-    Args:
-        noise: Noise distribution D_N, with a differentiable ``log_prob``.
-        e: Noise values, its event dimension last.
-
-    Returns:
-        The score, shaped as ``e``.
-    """
-    with ch.enable_grad():
-        e = e.detach().requires_grad_()
-        (grad,) = ch.autograd.grad(noise.log_prob(e).sum(), e)
-    return -grad
-
-
-def _truncated_noise(pred, phi, noise, num_samples):
-    """Draw noise for each prediction and mark the draws phi keeps.
-
-    Args:
-        pred: Predictions h_W(x), shaped (n, k).
-        phi: Truncation oracle over latents shaped (n, num_samples, k).
-        noise: Noise distribution D_N, with batch shape (k,).
-        num_samples: Draws per prediction.
-
-    Returns:
-        Tuple of the draws, shaped (n, num_samples, k), and a float mask
-        shaped (n, num_samples, 1).
-    """
-    e = noise.sample((pred.size(0), num_samples))
-    kept = phi(pred[:, None, :] + e)
-    return e, kept.reshape(pred.size(0), num_samples, 1).float()
-
-
-class TruncatedLinearModelNLL(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated NLL of a linear model whose latent response is observed.
-
-    For ``z = h_W(x) + e`` with ``e ~ D_N``, observed only where ``phi(z)``,
-    the per-sample loss is ``-log D_N(z - h) + log P(phi | h)``. Its gradient
-    in ``h`` is ``E[s(e) | phi] - s(z - h)`` for the noise score ``s``, and
-    the expectation is estimated by rejection sampling ``e`` against phi, so
-    any noise distribution with a differentiable ``log_prob`` serves.
-    """
-
-    @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
-        noise,
-        num_samples=1000,
         eps=1e-5,
+        min_accepted=10,
     ):
         """Compute the batch-mean truncated NLL.
 
         Args:
-            pred: Predictions h_W(x), shaped (n, k).
-            targ: Observed latents z, shaped (n, k).
-            phi: Truncation oracle over latents shaped (n, num_samples, k).
-            noise: Noise distribution D_N, with batch shape (k,).
-            num_samples: Rejection-sampling draws per prediction.
-            eps: Floor on the accepted fraction, so a prediction phi rejects
+            pred: Predictions h, shaped (n, k).
+            targ: Observed responses, shaped (n, k).
+            phi: Truncation oracle over latents shaped (n, m, k).
+            noise_var: Known noise variance, broadcastable to (k,).
+            num_samples: Draws per sample in the first round.
+            eps: Floor on the accepted fraction, so a sample phi rejects
                 entirely contributes a finite loss.
+            min_accepted: Kept draws each sample collects; see ``sample``.
         """
-        e, kept = _truncated_noise(pred, phi, noise, num_samples)
-        accepted = kept.sum(1)
-        conditional_score = (kept * noise_score(noise, e)).sum(1) / (accepted + eps)
-        observed_score = noise_score(noise, targ - pred)
-        ctx.save_for_backward(conditional_score - observed_score)
-        log_mass = ch.log(accepted / num_samples + eps).sum(-1)
-        nll = -noise.log_prob(targ - pred).sum(-1) + log_mass
-        return nll.mean()
+        noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
+        accepted, drawn, total, _ = TruncatedMSE.sample(
+            pred, phi, noise_var, num_samples, min_accepted
+        )
+        conditional_mean = total / (accepted + eps)
+        ctx.save_for_backward((conditional_mean - targ) / noise_var)
+        quadratic = 0.5 * (targ - pred).pow(2) / noise_var
+        log_mass = ch.log(accepted / drawn + eps)
+        return (quadratic + log_mass).sum(-1).mean()
 
     @staticmethod
     def backward(ctx, grad_output):  # pylint: disable=arguments-differ
         """Return the gradient in pred."""
         (grad,) = ctx.saved_tensors
-        return grad_output * grad / grad.size(0), None, None, None, None, None
+        return (grad_output * grad / grad.size(0),) + (None,) * 6
+
+    @staticmethod
+    def sample(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        pred, phi, noise_var, num_samples, min_accepted, squares=False
+    ):
+        """Rejection-sample N(pred, sigma^2) until phi keeps enough draws.
+
+        A fixed number of draws leaves a sample phi rarely admits with no
+        kept draw, whose conditional mean then reads as zero and biases the
+        gradient. Samples short of min_accepted draw again, each round sized
+        from the slowest one's acceptance rate.
+
+        Args:
+            pred: Predictions h, shaped (n, k).
+            phi: As ``forward``.
+            noise_var: Known noise variance, broadcastable to (k,).
+            num_samples: Draws per sample in the first round.
+            min_accepted: Kept draws each sample collects, up to
+                ``MAX_DRAWS_PER_SAMPLE`` draws.
+            squares: Also accumulate the kept draws' squares.
+
+        Returns:
+            Per sample: kept draws (n, 1), draws (n, 1), and the sums of the
+            kept latents and, if requested, their squares (n, k), the latter
+            accumulated in float64.
+        """
+        n = pred.size(0)
+        accepted, drawn = ch.zeros(n, 1), ch.zeros(n, 1)
+        total = ch.zeros_like(pred, dtype=ch.float64)
+        total_sq = ch.zeros_like(total) if squares else None
+        rows, block = ch.arange(n), num_samples
+        while rows.numel() > 0:
+            z = pred[rows, None, :] + noise_var.sqrt() * ch.randn(
+                rows.numel(), block, pred.size(1)
+            )
+            kept = phi(z).reshape(rows.numel(), block, 1)
+            kept = ch.bernoulli(kept) if kept.is_floating_point() else kept.float()
+            accepted[rows] += kept.sum(1)
+            drawn[rows] += block
+            total[rows] += (kept * z).sum(1).double()
+            if total_sq is not None:
+                total_sq[rows] += (kept * z.pow(2)).sum(1).double()
+            short = (accepted[rows, 0] < min_accepted) & (
+                drawn[rows, 0] < MAX_DRAWS_PER_SAMPLE
+            )
+            rows = rows[short]
+            if rows.numel() > 0:
+                rate = float((accepted[rows] / drawn[rows]).min().clamp_min(1e-4))
+                needed = float((min_accepted - accepted[rows]).max()) / rate
+                block = int(
+                    min(
+                        needed + 1,
+                        max(MAX_DRAWS_PER_ROUND // rows.numel(), 1),
+                        MAX_DRAWS_PER_SAMPLE - float(drawn[rows].max()),
+                    )
+                )
+        return accepted, drawn, total.float(), total_sq
 
     @staticmethod
     def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        pred, design, phi, noise, num_samples=1000, eps=1e-5
-    ):
+        pred, X, phi, noise_var, num_samples=1000, eps=1e-5, min_accepted=10
+    ):  # pylint: disable=invalid-name
         """Return the batch-mean Hessian of the NLL in the weight.
 
-        Uses ``Cov[s(e) | phi]`` per sample, the exact curvature in h when
-        the score's Jacobian is constant, as for Gaussian noise.
+        ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``, per output.
 
         Args:
-            pred: Predictions h_W(x), shaped (n, k).
-            design: Design matrix x, shaped (n, d).
+            pred: Predictions h, shaped (n, k).
+            X: Design matrix, shaped (n, d).
             phi: As ``forward``.
-            noise: As ``forward``.
+            noise_var: As ``forward``.
             num_samples: As ``forward``.
             eps: As ``forward``.
+            min_accepted: As ``forward``.
 
         Returns:
             The Hessian for the weight of shape (d, k) flattened row-major,
             shaped (d * k, d * k).
         """
         with ch.no_grad():
-            e, kept = _truncated_noise(pred, phi, noise, num_samples)
-            score = noise_score(noise, e)
-            weights = kept / (kept.sum(1, keepdim=True) + eps)
-            centered = score - (weights * score).sum(1, keepdim=True)
-            cov = ch.einsum("nma,nmb->nab", weights * centered, centered)
-            hess = ch.einsum("ni,nj,nab->iajb", design, design, cov)
-            size = design.size(1) * pred.size(1)
-            return hess.reshape(size, size) / pred.size(0)
+            noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
+            accepted, _, total, total_sq = TruncatedMSE.sample(
+                pred, phi, noise_var, num_samples, min_accepted, squares=True
+            )
+            count = accepted.double() + eps
+            mean = total.double() / count
+            var = (total_sq / count - mean.pow(2)) / noise_var.double().pow(2)
+            design = X.double()
+            hess = ch.einsum(
+                "ni,nj,na,ab->iajb",
+                design,
+                design,
+                var,
+                ch.eye(pred.size(1), dtype=ch.float64),
+            )
+            size = X.size(1) * pred.size(1)
+            return (hess.reshape(size, size) / pred.size(0)).float()
 
 
 class TruncatedUnknownVarianceMSE(ch.autograd.Function):  # pylint: disable=abstract-method
@@ -277,7 +253,7 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
         M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
             ch.zeros(pred[0].size(0)), noise_var
         )
-        result = Test(pred, phi, c_gamma, alpha, T)
+        result = SwitchGrad.survival_test(pred, phi, c_gamma, alpha, T)
 
         noised = stacked + M.sample(stacked.size()[:-1])
 
@@ -291,6 +267,34 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
             z - pred
         ).norm(p=2, keepdim=True, dim=-1).pow(2)
         return loss.mean(0)
+
+    @staticmethod
+    def survival_test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
+        """Return whether each prediction keeps enough mass for the censor-aware gradient.
+
+        Args:
+            mu: Current conditional mean for LDS.
+            phi: Oracle.
+            c_gamma: Constant.
+            alpha: Survival probability.
+            T: Number of timesteps in dataset.
+        """
+        M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
+            ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0))
+        )
+
+        # Threshold constant.
+        gamma = (alpha / 2) ** c_gamma
+
+        # Number of samples.
+        k = int((4 / gamma) * math.log(T))
+        stacked = mu.repeat(k, 1, 1)
+        noise = M.sample(stacked.size()[:-1])
+        ci = stacked + noise
+        p = phi(ci).float().mean(0)
+        # Check whether the probability that a sample falls within the
+        # truncation set is greater than the survival probability.
+        return p >= (2 * gamma)
 
     @staticmethod
     def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name

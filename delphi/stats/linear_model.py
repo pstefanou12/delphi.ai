@@ -124,26 +124,21 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
         return X / self.covariate_scale
 
-    def forward(self, design: ch.Tensor) -> ch.Tensor:
+    def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         """Return ``h_W(x)`` for each row of the design matrix."""
-        return design @ self.weight
+        return X @ self.weight
 
-    def untruncated_fit(self, design: ch.Tensor, targ: ch.Tensor) -> ch.Tensor:
-        """Return the untruncated MLE of the weight, the descent's start.
+    def untruncated_fit(self, X: ch.Tensor, y: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the untruncated fit of the weight: OLS unless overridden.
 
         Args:
-            design: Design matrix, shaped (n, d + 1) with an intercept.
-            targ: Targets, shaped (n, k).
+            X: Design matrix, shaped (n, d + 1) with an intercept.
+            y: Targets, shaped (n, k).
 
         Returns:
             The weight, shaped (d + 1, k) with an intercept.
-
-        Raises:
-            NotImplementedError: Unless a subclass supplies its MLE.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} must supply its untruncated MLE."
-        )
+        return ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
 
     def coefficients(
         self, params: Optional[ch.Tensor]
@@ -226,11 +221,11 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         return self.avg_intercept_
 
     def predict(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
-        """Return ``h_W(x)`` at the averaged estimate, shaped (n, k).
+        """Return ``h_W(x)`` at ``coef_`` and ``intercept_``, shaped (n, k).
 
         Args:
             X: Covariates, shaped (n, d).
         """
-        coef, intercept = self.coefficients(self._estimate("avg"))
-        pred = X @ require_fitted(coef, "coef_").T
+        pred = X @ require_fitted(self.coef_, "coef_").T
+        intercept = self.intercept_
         return pred if intercept is None else pred + intercept

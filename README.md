@@ -300,16 +300,19 @@ print(model.summary())
 
 **`phi` sees the response.** It receives latents shaped `(n, m, 1)` and
 returns a mask over them; any set works, a union of intervals included.
-`alpha` is the survival probability, which sets `r*`.
+`alpha` is the survival probability, which sets `r*`. When it is unknown,
+pass `None`: the radius starts at `alpha = 1`'s and grows by `rate` each
+phase until the projection stops binding.
 
 **More passes, less noise.** The defaults are the paper's single pass;
 `epochs` runs more, reshuffling each time and continuing the step decay, and
 `avg_burn_in` drops the early iterates from the average. A non-SGD optimizer
 runs without the step schedule unless one is set.
 
-The unknown-variance, lasso and linear-dynamical-system estimators have not
-moved to this design yet: `stats.LegacyTruncatedLinearRegression` keeps the
-first and last behind its `noise_var=None` and `dependent=True` flags.
+**The variant follows the arguments.** `noise_var=None` learns the variance
+with the weight (Daskalakis et al., 2022), and `dependent=True` fits a linear
+dynamical system from one trajectory (Plevrakis, 2021). Both still need
+`alpha`.
 
 ## Architecture
 
@@ -377,12 +380,12 @@ The truncated linear models follow the same pattern.
 `delphi/stats/linear_model.py`'s `LinearModel` owns the prediction
 `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
 `best_` estimates of `coef_` and `intercept_`.
-`delphi/stats/truncated_linear_model.py`'s `TruncatedLinearModel` adds the
-oracle, the truncated NLL (`losses.TruncatedLinearModelNLL`, whose gradient
-`E[s(e) | phi] - s(z - h)` needs only the noise's `log_prob`), its Hessian,
-the projection in `step_post_hook` and `summary()`. A model supplies its
-noise, its untruncated fit and its projection set
-(`delphi/stats/projection_sets.py`).
+`delphi/stats/truncated/truncated_linear_model.py`'s `TruncatedLinearModel`
+adds the oracle, the radius phases, the projection in `step_post_hook`, the
+Newton refinement and `summary()`. A model supplies its criterion from
+`delphi/stats/truncated/losses.py` (`TruncatedMSE` for known-variance
+regression), its Hessian and its projection set
+(`delphi/stats/truncated/projection_sets.py`).
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
 ones: `Identity`, which admits every sample, and `RecoveredSet`, the set an

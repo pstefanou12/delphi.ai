@@ -22,15 +22,23 @@ class TruncatedLinearModelConfig(LinearModelConfig):
 
     Attributes:
         alpha: Survival probability lower bound of the truncation set.
-        num_samples: Rejection-sampling draws per criterion evaluation.
+        num_samples: Rejection-sampling draws per sample in the first round.
+        min_accepted: Kept draws each sample collects, in further rounds,
+            before its conditional mean is taken.
         eps: Numerical stability constant for the criterion.
-        project: Keep the iterates in the model's projection set.
-        start: Start the descent at the untruncated MLE, or at zero; either
-            is projected onto the projection set first.
+        projection_set: The model's own projection set, or "none".
+        rate: Factor the projection radius grows by per phase when alpha
+            is not given.
+        max_radius: Largest projection radius those phases reach.
+        refine_steps: Full-batch Newton steps after the descent, for models
+            with a Hessian; 0 skips them.
     """
 
     alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
     num_samples: int = pydantic.Field(default=1000, ge=1)
+    min_accepted: int = pydantic.Field(default=10, ge=1)
     eps: float = pydantic.Field(default=1e-5, gt=0.0)
-    project: bool = True
-    start: Literal["untruncated", "zero"] = "untruncated"
+    projection_set: Literal["default", "none"] = "default"
+    rate: float = pydantic.Field(default=1.5, gt=1.0)
+    max_radius: float = pydantic.Field(default=50.0, gt=0.0)
+    refine_steps: int = pydantic.Field(default=0, ge=0)

@@ -2,9 +2,6 @@
 """Statistical models subpackage for delphi."""
 
 from delphi.stats.linear_model import LinearModel
-from delphi.stats.truncated.legacy_truncated_linear_regression import (
-    LegacyTruncatedLinearRegression,
-)
 from delphi.stats.truncated.truncated_lasso_regression import TruncatedLassoRegression
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.stats.truncated.truncated_linear_regression import TruncatedLinearRegression
@@ -16,7 +13,6 @@ from delphi.stats.truncated.truncated_linear_regression import TruncatedLinearRe
 # from delphi.stats.softmax import SoftmaxModel
 
 __all__ = [
-    "LegacyTruncatedLinearRegression",
     "LinearModel",
     "TruncatedLassoRegression",
     "TruncatedLinearModel",

@@ -15,8 +15,9 @@ import torch as ch
 from torch import linalg as LA
 
 from delphi import configs
-from delphi.stats.truncated.legacy_truncated_linear_regression import (
-    LegacyTruncatedLinearRegression,
+from delphi.stats import linear_model
+from delphi.stats.truncated.truncated_linear_regression import (
+    TruncatedLinearRegression,
 )
 from delphi.utils.helpers import calc_spectral_norm, calc_thickness
 
@@ -151,7 +152,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if X.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", X.size(0))
 
-        self.trunc_lds_phase_one = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+        self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
             self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
@@ -160,7 +161,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             rand_seed=self.rand_seed,
         )
         self.trunc_lds_phase_one.fit(X, Y)
-        self.A_hat_ = self.trunc_lds_phase_one.coef_
+        self.A_hat_ = linear_model.require_fitted(
+            self.trunc_lds_phase_one.coef_, "coef_"
+        ).T
 
     def run_phase_two(self, store: Store = None):
         """
@@ -193,7 +196,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if U.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", U.size(0))
 
-        self.trunc_lds_phase_two = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+        self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
             self._lds_hyperparameters(),
             self.hyperparameters.phi,
             self.hyperparameters.alpha,
@@ -202,7 +205,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             rand_seed=self.rand_seed,
         )
         self.trunc_lds_phase_two.fit(U, Y)
-        self.B_hat_ = self.trunc_lds_phase_two.coef_
+        self.B_hat_ = linear_model.require_fitted(
+            self.trunc_lds_phase_two.coef_, "coef_"
+        ).T
 
     def find_max(self, mat_list, eps):
         """
@@ -395,7 +400,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             feat_concat = ch.cat([XU_concat, XX_concat])
             y_concat = ch.cat([Yu, Yx])
 
-            self.trunc_lds_phase_three = LegacyTruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+            self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
                 self._lds_hyperparameters(),
                 self.hyperparameters.phi,
                 self.hyperparameters.alpha,
@@ -406,7 +411,9 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             )
             self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
 
-            AB = self.trunc_lds_phase_three.coef_  # pylint: disable=invalid-name
+            AB = linear_model.require_fitted(
+                self.trunc_lds_phase_three.coef_, "coef_"
+            ).T  # pylint: disable=invalid-name
             A_, B_ = AB[: self.d], AB[self.d :]  # pylint: disable=invalid-name
 
             A_results = ch.cat([A_results, A_[None, ...]])
