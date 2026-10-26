@@ -12,17 +12,17 @@ import math
 
 import numpy as np
 import pytest
-from sklearn.linear_model import LinearRegression
+from sklearn import linear_model
 import torch as ch
-from torch.nn import MSELoss
+import torch.nn
 
 from delphi import stats
-from delphi.stats.truncated.tests import helpers
-from delphi.utils.helpers import calc_spectral_norm
+from delphi.stats.truncated.tests import regression
+from delphi.utils import helpers
 
 INF = math.inf
 SEED = 69
-mse_loss = MSELoss()
+mse_loss = torch.nn.MSELoss()
 
 
 def _intervals(*bounds):
@@ -45,57 +45,59 @@ def _fit(dataset, tolerance, alpha="known", ols_margin=0.5, **hyperparameters):
         dataset.alpha if alpha == "known" else alpha,
         noise_var=dataset.noise_var,
     )
-    helpers.assert_recovers(model, dataset, tolerance, ols_margin=ols_margin)
+    regression.assert_recovers(model, dataset, tolerance, ols_margin=ols_margin)
     return model
 
 
 def test_1d_no_truncation():
-    dataset = helpers.make_dataset([2.0], -1.0, _intervals((-INF, INF)), 2000)
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, INF)), 2000)
     _fit(dataset, 0.04, alpha=None, ols_margin=None)
 
 
 def test_1d_left_truncation():
-    dataset = helpers.make_dataset([2.0], -1.0, _intervals((0.0, INF)), 2000)
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((0.0, INF)), 2000)
     _fit(dataset, 0.18)
 
 
 def test_1d_right_truncation():
-    dataset = helpers.make_dataset([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
     _fit(dataset, 0.06)
 
 
 def test_1d_interval():
-    dataset = helpers.make_dataset([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
     _fit(dataset, 0.35)
 
 
 def test_1d_union_of_intervals():
     phi = _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF))
-    dataset = helpers.make_dataset([2.0], -1.0, phi, 2000)
+    dataset = regression.make_dataset([2.0], -1.0, phi, 2000)
     _fit(dataset, 0.02)
 
 
 def test_1d_small_mass():
-    dataset = helpers.make_dataset([2.0], -1.0, _intervals((3.85, INF)), 2000)
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((3.85, INF)), 2000)
     _fit(dataset, 0.15)
 
 
 def test_2d_union_of_intervals():
     phi = _intervals((-INF, -2.0), (0.0, 1.0), (2.5, INF))
     covariance = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
-    dataset = helpers.make_dataset([1.0, -1.0], 0.5, phi, 2000, covariance=covariance)
+    dataset = regression.make_dataset(
+        [1.0, -1.0], 0.5, phi, 2000, covariance=covariance
+    )
     _fit(dataset, 0.09)
 
 
 def test_2d_two_sided_tails():
     phi = _intervals((-INF, -1.5), (1.5, INF))
-    dataset = helpers.make_dataset([1.0, -1.0], 0.5, phi, 2000)
+    dataset = regression.make_dataset([1.0, -1.0], 0.5, phi, 2000)
     _fit(dataset, 0.08)
 
 
 def test_10d_left_truncation():
     # Daskalakis et al. (2020), Section 6: w = 1, kept only where y > 4.
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
     _fit(dataset, 0.16)
@@ -103,12 +105,12 @@ def test_10d_left_truncation():
 
 def test_10d_union_of_intervals():
     phi = _intervals((-2.0, 0.0), (3.0, INF))
-    dataset = helpers.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
+    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
     _fit(dataset, 0.11)
 
 
 def test_10d_no_truncation():
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         ch.ones(10).tolist(), 0.5, _intervals((-INF, INF)), 5000
     )
     _fit(dataset, 0.09, alpha=None, ols_margin=None)
@@ -118,7 +120,7 @@ def test_10d_no_truncation():
 def test_100d_union_of_intervals():
     phi = _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF))
     coef = (ch.ones(100) / math.sqrt(10)).tolist()
-    dataset = helpers.make_dataset(coef, 0.5, phi, 20000)
+    dataset = regression.make_dataset(coef, 0.5, phi, 20000)
     _fit(dataset, 0.15)
 
 
@@ -126,12 +128,12 @@ def test_10d_randomized_truncation():
     def phi(z):
         return ch.sigmoid(3.0 * (z - 4.0))
 
-    dataset = helpers.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
+    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
     _fit(dataset, 0.13)
 
 
 def test_10d_alpha_unknown():
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
     _fit(dataset, 0.16, alpha=None)
@@ -142,7 +144,7 @@ def test_10d_ill_conditioned_covariates():
     rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
     spectrum = ch.logspace(0.0, -3.0, 10)
     covariance = rotation @ ch.diag(spectrum) @ rotation.T
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         ch.ones(10).tolist(), 0.5, _intervals((1.0, INF)), 5000, covariance=covariance
     )
     # The least-variance direction, 1e-3, sets the MLE's error: 0.93.
@@ -152,7 +154,7 @@ def test_10d_ill_conditioned_covariates():
 def test_10d_rescaled_covariates():
     covariance = 1e6 * ch.eye(10)
     coef = (1e-3 * ch.ones(10)).tolist()
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         coef, 0.5, _intervals((4.0, INF)), 5000, covariance=covariance
     )
     _fit(dataset, 0.12)
@@ -160,7 +162,7 @@ def test_10d_rescaled_covariates():
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_10d_seeds(seed):
-    dataset = helpers.make_dataset(
+    dataset = regression.make_dataset(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, seed=seed
     )
     _fit(dataset, 0.13)
@@ -193,12 +195,12 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression(fit_intercept=False)
+    gt_norm = linear_model.LinearRegression(fit_intercept=False)
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(gt_norm.coef_)
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression(fit_intercept=False)
+    ols_trunc = linear_model.LinearRegression(fit_intercept=False)
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(ols_trunc.coef_.flatten())
@@ -276,12 +278,12 @@ def test_unknown_variance_truncated_regression_one_dimension():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -368,12 +370,12 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -446,12 +448,12 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression(fit_intercept=False)
+    gt_norm = linear_model.LinearRegression(fit_intercept=False)
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(gt_norm.coef_.flatten())
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression(fit_intercept=False)
+    ols_trunc = linear_model.LinearRegression(fit_intercept=False)
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(ols_trunc.coef_.flatten())
@@ -522,12 +524,12 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -601,12 +603,12 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -671,10 +673,10 @@ def test_truncated_dependent_regression():
     spectral_norm = float("inf")
     while spectral_norm > 1.0:
         A = 0.25 * ch.randn((D, D))
-        spectral_norm = calc_spectral_norm(A)
+        spectral_norm = helpers.calc_spectral_norm(A)
 
-    spectral_norm = calc_spectral_norm(A)
-    print(f"A spectral norm: {calc_spectral_norm(A)}")
+    spectral_norm = helpers.calc_spectral_norm(A)
+    print(f"A spectral norm: {helpers.calc_spectral_norm(A)}")
 
     phi_bound = 4.0
 
@@ -721,8 +723,8 @@ def test_truncated_dependent_regression():
     # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
     A_ = trunc_lds.coef_.T
     A0_ = trunc_lds.ols_coef_.T
-    trunc_spec_norm = calc_spectral_norm(A - A_)
-    emp_spec_norm = calc_spectral_norm(A - A0_)
+    trunc_spec_norm = helpers.calc_spectral_norm(A - A_)
+    emp_spec_norm = helpers.calc_spectral_norm(A - A0_)
 
     print(f"alpha: {alpha}")
     print(f"A spectral norm: {spectral_norm}")

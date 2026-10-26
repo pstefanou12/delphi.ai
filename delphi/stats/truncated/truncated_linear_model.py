@@ -4,7 +4,7 @@
 The model is ``z = h_W(x) + e``, observed only where the oracle ``phi``
 admits it. A subclass names its parameters, its criterion and the convex set
 the descent is kept in; projected SGD through the trainer, the radius phases,
-the Newton refinement, the estimates and the report live here.
+the estimates and the report live here.
 """
 
 import abc
@@ -36,7 +36,8 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     """Projected SGD on the truncated NLL of a linear model.
 
     Subclasses supply ``criterion_parameters`` and, to constrain the descent
-    or refine it, ``build_projection_set`` and ``hessian``.
+    or refine it, ``build_projection_set`` and ``hessian``; ``refine_steps``
+    runs the trainer's Newton refinement after the phases.
 
     With alpha known the projection radius is fixed and one phase runs.
     Without it the radius starts where alpha = 1 would put it and grows by
@@ -51,9 +52,6 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             coordinates; set during fit.
         projection_set: The set the iterates are kept in.
         radius: The projection radius of the current phase.
-        descent: The projected SGD's record when the Newton refinement ran
-            after it; the estimates then come from ``procedure``, the
-            refinement's.
     """
 
     # The covariates are correlated, so the Hessian's off-diagonal entries
@@ -98,7 +96,6 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         )
         self.radius: Optional[float] = None
         self.trainer: Optional[delphi.trainer.Trainer] = None
-        self.descent: Optional[delphi.trainer.ProcedureResult] = None
         self._data: Optional[tuple[ch.Tensor, ch.Tensor]] = None
         self._projections = 0
 
@@ -163,24 +160,21 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         self.d, self.k = X.size(1), y.size(1)
         self.covariate_scale = 1.0
         X = self.design_matrix(X)  # pylint: disable=invalid-name
-        # Daskalakis et al. (2020), (4.1): ||x||_2 <= 1 once divided by
-        # B sqrt(d), with B the largest entry, the intercept's 1 included.
-        self.covariate_scale = float(X.abs().max()) * math.sqrt(X.size(1))
-        X = X / self.covariate_scale  # pylint: disable=invalid-name
+        if self.hyperparameters.scale_covariates:
+            # Daskalakis et al. (2020), (4.1): ||x||_2 <= 1 once divided by
+            # B sqrt(d), with B the largest entry, the intercept's 1 included.
+            self.covariate_scale = float(X.abs().max()) * math.sqrt(X.size(1))
+            X = X / self.covariate_scale  # pylint: disable=invalid-name
         self._data = (X, y)
         self.untruncated_weight = self.untruncated_fit(X, y)
         self.register_weight(self._start_weight())
         self.criterion_params = self.criterion_parameters(X, y)
-        self.radius, self.descent = None, None
+        self.radius = None
         self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         train_loader, val_loader = self._loaders(X, y, self.hyperparameters)
-        procedure = self.trainer.train_model(
+        self.procedure = self.trainer.train_model(
             train_loader, val_loader, rand_seed=self.rand_seed
         )
-        if self.hyperparameters.refine_steps > 0:
-            self.descent = procedure
-            procedure = self._refine(X, y)
-        self.procedure = procedure
         return self
 
     @staticmethod
@@ -244,6 +238,14 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             with ch.no_grad():
                 self.weight.copy_(self.projection_set.project(self.weight))
 
+    def step_post_hook(self, optimizer, args, kwargs) -> None:
+        """Project the weight back onto the projection set."""
+        with ch.no_grad():
+            projected = self.projection_set.project(self.weight)
+            if projected is not self.weight:
+                self._projections += 1
+                self.weight.copy_(projected)
+
     def post_phase_hook(
         self, result: delphi.trainer.RunResult
     ) -> tuple[bool, Optional[str]]:
@@ -260,22 +262,19 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         )
         return False, None
 
-    def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Project the weight back onto the projection set."""
-        with ch.no_grad():
-            projected = self.projection_set.project(self.weight)
-            if projected is not self.weight:
-                self._projections += 1
-                self.weight.copy_(projected)
-
     def run_metrics(self) -> dict:
         """Return the run's projection radius and how often it projected."""
         return {"radius": self.radius, "projections": self._projections}
 
     def evaluate(self) -> dict:
-        """Return the criterion at the current iterate on the training set."""
+        """Return the criterion at the current iterate on the training set.
+
+        Every call draws the same noise, so ``best_`` compares iterates rather
+        than Monte Carlo draws, and evaluation leaves the training RNG alone.
+        """
         X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-        with ch.no_grad():
+        with ch.no_grad(), ch.random.fork_rng():
+            ch.manual_seed(self.rand_seed)
             return {
                 "loss": self.required_criterion(  # pylint: disable=not-callable
                     self(X), y, *self.criterion_params
@@ -300,60 +299,6 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     def theta(self) -> ch.Tensor:
         """The trained weight, which FisherLR re-measures curvature at."""
         return self.weight
-
-    def _refine(
-        self,
-        X: ch.Tensor,  # pylint: disable=invalid-name
-        y: ch.Tensor,
-    ) -> delphi.trainer.ProcedureResult:
-        """Polish the descent's average with projected Newton steps.
-
-        Full batch at a unit rate, so each step is ``w - H^-1 grad``; the
-        last half of the iterates is averaged to cancel the Monte Carlo
-        noise in the gradient.
-
-        Returns:
-            The refinement's record.
-        """
-        main = self.hyperparameters
-        config = main.model_copy(
-            update={
-                "batch_size": -1,
-                "val": 0.0,
-                "optimizer": "sgd",
-                "lr": 1.0,
-                "sgd_momentum": 0.0,
-                "weight_decay": 0.0,
-                "scheduler": None,
-                "constant": True,
-                "epochs": None,
-                "iterations": main.refine_steps,
-                "avg_burn_in": 0.5,
-                "warm_start_iterations": None,
-                "warm_start_epochs": None,
-                "max_phases": 1,
-            }
-        )
-        descent = linear_model.require_fitted(self.descent, "descent")
-        avg = linear_model.require_fitted(descent.final.avg_params, "avg_params")
-        with ch.no_grad():
-            self.weight.copy_(avg.reshape(self.weight.shape))
-        # A tensor hook runs after backward, inside optimizer.step's closure.
-        hook = self.weight.register_hook(self._newton_direction)
-        try:
-            train_loader, _ = self._loaders(X, y, config)
-            return delphi.trainer.Trainer(self, config).train_model(
-                train_loader, None, rand_seed=self.rand_seed
-            )
-        finally:
-            hook.remove()
-            self.hyperparameters = main
-
-    def _newton_direction(self, grad: ch.Tensor) -> ch.Tensor:
-        """Return H^-1 grad, with H the Hessian at the current weight."""
-        hess = self.hessian(self.weight.detach())
-        step = ch.linalg.solve(hess, grad.reshape(-1, 1))  # pylint: disable=not-callable
-        return step.reshape(grad.shape)
 
     def summary(self) -> str:
         """Return a plain-text report on the fit.
@@ -388,25 +333,26 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         ]
 
     def _summary_procedure(self) -> list[tuple[str, str]]:
-        rows = []
-        stages = [("descent", self.descent), ("refinement", self.procedure)]
-        if self.descent is None:
-            stages = [("descent", self.procedure)]
-        for name, record in stages:
-            if record is None:
-                continue
-            final = record.final
+        procedure = linear_model.require_fitted(self.procedure, "procedure")
+        rows = [
+            (
+                "descent",
+                f"{procedure.iterations} steps over {len(procedure.phases)} "
+                f"phase(s); {procedure.stop_reason}",
+            )
+        ]
+        if procedure.refinement is not None:
             rows.append(
                 (
-                    name,
-                    f"{record.iterations} steps over {len(record.phases)} "
-                    f"phase(s), {record.seconds:.2f}s; {final.stop_reason}",
+                    "refinement",
+                    f"{procedure.refinement.iterations} Newton steps; "
+                    f"{procedure.refinement.stop_reason}",
                 )
             )
-        descent = self.descent or self.procedure
-        if descent is not None:
-            rows.append(("projection radius", f"{descent.final.metrics['radius']:.4f}"))
-            rows.append(("projections", str(sum(descent.series("projections")))))
+        rows.append(("seconds", f"{procedure.seconds:.2f}"))
+        last = procedure.phases[-1]
+        rows.append(("projection radius", f"{last.metrics['radius']:.4f}"))
+        rows.append(("projections", str(sum(procedure.series("projections")))))
         return rows
 
     def _summary_estimates(self) -> list[tuple[str, str]]:

@@ -1,9 +1,12 @@
 # Author: pstefanou12@
-"""Shared harness for the truncated linear model tests.
+"""Test harness for the truncated regression models.
 
-``make_dataset`` draws a truncated regression sample with known parameters,
-and ``assert_recovers`` fits a model to it and checks every estimate the
-model returns against the truth.
+Any model fit to ``y = w^T x + b + e`` observed through a set on y, the
+known- and unknown-variance regressions and the lasso among them:
+``make_dataset`` draws such a sample with known parameters, and
+``assert_recovers`` fits a model to it and checks every estimate the model
+returns against the truth. Models observing something else, such as the
+classifiers' labels, get a harness module of their own.
 """
 
 from collections.abc import Callable, Sequence
@@ -119,10 +122,12 @@ def assert_recovers(
     *,
     ols_margin: Optional[float] = 0.5,
 ) -> None:
-    """Fit model to dataset and check each estimate it returns.
+    """Fit a regression model to dataset and check each estimate it returns.
 
     Args:
-        model: An unfitted truncated linear model.
+        model: An unfitted truncated regression model, exposing
+            ``{avg,ema,final,best}_coef_`` and ``_intercept_``, and
+            ``_variance_`` when its ``noise_var`` is None.
         dataset: The sample, with its truth.
         tolerance: Largest L2 error allowed for (coef, intercept), and for
             the variance when the model learns it.

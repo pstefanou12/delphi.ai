@@ -253,42 +253,29 @@ here it only sizes the region the descent is kept in.
 
 ## Truncated Regression
 
-A linear model observed through a truncation set: `y = w^T x + b + e` with
-`e ~ N(0, sigma^2)` and `sigma^2` known, where a sample `(x, y)` is seen only
-if `phi(y)` admits it. Ordinary least squares on such a sample is biased
-toward the set. `stats.TruncatedLinearRegression` implements Daskalakis,
-Gouleakis, Tzamos and Zampetakis (2020), "Computationally and Statistically
-Efficient Truncated Regression":
+A linear model `y = w^T x + b + e`, `e ~ N(0, sigma^2)`, observed only where
+`phi(y)` admits the response. Least squares on such a sample is biased
+toward the set. All models live in `delphi.stats`.
 
-1. **Normalize.** The design matrix, intercept column included, is divided by
-   `B sqrt(d + 1)` for its largest entry `B`, so every row has norm at most 1.
-   The estimates are reported in the original units.
-2. **Project onto `D_{r,B}`** (Definition 2): the weights `w` with
-   `sum_i ((y_i - w^T x_i) / sigma)^2 x_i x_i^T <= r sum_i x_i x_i^T` and,
-   optionally, `||w|| <= B`. On it the truncated negative log-likelihood is
-   strongly convex and the stochastic gradient has bounded variance, and it
-   holds the truth with high probability for `r* = 4 log(2 / alpha) + 7`, the
-   default. The paper projects with the ellipsoid method; here a point
-   outside is moved along the segment to the OLS fit, which anchors the set,
-   until it re-enters it, so no convex solver is needed.
-3. **Projected SGD without replacement.** One shuffled pass, one sample per
-   step, from OLS (or zero, `start="zero"`) projected onto the set. Each
-   gradient is `x (E[z | phi] - y) / sigma^2` at the current prediction, with
-   `E[z | phi]` estimated by rejection sampling `num_samples` draws of the
-   noise against `phi`. Steps decay as `1 / (L + mu t)`, the paper's
-   `1 / (lambda t)`, with `mu` and `L` read off the Hessian at the start.
-4. **Average the iterates.** `coef_` and `intercept_` are the average of
-   every iterate, as in the paper; `ema_`, `final_` and `best_` variants are
-   also kept.
+| Model | Module | Example |
+|---|---|---|
+| `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLinearRegression`, `dependent=True` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLassoRegression` | [`truncated_lasso_regression`](delphi/stats/truncated/truncated_lasso_regression.py) | |
+
+With the variance known, the fit follows Daskalakis, Gouleakis, Tzamos and
+Zampetakis (2020): projected SGD on the truncated NLL inside their set
+`D_{r,B}`, one shuffled pass from OLS, the iterates averaged, then
+`refine_steps` Newton steps to the empirical MLE. An unknown variance follows
+Daskalakis, Stefanou, Yao and Zampetakis (2022), and dependent data, a linear
+dynamical system observed along one trajectory, Plevrakis (2021).
 
 ```python
 import torch as ch
 
 from delphi import stats
 
-ch.manual_seed(0)
-
-# The paper's experiment: w = 1 in ten dimensions, observed only where y > 4.
 X = ch.randn(20000, 10)
 y = X @ ch.ones(10, 1) + 0.5 + ch.randn(20000, 1)
 
@@ -298,31 +285,21 @@ def phi(z):
 
 
 kept = phi(y).flatten()
-alpha = kept.float().mean().item()
-
-model = stats.TruncatedLinearRegression({}, phi, alpha, noise_var=1.0)
+model = stats.TruncatedLinearRegression(
+    {}, phi, kept.float().mean().item(), noise_var=1.0
+)
 model.fit(X[kept], y[kept])
-
-model.coef_, model.intercept_          # the averaged iterate
-model.ols_coef_, model.ols_intercept_  # least squares on the same sample
+model.coef_, model.intercept_
 print(model.summary())
 ```
 
-**`phi` sees the response.** It receives latents shaped `(n, m, 1)` and
-returns a mask over them; any set works, a union of intervals included.
-`alpha` is the survival probability, which sets `r*`. When it is unknown,
-pass `None`: the radius starts at `alpha = 1`'s and grows by `rate` each
-phase until the projection stops binding.
-
-**More passes, less noise.** The defaults are the paper's single pass;
-`epochs` runs more, reshuffling each time and continuing the step decay, and
-`avg_burn_in` drops the early iterates from the average. A non-SGD optimizer
-runs without the step schedule unless one is set.
-
-**The variant follows the arguments.** `noise_var=None` learns the variance
-with the weight (Daskalakis et al., 2022), and `dependent=True` fits a linear
-dynamical system from one trajectory (Plevrakis, 2021). Both still need
-`alpha`.
+- **`phi` sees the response**, shaped `(n, m, 1)`, and returns a mask or a
+  survival probability.
+- **`alpha`** sets the projection radius `r* = 4 log(2 / alpha) + 7`. Pass
+  `None` when it is unknown: the radius then grows by `rate` each phase until
+  the projection stops binding.
+- **`sampler`** estimates `P(z in S)` and `E[z | S]` for the loss; rejection
+  sampling by default.
 
 ## Architecture
 
@@ -346,11 +323,15 @@ fit*, which each model describes.
    changes the problem for the next phase, such as widening a projection
    budget. `max_phases` caps the number. A model that never changes its
    problem keeps the default hook and trains once.
+3. **An optional refinement.** With `refine_steps` set, the trainer takes
+   that many Newton steps, `theta - H^-1 grad` on the full sample with `H`
+   the model's `hessian()`, from the last phase's averaged iterate. Any model
+   training one parameter tensor with a Hessian can use it.
 
-Each run, warm start or phase, is one **stage**: a config, a criterion and
+Each run, warm start, phase or refinement, is one **stage**: a config, a criterion and
 that criterion's Hessian, which the Fisher learning-rate schedule sizes its
 steps from. `train_model` returns a `ProcedureResult` with the warm start,
-the phases in order and why the procedure stopped. Each run is a `RunResult`
+the phases in order, why they stopped, and the refinement. Each run is a `RunResult`
 holding the config it ran under, its loss, gradient and iterate histories,
 its stop reason and wall time, and any `metrics` the model reports through
 `run_metrics`. The best, final, moving-average and averaged estimates are
@@ -391,9 +372,9 @@ The truncated linear models follow the same pattern.
 `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
 `best_` estimates of `coef_` and `intercept_`.
 `delphi/stats/truncated/truncated_linear_model.py`'s `TruncatedLinearModel`
-adds the oracle, the radius phases, the projection in `step_post_hook`, the
-Newton refinement and `summary()`. A model supplies its criterion from
-`delphi/stats/truncated/losses.py` (`TruncatedMSE` for known-variance
+adds the oracle, the radius phases, the projection in `step_post_hook` and
+`summary()`. A model supplies its criterion from
+`delphi/stats/truncated/losses.py` (`TruncatedGaussianNLL` for known-variance
 regression), its Hessian and its projection set
 (`delphi/stats/truncated/projection_sets.py`).
 

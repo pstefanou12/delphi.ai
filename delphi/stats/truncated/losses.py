@@ -2,32 +2,26 @@
 """Autograd loss functions for truncated regression and classification models."""
 
 import math
+from typing import cast
 
 import torch as ch
 from torch import sigmoid as sig  # pylint: disable=no-name-in-module
 import torch.distributions
 import torch.nn
 
+from delphi.truncated import sampling
 from delphi.utils import helpers
 
 gumbel = torch.distributions.Gumbel(0, 1)
 
-# Draws per sample a TruncatedMSE estimate may take to collect min_accepted;
-# a sample whose survival mass is below min_accepted / MAX_DRAWS_PER_SAMPLE
-# keeps what it has.
-MAX_DRAWS_PER_SAMPLE = 1_000_000
-# Caps one round's draws across the batch, bounding its memory.
-MAX_DRAWS_PER_ROUND = 10_000_000
 
-
-class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated NLL of regression with known noise variance.
+class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-method
+    """Truncated NLL of regression with known Gaussian noise variance.
 
     Per sample, ``(y - h)^2 / (2 sigma^2) + log P(h + e in S)`` with
     ``e ~ N(0, sigma^2)``; its gradient in h is ``(E[z | S] - y) / sigma^2``
-    for ``z ~ N(h, sigma^2)``, estimated from rejection-sampled draws at the
-    sample's own h. ``phi`` may return a survival probability rather than a
-    mask, in which case each draw is kept with that probability.
+    for ``z ~ N(h, sigma^2)``. The sampler estimates ``P`` and ``E[z | S]``
+    at each sample's own h.
     """
 
     @staticmethod
@@ -37,9 +31,8 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
         targ,
         phi,
         noise_var,
-        num_samples=1000,
+        sampler: sampling.GaussianSampler,
         eps=1e-5,
-        min_accepted=10,
     ):
         """Compute the batch-mean truncated NLL.
 
@@ -48,88 +41,26 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
             targ: Observed responses, shaped (n, k).
             phi: Truncation oracle over latents shaped (n, m, k).
             noise_var: Known noise variance, broadcastable to (k,).
-            num_samples: Draws per sample in the first round.
-            eps: Floor on the accepted fraction, so a sample phi rejects
+            sampler: Estimates the conditional moments.
+            eps: Floor on the survival mass, so a sample phi rejects
                 entirely contributes a finite loss.
-            min_accepted: Kept draws each sample collects; see ``sample``.
         """
         noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
-        accepted, drawn, total, _ = TruncatedMSE.sample(
-            pred, phi, noise_var, num_samples, min_accepted
-        )
-        conditional_mean = total / (accepted + eps)
+        moments = sampler.moments(pred, noise_var, phi)
+        conditional_mean = moments.mean.to(pred.dtype)
         ctx.save_for_backward((conditional_mean - targ) / noise_var)
         quadratic = 0.5 * (targ - pred).pow(2) / noise_var
-        log_mass = ch.log(accepted / drawn + eps)
+        log_mass = ch.log(moments.mass + eps)
         return (quadratic + log_mass).sum(-1).mean()
 
     @staticmethod
     def backward(ctx, grad_output):  # pylint: disable=arguments-differ
         """Return the gradient in pred."""
         (grad,) = ctx.saved_tensors
-        return (grad_output * grad / grad.size(0),) + (None,) * 6
+        return (grad_output * grad / grad.size(0),) + (None,) * 5
 
     @staticmethod
-    def sample(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        pred, phi, noise_var, num_samples, min_accepted, squares=False
-    ):
-        """Rejection-sample N(pred, sigma^2) until phi keeps enough draws.
-
-        A fixed number of draws leaves a sample phi rarely admits with no
-        kept draw, whose conditional mean then reads as zero and biases the
-        gradient. Samples short of min_accepted draw again, each round sized
-        from the slowest one's acceptance rate.
-
-        Args:
-            pred: Predictions h, shaped (n, k).
-            phi: As ``forward``.
-            noise_var: Known noise variance, broadcastable to (k,).
-            num_samples: Draws per sample in the first round.
-            min_accepted: Kept draws each sample collects, up to
-                ``MAX_DRAWS_PER_SAMPLE`` draws.
-            squares: Also accumulate the kept draws' squares.
-
-        Returns:
-            Per sample: kept draws (n, 1), draws (n, 1), and the sums of the
-            kept latents and, if requested, their squares (n, k), the latter
-            accumulated in float64.
-        """
-        n = pred.size(0)
-        accepted, drawn = ch.zeros(n, 1), ch.zeros(n, 1)
-        total = ch.zeros_like(pred, dtype=ch.float64)
-        total_sq = ch.zeros_like(total) if squares else None
-        rows, block = ch.arange(n), num_samples
-        while rows.numel() > 0:
-            z = pred[rows, None, :] + noise_var.sqrt() * ch.randn(
-                rows.numel(), block, pred.size(1)
-            )
-            kept = phi(z).reshape(rows.numel(), block, 1)
-            kept = ch.bernoulli(kept) if kept.is_floating_point() else kept.float()
-            accepted[rows] += kept.sum(1)
-            drawn[rows] += block
-            total[rows] += (kept * z).sum(1).double()
-            if total_sq is not None:
-                total_sq[rows] += (kept * z.pow(2)).sum(1).double()
-            short = (accepted[rows, 0] < min_accepted) & (
-                drawn[rows, 0] < MAX_DRAWS_PER_SAMPLE
-            )
-            rows = rows[short]
-            if rows.numel() > 0:
-                rate = float((accepted[rows] / drawn[rows]).min().clamp_min(1e-4))
-                needed = float((min_accepted - accepted[rows]).max()) / rate
-                block = int(
-                    min(
-                        needed + 1,
-                        max(MAX_DRAWS_PER_ROUND // rows.numel(), 1),
-                        MAX_DRAWS_PER_SAMPLE - float(drawn[rows].max()),
-                    )
-                )
-        return accepted, drawn, total.float(), total_sq
-
-    @staticmethod
-    def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        pred, X, phi, noise_var, num_samples=1000, eps=1e-5, min_accepted=10
-    ):  # pylint: disable=invalid-name
+    def hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
         """Return the batch-mean Hessian of the NLL in the weight.
 
         ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``, per output.
@@ -139,9 +70,7 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
             X: Design matrix, shaped (n, d).
             phi: As ``forward``.
             noise_var: As ``forward``.
-            num_samples: As ``forward``.
-            eps: As ``forward``.
-            min_accepted: As ``forward``.
+            sampler: As ``forward``.
 
         Returns:
             The Hessian for the weight of shape (d, k) flattened row-major,
@@ -149,12 +78,9 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
         """
         with ch.no_grad():
             noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
-            accepted, _, total, total_sq = TruncatedMSE.sample(
-                pred, phi, noise_var, num_samples, min_accepted, squares=True
-            )
-            count = accepted.double() + eps
-            mean = total.double() / count
-            var = (total_sq / count - mean.pow(2)) / noise_var.double().pow(2)
+            moments = sampler.moments(pred, noise_var, phi, second_moment=True)
+            second = cast(ch.Tensor, moments.second_moment)
+            var = (second - moments.mean.pow(2)) / noise_var.double().pow(2)
             design = X.double()
             hess = ch.einsum(
                 "ni,nj,na,ab->iajb",
@@ -167,7 +93,7 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
             return (hess.reshape(size, size) / pred.size(0)).float()
 
 
-class TruncatedUnknownVarianceMSE(ch.autograd.Function):  # pylint: disable=abstract-method
+class TruncatedGaussianNLLUnknownVariance(ch.autograd.Function):  # pylint: disable=abstract-method
     """MLE for truncated Gaussian regression with unknown noise variance.
 
     Optimization variables: mu (pred) and lambda_ (1/sigma^2).

@@ -19,8 +19,8 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
     Attributes:
         weight_bound: The B of D_{r,B}, on the weight in the normalized
             coordinates the descent runs in; None drops the ball.
-        refine_steps: Newton steps after the descent; their iterates are
-            the estimates, or the descent's when 0.
+        refine_steps: Newton steps after the descent, as
+            ``configs.RefinementConfig``; on by default here.
     """
 
     batch_size: int = 10

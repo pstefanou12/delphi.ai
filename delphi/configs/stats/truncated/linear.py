@@ -30,8 +30,9 @@ class TruncatedLinearModelConfig(LinearModelConfig):
         rate: Factor the projection radius grows by per phase when alpha
             is not given.
         max_radius: Largest projection radius those phases reach.
-        refine_steps: Full-batch Newton steps after the descent, for models
-            with a Hessian; 0 skips them.
+        scale_covariates: Divide the design matrix by ``B sqrt(d + 1)``, for ``B``
+            its largest entry, so every row has norm at most 1. Estimates
+            are reported in the original units either way.
     """
 
     alpha: float = pydantic.Field(default=1.0, gt=0.0, le=1.0)
@@ -41,4 +42,4 @@ class TruncatedLinearModelConfig(LinearModelConfig):
     projection_set: Literal["default", "none"] = "default"
     rate: float = pydantic.Field(default=1.5, gt=1.0)
     max_radius: float = pydantic.Field(default=50.0, gt=0.0)
-    refine_steps: int = pydantic.Field(default=0, ge=0)
+    scale_covariates: bool = True

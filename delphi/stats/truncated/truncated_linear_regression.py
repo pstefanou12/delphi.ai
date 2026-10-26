@@ -21,6 +21,7 @@ from delphi import configs
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses, projection_sets
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
+from delphi.truncated import sampling
 from delphi.utils import helpers
 
 
@@ -55,6 +56,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         *,
         noise_var: Optional[Union[float, ch.Tensor]] = None,
         dependent: bool = False,
+        sampler: Optional[sampling.GaussianSampler] = None,
         fit_intercept: bool = True,
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
@@ -69,6 +71,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             noise_var: The known noise variance; None learns it.
             dependent: Whether the samples form one trajectory, x_{t+1} =
                 A x_t + e; needs noise_var, its noise covariance.
+            sampler: Estimates the known-variance loss's conditional
+                moments; rejection sampling at ``num_samples`` and
+                ``min_accepted`` by default.
             fit_intercept: Whether to fit an intercept.
             emp_weight: Start in place of OLS; see ``TruncatedLinearModel``.
             rand_seed: Seed applied at the start of every run.
@@ -92,6 +97,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self.dependent = dependent
         self.variance_bounds: Optional[helpers.Bounds] = None
         self.survival_threshold = 1.0
+        self.sampler = sampler or sampling.GaussianRejectionSampler(
+            self.hyperparameters.num_samples, self.hyperparameters.min_accepted
+        )
         if dependent:
             lds = cast(
                 configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
@@ -101,9 +109,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             self.survival_threshold = lds.c_s * (math.sqrt(math.log(1 / known)) + 1)
             self.criterion = losses.SwitchGrad.apply
         elif noise_var is None:
-            self.criterion = losses.TruncatedUnknownVarianceMSE.apply
+            self.criterion = losses.TruncatedGaussianNLLUnknownVariance.apply
         else:
-            self.criterion = losses.TruncatedMSE.apply
+            self.criterion = losses.TruncatedGaussianNLL.apply
 
     def criterion_parameters(self, X: ch.Tensor, y: ch.Tensor) -> list:  # pylint: disable=invalid-name
         hp = self.hyperparameters
@@ -120,7 +128,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             ]
         if self.noise_var is None:
             return [self.lambda_, self.phi, hp.num_samples, hp.eps]
-        return [self.phi, self.noise_var, hp.num_samples, hp.eps, hp.min_accepted]
+        return [self.phi, self.noise_var, self.sampler, hp.eps]
 
     def register_weight(self, weight: ch.Tensor) -> None:
         X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
@@ -220,15 +228,12 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             return super().hessian(theta)
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         weight = self.weight.detach() if theta is None else theta
-        hp = self.hyperparameters
-        return losses.TruncatedMSE.hessian(
+        return losses.TruncatedGaussianNLL.hessian(
             X @ weight.reshape(-1, linear_model.require_fitted(self.k, "k")),
             X,
             self.phi,
             self.noise_var,
-            hp.num_samples,
-            hp.eps,
-            hp.min_accepted,
+            self.sampler,
         )
 
     def coefficients(self, params):

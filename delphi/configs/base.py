@@ -67,7 +67,25 @@ class WarmStartConfig(pydantic.BaseModel):
         return self
 
 
-class TrainerConfig(WarmStartConfig):
+class RefinementConfig(pydantic.BaseModel):
+    """Configuration of the refinement, a training stage after the phases.
+
+    Setting ``refine_steps`` enables it. From the last phase's averaged
+    iterate, each step is ``theta - H^-1 grad`` on the full sample, with ``H``
+    the model's ``hessian`` at the current iterate, so the model must train a
+    single parameter tensor and supply its Hessian.
+
+    Attributes:
+        refine_steps: Newton steps; 0 skips the stage.
+        refine_avg_burn_in: Fraction of the steps left out of the average,
+            which cancels the Monte Carlo noise in a sampled gradient.
+    """
+
+    refine_steps: int = pydantic.Field(default=0, ge=0)
+    refine_avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
+
+
+class TrainerConfig(WarmStartConfig, RefinementConfig):
     """Configuration for the Trainer.
 
     Attributes:
@@ -140,6 +158,29 @@ class TrainerConfig(WarmStartConfig):
         if self.warm_start_epochs is not None:
             update["iterations"] = None
         return self.model_copy(update=update)
+
+    def refinement_overlay(self) -> "TrainerConfig":
+        """Return this config as the refinement's: unit-rate, unscheduled SGD.
+
+        Sets the optimizer fields a ``DelphiConfig`` carries alongside.
+
+        Returns:
+            A copy that takes ``refine_steps`` Newton steps.
+        """
+        return self.model_copy(
+            update={
+                "optimizer": "sgd",
+                "lr": 1.0,
+                "sgd_momentum": 0.0,
+                "weight_decay": 0.0,
+                "scheduler": None,
+                "constant": True,
+                "max_grad_norm": None,
+                "epochs": None,
+                "iterations": self.refine_steps,
+                "avg_burn_in": self.refine_avg_burn_in,
+            }
+        )
 
 
 class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):

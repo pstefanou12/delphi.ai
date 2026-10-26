@@ -14,6 +14,7 @@ from torch import nn
 from delphi import configs, trainer
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses
+from delphi.truncated import sampling
 from delphi.utils import datasets
 
 
@@ -64,11 +65,11 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
 
         del self.criterion
 
-        self.criterion = losses.TruncatedMSE.apply
+        self.criterion = losses.TruncatedGaussianNLL.apply
         self.criterion_params = [
             self.phi,
             self.noise_var,
-            self.hyperparameters.num_samples,
+            sampling.GaussianRejectionSampler(self.hyperparameters.num_samples),
             self.hyperparameters.eps,
         ]
 
