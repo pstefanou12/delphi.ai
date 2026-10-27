@@ -67,8 +67,9 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
         """Take ``refine_steps`` Newton steps on the full sample.
 
         Starts from the fit's averaged iterate. Each step moves by
-        ``H^-1 grad``, with ``H`` the Hessian at the current iterate; the
-        model's own hooks, such as a projection, still apply.
+        ``H^-1 grad``, with ``H`` the Hessian at the current iterate, damped
+        when ``refine_damped`` is set; the model's own hooks, such as a
+        projection, still apply.
 
         Args:
             train_loader: The fit's training loader, whose dataset the steps
@@ -121,7 +122,10 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
 
         def direction(grad: ch.Tensor) -> ch.Tensor:
             hess = self.hessian(param.detach())
-            step = ch.linalg.solve(hess, grad.reshape(-1, 1).to(hess.dtype))  # pylint: disable=not-callable
+            flat = grad.reshape(-1, 1).to(hess.dtype)
+            step = ch.linalg.solve(hess, flat)  # pylint: disable=not-callable
+            if self.hyperparameters.refine_damped:
+                step = step / (1.0 + float((flat * step).sum().clamp_min(0.0).sqrt()))
             return step.reshape(grad.shape).to(grad.dtype)
 
         return direction

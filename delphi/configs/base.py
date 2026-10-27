@@ -79,10 +79,15 @@ class RefinementConfig(pydantic.BaseModel):
         refine_steps: Newton steps; 0 skips the stage.
         refine_avg_burn_in: Fraction of the steps left out of the average,
             which cancels the Monte Carlo noise in a sampled gradient.
+        refine_damped: Shrink each step by ``1 / (1 + delta)``, for delta
+            the Newton decrement ``sqrt(grad^T H^-1 grad)``: Nesterov's
+            damped Newton, which converges from a start where full steps
+            overshoot.
     """
 
     refine_steps: int = pydantic.Field(default=0, ge=0)
     refine_avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
+    refine_damped: bool = False
 
 
 class TrainerConfig(WarmStartConfig):
