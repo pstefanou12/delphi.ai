@@ -86,6 +86,7 @@ truth.
 | `TruncatedGammaUnknownConcentration` | [`truncated_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_gamma_unknown_concentration.py) | |
 | `TruncatedWishart` | [`truncated_wishart`](delphi/truncated/distributions/truncated_wishart.py) | |
 | `TruncatedMaxwell` | [`truncated_maxwell`](delphi/truncated/distributions/truncated_maxwell.py) | |
+| `TruncatedGumbel` | [`truncated_gumbel`](delphi/truncated/distributions/truncated_gumbel.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
