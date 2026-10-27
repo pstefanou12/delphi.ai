@@ -85,6 +85,7 @@ truth.
 | `TruncatedInverseGaussian` | [`truncated_inverse_gaussian`](delphi/truncated/distributions/truncated_inverse_gaussian.py) | |
 | `TruncatedGammaUnknownConcentration` | [`truncated_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_gamma_unknown_concentration.py) | |
 | `TruncatedWishart` | [`truncated_wishart`](delphi/truncated/distributions/truncated_wishart.py) | |
+| `TruncatedMaxwell` | [`truncated_maxwell`](delphi/truncated/distributions/truncated_maxwell.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
