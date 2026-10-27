@@ -87,6 +87,7 @@ truth.
 | `TruncatedWishart` | [`truncated_wishart`](delphi/truncated/distributions/truncated_wishart.py) | |
 | `TruncatedMaxwell` | [`truncated_maxwell`](delphi/truncated/distributions/truncated_maxwell.py) | |
 | `TruncatedGumbel` | [`truncated_gumbel`](delphi/truncated/distributions/truncated_gumbel.py) | |
+| `TruncatedLevy` | [`truncated_levy`](delphi/truncated/distributions/truncated_levy.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
