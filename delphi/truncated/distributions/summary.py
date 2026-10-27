@@ -31,15 +31,33 @@ def render(model) -> str:
     if model.procedure is None:
         raise RuntimeError(f"{type(model).__name__} has not been fit; call fit first.")
     mass = model.mass_on_set(model.avg_params)
-    sections = [
-        ("Model and data", _data(model)),
-        ("Optimization", _optimization(model.procedure)),
-        ("Estimates", _estimates(model)),
-        ("Truncation and curvature at the averaged estimate", _curvature(model, mass)),
-    ]
-    lines = ["=" * WIDTH, f" {model}", "=" * WIDTH]
-    for title, rows in sections:
-        lines += ["", f" {title}", " " + "-" * (WIDTH - 1)]
+    return frame(
+        str(model),
+        [
+            ("Model and data", _data(model)),
+            ("Optimization", optimization(model.procedure)),
+            ("Estimates", _estimates(model)),
+            (
+                "Truncation and curvature at the averaged estimate",
+                _curvature(model, mass),
+            ),
+        ],
+    )
+
+
+def frame(title: str, sections: list[tuple[str, list[tuple[str, str]]]]) -> str:
+    """Lay out titled sections of labelled rows as one report.
+
+    Args:
+        title: The report's heading, usually the model's name.
+        sections: Each section's title and its (label, value) rows.
+
+    Returns:
+        The report, ready to print.
+    """
+    lines = ["=" * WIDTH, f" {title}", "=" * WIDTH]
+    for heading, rows in sections:
+        lines += ["", f" {heading}", " " + "-" * (WIDTH - 1)]
         lines += [f"   {label:<30}{value}" for label, value in rows]
     lines.append("=" * WIDTH)
     return "\n".join(lines)
@@ -59,7 +77,13 @@ def _data(model) -> list[tuple[str, str]]:
     ]
 
 
-def _optimization(procedure) -> list[tuple[str, str]]:
+def optimization(procedure) -> list[tuple[str, str]]:
+    """Return the rows describing how a procedure's descent went.
+
+    Args:
+        procedure: A ``ProcedureResult`` whose phases report ``projections``
+            and ``projection_distance`` in their metrics.
+    """
     final = procedure.final
     config = final.config
     rows = [
@@ -68,8 +92,8 @@ def _optimization(procedure) -> list[tuple[str, str]]:
         ("steps", f"{procedure.iterations} over {len(procedure.phases)} phase(s)"),
         ("stop reason", f"{procedure.stop_reason}; last phase {final.stop_reason}"),
         ("wall time", f"{procedure.seconds:.2f}s"),
-        ("final train loss", _scalar(final.train_losses[-1])),
-        ("final validation loss", _scalar(final.final_loss)),
+        ("final train loss", scalar(final.train_losses[-1])),
+        ("final validation loss", scalar(final.final_loss)),
     ]
     warm = procedure.warm_start
     if warm is not None:
@@ -95,7 +119,7 @@ def _estimates(model) -> list[tuple[str, str]]:
     for suffix in model.estimate_suffixes:
         for name in ESTIMATORS:
             rows.append(
-                (f"{name}_{suffix}", _tensor(getattr(model, f"{name}_{suffix}")))
+                (f"{name}_{suffix}", tensor(getattr(model, f"{name}_{suffix}")))
             )
     return rows
 
@@ -119,11 +143,13 @@ def _curvature(model, mass: float) -> list[tuple[str, str]]:
     return rows
 
 
-def _scalar(value) -> str:
+def scalar(value) -> str:
+    """Format a scalar tensor or float, or n/a for None."""
     return "n/a" if value is None else f"{float(value):.6f}"
 
 
-def _tensor(value) -> str:
+def tensor(value) -> str:
+    """Format a tensor compactly, cutting long vectors to their head."""
     if value is None:
         return "n/a"
     value = value.detach()

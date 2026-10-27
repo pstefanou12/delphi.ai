@@ -1,248 +1,212 @@
+# Author: pstefanou12@
+"""Tests for truncated linear regression.
+
+Known variance runs one case per truncation set on the shared harness; each
+tolerance is about twice the error of the exact truncated MLE on the same
+sample, measured with the closed-form NLL; every estimate lands within a
+few hundredths of that MLE. The unknown-variance and
+dependent-data cases follow.
 """
-Test suite for truncated linear regression.
-Includes:
-    -Truncated regression with known variance
-    -Truncated regression with unknown variance
-    -Truncated regression with known regression and temporal dependencies
-    -Truncated LASSO regression with known noise variance
-"""
+
+import math
 
 import numpy as np
 import pytest
-from sklearn.linear_model import LassoCV, LinearRegression
+from sklearn import linear_model
 import torch as ch
-from torch.nn import MSELoss
+import torch.nn
 
 from delphi import stats
-from delphi.utils.helpers import calc_spectral_norm
+from delphi.stats.truncated.tests import regression
+from delphi.utils import helpers
 
-# CONSTANTS
-mse_loss = MSELoss()
-seed = 69
+INF = math.inf
+SEED = 69
+mse_loss = torch.nn.MSELoss()
 
 
-# left truncated linear regression with known variance - 1 dimension
-def test_known_truncated_regression_one_dimension_no_intercept():
-    ch.manual_seed(seed)
-    NUM_SAMPLES = 1000
-    # generate ground truth
-    NOISE_VAR = ch.ones(1, 1)
-    W = ch.ones(1, 1)
-    print(f"gt weight: {W}")
-    print(f"gt noise var: {NOISE_VAR}")
+def _intervals(*bounds):
+    """Return an oracle admitting the union of the open (a, b) intervals."""
 
-    # generate data
-    X = ch.rand(NUM_SAMPLES, 1)
-    y = X @ W.T
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = ch.zeros(1)
+    def phi(z):
+        kept = ch.zeros_like(z, dtype=ch.bool)
+        for low, high in bounds:
+            kept |= (z > low) & (z < high)
+        return kept
 
-    def phi(x):
-        return x > phi_left
+    return phi
 
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression(fit_intercept=False)
-    gt_norm.fit(X, y)
-    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten()]))
-
-    # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression(fit_intercept=False)
-    ols_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(np.concatenate([ols_trunc.coef_.flatten()]))
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
-
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
-
-    def phi_scale(x):
-        return x > phi_scale_left
-
-    # train algorithm
-    train_kwargs = {
-        "epochs": 5,
-        "optimizer": "lbfgs",
-        "batch_size": -1,
-        "trials": 1,
-    }
-    trunc_reg = stats.TruncatedLinearRegression(
-        train_kwargs, phi_scale, alpha, fit_intercept=False, noise_var=ch.ones(1, 1)
+def _fit(dataset, tolerance, alpha="known", ols_margin=0.5, **hyperparameters):
+    """Fit known-variance regression to dataset and check its estimates."""
+    model = stats.TruncatedLinearRegression(
+        hyperparameters,
+        dataset.phi,
+        dataset.alpha if alpha == "known" else alpha,
+        noise_var=dataset.noise_var,
     )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.best_coef_).flatten()]) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    trunc_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"truc mse loss: {trunc_mse_loss}")
-    msg = f"trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert trunc_mse_loss <= emp_mse_loss, msg
-    msg = f"trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1"
-    assert trunc_mse_loss <= 1e-1, msg
+    regression.assert_recovers(model, dataset, tolerance, ols_margin=ols_margin)
+    return model
 
 
-# left truncated linear regression with known variance - 1 dimension
-# TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
-# estimator: ch.cat gets a scalar at position 1.
-# TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
-# estimator: ch.cat gets a scalar at position 1.
-# TODO: pstefanou12@ - fix the 0-d tensor built in this test, not in the
-# estimator: ch.cat gets a scalar at position 1.
-@pytest.mark.skip(reason="test builds a 0-d tensor that ch.cat cannot concatenate")
-def test_known_truncated_regression_one_dimension():
-    ch.manual_seed(seed)
-    NUM_SAMPLES = 5000
-    # generate ground truth
-    NOISE_VAR = ch.ones(1, 1)
-    W = ch.ones(1, 1)
-    W0 = ch.ones(1, 1)
+def test_1d_no_truncation():
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, INF)), 2000)
+    _fit(dataset, 0.04, alpha=None, ols_margin=None)
 
-    print(f"gt weight: {W}")
-    print(f"gt intercept: {W0}")
-    print(f"gt noise var: {NOISE_VAR}")
-    # generate data
-    X = ch.rand(NUM_SAMPLES, 1)
-    y = X @ W.T + W0
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = ch.ones(1)
 
-    def phi(x):
-        return x > phi_left
+def test_1d_left_truncation():
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((0.0, INF)), 2000)
+    _fit(dataset, 0.18)
 
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
-    gt_norm.fit(X, y)
-    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
+def test_1d_right_truncation():
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
+    _fit(dataset, 0.06)
 
-    # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
-    ols_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(
-        np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_])
+
+def test_1d_interval():
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
+    _fit(dataset, 0.35)
+
+
+def test_1d_union_of_intervals():
+    phi = _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF))
+    dataset = regression.make_dataset([2.0], -1.0, phi, 2000)
+    _fit(dataset, 0.02)
+
+
+def test_1d_small_mass():
+    dataset = regression.make_dataset([2.0], -1.0, _intervals((3.85, INF)), 2000)
+    _fit(dataset, 0.15)
+
+
+def test_2d_union_of_intervals():
+    phi = _intervals((-INF, -2.0), (0.0, 1.0), (2.5, INF))
+    covariance = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
+    dataset = regression.make_dataset(
+        [1.0, -1.0], 0.5, phi, 2000, covariance=covariance
     )
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
+    _fit(dataset, 0.09)
 
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
 
-    def phi_scale(x):
-        return x > phi_scale_left
+def test_2d_two_sided_tails():
+    phi = _intervals((-INF, -1.5), (1.5, INF))
+    dataset = regression.make_dataset([1.0, -1.0], 0.5, phi, 2000)
+    _fit(dataset, 0.08)
 
-    # train algorithm
-    train_kwargs = {
-        "epochs": 3,
-        "lr": 1e-1,
-        "batch_size": 10,
-        "trials": 1,
-    }
-    trunc_reg = stats.TruncatedLinearRegression(
-        train_kwargs, phi_scale, alpha, fit_intercept=True, noise_var=ch.ones(1, 1)
+
+def test_10d_left_truncation():
+    # Daskalakis et al. (2020), Section 6: w = 1, kept only where y > 4.
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]
-    ) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    trunc_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"truc mse loss: {trunc_mse_loss}")
-    msg = f"trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert trunc_mse_loss <= emp_mse_loss, msg
-    msg = f"trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1"
-    assert trunc_mse_loss <= 1e-1, msg
+    _fit(dataset, 0.16)
 
 
-# left truncated linear regression with known variance - 20 dimensions
-def test_known_truncated_regression_higher_dimensions():
-    ch.manual_seed(seed)
-    D = 20
-    NUM_SAMPLES = 10000
-    # generate ground truth
-    NOISE_VAR = 3 * ch.ones(1, 1)
-    W = ch.ones(1, D)
-    W0 = ch.ones(1, 1)
-    print(f"gt weight: {W}")
-    print(f"gt intercept: {W0}")
-    print(f"gt noise var: {NOISE_VAR}")
+def test_10d_union_of_intervals():
+    phi = _intervals((-2.0, 0.0), (3.0, INF))
+    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
+    _fit(dataset, 0.11)
 
-    # generate data
-    X = ch.rand(NUM_SAMPLES, D)
-    y = X @ W.T + W0
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = 10 * ch.ones(1)
 
-    def phi(x):
-        return x > phi_left
-
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
-
-    gt_norm = LinearRegression()
-    gt_norm.fit(X, y)
-    gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
-
-    # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
-    ols_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(
-        np.concatenate([ols_trunc.coef_.flatten(), ols_trunc.intercept_])
+def test_10d_no_truncation():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((-INF, INF)), 5000
     )
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
+    _fit(dataset, 0.09, alpha=None, ols_margin=None)
 
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
 
-    def phi_scale(x):
-        return x > phi_scale_left
+@pytest.mark.slow
+def test_100d_union_of_intervals():
+    phi = _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF))
+    coef = (ch.ones(100) / math.sqrt(10)).tolist()
+    dataset = regression.make_dataset(coef, 0.5, phi, 20000)
+    _fit(dataset, 0.15)
 
-    # train algorithm
-    train_kwargs = {
-        "epochs": 5,
-        "optimizer": "lbfgs",
-        "batch_size": -1,
-        "trials": 1,
-        "num_samples": 5000,
-    }
-    trunc_reg = stats.TruncatedLinearRegression(
-        train_kwargs, phi_scale, alpha, noise_var=ch.ones(1, 1)
+
+def test_10d_randomized_truncation():
+    def phi(z):
+        return ch.sigmoid(3.0 * (z - 4.0))
+
+    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
+    _fit(dataset, 0.13)
+
+
+def test_10d_alpha_unknown():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_[..., None]]
-    ) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    known_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"known mse loss: {known_mse_loss}")
-    msg = f"known mse loss is larger than empirical mse loss. known mse loss is {known_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert known_mse_loss <= emp_mse_loss, msg
-    msg = f"known mse loss is larger than 1e-1. known mse loss is {known_mse_loss.item():.3f}"
-    assert known_mse_loss <= 1e-1, msg
+    _fit(dataset, 0.16, alpha=None)
+
+
+def test_10d_ill_conditioned_covariates():
+    ch.manual_seed(1)
+    rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
+    spectrum = ch.logspace(0.0, -3.0, 10)
+    covariance = rotation @ ch.diag(spectrum) @ rotation.T
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((1.0, INF)), 5000, covariance=covariance
+    )
+    # The least-variance direction, 1e-3, sets the MLE's error: 0.93.
+    _fit(dataset, 1.3, ols_margin=0.8)
+
+
+def test_10d_rescaled_covariates():
+    covariance = 1e6 * ch.eye(10)
+    coef = (1e-3 * ch.ones(10)).tolist()
+    dataset = regression.make_dataset(
+        coef, 0.5, _intervals((4.0, INF)), 5000, covariance=covariance
+    )
+    _fit(dataset, 0.12)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_10d_seeds(seed):
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, seed=seed
+    )
+    _fit(dataset, 0.13)
+
+
+def test_1d_left_truncation_noise_var_5():
+    dataset = regression.make_dataset(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
+    )
+    _fit(dataset, 0.07)
+
+
+def test_1d_left_truncation_noise_var_10():
+    dataset = regression.make_dataset(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
+    )
+    _fit(dataset, 0.33)
+
+
+def test_10d_left_truncation_noise_var_5():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
+    )
+    _fit(dataset, 0.26)
+
+
+def test_10d_left_truncation_noise_var_10():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
+    )
+    _fit(dataset, 0.47)
+
+
+def test_10d_union_of_intervals_noise_var_10():
+    phi = _intervals((-2.0, 0.0), (3.0, INF))
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, phi, 5000, noise_var=10.0
+    )
+    _fit(dataset, 0.40)
 
 
 # left truncated regression with unknown noise variance in one dimension - no intercept
 def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 1
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -267,12 +231,12 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression(fit_intercept=False)
+    gt_norm = linear_model.LinearRegression(fit_intercept=False)
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(gt_norm.coef_)
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression(fit_intercept=False)
+    ols_trunc = linear_model.LinearRegression(fit_intercept=False)
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(ols_trunc.coef_.flatten())
@@ -319,23 +283,11 @@ def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     )
 
 
-# left truncated regression with unknown noise variance in one dimension
-# TODO: pstefanou12@ - the six accuracy skips (this one, the four other
-# unknown-variance cases, and lasso no-intercept) miss by 0.12 to 2.85. The
-# gradient_steps key these tests pass is dead, so none of them ever set the
-# training length they intended.
-# TODO: pstefanou12@ - the eight accuracy skips in this file (five
-# unknown-variance cases and three lasso) miss by 0.12 to 2.85. The
-# gradient_steps key these tests pass is dead, so none of them ever set
-# the training length they intended; DelphiConfig now warns about it.
-# TODO: pstefanou12@ - the eight accuracy skips here are not a
-# training-length artefact. The dead gradient_steps key was renamed to
-# iterations, which cut this file's runtime from 11:10 to 1:35 and so
-# demonstrably binds; only lasso ten-dimensions moved (0.438 to 0.220) and
-# nothing started passing. The gap is in the estimator.
+# TODO: pstefanou12@ - the five unknown-variance accuracy skips miss by 0.12
+# to 2.85 at their full iteration counts, so the gap is in the estimator.
 @pytest.mark.skip(reason="accuracy: mse 0.134 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_one_dimension():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 1
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -362,12 +314,12 @@ def test_unknown_variance_truncated_regression_one_dimension():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -425,7 +377,7 @@ def test_unknown_variance_truncated_regression_one_dimension():
 # left truncated regression with unknown noise variance in one dimension with noise variance 3
 @pytest.mark.skip(reason="accuracy: var l1 0.122 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 1
     NUM_SAMPLES = 3000
     # generate ground truth
@@ -454,12 +406,12 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -507,7 +459,7 @@ def test_unknown_variance_truncated_regression_one_dimension_with_noise_var_3():
 
 @pytest.mark.skip(reason="accuracy: var l1 1.40 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 10
     NUM_SAMPLES = 20000
     # generate ground truth
@@ -532,12 +484,12 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression(fit_intercept=False)
+    gt_norm = linear_model.LinearRegression(fit_intercept=False)
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(gt_norm.coef_.flatten())
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression(fit_intercept=False)
+    ols_trunc = linear_model.LinearRegression(fit_intercept=False)
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(ols_trunc.coef_.flatten())
@@ -582,7 +534,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions_no_intercept():
 # left truncated regression with unknown noise variance in ten dimensions
 @pytest.mark.skip(reason="accuracy: mse 1.92 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_ten_dimensions():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 10
     NUM_SAMPLES = 10000
     # generate ground truth
@@ -608,12 +560,12 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -661,7 +613,7 @@ def test_unknown_variance_truncated_regression_ten_dimensions():
 # left truncated regression with unknown noise variance in ten dimensions
 @pytest.mark.skip(reason="accuracy: mse 2.85 against a 0.1 tolerance")
 def test_unknown_variance_truncated_regression_fifty_dimensions():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 50
     NUM_SAMPLES = 100000
     # generate ground truth
@@ -687,12 +639,12 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     alpha = x_trunc.size(0) / X.size(0)
     print(f"alpha: {alpha}")
 
-    gt_norm = LinearRegression()
+    gt_norm = linear_model.LinearRegression()
     gt_norm.fit(X, noised)
     gt_ = ch.from_numpy(np.concatenate([gt_norm.coef_.flatten(), gt_norm.intercept_]))
 
     # calculate empirical noise variance for regression
-    ols_trunc = LinearRegression()
+    ols_trunc = linear_model.LinearRegression()
     ols_trunc.fit(x_trunc, y_trunc)
     emp_noise_var = ch.from_numpy(ols_trunc.predict(x_trunc) - y_trunc.numpy()).var(0)
     emp_ = ch.from_numpy(
@@ -748,283 +700,19 @@ def test_unknown_variance_truncated_regression_fifty_dimensions():
     )
 
 
-@pytest.mark.skip(reason="accuracy: mse 0.146 against a 0.1 tolerance")
-def test_truncated_lasso_regression_one_dimension_no_intercept():
-    ch.manual_seed(seed)
-    L1 = 0.1
-    NUM_SAMPLES = 1000
-    # generate ground truth
-    NOISE_VAR = ch.ones(1, 1)
-    W = ch.ones(1, 1)
-    print(f"gt weight: {W}")
-    print(f"gt noise var: {NOISE_VAR}")
-
-    # generate data
-    X = ch.rand(NUM_SAMPLES, 1)
-    y = X @ W.T
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = ch.zeros(1)
-
-    def phi(x):
-        return x > phi_left
-
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
-
-    gt_lasso = LassoCV(alphas=[L1], fit_intercept=False)
-    gt_lasso.fit(X, y)
-    gt_ = ch.from_numpy(np.concatenate([gt_lasso.coef_.flatten()]))
-    print(f"ground truth weights: {gt_}")
-
-    # calculate empirical noise variance for regression
-    lasso_trunc = LassoCV(alphas=[L1], fit_intercept=False)
-    lasso_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(np.concatenate([lasso_trunc.coef_.flatten()]))
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
-
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
-
-    def phi_scale(x):
-        return x > phi_scale_left
-
-    # train algorithm
-    train_kwargs = {
-        "lr": 1e-1,
-        "batch_size": 10,
-        "iterations": 1000,
-        "trials": 1,
-    }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs,
-        phi_scale,
-        alpha,
-        l1=L1,
-        fit_intercept=False,
-        noise_var=ch.ones(1, 1),
-    )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat([(trunc_reg.best_coef_).flatten()]) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    trunc_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"trunc mse loss: {trunc_mse_loss}")
-    msg = f"trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert trunc_mse_loss <= emp_mse_loss, msg
-    msg = f"trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1"
-    assert trunc_mse_loss <= 1e-1, msg
-
-
-# TODO: pstefanou12@ - the lasso weight carries one column more than the
-# design matrix, so the intercept column is counted twice.
-@pytest.mark.skip(reason="accuracy: mse 0.175 against a 0.1 tolerance")
-def test_truncated_lasso_regression_one_dimension():
-    ch.manual_seed(seed)
-    L1 = 0.1
-    NUM_SAMPLES = 1000
-    # generate ground truth
-    NOISE_VAR = ch.ones(1, 1)
-    W = ch.ones(1, 1)
-    W0 = ch.ones(1, 1)
-    print(f"gt weight: {W}")
-    print(f"gt bias: {W0}")
-    print(f"gt noise var: {NOISE_VAR}")
-
-    # generate data
-    X = ch.rand(NUM_SAMPLES, 1)
-    y = X @ W.T + W0
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = 2
-
-    def phi(x):
-        return x > phi_left
-
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
-
-    gt_lasso = LassoCV(alphas=[L1])
-    gt_lasso.fit(X, y)
-    gt_ = ch.from_numpy(
-        np.concatenate(
-            [
-                gt_lasso.coef_.flatten(),
-                gt_lasso.intercept_.reshape(
-                    1,
-                ),
-            ]
-        )
-    )
-    print(f"ground truth weights: {gt_}")
-
-    # calculate empirical noise variance for regression
-    lasso_trunc = LassoCV(alphas=[L1])
-    lasso_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(
-        np.concatenate(
-            [
-                lasso_trunc.coef_.flatten(),
-                lasso_trunc.intercept_.reshape(
-                    1,
-                ),
-            ]
-        )
-    )
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
-
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
-
-    def phi_scale(x):
-        return x > phi_scale_left
-
-    # train algorithm
-    train_kwargs = {
-        "lr": 1e-1,
-        "batch_size": 10,
-        "iterations": 1000,
-        "trials": 1,
-    }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
-    )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]
-    ) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    trunc_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"trunc mse loss: {trunc_mse_loss}")
-    msg = f"trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert trunc_mse_loss <= emp_mse_loss, msg
-    msg = f"trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1"
-    assert trunc_mse_loss <= 1e-1, msg
-
-
-@pytest.mark.skip(reason="accuracy: mse 0.220 against an empirical 0.025")
-def test_truncated_lasso_regression_ten_dimensions():
-    ch.manual_seed(seed)
-    L1 = 0.1
-    NUM_SAMPLES = 10000
-    D = 10
-    # generate ground truth
-    NOISE_VAR = ch.ones(1, 1)
-    W = ch.ones(1, D)
-    W0 = ch.ones(1, 1)
-    print(f"gt weight: {W}")
-    print(f"gt bias: {W0}")
-    print(f"gt noise var: {NOISE_VAR}")
-
-    # generate data
-    X = ch.rand(NUM_SAMPLES, D)
-    y = X @ W.T + W0
-    noised = y + ch.sqrt(NOISE_VAR) * ch.randn(y.size(0), 1)
-    # generate ground-truth data
-    phi_left = 5
-
-    def phi(x):
-        return x > phi_left
-
-    # truncate
-    indices = phi(noised).nonzero()[:, 0]
-    x_trunc, y_trunc = X[indices], noised[indices]
-    alpha = x_trunc.size(0) / X.size(0)
-    print(f"alpha: {alpha}")
-
-    gt_lasso = LassoCV(alphas=[L1])
-    gt_lasso.fit(X, y)
-    gt_ = ch.from_numpy(
-        np.concatenate(
-            [
-                gt_lasso.coef_.flatten(),
-                gt_lasso.intercept_.reshape(
-                    1,
-                ),
-            ]
-        )
-    )
-    print(f"ground truth weights: {gt_}")
-
-    # calculate empirical noise variance for regression
-    lasso_trunc = LassoCV(alphas=[L1])
-    lasso_trunc.fit(x_trunc, y_trunc)
-    emp_ = ch.from_numpy(
-        np.concatenate(
-            [
-                lasso_trunc.coef_.flatten(),
-                lasso_trunc.intercept_.reshape(
-                    1,
-                ),
-            ]
-        )
-    )
-    print(f"empirical weights: {emp_}")
-    emp_mse_loss = mse_loss(emp_, gt_)
-    print(f"emp mse loss: {emp_mse_loss}")
-
-    # scale y features
-    y_trunc_scale = y_trunc / ch.sqrt(NOISE_VAR)
-    phi_scale_left = phi_left / ch.sqrt(NOISE_VAR)
-
-    def phi_scale(x):
-        return x > phi_scale_left
-
-    # train algorithm
-    train_kwargs = {
-        "lr": 1e-1,
-        "batch_size": 10,
-        "iterations": 1000,
-        "trials": 1,
-    }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
-    )
-    trunc_reg.fit(x_trunc, y_trunc_scale)
-    w_ = ch.cat(
-        [(trunc_reg.best_coef_).flatten(), trunc_reg.best_intercept_]
-    ) * ch.sqrt(NOISE_VAR)
-    print(f"estimated weights: {w_}")
-    trunc_mse_loss = mse_loss(gt_, w_.flatten())
-    print(f"trunc mse loss: {trunc_mse_loss}")
-    msg = f"trunc mse loss is larger than empirical mse loss. known mse loss is {trunc_mse_loss}, and empirical mse loss is: {emp_mse_loss}"
-    assert trunc_mse_loss <= emp_mse_loss, msg
-    msg = f"trunc mse loss: {trunc_mse_loss}, which is larger than 1e-1"
-    assert trunc_mse_loss <= 1e-1, msg
-
-
-# TODO: pstefanou12@ - truncated_linear_regression.py:421 multiplies by a
-# weight that the dependent path never assigns.
-# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
-# backward, so weight.grad is still None when Sigma.inverse() needs it.
-# Applying the transform needs to move relative to the closure.
-# TODO: pstefanou12@ - step_pre_hook runs before the LBFGS closure calls
-# backward, so weight.grad is still None when Sigma.inverse() needs it.
-# Applying the transform needs to move relative to the closure.
-@pytest.mark.skip(reason="dependent path reaches Tensor @ None in step_pre_hook")
+@pytest.mark.slow
 def test_truncated_dependent_regression():
-    ch.manual_seed(seed)
+    ch.manual_seed(SEED)
     D = 10  # number of dimensions for A_{*} matrix
     T = 10000  # uncensored system trajectory length
 
     spectral_norm = float("inf")
     while spectral_norm > 1.0:
         A = 0.25 * ch.randn((D, D))
-        spectral_norm = calc_spectral_norm(A)
+        spectral_norm = helpers.calc_spectral_norm(A)
 
-    spectral_norm = calc_spectral_norm(A)
-    print(f"A spectral norm: {calc_spectral_norm(A)}")
+    spectral_norm = helpers.calc_spectral_norm(A)
+    print(f"A spectral norm: {helpers.calc_spectral_norm(A)}")
 
     phi_bound = 4.0
 
@@ -1049,7 +737,7 @@ def test_truncated_dependent_regression():
 
     train_kwargs = {
         "c_eta": 0.5,
-        "epochs": 5,
+        "epochs": 1,
         "trials": 1,
         "batch_size": 1,
         "num_samples": 100,
@@ -1065,13 +753,14 @@ def test_truncated_dependent_regression():
         train_kwargs["alpha"],
         noise_var=NOISE_VAR,
         dependent=True,
-        rand_seed=seed,
+        rand_seed=SEED,
     )
     trunc_lds.fit(X, Y)
-    A_ = trunc_lds.coef_
-    A0_ = trunc_lds.ols_coef_
-    trunc_spec_norm = calc_spectral_norm(A - A_)
-    emp_spec_norm = calc_spectral_norm(A - A0_)
+    # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
+    A_ = trunc_lds.coef_.T
+    A0_ = trunc_lds.emp_coef_.T
+    trunc_spec_norm = helpers.calc_spectral_norm(A - A_)
+    emp_spec_norm = helpers.calc_spectral_norm(A - A0_)
 
     print(f"alpha: {alpha}")
     print(f"A spectral norm: {spectral_norm}")
@@ -1081,3 +770,40 @@ def test_truncated_dependent_regression():
     assert trunc_spec_norm <= emp_spec_norm, (
         f"truncated spectral norm {trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}"
     )
+
+
+def test_dependent_step_is_preconditioned_by_sigma():
+    """SON-SG's step is -lr Sigma^-1 grad, with Sigma updated by the batch."""
+    ch.manual_seed(SEED)
+    dims, num_samples = 3, 200
+    X = ch.randn(num_samples, dims)
+    Y = X @ (0.5 * ch.eye(dims)) + ch.randn(num_samples, dims)
+
+    def phi(x):
+        return x.norm(dim=-1, keepdim=True) <= 10.0
+
+    model = stats.TruncatedLinearRegression(
+        {"iterations": 1, "num_samples": 10},
+        phi,
+        0.9,
+        noise_var=ch.eye(dims),
+        dependent=True,
+    ).fit(X, Y)
+    model.trainer._reset_run_state()  # pylint: disable=protected-access
+    design, targets = model._data  # pylint: disable=protected-access
+    inp, targ = design[:50], targets[:50]
+    start, sigma = model.weight.detach().clone(), model.Sigma.clone()  # pylint: disable=no-member
+
+    ch.manual_seed(1)
+    model.trainer.train_step((inp, targ))
+    step = model.weight.detach() - start
+
+    sigma = sigma + ch.einsum("ni,nj->ij", inp, inp) / inp.size(0)
+    weight = start.clone().requires_grad_()
+    ch.manual_seed(1)
+    loss = model.required_criterion(inp @ weight, targ, *model.criterion_params)  # pylint: disable=not-callable
+    (plain,) = ch.autograd.grad(loss.sum(), weight)
+    lr = model.optimizer.param_groups[0]["lr"]
+    expected = -lr * ch.linalg.solve(sigma, plain)  # pylint: disable=not-callable
+    assert ch.allclose(step, expected, atol=1e-5), (step, expected)
+    assert not ch.allclose(step, -lr * plain, atol=1e-5)

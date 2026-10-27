@@ -12,7 +12,9 @@ import torch as ch
 from torch import nn
 
 from delphi import configs, trainer
-from delphi.stats import linear_model, losses
+from delphi.stats import linear_model
+from delphi.stats.truncated import losses
+from delphi.truncated import sampling
 from delphi.utils import datasets
 
 
@@ -63,11 +65,11 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
 
         del self.criterion
 
-        self.criterion = losses.TruncatedMSE.apply
+        self.criterion = losses.TruncatedGaussianNLL.apply
         self.criterion_params = [
             self.phi,
             self.noise_var,
-            self.hyperparameters.num_samples,
+            sampling.GaussianRejectionSampler(self.hyperparameters.num_samples),
             self.hyperparameters.eps,
         ]
 
@@ -147,6 +149,10 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         """Forward pass through the model."""
         return X @ self.weight
+
+    def compute_loss(self, batch, criterion=None) -> ch.Tensor:
+        """Average the truncated NLL, which is per sample, over the batch."""
+        return super().compute_loss(batch, criterion).mean()
 
     def pre_step_hook(self, inp: ch.Tensor) -> None:
         """Pre-step hook to apply L1 regularization gradient.

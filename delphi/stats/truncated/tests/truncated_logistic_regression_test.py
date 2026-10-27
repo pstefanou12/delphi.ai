@@ -15,8 +15,10 @@ from torch.distributions import Gumbel, Uniform
 from torch.nn import CosineSimilarity
 
 from delphi.stats.softmax import SoftmaxRegression
-from delphi.stats.truncated_logistic_regression import TruncatedLogisticRegression
-from delphi.stats.truncated_probit_regression import TruncatedProbitRegression
+from delphi.stats.truncated.truncated_logistic_regression import (
+    TruncatedLogisticRegression,
+)
+from delphi.stats.truncated.truncated_probit_regression import TruncatedProbitRegression
 from delphi.utils.helpers import logistic
 
 cos_sim = CosineSimilarity()

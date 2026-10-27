@@ -1,60 +1,85 @@
 # Author: pstefanou12@
 """Configuration models for the truncated regression estimators."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 import pydantic
 
 from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 
 
-class TruncatedRegressionFieldsConfig(TruncatedLinearModelConfig):
-    """Fields shared by the truncated regression and dynamical-system variants.
+class TruncatedRegressionConfig(TruncatedLinearModelConfig):
+    """Configuration for truncated linear regression with known variance.
 
-    ``TruncatedLinearRegression`` reads from both variants depending on its
-    ``dependent`` flag, so every field either one needs is declared here and
-    the concrete subclasses override only default values. That keeps a single
-    type parameter sufficient for the estimator.
+    The descent follows Daskalakis et al. (2020), Algorithm 1: one shuffled
+    pass, one sample per step, steps of 1 / (lambda i) from the Fisher
+    schedule, every sample used, and every iterate averaged. Newton steps on
+    the full sample then take that average to the empirical MLE.
 
     Attributes:
-        var_lr: Learning rate for the variance parameter when noise_var is
-            unknown.
-        eps: Numerical stability constant for the truncated MSE criterion.
-        r: Initial projection set radius.
-        rate: Multiplicative radius expansion factor.
-        num_samples: Monte Carlo samples drawn per criterion evaluation.
-        l1: L1 regularization weight.
+        weight_bound: The B of D_{r,B}, on the weight in the normalized
+            coordinates the descent runs in; None drops the ball.
+        refine_steps: Newton steps after the descent, as
+            ``configs.RefinementConfig``; on by default here.
     """
 
-    # None disables the separate variance learning rate; parameters_() in
-    # TruncatedLinearRegression branches on that explicitly.
-    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
-    eps: float = pydantic.Field(default=1e-5, gt=0.0)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
-    rate: float = pydantic.Field(default=1.5, gt=0.0)
-    num_samples: int = pydantic.Field(default=1000, ge=1)
-    l1: float = pydantic.Field(default=0.0, ge=0.0)
+    batch_size: int = 10
+    epochs: Optional[int] = pydantic.Field(default=1, ge=1)
+    val: float = pydantic.Field(default=0.0, ge=0.0, le=1.0)
+    scheduler: Optional[str] = "fisher"
+    fisher_refresh_every: int = pydantic.Field(
+        default=0, ge=0, serialization_alias="refresh_every"
+    )
+    avg_burn_in: float = pydantic.Field(default=0.0, ge=0.0, lt=1.0)
+    weight_bound: Optional[float] = pydantic.Field(default=None, gt=0.0)
+    refine_steps: int = pydantic.Field(default=30, ge=0)
+
+    @pydantic.model_validator(mode="after")
+    def drop_default_schedule_off_sgd(self) -> "TruncatedRegressionConfig":
+        """Leave a non-SGD optimizer unscheduled unless a schedule is set.
+
+        The 1 / (lambda i) schedule is SGD's; L-BFGS and Adam scale their
+        own steps, and decaying them as well stalls the descent.
+        """
+        if self.optimizer.lower() != "sgd" and "scheduler" not in (
+            self.model_fields_set
+        ):
+            object.__setattr__(self, "scheduler", None)
+        return self
 
 
-class TruncatedRegressionConfig(TruncatedRegressionFieldsConfig):
-    """Configuration for truncated linear regression (TRUNC_REG_DEFAULTS)."""
+class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
+    """Configuration for truncated regression with the variance learned.
 
+    The defaults are the ones this estimator had before the known-variance
+    rework: projected SGD in (v, lambda) with a held-out split, no step
+    schedule and no Newton refinement.
+
+    Attributes:
+        var_lr: Learning rate for lambda; None trains it at lr.
+        r: Scale of the variance upper bound above the start's residual
+            variance.
+    """
+
+    batch_size: int = 50
+    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
     iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
+    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
     val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
+    scheduler: Optional[str] = None
+    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
+    refine_steps: int = pydantic.Field(default=0, ge=0)
+    projection_set: Literal["default", "none"] = "none"
+    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
+    r: float = pydantic.Field(default=1.0, gt=0.0)
 
 
-class TruncatedLassoRegressionConfig(TruncatedRegressionConfig):
-    """Configuration for truncated LASSO regression (TRUNC_LASSO_DEFAULTS)."""
+class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):
+    """Configuration for truncated linear dynamical systems (Plevrakis 2021).
 
-    num_samples: int = pydantic.Field(default=10000, ge=1)
-
-
-class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):
-    """Configuration for truncated linear dynamical systems (TRUNC_LDS_DEFAULTS).
-
-    c_s, c_eta and c_gamma live here rather than on a shared parent: each is
-    read only from TruncatedLinearRegression's dependent branches, and
-    TRUNC_LDS_DEFAULTS was the only pre-pydantic spec that declared them.
+    The defaults are the ones this estimator had before the known-variance
+    rework: data consumed in order, a constant step derived from alpha, and
+    no projection or refinement.
 
     Attributes:
         c_s: Scaling constant for the dependent-data survival threshold.
@@ -67,5 +92,25 @@ class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionFieldsConfig):
     c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
 
     num_samples: int = pydantic.Field(default=50, ge=1)
-    shuffle: bool = False  # Dependent data is consumed in order.
+    batch_size: int = 50
+    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
+    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
+    shuffle: bool = False
     constant: bool = True
+    scheduler: Optional[str] = None
+    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
+    refine_steps: int = pydantic.Field(default=0, ge=0)
+    projection_set: Literal["default", "none"] = "none"
+
+
+class TruncatedLassoRegressionConfig(TruncatedLinearModelConfig):
+    """Configuration for truncated LASSO regression (TRUNC_LASSO_DEFAULTS).
+
+    Attributes:
+        r: Initial projection set radius.
+    """
+
+    iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
+    val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
+    num_samples: int = pydantic.Field(default=10000, ge=1)
+    r: float = pydantic.Field(default=1.0, gt=0.0)

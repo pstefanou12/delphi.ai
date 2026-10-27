@@ -12,6 +12,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
+- [Truncated Regression](#truncated-regression)
 - [Architecture](#architecture)
   - [The trainer](#the-trainer)
   - [Models](#models)
@@ -250,6 +251,46 @@ truth and only the mean is learned, which leaves less to estimate. Both
 estimators degrade as the survival mass falls, which `alpha` does not change:
 here it only sizes the region the descent is kept in.
 
+## Truncated Regression
+
+A linear model `y = w^T x + b + e`, `e ~ N(0, sigma^2)`, observed only where
+`phi(y)` admits the response. Least squares on such a sample is biased
+toward the set. All models live in `delphi.stats`.
+
+| Model | Module | Example |
+|---|---|---|
+| `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+
+```python
+import torch as ch
+
+from delphi import stats
+
+X = ch.randn(20000, 10)
+y = X @ ch.ones(10, 1) + 0.5 + ch.randn(20000, 1)
+
+
+def phi(z):
+    return z > 4.0
+
+
+kept = phi(y).flatten()
+model = stats.TruncatedLinearRegression(
+    {}, phi, kept.float().mean().item(), noise_var=1.0
+)
+model.fit(X[kept], y[kept])
+model.coef_, model.intercept_
+print(model.summary())
+```
+
+- **`phi` sees the response**, shaped `(n, m, 1)`, and returns a mask or a
+  survival probability.
+- **`alpha`** sets the projection radius `r* = 4 log(2 / alpha) + 7`, unless
+  the `radius` hyperparameter is given. Pass `None` when it is unknown: the
+  radius then grows by `rate` each phase until the projection stops binding.
+- **`sampler`** estimates `P(z in S)` and `E[z | S]` for the loss; rejection
+  sampling by default.
+
 ## Architecture
 
 delphi separates *how a model is fit*, which the trainer owns, from *what is
@@ -272,7 +313,6 @@ fit*, which each model describes.
    changes the problem for the next phase, such as widening a projection
    budget. `max_phases` caps the number. A model that never changes its
    problem keeps the default hook and trains once.
-
 Each run, warm start or phase, is one **stage**: a config, a criterion and
 that criterion's Hessian, which the Fisher learning-rate schedule sizes its
 steps from. `train_model` returns a `ProcedureResult` with the warm start,
@@ -311,6 +351,19 @@ The truncated distributions add two layers on top of this:
   that widen its budget. The family adds its starting point
   (`_calc_emp_model`), the domain of its parameters (`_constraints`) and its
   estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
+
+The truncated linear models follow the same pattern.
+`delphi/statistical_model.py`'s `StatisticalModel` sits under them: once
+the trainer has fit a model, `refine()` takes `refine_steps` Newton steps
+with its `hessian()`. `delphi/stats/linear_model.py`'s `LinearModel` owns
+the prediction `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
+`best_` estimates of `coef_` and `intercept_`.
+`delphi/stats/truncated/truncated_linear_model.py`'s `TruncatedLinearModel`
+adds the oracle, the radius phases, the projection in `step_post_hook` and
+`summary()`. A model supplies its criterion from
+`delphi/stats/truncated/losses.py` (`TruncatedGaussianNLL` for known-variance
+regression), its Hessian and its projection set from
+`delphi/projection_sets.py`.
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
 ones: `Identity`, which admits every sample, and `RecoveredSet`, the set an

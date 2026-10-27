@@ -2,48 +2,27 @@
 """Autograd loss functions for truncated regression and classification models."""
 
 import math
+from typing import cast
 
 import torch as ch
 from torch import sigmoid as sig  # pylint: disable=no-name-in-module
 import torch.distributions
 import torch.nn
 
+from delphi.truncated import sampling
 from delphi.utils import helpers
 
-softmax = torch.nn.Softmax(dim=1)
 gumbel = torch.distributions.Gumbel(0, 1)
 
 
-def Test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
-    """Check which gradient to take at timestep t.
+class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-method
+    """Truncated NLL of regression with known Gaussian noise variance.
 
-    Args:
-        mu: Current conditional mean for LDS.
-        phi: Oracle.
-        c_gamma: Constant.
-        alpha: Survival probability.
-        T: Number of timesteps in dataset.
+    Per sample, ``(y - h)^2 / (2 sigma^2) + log P(h + e in S)`` with
+    ``e ~ N(0, sigma^2)``; its gradient in h is ``(E[z | S] - y) / sigma^2``
+    for ``z ~ N(h, sigma^2)``. The sampler estimates ``P`` and ``E[z | S]``
+    at each sample's own h. Returns one loss per sample; the caller reduces.
     """
-    M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
-        ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0))
-    )
-
-    # Threshold constant.
-    gamma = (alpha / 2) ** c_gamma
-
-    # Number of samples.
-    k = int((4 / gamma) * math.log(T))
-    stacked = mu.repeat(k, 1, 1)
-    noise = M.sample(stacked.size()[:-1])
-    ci = stacked + noise
-    p = phi(ci).float().mean(0)
-    # Check whether the probability that a sample falls within the
-    # truncation set is greater than the survival probability.
-    return p >= (2 * gamma)
-
-
-class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated mean squared error loss for regression with known noise variance."""
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
@@ -52,34 +31,73 @@ class TruncatedMSE(ch.autograd.Function):  # pylint: disable=abstract-method
         targ,
         phi,
         noise_var,
-        num_samples=1000,
-        eps=1e-10,  # pylint: disable=invalid-name
+        sampler: sampling.GaussianSampler,
+        eps=1e-5,
     ):
-        """Compute truncated MSE loss."""
-        stacked = pred.unsqueeze(1).repeat(1, num_samples, 1)
-        noise = (noise_var**0.5) * ch.randn_like(stacked)
-        noised = stacked + noise
+        """Compute each sample's truncated NLL, summed over its outputs.
 
-        mask = phi(noised).float()
-        z = (mask * noised).sum(dim=1) / (mask.sum(dim=1) + eps)
-        P_hat = mask.mean(dim=1).clamp_min(eps)  # pylint: disable=invalid-name
+        Args:
+            pred: Predictions h, shaped (n, k).
+            targ: Observed responses, shaped (n, k).
+            phi: Truncation oracle over latents shaped (n, m, k).
+            noise_var: Known noise variance, broadcastable to (k,).
+            sampler: Estimates the conditional moments.
+            eps: Floor on the survival mass, so a sample phi rejects
+                entirely contributes a finite loss.
 
-        ctx.save_for_backward(targ, z, noise_var)
-        quadratic_loss = -0.5 * (pred - targ).pow(2) / noise_var
-        trunc_const = ch.log(P_hat + eps)
-
-        return -(quadratic_loss - trunc_const) / pred.size(0)
+        Returns:
+            The losses, shaped (n,).
+        """
+        noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
+        moments = sampler.moments(pred, noise_var, phi)
+        conditional_mean = moments.mean.to(pred.dtype)
+        ctx.save_for_backward((conditional_mean - targ) / noise_var)
+        quadratic = 0.5 * (targ - pred).pow(2) / noise_var
+        log_mass = ch.log(moments.mass + eps)
+        return (quadratic + log_mass).sum(-1)
 
     @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated MSE w.r.t. pred."""
-        targ, z, noise_var = ctx.saved_tensors
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the gradient in pred."""
+        (grad,) = ctx.saved_tensors
+        return (grad_output[:, None] * grad,) + (None,) * 5
 
-        grad_pred = (targ - z) / noise_var
-        return -grad_pred / targ.size(0), None, None, None, None, None
+    @staticmethod
+    def hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
+        """Return the batch-mean Hessian of the NLL in the weight.
+
+        ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``, per output.
+
+        Args:
+            pred: Predictions h, shaped (n, k).
+            X: Design matrix, shaped (n, d).
+            phi: As ``forward``.
+            noise_var: As ``forward``.
+            sampler: As ``forward``.
+
+        Returns:
+            The Hessian for the weight of shape (d, k) flattened row-major,
+            shaped (d * k, d * k), in float64: scaled covariates leave its
+            smallest eigenvalue below float32's resolution of its largest.
+        """
+        with ch.no_grad():
+            noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
+            moments = sampler.moments(pred, noise_var, phi, second_moment=True)
+            second = cast(ch.Tensor, moments.second_moment)
+            var = (second - moments.mean.pow(2)) / noise_var.double().pow(2)
+            design = X.double()
+            hess = ch.einsum(
+                "ni,nj,na,ab->iajb",
+                design,
+                design,
+                var,
+                ch.eye(pred.size(1), dtype=ch.float64),
+            )
+            size = X.size(1) * pred.size(1)
+            return hess.reshape(size, size) / pred.size(0)
 
 
-class TruncatedUnknownVarianceMSE(ch.autograd.Function):  # pylint: disable=abstract-method
+class TruncatedGaussianNLLUnknownVariance(ch.autograd.Function):  # pylint: disable=abstract-method
     """MLE for truncated Gaussian regression with unknown noise variance.
 
     Optimization variables: mu (pred) and lambda_ (1/sigma^2).
@@ -165,7 +183,7 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
         M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
             ch.zeros(pred[0].size(0)), noise_var
         )
-        result = Test(pred, phi, c_gamma, alpha, T)
+        result = SwitchGrad.survival_test(pred, phi, c_gamma, alpha, T)
 
         noised = stacked + M.sample(stacked.size()[:-1])
 
@@ -179,6 +197,34 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
             z - pred
         ).norm(p=2, keepdim=True, dim=-1).pow(2)
         return loss.mean(0)
+
+    @staticmethod
+    def survival_test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
+        """Return whether each prediction keeps enough mass for the censor-aware gradient.
+
+        Args:
+            mu: Current conditional mean for LDS.
+            phi: Oracle.
+            c_gamma: Constant.
+            alpha: Survival probability.
+            T: Number of timesteps in dataset.
+        """
+        M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
+            ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0))
+        )
+
+        # Threshold constant.
+        gamma = (alpha / 2) ** c_gamma
+
+        # Number of samples.
+        k = int((4 / gamma) * math.log(T))
+        stacked = mu.repeat(k, 1, 1)
+        noise = M.sample(stacked.size()[:-1])
+        ci = stacked + noise
+        p = phi(ci).float().mean(0)
+        # Check whether the probability that a sample falls within the
+        # truncation set is greater than the survival probability.
+        return p >= (2 * gamma)
 
     @staticmethod
     def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name

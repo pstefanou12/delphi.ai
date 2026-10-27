@@ -2,17 +2,19 @@
 """Statistical models subpackage for delphi."""
 
 from delphi.stats.linear_model import LinearModel
-from delphi.stats.truncated_lasso_regression import TruncatedLassoRegression
-from delphi.stats.truncated_linear_regression import TruncatedLinearRegression
+from delphi.stats.truncated.truncated_lasso_regression import TruncatedLassoRegression
+from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
+from delphi.stats.truncated.truncated_linear_regression import TruncatedLinearRegression
 
 # from delphi.stats import truncated_lqr
-# from delphi.stats.truncated_logistic_regression import TruncatedLogisticRegression
-# from delphi.stats.truncated_probit_regression import TruncatedProbitRegression
+# from delphi.stats.truncated.truncated_logistic_regression import TruncatedLogisticRegression
+# from delphi.stats.truncated.truncated_probit_regression import TruncatedProbitRegression
 # from delphi.stats.gumbel_ce import GumbelCEModel
 # from delphi.stats.softmax import SoftmaxModel
 
 __all__ = [
-    "TruncatedLinearRegression",
-    "TruncatedLassoRegression",
     "LinearModel",
+    "TruncatedLassoRegression",
+    "TruncatedLinearModel",
+    "TruncatedLinearRegression",
 ]

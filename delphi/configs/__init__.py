@@ -9,7 +9,14 @@ is the single re-export point, and the subpackage ``__init__`` files are
 deliberately empty.
 """
 
-from delphi.configs.base import DelphiConfig, TrainerConfig, WarmStartConfig, _ConfigT
+from delphi.configs.base import (
+    DelphiConfig,
+    RefinementConfig,
+    StatisticalModelConfig,
+    TrainerConfig,
+    WarmStartConfig,
+    _ConfigT,
+)
 from delphi.configs.dataset import DatasetConfig
 from delphi.configs.distributions.truncated.exponential_family import (
     TruncatedExponentialFamilyDistributionConfig,
@@ -58,7 +65,7 @@ from delphi.configs.stats.truncated.regression import (
     TruncatedLassoRegressionConfig,
     TruncatedLinearDynamicalSystemConfig,
     TruncatedRegressionConfig,
-    TruncatedRegressionFieldsConfig,
+    TruncatedUnknownVarianceRegressionConfig,
 )
 
 __all__ = [
@@ -84,6 +91,8 @@ __all__ = [
     "TruncatedExponentialFamilyDistributionConfig",
     "TruncatedGammaUnknownConcentrationConfig",
     "TruncatedInverseGaussianConfig",
+    "RefinementConfig",
+    "StatisticalModelConfig",
     "WarmStartConfig",
     "WarmStartedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",
@@ -94,7 +103,7 @@ __all__ = [
     "TruncatedMultivariateNormalConfig",
     "TruncatedProbitRegressionConfig",
     "TruncatedRegressionConfig",
-    "TruncatedRegressionFieldsConfig",
+    "TruncatedUnknownVarianceRegressionConfig",
     "UnknownTruncationMultivariateNormalConfig",
     "WarmupConfig",
     "_ConfigT",

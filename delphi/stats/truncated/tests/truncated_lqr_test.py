@@ -7,7 +7,7 @@ import pytest
 # import torch as ch
 
 # from delphi import oracle
-# from delphi.stats.truncated_lqr import TruncatedLQR
+# from delphi.stats.truncated.truncated_lqr import TruncatedLQR
 # from delphi.utils.helpers import Parameters, calc_spectral_norm
 
 

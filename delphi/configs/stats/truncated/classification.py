@@ -17,17 +17,13 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
 
     Attributes:
         l1: L1 regularization weight.
-        eps: Numerical stability constant for the criterion.
         r: Initial projection set radius.
         rate: Multiplicative radius expansion factor.
-        num_samples: Monte Carlo samples drawn per criterion evaluation.
     """
 
     l1: float = pydantic.Field(default=0.0, ge=0.0)
-    eps: float = pydantic.Field(default=1e-5, gt=0.0)
     r: float = pydantic.Field(default=1.0, gt=0.0)
     rate: float = pydantic.Field(default=1.5, gt=0.0)
-    num_samples: int = pydantic.Field(default=1000, ge=1)
     batch_size: int = 10
 
 

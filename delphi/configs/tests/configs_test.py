@@ -189,7 +189,7 @@ def test_dependent_variant_overrides_only_defaults() -> None:
     dynamical = configs.TruncatedLinearDynamicalSystemConfig()
     assert (regression.shuffle, regression.constant) == (True, False)
     assert (dynamical.shuffle, dynamical.constant) == (False, True)
-    assert set(configs.TruncatedRegressionFieldsConfig.model_fields) <= set(
+    assert set(configs.TruncatedRegressionConfig.model_fields) <= set(
         type(dynamical).model_fields
     )
 
