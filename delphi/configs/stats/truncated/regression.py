@@ -49,29 +49,27 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
 
 
 class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
-    """Configuration for truncated regression with the variance learned.
+    """Configuration for truncated linear regression with the variance learned.
 
-    The defaults are the ones this estimator had before the known-variance
-    rework: projected SGD in (v, lambda) with a held-out split, no step
-    schedule and no Newton refinement.
+    The descent follows Daskalakis, Stefanou, Yao and Zampetakis (2022),
+    Algorithm 1, in the natural parameters ``(v, lambda)``, on the schedule
+    and refinement of ``TruncatedRegressionConfig``.
 
     Attributes:
-        var_lr: Learning rate for lambda; None trains it at lr.
-        r: Scale of the variance upper bound above the start's residual
-            variance.
+        radius: The ``1 / a`` of the projection set D, for a the survival
+            mass; None takes ``1 / alpha``, or 1 when alpha is unknown.
+        weight_bound: The B of D, on the weight in the normalized
+            coordinates the descent runs in; None drops the ball.
+        batch_size: Larger than the known variance's: the lambda gradient
+            ``(y^2 - E[z^2 | S]) / 2`` is noisy enough at 10 that the
+            average drifts away from the MLE.
+        refine_damped: On, since full Newton steps from the descent's
+            average can overshoot lambda out of D.
     """
 
-    batch_size: int = 50
-    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
-    iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
-    val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
-    scheduler: Optional[str] = None
-    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
-    refine_steps: int = pydantic.Field(default=0, ge=0)
-    projection_set: Literal["default", "none"] = "none"
-    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
+    batch_size: int = 100
+    epochs: Optional[int] = pydantic.Field(default=5, ge=1)
+    refine_damped: bool = True
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):

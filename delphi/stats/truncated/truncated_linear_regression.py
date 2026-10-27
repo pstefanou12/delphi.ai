@@ -4,8 +4,10 @@
 - ``noise_var`` given: Daskalakis, Gouleakis, Tzamos and Zampetakis (2020),
   projected SGD without replacement on the truncated NLL in D_{r,B}, then
   Newton steps to the empirical MLE.
-- ``noise_var=None``: the variance is learned with the weight, in the natural
-  parameters ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``.
+- ``noise_var=None``: Daskalakis, Stefanou, Yao and Zampetakis (2022),
+  projected SGD on the truncated NLL in the natural parameters
+  ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``, kept in their set D, then
+  Newton steps to the empirical MLE.
 - ``dependent=True``: a linear dynamical system, by the switching gradient
   with ``Sigma^-1`` preconditioning.
 """
@@ -15,7 +17,6 @@ import math
 from typing import Optional, Union, cast
 
 import torch as ch
-import torch.nn
 
 from delphi import configs
 import delphi.projection_sets
@@ -23,7 +24,7 @@ from delphi.stats import linear_model
 from delphi.stats.truncated import losses
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.truncated import sampling
-from delphi.utils import helpers
+from delphi.truncated.distributions import summary
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
@@ -38,13 +39,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     Attributes:
         noise_var: The known noise variance, or None when it is learned.
         dependent: Whether the samples come from one trajectory.
-        variance_bounds: The interval the learned variance is kept in.
         survival_threshold: The threshold s of dependent data; 1 otherwise.
     """
 
-    # Created by register_parameter and register_buffer during fit.
-    v: torch.nn.Parameter
-    lambda_: torch.nn.Parameter
+    # Created by register_buffer during fit.
     Sigma: ch.Tensor  # pylint: disable=invalid-name
 
     defaults = configs.TruncatedRegressionConfig
@@ -68,25 +66,22 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             hyperparameters: Hyperparameter dict.
             phi: Truncation oracle over responses shaped (n, m, k).
             alpha: Survival probability in (0, 1]; None if unknown, which
-                only known variance supports.
-            noise_var: The known noise variance; None learns it.
+                dependent data does not support.
+            noise_var: The known noise variance; None learns it, training
+                ``weight`` as ``(v, lambda)``: v's rows, then lambda's.
             dependent: Whether the samples form one trajectory, x_{t+1} =
                 A x_t + e; needs noise_var, its noise covariance.
-            sampler: Estimates the known-variance loss's conditional
-                moments; rejection sampling at ``num_samples`` and
-                ``min_accepted`` by default.
+            sampler: Estimates the loss's conditional moments; rejection
+                sampling at ``num_samples`` and ``min_accepted`` by default.
             fit_intercept: Whether to fit an intercept.
             emp_weight: Start in place of OLS; see ``TruncatedLinearModel``.
             rand_seed: Seed applied at the start of every run.
 
         Raises:
-            ValueError: If dependent data lacks noise_var, or alpha is
-                missing where the variant needs it.
+            ValueError: If dependent data lacks noise_var or alpha.
         """
-        if dependent and noise_var is None:
-            raise ValueError("dependent data needs the noise covariance noise_var.")
-        if alpha is None and (dependent or noise_var is None):
-            raise ValueError("unknown variance and dependent data need alpha.")
+        if dependent and (noise_var is None or alpha is None):
+            raise ValueError("dependent data needs noise_var and alpha.")
         if dependent:
             self.defaults = configs.TruncatedLinearDynamicalSystemConfig
         elif noise_var is None:
@@ -96,7 +91,6 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         )
         self.noise_var = None if noise_var is None else ch.as_tensor(noise_var)
         self.dependent = dependent
-        self.variance_bounds: Optional[helpers.Bounds] = None
         self.survival_threshold = 1.0
         self.sampler = sampler or sampling.GaussianRejectionSampler(
             self.hyperparameters.num_samples, self.hyperparameters.min_accepted
@@ -128,16 +122,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 hp.eps,
             ]
         if self.noise_var is None:
-            return [self.lambda_, self.phi, hp.num_samples, hp.eps]
+            return [self.phi, self.sampler, hp.eps]
         return [self.phi, self.noise_var, self.sampler, hp.eps]
 
     def register_weight(self, weight: ch.Tensor) -> None:
-        X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         if self.noise_var is None:
-            self._register_natural_parameters(X, y, weight)
+            precision = 1.0 / self._residual_var(weight)
+            super().register_weight(ch.cat([weight * precision, precision[None]]))
             return
         super().register_weight(weight)
         if self.dependent:
+            X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
             sigma_0 = X.T @ X / (self.survival_threshold * X.size(0))
             self.register_buffer("Sigma", sigma_0)
             # A tensor hook runs after backward, inside optimizer.step's
@@ -145,57 +140,33 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             # and backward, which discard what it writes.
             self.weight.register_hook(self.precondition)
 
-    def _register_natural_parameters(self, X, y, weight) -> None:  # pylint: disable=invalid-name
-        """Register (v, lambda) from a start weight, with the variance bounds.
-
-        The bounds are Daskalakis, Stefanou, Yao and Zampetakis (2022),
-        Definition 3.1, around the residual variance at the start.
-        """
-        hp = cast(
-            configs.TruncatedUnknownVarianceRegressionConfig, self.hyperparameters
-        )
-        residual_var = ch.var(X @ weight - y, dim=0)[..., None]
-        lower = residual_var / (8 * (5 + 2 * math.log(1 / cast(float, self.alpha))))
-        upper = residual_var + hp.r * self.base_radius
-        self.variance_bounds = helpers.Bounds(lower, upper)
-        lambda_ = residual_var.inverse()
-        self.register_parameter("v", torch.nn.Parameter(weight * lambda_))
-        self.register_parameter("lambda_", torch.nn.Parameter(lambda_.clone()))
+    def _residual_var(self, weight: ch.Tensor) -> ch.Tensor:
+        """Return each output's mean squared residual at weight, shaped (k,)."""
+        X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        return (X @ weight - y).pow(2).mean(0)
 
     def precondition(self, grad: ch.Tensor) -> ch.Tensor:
         """Return Sigma^-1 grad, the SON-SG step direction for dependent data."""
         return ch.linalg.solve(self.Sigma, grad)  # pylint: disable=not-callable,no-member
 
     def compute_loss(self, batch, criterion=None) -> ch.Tensor:
-        """Average the known-variance NLL, which is per sample, over the batch."""
+        """Average the NLL, which is per sample, over the batch."""
         loss = super().compute_loss(batch, criterion)
-        if self.noise_var is None or self.dependent:
-            return loss
-        return loss.mean()
+        return loss if self.dependent else loss.mean()
 
-    def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+    def forward(self, X: ch.Tensor):  # pylint: disable=invalid-name
+        """Return ``h_W(x)``, or ``(v^T x, lambda)`` when lambda is learned."""
         if self.noise_var is None:
-            return X @ self.v / self.lambda_
+            return X @ self.weight[:-1], self.weight[-1]
         if self.dependent:
             self.Sigma += X.T @ X / X.size(0)  # pylint: disable=invalid-name,no-member
         return X @ self.weight
 
-    def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Keep the learned variance in its bounds, or project the weight."""
-        if self.noise_var is None:
-            bounds = linear_model.require_fitted(self.variance_bounds, "bounds")
-            with ch.no_grad():
-                variance = ch.clamp(1.0 / self.lambda_, bounds.lower, bounds.upper)
-                self.lambda_.copy_(1.0 / variance)
-            return
-        super().step_post_hook(optimizer, args, kwargs)
-
-    def parameter_groups(self) -> list[dict]:
-        """Train lambda at var_lr when it is set."""
-        var_lr = getattr(self.hyperparameters, "var_lr", None)
-        if self.noise_var is None and var_lr is not None:
-            return [{"params": [self.v]}, {"params": [self.lambda_], "lr": var_lr}]
-        return super().parameter_groups()
+    def default_radius(self) -> float:
+        """Return 1 / alpha, the radius of D, for learned variance."""
+        if self.noise_var is not None:
+            return super().default_radius()
+        return 1.0 if self.alpha is None else 1.0 / self.alpha
 
     def build_projection_set(
         self,
@@ -203,7 +174,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         y: ch.Tensor,
         radius: float,
     ) -> delphi.projection_sets.ProjectionSet:
-        """Return D_{r,B} anchored at emp_weight, its r grown until it holds it.
+        """Return the set the descent is kept in, anchored at emp_weight.
+
+        D_{r,B} with its r grown until it holds emp_weight, or for learned
+        variance D around emp_weight's residual variance.
 
         Raises:
             ValueError: If emp_weight lies outside the ball of radius
@@ -217,6 +191,14 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             raise ValueError(
                 f"emp_weight has norm {float(anchor.norm()):.4f} in the scaled "
                 f"coordinates, outside weight_bound {hp.weight_bound}."
+            )
+        if self.noise_var is None:
+            residual_var = self._residual_var(anchor)
+            return delphi.projection_sets.NaturalParameterSet(
+                residual_var,
+                radius,
+                ch.cat([anchor / residual_var, 1.0 / residual_var[None]]),
+                hp.weight_bound,
             )
         variance = float(linear_model.require_fitted(self.noise_var, "noise_var"))
         projection = delphi.projection_sets.ResidualSpectralSet(
@@ -237,13 +219,18 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         return projection
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the Hessian of the known-variance NLL, by default at OLS."""
-        if self.noise_var is None or self.dependent:
+        """Return the Hessian of the NLL, by default at the current weight."""
+        if self.dependent:
             return super().hessian(theta)
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         weight = self.weight.detach() if theta is None else theta
+        weight = weight.reshape(-1, linear_model.require_fitted(self.k, "k"))
+        if self.noise_var is None:
+            return losses.TruncatedGaussianNLLUnknownVariance.hessian(
+                X @ weight[:-1], weight[-1], X, self.phi, self.sampler
+            )
         return losses.TruncatedGaussianNLL.hessian(
-            X @ weight.reshape(-1, linear_model.require_fitted(self.k, "k")),
+            X @ weight,
             X,
             self.phi,
             self.noise_var,
@@ -253,7 +240,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def coefficients(self, params):
         """Split a flat iterate; for learned variance, ``(v, lambda)``."""
         if params is not None and self.noise_var is None:
-            params = params[:-1] / params[-1]
+            natural = params.reshape(-1, linear_model.require_fitted(self.k, "k"))
+            params = (natural[:-1] / natural[-1]).flatten()
         return super().coefficients(params)
 
     def _variance(self, name: str) -> Optional[ch.Tensor]:
@@ -261,7 +249,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if self.noise_var is not None:
             return self.noise_var
         params = self._estimate(name)
-        return None if params is None else 1.0 / params[-1:]
+        if params is None:
+            return None
+        return 1.0 / params.reshape(-1, linear_model.require_fitted(self.k, "k"))[-1]
 
     @property
     def avg_variance_(self) -> Optional[ch.Tensor]:
@@ -287,6 +277,15 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the averaged iterate."""
         return self.avg_variance_
+
+    def _summary_estimates(self) -> list[tuple[str, str]]:
+        rows = super()._summary_estimates()
+        if self.noise_var is None:
+            rows += [
+                (f"{name}_variance_", summary.tensor(self._variance(name)))
+                for name in linear_model.ESTIMATORS
+            ]
+        return rows
 
     def __str__(self):
         """Return a human-readable name for this model."""
