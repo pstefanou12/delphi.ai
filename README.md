@@ -90,6 +90,7 @@ truth.
 | `TruncatedLevy` | [`truncated_levy`](delphi/truncated/distributions/truncated_levy.py) | |
 | `TruncatedLogarithmic` | [`truncated_logarithmic`](delphi/truncated/distributions/truncated_logarithmic.py) | |
 | `TruncatedBetaPrime` | [`truncated_beta_prime`](delphi/truncated/distributions/truncated_beta_prime.py) | |
+| `TruncatedInverseGammaUnknownConcentration` | [`truncated_inverse_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_inverse_gamma_unknown_concentration.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
