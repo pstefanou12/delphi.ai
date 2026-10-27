@@ -120,6 +120,7 @@ def assert_recovers(
     dataset: TruncatedDataset,
     tolerance: float,
     *,
+    variance_tolerance: Optional[float] = None,
     ols_margin: Optional[float] = 0.5,
 ) -> None:
     """Fit a regression model to dataset and check each estimate it returns.
@@ -129,12 +130,15 @@ def assert_recovers(
             ``{avg,ema,final,best}_coef_`` and ``_intercept_``, and
             ``_variance_`` when its ``noise_var`` is None.
         dataset: The sample, with its truth.
-        tolerance: Largest L2 error allowed for (coef, intercept), and for
-            the variance when the model learns it.
+        tolerance: Largest L2 error allowed for (coef, intercept).
+        variance_tolerance: Largest error allowed for the variance when the
+            model learns it; tolerance if None.
         ols_margin: Each estimate's error must also be below this fraction
             of OLS's; None skips the comparison, as without truncation.
     """
     model.fit(dataset.X, dataset.y)
+    if variance_tolerance is None:
+        variance_tolerance = tolerance
     ols = dataset.error(dataset.ols_coef, dataset.ols_intercept)
     names = [*linear_model.ESTIMATORS, ""]
     for name in names:
@@ -152,6 +156,7 @@ def assert_recovers(
             )
         if getattr(model, "noise_var", 1.0) is None:
             variance = float(getattr(model, f"{prefix}variance_"))
-            assert abs(variance - dataset.noise_var) <= tolerance, (
-                f"{prefix}variance_: {variance:.4f} against {dataset.noise_var}"
+            assert abs(variance - dataset.noise_var) <= variance_tolerance, (
+                f"{prefix}variance_: {variance:.4f} against "
+                f"{dataset.noise_var}, beyond {variance_tolerance}"
             )
