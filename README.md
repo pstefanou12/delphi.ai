@@ -89,6 +89,7 @@ truth.
 | `TruncatedGumbel` | [`truncated_gumbel`](delphi/truncated/distributions/truncated_gumbel.py) | |
 | `TruncatedLevy` | [`truncated_levy`](delphi/truncated/distributions/truncated_levy.py) | |
 | `TruncatedLogarithmic` | [`truncated_logarithmic`](delphi/truncated/distributions/truncated_logarithmic.py) | |
+| `TruncatedBetaPrime` | [`truncated_beta_prime`](delphi/truncated/distributions/truncated_beta_prime.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
