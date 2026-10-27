@@ -91,6 +91,7 @@ truth.
 | `TruncatedLogarithmic` | [`truncated_logarithmic`](delphi/truncated/distributions/truncated_logarithmic.py) | |
 | `TruncatedBetaPrime` | [`truncated_beta_prime`](delphi/truncated/distributions/truncated_beta_prime.py) | |
 | `TruncatedInverseGammaUnknownConcentration` | [`truncated_inverse_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_inverse_gamma_unknown_concentration.py) | |
+| `TruncatedInverseWishart` | [`truncated_inverse_wishart`](delphi/truncated/distributions/truncated_inverse_wishart.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 
