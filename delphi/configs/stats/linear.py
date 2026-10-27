@@ -3,10 +3,10 @@
 
 import pydantic
 
-from delphi.configs.base import DelphiConfig
+from delphi.configs.base import StatisticalModelConfig
 
 
-class LinearModelConfig(DelphiConfig):
+class LinearModelConfig(StatisticalModelConfig):
     """Shared configuration for the delphi.stats truncated linear models.
 
     Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in

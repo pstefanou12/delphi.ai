@@ -150,6 +150,10 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Forward pass through the model."""
         return X @ self.weight
 
+    def compute_loss(self, batch, criterion=None) -> ch.Tensor:
+        """Average the truncated NLL, which is per sample, over the batch."""
+        return super().compute_loss(batch, criterion).mean()
+
     def pre_step_hook(self, inp: ch.Tensor) -> None:
         """Pre-step hook to apply L1 regularization gradient.
 

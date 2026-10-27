@@ -68,12 +68,12 @@ class WarmStartConfig(pydantic.BaseModel):
 
 
 class RefinementConfig(pydantic.BaseModel):
-    """Configuration of the refinement, a training stage after the phases.
+    """Configuration of a statistical model's refinement, after its fit.
 
-    Setting ``refine_steps`` enables it. From the last phase's averaged
-    iterate, each step is ``theta - H^-1 grad`` on the full sample, with ``H``
-    the model's ``hessian`` at the current iterate, so the model must train a
-    single parameter tensor and supply its Hessian.
+    Setting ``refine_steps`` enables it. From the fit's averaged iterate,
+    each step is ``theta - H^-1 grad`` on the full sample, with ``H`` the
+    model's ``hessian`` at the current iterate; see
+    ``StatisticalModel.refine``.
 
     Attributes:
         refine_steps: Newton steps; 0 skips the stage.
@@ -85,7 +85,7 @@ class RefinementConfig(pydantic.BaseModel):
     refine_avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
 
 
-class TrainerConfig(WarmStartConfig, RefinementConfig):
+class TrainerConfig(WarmStartConfig):
     """Configuration for the Trainer.
 
     Attributes:
@@ -159,29 +159,6 @@ class TrainerConfig(WarmStartConfig, RefinementConfig):
             update["iterations"] = None
         return self.model_copy(update=update)
 
-    def refinement_overlay(self) -> "TrainerConfig":
-        """Return this config as the refinement's: unit-rate, unscheduled SGD.
-
-        Sets the optimizer fields a ``DelphiConfig`` carries alongside.
-
-        Returns:
-            A copy that takes ``refine_steps`` Newton steps.
-        """
-        return self.model_copy(
-            update={
-                "optimizer": "sgd",
-                "lr": 1.0,
-                "sgd_momentum": 0.0,
-                "weight_decay": 0.0,
-                "scheduler": None,
-                "constant": True,
-                "max_grad_norm": None,
-                "epochs": None,
-                "iterations": self.refine_steps,
-                "avg_burn_in": self.refine_avg_burn_in,
-            }
-        )
-
 
 class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
     """Base for every config the delphi model and trainer consume.
@@ -232,6 +209,34 @@ class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
         if hidden:
             lines.append(f"  ({hidden} defaults not shown; see model_dump())")
         return "\n".join(lines)
+
+
+class StatisticalModelConfig(DelphiConfig, RefinementConfig):
+    """Base config of the statistical models, which may refine their fit."""
+
+    def refinement_overlay(self) -> "StatisticalModelConfig":
+        """Return this config as the refinement's: unit-rate, unscheduled SGD.
+
+        Returns:
+            A copy that takes ``refine_steps`` Newton steps.
+        """
+        return self.model_copy(
+            update={
+                "optimizer": "sgd",
+                "lr": 1.0,
+                "sgd_momentum": 0.0,
+                "weight_decay": 0.0,
+                "scheduler": None,
+                "constant": True,
+                "max_grad_norm": None,
+                "epochs": None,
+                "iterations": self.refine_steps,
+                "avg_burn_in": self.refine_avg_burn_in,
+                "max_phases": 1,
+                "warm_start_iterations": None,
+                "warm_start_epochs": None,
+            }
+        )
 
 
 _ConfigT = TypeVar("_ConfigT", bound=DelphiConfig)

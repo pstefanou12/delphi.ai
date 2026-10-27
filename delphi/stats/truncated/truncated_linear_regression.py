@@ -18,8 +18,9 @@ import torch as ch
 import torch.nn
 
 from delphi import configs
+import delphi.projection_sets
 from delphi.stats import linear_model
-from delphi.stats.truncated import losses, projection_sets
+from delphi.stats.truncated import losses
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.truncated import sampling
 from delphi.utils import helpers
@@ -165,6 +166,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Return Sigma^-1 grad, the SON-SG step direction for dependent data."""
         return ch.linalg.solve(self.Sigma, grad)  # pylint: disable=not-callable,no-member
 
+    def compute_loss(self, batch, criterion=None) -> ch.Tensor:
+        """Average the known-variance NLL, which is per sample, over the batch."""
+        loss = super().compute_loss(batch, criterion)
+        if self.noise_var is None or self.dependent:
+            return loss
+        return loss.mean()
+
     def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         if self.noise_var is None:
             return X @ self.v / self.lambda_
@@ -194,31 +202,37 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,
         radius: float,
-    ) -> projection_sets.ProjectionSet:
-        """Return D_{r,B} anchored at OLS, its r grown until OLS lies inside.
+    ) -> delphi.projection_sets.ProjectionSet:
+        """Return D_{r,B} anchored at emp_weight, its r grown until it holds it.
 
         Raises:
-            ValueError: If OLS lies outside the ball of radius weight_bound.
+            ValueError: If emp_weight lies outside the ball of radius
+                weight_bound.
         """
         if self.dependent:
             return super().build_projection_set(X, y, radius)
-        ols = self.required_untruncated_weight
-        bound = self.hyperparameters.weight_bound
-        if bound is not None and float(ols.norm()) > bound:
+        hp = self.hyperparameters
+        anchor = self.emp_start
+        if hp.weight_bound is not None and float(anchor.norm()) > hp.weight_bound:
             raise ValueError(
-                f"OLS has norm {float(ols.norm()):.4f} in the normalized "
-                f"coordinates, outside weight_bound {bound}."
+                f"emp_weight has norm {float(anchor.norm()):.4f} in the scaled "
+                f"coordinates, outside weight_bound {hp.weight_bound}."
             )
         variance = float(linear_model.require_fitted(self.noise_var, "noise_var"))
-        projection = projection_sets.ResidualSpectralSet(
-            X, y, variance, radius, ols, bound
+        projection = delphi.projection_sets.ResidualSpectralSet(
+            X,
+            y,
+            variance,
+            radius,
+            anchor,
+            hp.weight_bound,
+            bisection_steps=hp.bisection_steps,
+            max_quadratic_entries=hp.max_quadratic_entries,
         )
-        while not projection.contains(ols):
-            projection.radius = cast(float, projection.radius) * (
-                self.hyperparameters.rate
-            )
+        while not projection.contains(anchor):
+            projection.radius = cast(float, projection.radius) * hp.rate
             self.logger.warning(
-                f"OLS lies outside D_{{r,B}}; r -> {projection.radius:.4f}."
+                f"emp_weight lies outside D_{{r,B}}; r -> {projection.radius:.4f}."
             )
         return projection
 
@@ -273,16 +287,6 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the averaged iterate."""
         return self.avg_variance_
-
-    @property
-    def ols_coef_(self) -> Optional[ch.Tensor]:
-        """Coefficients of OLS on the truncated sample."""
-        return self.untruncated_coefficients()[0]
-
-    @property
-    def ols_intercept_(self) -> Optional[ch.Tensor]:
-        """Intercept of OLS on the truncated sample."""
-        return self.untruncated_coefficients()[1]
 
     def __str__(self):
         """Return a human-readable name for this model."""

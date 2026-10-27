@@ -168,6 +168,42 @@ def test_10d_seeds(seed):
     _fit(dataset, 0.13)
 
 
+def test_1d_left_truncation_noise_var_5():
+    dataset = regression.make_dataset(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
+    )
+    _fit(dataset, 0.07)
+
+
+def test_1d_left_truncation_noise_var_10():
+    dataset = regression.make_dataset(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
+    )
+    _fit(dataset, 0.33)
+
+
+def test_10d_left_truncation_noise_var_5():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
+    )
+    _fit(dataset, 0.26)
+
+
+def test_10d_left_truncation_noise_var_10():
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
+    )
+    _fit(dataset, 0.47)
+
+
+def test_10d_union_of_intervals_noise_var_10():
+    phi = _intervals((-2.0, 0.0), (3.0, INF))
+    dataset = regression.make_dataset(
+        ch.ones(10).tolist(), 0.5, phi, 5000, noise_var=10.0
+    )
+    _fit(dataset, 0.40)
+
+
 # left truncated regression with unknown noise variance in one dimension - no intercept
 def test_unknown_variance_truncated_regression_one_dimension_no_intercept():
     ch.manual_seed(SEED)
@@ -722,7 +758,7 @@ def test_truncated_dependent_regression():
     trunc_lds.fit(X, Y)
     # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
     A_ = trunc_lds.coef_.T
-    A0_ = trunc_lds.ols_coef_.T
+    A0_ = trunc_lds.emp_coef_.T
     trunc_spec_norm = helpers.calc_spectral_norm(A - A_)
     emp_spec_norm = helpers.calc_spectral_norm(A - A0_)
 

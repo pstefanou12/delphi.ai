@@ -1,7 +1,7 @@
 # Author: pstefanou12@
-"""Convex sets that projected SGD keeps a truncated linear model's weight in.
+"""Convex sets that projected SGD keeps a model's parameters in.
 
-Each set is built from the training data once and holds a feasible anchor.
+Each set holds a feasible anchor.
 A point outside moves along the segment to the anchor until it re-enters the
 set. That is not the Euclidean projection, but the point it returns lies in
 the set, where the truncated NLL is strongly convex and the stochastic
@@ -14,11 +14,6 @@ from typing import Optional, cast
 
 import torch as ch
 
-# Halvings of the segment; 2^-40 of its length is below float32 precision.
-BISECTION_STEPS = 40
-# Caps the precomputed quadratic form of D_{r,B} at 128 MB of float64.
-QUADRATIC_MAX_ENTRIES = 2**24
-
 
 class ProjectionSet(abc.ABC):
     """A convex set of weights with a feasible anchor.
@@ -26,17 +21,26 @@ class ProjectionSet(abc.ABC):
     Attributes:
         anchor: A weight inside the set, which projections move towards.
         radius: The set's size, for sets that have one.
+        bisection_steps: Halvings of the segment a projection searches.
     """
 
-    def __init__(self, anchor: ch.Tensor, radius: Optional[float] = None):
+    def __init__(
+        self,
+        anchor: ch.Tensor,
+        radius: Optional[float] = None,
+        bisection_steps: int = 40,
+    ):
         """Initialize the set.
 
         Args:
             anchor: A weight inside the set.
             radius: The set's size, or None.
+            bisection_steps: Halvings of the segment a projection searches;
+                40 leaves 2^-40 of it, below float32 precision.
         """
         self.anchor = anchor.detach().clone()
         self.radius = radius
+        self.bisection_steps = bisection_steps
 
     @abc.abstractmethod
     def contains(self, weight: ch.Tensor) -> bool:
@@ -56,7 +60,7 @@ class ProjectionSet(abc.ABC):
             return weight
         inside, outside = 0.0, 1.0
         direction = weight.detach() - self.anchor
-        for _ in range(BISECTION_STEPS):
+        for _ in range(self.bisection_steps):
             middle = (inside + outside) / 2.0
             if self.contains(self.anchor + middle * direction):
                 inside = middle
@@ -100,6 +104,8 @@ class ResidualSpectralSet(ProjectionSet):
         radius: float,
         anchor: ch.Tensor,
         bound: Optional[float] = None,
+        bisection_steps: int = 40,
+        max_quadratic_entries: int = 2**24,
     ):
         """Build D_{r,B} from the training data.
 
@@ -110,8 +116,12 @@ class ResidualSpectralSet(ProjectionSet):
             radius: The set's r.
             anchor: Weight of shape (d, 1) to retract towards.
             bound: The set's B, or None for no ball.
+            bisection_steps: As ``ProjectionSet``.
+            max_quadratic_entries: Largest precomputed quadratic form, in
+                float64 entries; 2^24 is 128 MB. A larger one is skipped for
+                the O(n d^2) test.
         """
-        super().__init__(anchor, radius)
+        super().__init__(anchor, radius, bisection_steps)
         self.bound = bound
         scale = math.sqrt(noise_var)
         chol = ch.linalg.cholesky(X.T @ X)  # pylint: disable=not-callable
@@ -120,7 +130,7 @@ class ResidualSpectralSet(ProjectionSet):
         self._direct: Optional[tuple[ch.Tensor, ch.Tensor]] = None
         self._quadratic: Optional[ch.Tensor] = None
         entries = ((X.size(1) + 1) * X.size(1)) ** 2
-        if (X.size(1) + 1) ** 2 <= X.size(0) and entries <= QUADRATIC_MAX_ENTRIES:
+        if (X.size(1) + 1) ** 2 <= X.size(0) and entries <= max_quadratic_entries:
             whitened, joint = whitened.double(), joint.double()
             self._quadratic = ch.einsum(
                 "np,nq,na,nb->pqab", joint, joint, whitened, whitened

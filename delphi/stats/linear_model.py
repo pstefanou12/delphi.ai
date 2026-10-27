@@ -6,19 +6,14 @@ output for regression and binary classification, k logits for multiclass,
 and k = d for a linear dynamical system.
 """
 
-from __future__ import annotations
-
 import logging
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar
 
 import torch as ch
 import torch.nn
 
 from delphi import configs
-from delphi.delphi import delphi
-
-if TYPE_CHECKING:
-    from delphi import trainer
+from delphi.statistical_model import StatisticalModel
 
 _LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
 _T = TypeVar("_T")
@@ -42,7 +37,7 @@ def require_fitted(value: Optional[_T], name: str) -> _T:
 
 
 class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attributes
-    delphi[_LinearConfigT], Generic[_LinearConfigT]
+    StatisticalModel[_LinearConfigT], Generic[_LinearConfigT]
 ):
     """Abstract base of the delphi linear models.
 
@@ -52,7 +47,7 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
 
     A model fit by the trainer trains ``weight``, of shape (d + 1, k) with an
     intercept, on the design matrix ``design_matrix(X)``. Its estimates are
-    read from the procedure's iterates as ``{avg,ema,final,best}_coef_`` and
+    read from ``final_run``'s iterates as ``{avg,ema,final,best}_coef_`` and
     ``_intercept_``; ``coef_`` and ``intercept_`` are the averaged ones.
 
     Attributes:
@@ -64,7 +59,6 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         covariate_scale: The design matrix, intercept column included, is
             divided by this before the descent, so the estimates are divided
             by it after.
-        procedure: The trainer's record of the fit, or None before it.
     """
 
     # Created by register_buffer below, which pylint and mypy cannot see.
@@ -95,11 +89,10 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         self.k: Optional[int] = None  # pylint: disable=invalid-name
         self.base_radius = 2.0
         self.covariate_scale = 1.0
-        self.procedure: Optional[trainer.ProcedureResult] = None
 
     @property
     def required_emp_weight(self) -> ch.Tensor:
-        """Return the empirical weight, which calc_emp_model must have set.
+        """Return the empirical weight, which _calc_emp_model must have set.
 
         Returns:
             The empirical weight estimate.
@@ -128,18 +121,6 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         """Return ``h_W(x)`` for each row of the design matrix."""
         return X @ self.weight
 
-    def untruncated_fit(self, X: ch.Tensor, y: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
-        """Return the untruncated fit of the weight: OLS unless overridden.
-
-        Args:
-            X: Design matrix, shaped (n, d + 1) with an intercept.
-            y: Targets, shaped (n, k).
-
-        Returns:
-            The weight, shaped (d + 1, k) with an intercept.
-        """
-        return ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
-
     def coefficients(
         self, params: Optional[ch.Tensor]
     ) -> tuple[Optional[ch.Tensor], Optional[ch.Tensor]]:
@@ -161,14 +142,12 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         return weight[:-1].T, weight[-1]
 
     def _estimate(self, name: str) -> Optional[ch.Tensor]:
-        """Return one of the procedure's iterate estimates.
+        """Return one of final_run's iterate estimates.
 
         Raises:
             RuntimeError: If the model has not been fit.
         """
-        if self.procedure is None:
-            raise RuntimeError(f"{type(self).__name__} has not been fit.")
-        return getattr(self.procedure.final, f"{name}_params")
+        return getattr(self.final_run, f"{name}_params")
 
     @property
     def avg_coef_(self) -> Optional[ch.Tensor]:

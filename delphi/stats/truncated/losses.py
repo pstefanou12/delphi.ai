@@ -21,7 +21,7 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
     Per sample, ``(y - h)^2 / (2 sigma^2) + log P(h + e in S)`` with
     ``e ~ N(0, sigma^2)``; its gradient in h is ``(E[z | S] - y) / sigma^2``
     for ``z ~ N(h, sigma^2)``. The sampler estimates ``P`` and ``E[z | S]``
-    at each sample's own h.
+    at each sample's own h. Returns one loss per sample; the caller reduces.
     """
 
     @staticmethod
@@ -34,7 +34,7 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
         sampler: sampling.GaussianSampler,
         eps=1e-5,
     ):
-        """Compute the batch-mean truncated NLL.
+        """Compute each sample's truncated NLL, summed over its outputs.
 
         Args:
             pred: Predictions h, shaped (n, k).
@@ -44,6 +44,9 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
             sampler: Estimates the conditional moments.
             eps: Floor on the survival mass, so a sample phi rejects
                 entirely contributes a finite loss.
+
+        Returns:
+            The losses, shaped (n,).
         """
         noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
         moments = sampler.moments(pred, noise_var, phi)
@@ -51,13 +54,13 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
         ctx.save_for_backward((conditional_mean - targ) / noise_var)
         quadratic = 0.5 * (targ - pred).pow(2) / noise_var
         log_mass = ch.log(moments.mass + eps)
-        return (quadratic + log_mass).sum(-1).mean()
+        return (quadratic + log_mass).sum(-1)
 
     @staticmethod
     def backward(ctx, grad_output):  # pylint: disable=arguments-differ
         """Return the gradient in pred."""
         (grad,) = ctx.saved_tensors
-        return (grad_output * grad / grad.size(0),) + (None,) * 5
+        return (grad_output[:, None] * grad,) + (None,) * 5
 
     @staticmethod
     def hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
@@ -74,7 +77,8 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
 
         Returns:
             The Hessian for the weight of shape (d, k) flattened row-major,
-            shaped (d * k, d * k).
+            shaped (d * k, d * k), in float64: scaled covariates leave its
+            smallest eigenvalue below float32's resolution of its largest.
         """
         with ch.no_grad():
             noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
@@ -90,7 +94,7 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
                 ch.eye(pred.size(1), dtype=ch.float64),
             )
             size = X.size(1) * pred.size(1)
-            return (hess.reshape(size, size) / pred.size(0)).float()
+            return hess.reshape(size, size) / pred.size(0)
 
 
 class TruncatedGaussianNLLUnknownVariance(ch.autograd.Function):  # pylint: disable=abstract-method

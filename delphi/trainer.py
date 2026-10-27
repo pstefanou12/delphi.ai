@@ -95,21 +95,17 @@ class RunResult:  # pylint: disable=too-many-instance-attributes
 
 @dataclasses.dataclass(frozen=True)
 class ProcedureResult:
-    """The record of a whole procedure.
-
-    An optional warm start, then phases, then an optional refinement.
-    """
+    """The record of a whole procedure: an optional warm start, then phases."""
 
     warm_start: Optional[RunResult]
     phases: tuple[RunResult, ...]
     stop_reason: Optional[str]
     seconds: float
-    refinement: Optional[RunResult] = None
 
     @property
     def final(self) -> RunResult:
-        """Return the run the estimates come from: the refinement, if any."""
-        return self.refinement or self.phases[-1]
+        """Return the last phase, which the estimates come from."""
+        return self.phases[-1]
 
     @property
     def iterations(self) -> int:
@@ -222,14 +218,13 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         store: Optional[Store] = None,
         checkpoint: Optional[dict] = None,
     ) -> ProcedureResult:
-        """Train the model: an optional warm start, phases, then a refinement.
+        """Train the model: an optional warm start, then phases until done.
 
         A config with a warm-start budget runs the model's warm-start
         criterion first. Each phase then trains the model's own criterion from
         the current parameters until ``model.post_phase_hook`` stops them or
         ``max_phases`` caps them. A model that never changes its problem keeps
-        the default hook and trains once. A config with ``refine_steps`` then
-        takes that many Newton steps; see ``configs.RefinementConfig``.
+        the default hook and trains once.
 
         Pass ``train_loader=None`` for environment-driven algorithms (RL,
         online EM) where the model's ``train_batch(None)`` generates data
@@ -248,8 +243,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         Raises:
             ValueError: If train_loader has no samples (mapped datasets only),
-                or a checkpoint is given alongside a warm start, or a
-                refinement cannot run; see ``_refine``.
+                or a checkpoint is given alongside a warm start.
         """
         if train_loader is not None:
             try:
@@ -282,15 +276,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         phases, reason = self._train_phases(
             train_loader, val_loader, rand_seed, store, checkpoint
         )
-        refinement = None
-        if hp.refine_steps > 0:
-            refinement = self._refine(phases[-1], train_loader, rand_seed, store)
         self.procedure = ProcedureResult(
             warm_start=warm_start,
             phases=phases,
             stop_reason=reason,
             seconds=time() - started,
-            refinement=refinement,
         )
         self.logger.info(f"stopped after {len(phases)} phase(s): {reason}")
         self.model.post_training_hook()
@@ -323,62 +313,6 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             criterion=self.model.warm_start_criterion,
             hessian=self.model.warm_start_hessian,
         )
-
-    def _refine(
-        self,
-        last: RunResult,
-        train_loader: Optional[DataLoader],
-        rand_seed: int,
-        store: Optional[Store],
-    ) -> RunResult:
-        """Run projected Newton steps on the full sample from last's average.
-
-        Returns:
-            The refinement's record.
-
-        Raises:
-            ValueError: If there is no training loader, the model trains more
-                than one parameter tensor, or it supplies no ``hessian``.
-        """
-        params = [p for p in self.model.parameters() if p.requires_grad]
-        if train_loader is None or len(params) != 1:
-            raise ValueError(
-                "the refinement needs a training loader and a model training "
-                f"one parameter tensor; {self.model} trains {len(params)}."
-            )
-        hessian = getattr(self.model, "hessian", None)
-        if hessian is None:
-            raise ValueError(f"{self.model} has refine_steps but no hessian.")
-        (param,) = params
-        start = last.avg_params
-
-        def from_average() -> None:
-            if start is not None:
-                with ch.no_grad():
-                    param.copy_(start.reshape(param.shape))
-
-        def newton_direction(grad: ch.Tensor) -> ch.Tensor:
-            hess = hessian(param.detach())
-            step = ch.linalg.solve(hess, grad.reshape(-1, 1))  # pylint: disable=not-callable
-            return step.reshape(grad.shape)
-
-        dataset = train_loader.dataset
-        full_batch = DataLoader(
-            dataset,
-            batch_size=len(dataset),  # type: ignore[arg-type]
-            collate_fn=train_loader.collate_fn,
-        )
-        stage = Stage(
-            name="refinement",
-            config=self.hyperparameters.refinement_overlay(),
-            pre_hook=from_average,
-        )
-        # A tensor hook runs after backward, inside optimizer.step's closure.
-        hook = param.register_hook(newton_direction)
-        try:
-            return self._run_stage(stage, full_batch, None, rand_seed, store)
-        finally:
-            hook.remove()
 
     def _train_phases(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,

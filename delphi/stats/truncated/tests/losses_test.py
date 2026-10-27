@@ -32,7 +32,7 @@ def test_truncated_gaussian_nll_matches_the_closed_form_nll():
     loss = losses.TruncatedGaussianNLL.apply(
         pred, targ, _positive, ch.ones(1), _SAMPLER
     )
-    expected = (0.5 * (targ - pred).pow(2) + ch.log(_STANDARD.cdf(pred))).mean()
+    expected = (0.5 * (targ - pred).pow(2) + ch.log(_STANDARD.cdf(pred))).flatten()
     assert ch.allclose(loss, expected, atol=5e-3), (loss, expected)
 
 
@@ -43,7 +43,7 @@ def test_truncated_gaussian_nll_gradient_is_the_conditional_mean_residual():
     loss = losses.TruncatedGaussianNLL.apply(
         pred, targ, _positive, ch.ones(1), _SAMPLER
     )
-    loss.backward()
+    loss.mean().backward()
     conditional_mean = pred.detach() + _mills(pred.detach())
     expected = (conditional_mean - targ) / pred.size(0)
     assert ch.allclose(pred.grad, expected, atol=5e-3), (pred.grad, expected)
@@ -58,7 +58,7 @@ def test_truncated_gaussian_nll_hessian_weights_the_design_by_the_variance():
     )
     mills = _mills(pred)
     variance = 1.0 - pred * mills - mills.pow(2)
-    expected = (design.T * variance.T) @ design / pred.size(0)
+    expected = ((design.T * variance.T) @ design / pred.size(0)).double()
     assert ch.allclose(hessian, expected, atol=1e-2), (hessian, expected)
 
 
@@ -77,6 +77,6 @@ def test_truncated_gaussian_nll_takes_any_sampler():
     loss = losses.TruncatedGaussianNLL.apply(
         pred, targ, _positive, ch.ones(1), _PositiveHalfLine()
     )
-    loss.backward()
+    loss.mean().backward()
     expected = (pred.detach() + _mills(pred.detach()) - targ) / pred.size(0)
     assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)

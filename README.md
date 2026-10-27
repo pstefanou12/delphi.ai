@@ -260,16 +260,6 @@ toward the set. All models live in `delphi.stats`.
 | Model | Module | Example |
 |---|---|---|
 | `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
-| `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
-| `TruncatedLinearRegression`, `dependent=True` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
-| `TruncatedLassoRegression` | [`truncated_lasso_regression`](delphi/stats/truncated/truncated_lasso_regression.py) | |
-
-With the variance known, the fit follows Daskalakis, Gouleakis, Tzamos and
-Zampetakis (2020): projected SGD on the truncated NLL inside their set
-`D_{r,B}`, one shuffled pass from OLS, the iterates averaged, then
-`refine_steps` Newton steps to the empirical MLE. An unknown variance follows
-Daskalakis, Stefanou, Yao and Zampetakis (2022), and dependent data, a linear
-dynamical system observed along one trajectory, Plevrakis (2021).
 
 ```python
 import torch as ch
@@ -295,9 +285,9 @@ print(model.summary())
 
 - **`phi` sees the response**, shaped `(n, m, 1)`, and returns a mask or a
   survival probability.
-- **`alpha`** sets the projection radius `r* = 4 log(2 / alpha) + 7`. Pass
-  `None` when it is unknown: the radius then grows by `rate` each phase until
-  the projection stops binding.
+- **`alpha`** sets the projection radius `r* = 4 log(2 / alpha) + 7`, unless
+  the `radius` hyperparameter is given. Pass `None` when it is unknown: the
+  radius then grows by `rate` each phase until the projection stops binding.
 - **`sampler`** estimates `P(z in S)` and `E[z | S]` for the loss; rejection
   sampling by default.
 
@@ -323,15 +313,10 @@ fit*, which each model describes.
    changes the problem for the next phase, such as widening a projection
    budget. `max_phases` caps the number. A model that never changes its
    problem keeps the default hook and trains once.
-3. **An optional refinement.** With `refine_steps` set, the trainer takes
-   that many Newton steps, `theta - H^-1 grad` on the full sample with `H`
-   the model's `hessian()`, from the last phase's averaged iterate. Any model
-   training one parameter tensor with a Hessian can use it.
-
-Each run, warm start, phase or refinement, is one **stage**: a config, a criterion and
+Each run, warm start or phase, is one **stage**: a config, a criterion and
 that criterion's Hessian, which the Fisher learning-rate schedule sizes its
 steps from. `train_model` returns a `ProcedureResult` with the warm start,
-the phases in order, why they stopped, and the refinement. Each run is a `RunResult`
+the phases in order and why the procedure stopped. Each run is a `RunResult`
 holding the config it ran under, its loss, gradient and iterate histories,
 its stop reason and wall time, and any `metrics` the model reports through
 `run_metrics`. The best, final, moving-average and averaged estimates are
@@ -368,15 +353,17 @@ The truncated distributions add two layers on top of this:
   estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
 
 The truncated linear models follow the same pattern.
-`delphi/stats/linear_model.py`'s `LinearModel` owns the prediction
-`h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
+`delphi/statistical_model.py`'s `StatisticalModel` sits under them: once
+the trainer has fit a model, `refine()` takes `refine_steps` Newton steps
+with its `hessian()`. `delphi/stats/linear_model.py`'s `LinearModel` owns
+the prediction `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
 `best_` estimates of `coef_` and `intercept_`.
 `delphi/stats/truncated/truncated_linear_model.py`'s `TruncatedLinearModel`
 adds the oracle, the radius phases, the projection in `step_post_hook` and
 `summary()`. A model supplies its criterion from
 `delphi/stats/truncated/losses.py` (`TruncatedGaussianNLL` for known-variance
-regression), its Hessian and its projection set
-(`delphi/stats/truncated/projection_sets.py`).
+regression), its Hessian and its projection set from
+`delphi/projection_sets.py`.
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful
 ones: `Identity`, which admits every sample, and `RecoveredSet`, the set an

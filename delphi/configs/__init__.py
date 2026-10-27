@@ -12,6 +12,7 @@ deliberately empty.
 from delphi.configs.base import (
     DelphiConfig,
     RefinementConfig,
+    StatisticalModelConfig,
     TrainerConfig,
     WarmStartConfig,
     _ConfigT,
@@ -91,6 +92,7 @@ __all__ = [
     "TruncatedGammaUnknownConcentrationConfig",
     "TruncatedInverseGaussianConfig",
     "RefinementConfig",
+    "StatisticalModelConfig",
     "WarmStartConfig",
     "WarmStartedExponentialFamilyDistributionConfig",
     "TruncatedLQRConfig",

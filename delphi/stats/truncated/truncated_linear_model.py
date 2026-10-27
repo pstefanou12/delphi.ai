@@ -3,8 +3,8 @@
 
 The model is ``z = h_W(x) + e``, observed only where the oracle ``phi``
 admits it. A subclass names its parameters, its criterion and the convex set
-the descent is kept in; projected SGD through the trainer, the radius phases,
-the estimates and the report live here.
+the descent is kept in; projected SGD through the trainer, the radius phases
+and the report live here.
 """
 
 import abc
@@ -17,8 +17,8 @@ import torch.nn
 import torch.utils.data
 
 from delphi import configs
+import delphi.projection_sets
 from delphi.stats import linear_model
-from delphi.stats.truncated import projection_sets
 import delphi.trainer
 from delphi.truncated.distributions import summary
 from delphi.utils import datasets
@@ -37,20 +37,21 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
 
     Subclasses supply ``criterion_parameters`` and, to constrain the descent
     or refine it, ``build_projection_set`` and ``hessian``; ``refine_steps``
-    runs the trainer's Newton refinement after the phases.
+    adds ``StatisticalModel.refine`` after the descent.
 
-    With alpha known the projection radius is fixed and one phase runs.
-    Without it the radius starts where alpha = 1 would put it and grows by
-    ``rate`` each phase, until a phase never projects or ``max_radius``.
+    The descent starts from ``emp_weight``: the caller's, else OLS. With
+    alpha known the projection radius is fixed and one phase runs. Without
+    it the radius starts at the ``radius`` hyperparameter, or where alpha = 1
+    would put it, and grows by ``rate`` each phase, until a phase never
+    projects or it reaches ``max_radius``.
 
     Attributes:
         phi: Truncation oracle over latents shaped (n, m, k), returning a
             mask or a survival probability.
         alpha: Survival probability lower bound, or None if unknown.
         rand_seed: Seed applied at the start of every run.
-        untruncated_weight: The untruncated fit, in the descent's
-            coordinates; set during fit.
-        projection_set: The set the iterates are kept in.
+        projection_set: The set the iterates are kept in, built on the
+            first phase.
         radius: The projection radius of the current phase.
     """
 
@@ -74,9 +75,9 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             phi: Truncation oracle over latents shaped (n, m, k).
             alpha: Survival probability in (0, 1], or None if unknown.
             fit_intercept: Whether to fit an intercept.
-            emp_weight: Start for the descent in place of the untruncated
-                fit, shaped (d + 1, k) with the intercept as its last row,
-                in the data's units.
+            emp_weight: Start for the descent in place of OLS, shaped
+                (d + 1, k) with the intercept as its last row, in the data's
+                units.
             rand_seed: Seed applied at the start of every run.
 
         Raises:
@@ -90,10 +91,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         self.phi = phi
         self.alpha = alpha
         self.rand_seed = rand_seed
-        self.untruncated_weight: Optional[ch.Tensor] = None
-        self.projection_set: projection_sets.ProjectionSet = (
-            projection_sets.Unconstrained(ch.zeros(1))
-        )
+        self.projection_set: Optional[delphi.projection_sets.ProjectionSet] = None
         self.radius: Optional[float] = None
         self.trainer: Optional[delphi.trainer.Trainer] = None
         self._data: Optional[tuple[ch.Tensor, ch.Tensor]] = None
@@ -105,6 +103,28 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
 
         Called once the parameters exist, with the training data.
         """
+
+    def _calc_emp_model(self, X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
+        """Set emp_weight to OLS unless given, and register the weight from it.
+
+        Args:
+            X: Design matrix in the descent's coordinates, shaped (n, d + 1)
+                with an intercept.
+            y: Targets, shaped (n, k).
+        """
+        if self.emp_weight is None:
+            ols = ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
+            self.emp_weight = ols / self.covariate_scale
+        self.register_weight(self.emp_start)
+
+    @property
+    def emp_start(self) -> ch.Tensor:
+        """emp_weight in the descent's coordinates, shaped (d + 1, k)."""
+        k = linear_model.require_fitted(self.k, "k")
+        start = self.required_emp_weight.reshape(-1, k)
+        if self.fit_intercept and start.size(0) == self.d:
+            start = ch.cat([start, ch.zeros(1, k)])
+        return start * self.covariate_scale
 
     def register_weight(self, weight: ch.Tensor) -> None:
         """Register the trained parameters from a start weight.
@@ -120,7 +140,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,
         radius: float,
-    ) -> projection_sets.ProjectionSet:
+    ) -> delphi.projection_sets.ProjectionSet:
         """Return the convex set the descent is kept in.
 
         Args:
@@ -131,16 +151,8 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         Returns:
             The whole space, unless a subclass constrains it.
         """
-        del X, y, radius
-        return projection_sets.Unconstrained(self.required_untruncated_weight)
-
-    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the Hessian of the criterion, for step sizes and Newton.
-
-        Raises:
-            NotImplementedError: Unless a subclass supplies it.
-        """
-        raise NotImplementedError(f"{type(self).__name__} has no hessian().")
+        del X, y
+        return delphi.projection_sets.Unconstrained(self.emp_start, radius)
 
     def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples.
@@ -166,15 +178,15 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             self.covariate_scale = float(X.abs().max()) * math.sqrt(X.size(1))
             X = X / self.covariate_scale  # pylint: disable=invalid-name
         self._data = (X, y)
-        self.untruncated_weight = self.untruncated_fit(X, y)
-        self.register_weight(self._start_weight())
+        self._calc_emp_model(X, y)
         self.criterion_params = self.criterion_parameters(X, y)
-        self.radius = None
+        self.projection_set, self.radius = None, None
         self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         train_loader, val_loader = self._loaders(X, y, self.hyperparameters)
         self.procedure = self.trainer.train_model(
             train_loader, val_loader, rand_seed=self.rand_seed
         )
+        self.refine(train_loader, rand_seed=self.rand_seed)
         return self
 
     @staticmethod
@@ -191,16 +203,6 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             raise ValueError(
                 f"need more samples than dimensions; X is {tuple(X.size())}."
             )
-
-    def _start_weight(self) -> ch.Tensor:
-        """Return emp_weight in the descent's coordinates, else the fit."""
-        if self.emp_weight is None:
-            return self.required_untruncated_weight
-        k = linear_model.require_fitted(self.k, "k")
-        start = self.emp_weight.reshape(-1, k)
-        if self.fit_intercept and start.size(0) == self.d:
-            start = ch.cat([start, ch.zeros(1, k)])
-        return start * self.covariate_scale
 
     def _loaders(self, X: ch.Tensor, y: ch.Tensor, config):  # pylint: disable=invalid-name
         """Return the training loader, and a validation loader if val > 0.
@@ -219,29 +221,35 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         return train_loader, None
 
     def pre_phase_hook(self) -> None:
-        """Set the phase's projection radius, building the set the first time."""
+        """Build the projection set on the first phase, resize it after."""
         self._projections = 0
-        if self.radius is not None:
+        if self.projection_set is not None:
             self.projection_set.radius = self.radius
             return
-        alpha = 1.0 if self.alpha is None else self.alpha
-        self.radius = 4.0 * math.log(2.0 / alpha) + 7.0
-        if self.hyperparameters.projection_set == "default":
+        hp = self.hyperparameters
+        radius = hp.radius
+        if radius is None:
+            alpha = 1.0 if self.alpha is None else self.alpha
+            radius = 4.0 * math.log(2.0 / alpha) + 7.0
+        if hp.projection_set == "default":
             X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-            self.projection_set = self.build_projection_set(X, y, self.radius)
-            self.radius = self.projection_set.radius
+            self.projection_set = self.build_projection_set(X, y, radius)
         else:
-            self.projection_set = projection_sets.Unconstrained(
-                self.required_untruncated_weight
+            self.projection_set = delphi.projection_sets.Unconstrained(
+                self.emp_start, radius
             )
+        self.radius = self.projection_set.radius
         if "weight" in self._parameters:
             with ch.no_grad():
                 self.weight.copy_(self.projection_set.project(self.weight))
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
         """Project the weight back onto the projection set."""
+        projection_set = linear_model.require_fitted(
+            self.projection_set, "projection_set"
+        )
         with ch.no_grad():
-            projected = self.projection_set.project(self.weight)
+            projected = projection_set.project(self.weight)
             if projected is not self.weight:
                 self._projections += 1
                 self.weight.copy_(projected)
@@ -275,25 +283,17 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         with ch.no_grad(), ch.random.fork_rng():
             ch.manual_seed(self.rand_seed)
-            return {
-                "loss": self.required_criterion(  # pylint: disable=not-callable
-                    self(X), y, *self.criterion_params
-                )
-            }
+            return {"loss": self.compute_loss((X, y)).sum()}
 
     @property
-    def required_untruncated_weight(self) -> ch.Tensor:
-        """The untruncated fit, which fit computes first."""
-        return linear_model.require_fitted(
-            self.untruncated_weight, "untruncated_weight"
-        )
+    def emp_coef_(self) -> Optional[ch.Tensor]:
+        """Coefficients of emp_weight, the descent's start."""
+        return linear_model.LinearModel.coefficients(self, self.emp_start.flatten())[0]
 
-    def untruncated_coefficients(
-        self,
-    ) -> tuple[Optional[ch.Tensor], Optional[ch.Tensor]]:
-        """Return the untruncated fit's coefficients and intercept."""
-        weight = self.required_untruncated_weight.flatten()
-        return linear_model.LinearModel.coefficients(self, weight)
+    @property
+    def emp_intercept_(self) -> Optional[ch.Tensor]:
+        """Intercept of emp_weight, the descent's start."""
+        return linear_model.LinearModel.coefficients(self, self.emp_start.flatten())[1]
 
     @property
     def theta(self) -> ch.Tensor:
@@ -338,20 +338,19 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             (
                 "descent",
                 f"{procedure.iterations} steps over {len(procedure.phases)} "
-                f"phase(s); {procedure.stop_reason}",
+                f"phase(s), {procedure.seconds:.2f}s; {procedure.stop_reason}",
             )
         ]
-        if procedure.refinement is not None:
+        if self.refinement is not None:
             rows.append(
                 (
                     "refinement",
-                    f"{procedure.refinement.iterations} Newton steps; "
-                    f"{procedure.refinement.stop_reason}",
+                    f"{self.refinement.iterations} Newton steps, "
+                    f"{self.refinement.seconds:.2f}s",
                 )
             )
-        rows.append(("seconds", f"{procedure.seconds:.2f}"))
-        last = procedure.phases[-1]
-        rows.append(("projection radius", f"{last.metrics['radius']:.4f}"))
+        radius = "none" if self.radius is None else f"{self.radius:.4f}"
+        rows.append(("projection radius", radius))
         rows.append(("projections", str(sum(procedure.series("projections")))))
         return rows
 
@@ -368,8 +367,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
                         summary.tensor(getattr(self, f"{name}_intercept_")),
                     )
                 )
-        coef, intercept = self.untruncated_coefficients()
-        rows.append(("OLS coef", summary.tensor(coef)))
-        if intercept is not None:
-            rows.append(("OLS intercept", summary.tensor(intercept)))
+        rows.append(("emp_coef_", summary.tensor(self.emp_coef_)))
+        if self.fit_intercept:
+            rows.append(("emp_intercept_", summary.tensor(self.emp_intercept_)))
         return rows
