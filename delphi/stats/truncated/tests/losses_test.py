@@ -1,16 +1,21 @@
 # Author: pstefanou12@
-"""Tests for the truncated regression losses against closed forms.
+"""Tests for the truncated regression and classification losses.
 
 With unit noise and the set ``z > 0``, a prediction h has survival mass
 ``Phi(h)``, and ``z | S`` is a normal truncated at ``a = -h`` with inverse
 Mills ratio ``lambda = pdf(a) / (1 - Phi(a))``, mean ``h + lambda`` and
-variance ``1 + a lambda - lambda^2``.
+variance ``1 + a lambda - lambda^2``. The classification losses are checked
+against the closed-form label masses of an interval and their derivatives.
 """
 
+import math
+
+import pytest
 import torch as ch
 import torch.distributions
 
 from delphi.stats.truncated import losses
+from delphi.stats.truncated.tests import classification
 from delphi.truncated import sampling
 
 _SAMPLER = sampling.GaussianRejectionSampler(num_samples=200_000)
@@ -79,4 +84,83 @@ def test_truncated_gaussian_nll_takes_any_sampler():
     )
     loss.mean().backward()
     expected = (pred.detach() + _mills(pred.detach()) - targ) / pred.size(0)
+    assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)
+
+
+# The classifiers' latent is kept where z > -1; label 1 is z >= 0.
+_ABOVE_MINUS_ONE = classification.Truncation((-1.0, math.inf, 1.0))
+_LATENT_SAMPLER = sampling.StratifiedLatentSampler(num_samples=100_000)
+_LABEL_LOSSES = [
+    (losses.TruncatedProbitNLL, sampling.GAUSSIAN_NOISE),
+    (losses.TruncatedBCE, sampling.LOGISTIC_NOISE),
+]
+
+
+def _closed_form_nll(pred: ch.Tensor, targ: ch.Tensor, noise) -> ch.Tensor:
+    """Return each sample's truncated label NLL from the closed-form masses."""
+    mass = _ABOVE_MINUS_ONE.label_mass(pred.double(), noise)
+    return ch.log(mass.sum(1)) - ch.log(mass.gather(1, targ.long()).flatten())
+
+
+@pytest.mark.parametrize("loss, noise", _LABEL_LOSSES)
+def test_truncated_label_nll_matches_the_closed_form_nll(loss, noise):
+    ch.manual_seed(0)
+    pred = ch.tensor([[-1.0], [0.0], [1.5]])
+    targ = ch.tensor([[0.0], [1.0], [0.0]])
+    value = loss.apply(pred, targ, _ABOVE_MINUS_ONE, _LATENT_SAMPLER)
+    expected = _closed_form_nll(pred, targ, noise).float()
+    assert ch.allclose(value, expected, atol=5e-3), (value, expected)
+
+
+@pytest.mark.parametrize("loss, noise", _LABEL_LOSSES)
+def test_truncated_label_nll_gradient_matches_the_closed_form_gradient(loss, noise):
+    ch.manual_seed(0)
+    pred = ch.tensor([[-1.0], [0.0], [1.5]], requires_grad=True)
+    targ = ch.tensor([[0.0], [1.0], [0.0]])
+    loss.apply(pred, targ, _ABOVE_MINUS_ONE, _LATENT_SAMPLER).sum().backward()
+    exact = pred.detach().double().requires_grad_()
+    _closed_form_nll(exact, targ, noise).sum().backward()
+    assert ch.allclose(pred.grad, exact.grad.float(), atol=5e-3), (
+        pred.grad,
+        exact.grad,
+    )
+
+
+@pytest.mark.parametrize("loss, noise", _LABEL_LOSSES)
+def test_truncated_label_nll_hessian_is_the_fisher_information(loss, noise):
+    ch.manual_seed(0)
+    pred = ch.tensor([[-1.0], [0.0], [1.5]])
+    design = ch.tensor([[1.0, 0.0], [0.5, 1.0], [-1.0, 2.0]])
+    hessian = loss.hessian(pred, design, _ABOVE_MINUS_ONE, _LATENT_SAMPLER)
+    information = []
+    for label in (0.0, 1.0):
+        exact = pred.double().requires_grad_()
+        nll = _closed_form_nll(exact, ch.full_like(pred, label), noise)
+        (score,) = ch.autograd.grad(nll.sum(), exact)
+        information.append(ch.exp(-nll.detach()) * score.flatten().pow(2))
+    weight = sum(information)
+    expected = (design.double().T * weight) @ design.double() / pred.size(0)
+    assert ch.allclose(hessian, expected, atol=5e-3), (hessian, expected)
+
+
+class _UntruncatedLogistic(sampling.LatentSampler):
+    """Exact per-label moments of a logistic latent with nothing truncated.
+
+    ``2 sigma(e) - 1`` given ``e >= -h`` averages to ``sigma(-h)``, and
+    given ``e < -h`` to ``-sigma(h)``.
+    """
+
+    def label_moments(self, loc, noise, phi):
+        loc = loc.double()
+        return sampling.LabelMoments(
+            mass=ch.cat([ch.sigmoid(-loc), ch.sigmoid(loc)], dim=1),
+            score=ch.cat([-ch.sigmoid(loc), ch.sigmoid(-loc)], dim=1),
+        )
+
+
+def test_truncated_bce_takes_any_sampler():
+    pred = ch.tensor([[-1.0], [0.0], [1.5]], requires_grad=True)
+    targ = ch.tensor([[0.0], [1.0], [0.0]])
+    losses.TruncatedBCE.apply(pred, targ, None, _UntruncatedLogistic()).sum().backward()
+    expected = ch.sigmoid(pred.detach()) - targ
     assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)

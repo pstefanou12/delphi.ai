@@ -5,14 +5,10 @@ import math
 from typing import cast
 
 import torch as ch
-from torch import sigmoid as sig  # pylint: disable=no-name-in-module
 import torch.distributions
 import torch.nn
 
 from delphi.truncated import sampling
-from delphi.utils import helpers
-
-gumbel = torch.distributions.Gumbel(0, 1)
 
 
 class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-method
@@ -244,104 +240,6 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
         )
 
 
-class TruncatedBCE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated binary cross entropy gradient for truncated binary classification."""
-
-    @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
-        num_samples=1000,
-        eps=1e-5,  # pylint: disable=invalid-name
-    ):
-        """Compute truncated BCE loss.
-
-        Args:
-            pred: Size (batch_size, 1) regression model predictions.
-            targ: Size (batch_size, 1) regression target values.
-            phi: Dependent variable membership oracle.
-            num_samples: Number of samples per batch element in rejection
-                sampling.
-            eps: Denominator error constant to avoid divide by zero.
-        """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        rand_noise = helpers.logistic.sample(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised >= 0
-        filtered = phi(noised)
-        mask = (noised_labs).eq(targ)
-        filtered = filtered.float()
-        ctx.save_for_backward(mask, filtered, rand_noise)
-        ctx.eps = eps
-        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + ctx.eps)
-        return -ch.log(prob_est) / pred.size(0)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated BCE w.r.t. pred."""
-        mask, filtered, rand_noise = ctx.saved_tensors
-
-        avg = (
-            2
-            * (sig(rand_noise) * mask * filtered).sum(0)
-            / ((mask * filtered).sum(0) + ctx.eps)
-        )
-        norm_const = (2 * sig(rand_noise) * filtered).sum(0) / (
-            filtered.sum(0) + ctx.eps
-        )
-        return -(avg - norm_const) / rand_noise.size(1), None, None, None, None
-
-
-class TruncatedProbitMLE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated probit MLE gradient for binary classification."""
-
-    @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
-        num_samples=1000,
-        eps=1e-5,  # pylint: disable=invalid-name
-    ):
-        """Compute truncated probit MLE loss.
-
-        Args:
-            pred: Size (batch_size, 1) regression model predictions.
-            targ: Size (batch_size, 1) regression target values.
-            phi: Dependent variable membership oracle.
-            num_samples: Number of samples per batch element in rejection
-                sampling.
-            eps: Denominator error constant to avoid divide by zero.
-        """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        rand_noise = ch.randn(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised >= 0
-        mask = noised_labs.eq(targ)
-        filtered = phi(noised)
-
-        mle = (filtered * mask).sum(0) + eps
-        trunc_const = (filtered).sum(0)
-
-        ctx.save_for_backward(rand_noise, filtered, mask)
-        ctx.eps = eps
-
-        return -ch.log(mle / (trunc_const + eps)) / pred.size(0)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated probit MLE w.r.t. pred."""
-        rand_noise, filtered, mask = ctx.saved_tensors
-        nll = (mask * filtered * rand_noise).sum(dim=0) / (
-            (mask * filtered).sum(dim=0) + ctx.eps
-        )
-        const = (rand_noise * filtered).sum(dim=0) / (filtered.sum(dim=0) + ctx.eps)
-        return -(nll - const) / rand_noise.size(1), None, None, None, None
-
-
 class GumbelCE(ch.autograd.Function):  # pylint: disable=abstract-method
     """Gumbel cross-entropy gradient for multiclass classification."""
 
@@ -375,8 +273,59 @@ class GumbelCE(ch.autograd.Function):  # pylint: disable=abstract-method
         return -avg, None, None, None
 
 
-class TruncatedCE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated cross-entropy gradient for truncated multiclass classification."""
+def _label_nll(
+    pred: ch.Tensor,
+    targ: ch.Tensor,
+    phi,
+    noise: sampling.LatentNoise,
+    sampler: sampling.LatentSampler,
+    eps: float,
+) -> tuple[ch.Tensor, ch.Tensor]:
+    """Return each sample's truncated label NLL and its gradient in pred."""
+    moments = sampler.label_moments(pred, noise, phi)
+    label = targ.long()
+    label_prob = moments.mass / moments.mass.sum(1, keepdim=True).clamp_min(1e-300)
+    mean_score = (label_prob * moments.score).sum(1, keepdim=True)
+    loss = -ch.log(label_prob.gather(1, label).clamp_min(eps))
+    grad = mean_score - moments.score.gather(1, label)
+    return loss.flatten().to(pred.dtype), grad.to(pred.dtype)
+
+
+def _label_fisher(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    pred: ch.Tensor,
+    X: ch.Tensor,  # pylint: disable=invalid-name
+    phi,
+    noise: sampling.LatentNoise,
+    sampler: sampling.LatentSampler,
+) -> ch.Tensor:
+    """Return the batch-mean Fisher information of the label NLL in the weight."""
+    with ch.no_grad():
+        moments = sampler.label_moments(pred, noise, phi)
+        label_prob = moments.mass / moments.mass.sum(1, keepdim=True).clamp_min(1e-300)
+        mean_score = (label_prob * moments.score).sum(1, keepdim=True)
+        info = (label_prob * (moments.score - mean_score).pow(2)).sum(1)
+        design = X.double()
+        return (design.T * info) @ design / pred.size(0)
+
+
+class _TruncatedLabelNLL(ch.autograd.Function):  # pylint: disable=abstract-method
+    """Truncated NLL of a binary label ``1{h + e >= 0}`` seen through phi.
+
+    Per sample, ``-log P(label y | z in S)`` for ``z = h + e``; its gradient
+    in h is ``E[s(e) | S] - E[s(e) | S, y]``, for the noise's score s
+    (Ilyas, Zampetakis and Daskalakis (2020), (5)). A subclass fixes the
+    noise. Returns one loss per sample; the caller reduces.
+    """
+
+    @staticmethod
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the gradient in pred."""
+        (grad,) = ctx.saved_tensors
+        return (grad_output[:, None] * grad,) + (None,) * 4
+
+
+class TruncatedProbitNLL(_TruncatedLabelNLL):  # pylint: disable=abstract-method
+    """Truncated probit NLL: ``e ~ N(0, 1)``, score ``s(e) = e``."""
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
@@ -384,45 +333,47 @@ class TruncatedCE(ch.autograd.Function):  # pylint: disable=abstract-method
         pred,
         targ,
         phi,
-        num_samples=5000,
-        eps=1e-5,  # pylint: disable=invalid-name
+        sampler: sampling.LatentSampler,
+        eps=1e-5,
     ):
-        """Compute truncated cross-entropy loss.
+        """Compute each sample's truncated NLL.
 
         Args:
-            pred: Size (batch_size, 1) regression model predictions.
-            targ: Size (batch_size, 1) regression target values.
-            phi: Dependent variable membership oracle.
-            num_samples: Number of samples per batch element in rejection
-                sampling.
-            eps: Denominator error constant to avoid divide by zero.
+            pred: Latent means h, shaped (n, 1).
+            targ: Labels in {0, 1}, shaped (n, 1).
+            phi: Truncation oracle over latents shaped (n, m, 1).
+            sampler: Estimates the per-label moments.
+            eps: Floor on ``P(label y | S)``, so a sample the iterate deems
+                impossible contributes a finite loss.
+
+        Returns:
+            The losses, shaped (n,).
         """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        rand_noise = gumbel.sample(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised.argmax(-1, keepdim=True)
-        filtered = phi(noised).float()
-        mask = (noised_labs).eq(targ)
-        ctx.save_for_backward(mask, filtered, rand_noise, pred)
-        ctx.eps = eps
-        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + eps)
-        return -ch.log(prob_est) / pred.size(0)
+        loss, grad = _label_nll(pred, targ, phi, sampling.GAUSSIAN_NOISE, sampler, eps)
+        ctx.save_for_backward(grad)
+        return loss
 
     @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated CE w.r.t. pred."""
-        mask, filtered, rand_noise, pred = ctx.saved_tensors
-        inner_exp = 1 - ch.exp(-rand_noise)
-        nll = (inner_exp * mask * filtered).sum(0) / (
-            (mask * filtered).sum(0) + ctx.eps
-        )
-        const = (inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
+    def hessian(pred, X, phi, sampler: sampling.LatentSampler):  # pylint: disable=invalid-name
+        """Return the batch-mean Fisher information in the weight.
 
-        return (-nll + const) / pred.size(0), None, None, None, None
+        The expected Hessian over the label, which unlike the observed one
+        is positive semi-definite everywhere.
+
+        Args:
+            pred: Latent means h, shaped (n, 1).
+            X: Design matrix, shaped (n, d).
+            phi: As ``forward``.
+            sampler: As ``forward``.
+
+        Returns:
+            The (d, d) information in float64.
+        """
+        return _label_fisher(pred, X, phi, sampling.GAUSSIAN_NOISE, sampler)
 
 
-class TruncatedCELabels(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated cross-entropy gradient using label filtering."""
+class TruncatedBCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
+    """Truncated logistic NLL: ``e ~ Logistic(0, 1)``, ``s(e) = 2 sigma(e) - 1``."""
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
@@ -430,37 +381,15 @@ class TruncatedCELabels(ch.autograd.Function):  # pylint: disable=abstract-metho
         pred,
         targ,
         phi,
-        num_samples=5000,
-        eps=1e-5,  # pylint: disable=invalid-name
+        sampler: sampling.LatentSampler,
+        eps=1e-5,
     ):
-        """Compute truncated cross-entropy loss with label filtering.
-
-        Args:
-            pred: Size (batch_size, 1) regression model predictions.
-            targ: Size (batch_size, 1) regression target values.
-            phi: Dependent variable membership oracle.
-            num_samples: Number of samples per batch element in rejection
-                sampling.
-            eps: Denominator error constant to avoid divide by zero.
-        """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        rand_noise = gumbel.sample(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised.argmax(-1, keepdim=True)
-        filtered = phi(noised, targ).float()
-        mask = (noised_labs).eq(targ)
-        ctx.save_for_backward(mask, filtered, rand_noise, pred)
-        ctx.eps = eps
-        prob_est = (mask * filtered + eps).sum(0) / (filtered.sum(0) + eps)
-        return -ch.log(prob_est) / pred.size(0)
+        """Compute each sample's truncated NLL; as ``TruncatedProbitNLL``."""
+        loss, grad = _label_nll(pred, targ, phi, sampling.LOGISTIC_NOISE, sampler, eps)
+        ctx.save_for_backward(grad)
+        return loss
 
     @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of truncated CE with labels w.r.t. pred."""
-        mask, filtered, rand_noise, pred = ctx.saved_tensors
-        inner_exp = 1 - ch.exp(-rand_noise)
-        nll = (inner_exp * mask * filtered).sum(0) / (
-            (mask * filtered).sum(0) + ctx.eps
-        )
-        const = (inner_exp * filtered).sum(0) / (filtered.sum(0) + ctx.eps)
-        return (-nll + const) / pred.size(0), None, None, None, None
+    def hessian(pred, X, phi, sampler: sampling.LatentSampler):  # pylint: disable=invalid-name
+        """Return the Fisher information; as ``TruncatedProbitNLL.hessian``."""
+        return _label_fisher(pred, X, phi, sampling.LOGISTIC_NOISE, sampler)
