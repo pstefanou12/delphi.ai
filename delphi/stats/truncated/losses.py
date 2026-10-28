@@ -312,9 +312,9 @@ class _TruncatedLabelNLL(ch.autograd.Function):  # pylint: disable=abstract-meth
     """Truncated NLL of a binary label ``1{h + e >= 0}`` seen through phi.
 
     Per sample, ``-log P(label y | z in S)`` for ``z = h + e``; its gradient
-    in h is ``E[s(e) | S] - E[s(e) | S, y]``, for the noise's score s
-    (Ilyas, Zampetakis and Daskalakis (2020), (5)). A subclass fixes the
-    noise. Returns one loss per sample; the caller reduces.
+    in h is ``E[s(e) | S] - E[s(e) | S, y]``, for the noise's score s. A
+    subclass fixes the noise. Returns one loss per sample; the caller
+    reduces.
     """
 
     @staticmethod

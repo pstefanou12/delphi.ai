@@ -11,9 +11,8 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 class TruncatedClassificationConfig(TruncatedLinearModelConfig):
     """Configuration shared by truncated probit and logistic regression.
 
-    The descent is projected SGD in R_alpha with steps of 1 / (lambda i)
-    from the Fisher schedule and every iterate averaged, as Ilyas,
-    Zampetakis and Daskalakis (2020), Theorem 1; Fisher scoring steps on the
+    The descent is projected SGD with steps of 1 / (lambda i) from the
+    Fisher schedule and every iterate averaged; Fisher scoring steps on the
     full sample then take that average to the empirical MLE.
 
     Attributes:

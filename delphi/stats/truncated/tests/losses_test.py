@@ -88,7 +88,7 @@ def test_truncated_gaussian_nll_takes_any_sampler():
 
 
 # The classifiers' latent is kept where z > -1; label 1 is z >= 0.
-_ABOVE_MINUS_ONE = classification.Truncation((-1.0, math.inf, 1.0))
+_ABOVE_MINUS_ONE = classification.PiecewiseSurvival((-1.0, math.inf, 1.0))
 _LATENT_SAMPLER = sampling.StratifiedLatentSampler(num_samples=100_000)
 _LABEL_LOSSES = [
     (losses.TruncatedProbitNLL, sampling.GAUSSIAN_NOISE),

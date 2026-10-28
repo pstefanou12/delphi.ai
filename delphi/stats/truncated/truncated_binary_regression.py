@@ -1,12 +1,9 @@
 # Author: pstefanou12@
 """Truncated binary regression: a latent-variable classifier seen through phi.
 
-Ilyas, Zampetakis and Daskalakis (2020): the latent ``z = w^T x + b + e``
-labels the sample ``y = 1{z >= 0}``, and the pair (x, y) is kept with
-probability ``phi(z)``. Projected SGD on the truncated NLL in R_alpha, the
-latent means at which every sample keeps mass alpha on each label, then
-Fisher scoring to the empirical MLE. Probit and logistic regression differ
-only in the noise e.
+The latent ``z = w^T x + b + e`` labels the sample ``y = 1{z >= 0}``, and
+the pair (x, y) is kept with probability ``phi(z)``. Probit and logistic
+regression differ only in the noise e.
 """
 
 from collections.abc import Callable
@@ -30,6 +27,9 @@ _ClassificationConfigT = TypeVar(
 # leaves out the start never will.
 _MAX_START_RADIUS = 700.0
 _NAIVE_ITERATIONS = 200
+# Fraction of the segment a LatentIntervalSet projection stops short of
+# its boundary.
+_INTERIOR = 1e-6
 
 
 class TruncatedBinaryRegression(
@@ -190,9 +190,7 @@ class TruncatedBinaryRegression(
         """
         del y
         anchor = self.emp_start
-        projection = delphi.projection_sets.LatentIntervalSet(
-            X, anchor, radius, self.latent_interval
-        )
+        projection = LatentIntervalSet(X, anchor, radius, self.latent_interval)
         while not projection.contains(anchor):
             if radius >= _MAX_START_RADIUS:
                 raise ValueError(
@@ -227,3 +225,64 @@ class TruncatedBinaryRegression(
             X: Covariates, shaped (n, d).
         """
         return (super().predict(X) >= 0).float()
+
+
+class LatentIntervalSet(delphi.projection_sets.ProjectionSet):
+    """Weights whose latent means ``x_i^T w`` all lie in one interval.
+
+    The interval is a function of the radius, recomputed when it changes;
+    R_alpha, the weights at which every sample keeps mass alpha on each
+    label, takes this form. The projection is exact along the segment to
+    the anchor, so it skips the bisection.
+
+    Attributes:
+        lower: The interval's lower end at the current radius.
+        upper: The interval's upper end at the current radius.
+    """
+
+    def __init__(
+        self,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        anchor: ch.Tensor,
+        radius: float,
+        interval: Callable[[float], tuple[float, float]],
+    ):
+        """Build the set over the training covariates.
+
+        Args:
+            X: Design matrix, shaped (n, d).
+            anchor: Weight of shape (d, 1) to retract towards.
+            radius: The set's size, which interval maps to its bounds.
+            interval: Maps a radius to the (lower, upper) bounds on every
+                latent mean; lower > upper describes the empty set.
+        """
+        self._design = X.double()
+        self._interval = interval
+        self.lower, self.upper = interval(radius)
+        super().__init__(anchor, radius)
+
+    @property
+    def radius(self) -> Optional[float]:
+        """The set's size; setting it recomputes the interval."""
+        return self._radius
+
+    @radius.setter
+    def radius(self, value: Optional[float]) -> None:
+        self._radius = value
+        if value is not None:
+            self.lower, self.upper = self._interval(value)
+
+    def contains(self, weight: ch.Tensor) -> bool:
+        latent = self._design @ weight.detach().double().reshape(-1, 1)
+        return bool(((latent >= self.lower) & (latent <= self.upper)).all())
+
+    def project(self, weight: ch.Tensor) -> ch.Tensor:
+        if self.contains(weight):
+            return weight
+        start = self._design @ self.anchor.double().reshape(-1, 1)
+        step = self._design @ (weight.detach() - self.anchor).double().reshape(-1, 1)
+        bound = ch.where(step > 0, self.upper, self.lower)
+        ratio = ch.where(step != 0, (bound - start) / step, math.inf)
+        # Inside the boundary, so rounding cannot leave the result outside.
+        reach = (ratio.min().clamp(0.0, 1.0) * (1.0 - _INTERIOR)).item()
+        return self.anchor + reach * (weight.detach() - self.anchor)

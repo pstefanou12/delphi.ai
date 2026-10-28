@@ -2,11 +2,9 @@
 """Test harness for the truncated binary classifiers.
 
 The latent ``z = w^T x + b + e`` labels a sample ``y = 1{z >= 0}``, kept
-with probability ``phi(z)`` (Ilyas, Zampetakis and Daskalakis (2020),
-Definition 1). ``make_dataset`` draws such a sample with known parameters,
-for a ``Truncation`` whose label masses have a closed form, so it also
-carries the exact truncated MLE; ``assert_recovers`` fits a model to it and
-checks every estimate the model returns against the truth.
+with probability ``phi(z)``. ``simulate`` draws such a sample with known
+parameters, and ``assert_recovers`` fits a model to it and checks every
+estimate the model returns against the truth.
 """
 
 from collections.abc import Sequence
@@ -15,7 +13,6 @@ import math
 from typing import Optional
 
 import torch as ch
-import torch.optim
 
 from delphi.stats import linear_model
 from delphi.truncated import sampling
@@ -24,8 +21,11 @@ from delphi.truncated import sampling
 _BLOCK = 100_000
 
 
-class Truncation:
-    """A survival probability constant on each of a few disjoint intervals.
+class PiecewiseSurvival:
+    """A truncation oracle keeping a latent with a probability per interval.
+
+    The probability is constant on each of a few disjoint intervals and zero
+    elsewhere, so each label's survival mass has a closed form.
 
     Attributes:
         pieces: (low, high, probability) per interval.
@@ -83,63 +83,8 @@ def _interval_mass(start, end, latent, noise) -> ch.Tensor:
     return ch.where(latent < start, upper_tail, lower_tail)
 
 
-def truncated_nll(
-    weight: ch.Tensor,
-    X: ch.Tensor,  # pylint: disable=invalid-name
-    y: ch.Tensor,
-    phi: Truncation,
-    noise: sampling.LatentNoise,
-) -> ch.Tensor:
-    """Return the mean exact truncated NLL at weight, (coef, intercept).
-
-    Args:
-        weight: Coefficients then intercept, shaped (d + 1, 1).
-        X: Covariates, shaped (n, d).
-        y: Labels, shaped (n, 1).
-        phi: The truncation.
-        noise: The law of e.
-    """
-    design = ch.cat([X, ch.ones(X.size(0), 1)], dim=1).double()
-    mass = phi.label_mass(design @ weight, noise)
-    observed = mass.gather(1, y.long())
-    return (ch.log(mass.sum(1, keepdim=True)) - ch.log(observed)).mean()
-
-
-def exact_mle(
-    X: ch.Tensor,  # pylint: disable=invalid-name
-    y: ch.Tensor,
-    phi: Truncation,
-    noise: sampling.LatentNoise,
-) -> ch.Tensor:
-    """Return the minimizer of ``truncated_nll``, shaped (d + 1,).
-
-    Args:
-        X: Covariates, shaped (n, d).
-        y: Labels, shaped (n, 1).
-        phi: The truncation; the whole line gives the naive fit.
-        noise: The law of e.
-    """
-    weight = ch.zeros(X.size(1) + 1, 1, dtype=ch.float64, requires_grad=True)
-    optimizer = torch.optim.LBFGS(
-        [weight],
-        max_iter=1000,
-        tolerance_grad=1e-12,
-        tolerance_change=1e-15,
-        line_search_fn="strong_wolfe",
-    )
-
-    def closure() -> ch.Tensor:
-        optimizer.zero_grad()
-        loss = truncated_nll(weight, X, y, phi, noise)
-        loss.backward()
-        return loss
-
-    optimizer.step(closure)
-    return weight.detach().flatten().float()
-
-
 @dataclasses.dataclass(frozen=True)
-class TruncatedDataset:  # pylint: disable=too-many-instance-attributes
+class Simulation:  # pylint: disable=too-many-instance-attributes
     """A truncated classification sample and the parameters that produced it.
 
     Attributes:
@@ -151,19 +96,15 @@ class TruncatedDataset:  # pylint: disable=too-many-instance-attributes
         noise: The law of the latent noise.
         alpha: The smallest per-label mass of any observed sample at the
             truth, the alpha of R_alpha.
-        naive: The untruncated MLE, coefficients then intercept.
-        mle: The truncated MLE, coefficients then intercept.
     """
 
     X: ch.Tensor  # pylint: disable=invalid-name
     y: ch.Tensor
     coef: ch.Tensor
     intercept: ch.Tensor
-    phi: Truncation
+    phi: PiecewiseSurvival
     noise: sampling.LatentNoise
     alpha: float
-    naive: ch.Tensor
-    mle: ch.Tensor
 
     def error(self, coef: ch.Tensor, intercept: Optional[ch.Tensor]) -> float:
         """Return the L2 distance of (coef, intercept) from the truth."""
@@ -174,21 +115,17 @@ class TruncatedDataset:  # pylint: disable=too-many-instance-attributes
             truth = ch.cat([truth, self.intercept])
         return float((estimate - truth).norm())
 
-    def flat_error(self, weight: ch.Tensor) -> float:
-        """Return the error of coefficients then intercept, flattened."""
-        return self.error(weight[:-1], weight[-1:])
 
-
-def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
+def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     coef: Sequence[float],
     intercept: float,
-    phi: Truncation,
+    phi: PiecewiseSurvival,
     n: int,
     *,
     noise: sampling.LatentNoise,
     covariance: Optional[ch.Tensor] = None,
     seed: int = 0,
-) -> TruncatedDataset:
+) -> Simulation:
     """Draw ``y = 1{coef^T x + intercept + e >= 0}`` until n samples pass phi.
 
     Args:
@@ -222,7 +159,7 @@ def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
     X, z = ch.cat(kept_X)[:n], ch.cat(kept_z)[:n]  # pylint: disable=invalid-name
     y = (z >= 0).float()
     latent = (X @ weight + intercept).double()
-    return TruncatedDataset(
+    return Simulation(
         X=X,
         y=y,
         coef=weight.T,
@@ -230,41 +167,37 @@ def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
         phi=phi,
         noise=noise,
         alpha=float(phi.label_mass(latent, noise).min()),
-        naive=exact_mle(X, y, Truncation((-math.inf, math.inf, 1.0)), noise),
-        mle=exact_mle(X, y, phi, noise),
     )
 
 
 def assert_recovers(
     model,
-    dataset: TruncatedDataset,
+    simulation: Simulation,
     tolerance: float,
     *,
     naive_margin: Optional[float] = 0.5,
 ) -> None:
-    """Fit a classifier to dataset and check each estimate it returns.
+    """Fit a classifier to a simulation and check each estimate it returns.
 
     Args:
         model: An unfitted truncated classifier, exposing
-            ``{avg,ema,final,best}_coef_`` and ``_intercept_``.
-        dataset: The sample, with its truth.
+            ``{avg,ema,final,best,emp}_coef_`` and ``_intercept_``.
+        simulation: The sample, with its truth.
         tolerance: Largest L2 error allowed for (coef, intercept).
         naive_margin: Each estimate's error must also be below this fraction
-            of the naive fit's; None skips the comparison, as without
-            truncation.
+            of the naive fit's, the model's start, which ignores phi; None
+            skips the comparison, as without truncation.
     """
-    model.fit(dataset.X, dataset.y)
-    naive = dataset.flat_error(dataset.naive)
-    mle = dataset.flat_error(dataset.mle)
+    model.fit(simulation.X, simulation.y)
+    naive = simulation.error(model.emp_coef_, model.emp_intercept_)
     for name in [*linear_model.ESTIMATORS, ""]:
         prefix = f"{name}_" if name else ""
         coef = getattr(model, f"{prefix}coef_")
         intercept = getattr(model, f"{prefix}intercept_")
-        error = dataset.error(coef, intercept)
+        error = simulation.error(coef, intercept)
         label = f"{prefix}coef_ and {prefix}intercept_"
         assert error <= tolerance, (
-            f"{label}: error {error:.4f} above {tolerance} "
-            f"(MLE {mle:.4f}, naive {naive:.4f})"
+            f"{label}: error {error:.4f} above {tolerance} (naive {naive:.4f})"
         )
         if naive_margin is not None:
             assert error <= naive_margin * naive, (
