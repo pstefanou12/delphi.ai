@@ -275,13 +275,13 @@ LOGISTIC_NOISE = LatentNoise(
 class LabelMoments:
     """Per-label quantities of latents ``z = h + e`` given the truncation set.
 
-    Column c holds label c, the half-line ``z < 0`` for 0 and ``z >= 0``
-    for 1.
+    Column c holds label c: for a scalar latent the half-line ``z < 0`` for
+    0 and ``z >= 0`` for 1, for a latent vector the region ``argmax z = c``.
 
     Attributes:
-        mass: ``P(z in S, label c)``, shaped (n, 2), in float64.
-        score: ``E[s(e) | z in S, label c]``, shaped (n, 2), in float64;
-            zero where the label keeps no mass.
+        mass: ``P(z in S, label c)``, shaped (n, C), in float64.
+        score: ``E[s(e) | z in S, label c]``, shaped (n, C, q) for a latent
+            of q coordinates, in float64; zero where the label keeps no mass.
     """
 
     mass: ch.Tensor
@@ -363,5 +363,79 @@ class StratifiedLatentSampler(LatentSampler):
         score = (weight * noise.score(noise_draws)).sum(-1)
         return LabelMoments(
             mass=label_mass * kept / m,
+            score=ch.where(kept > 0, score / kept.clamp_min(1e-300), 0.0)[..., None],
+        )
+
+
+class GumbelSampler(abc.ABC):
+    """Estimates ``LabelMoments`` of Gumbel latents at each row of loc.
+
+    The latent is ``z = h + g`` for i.i.d. standard Gumbel g, labeled
+    ``argmax z``; the score is ``s(g) = 1 - exp(-g)``.
+    """
+
+    @abc.abstractmethod
+    def label_moments(self, loc: ch.Tensor, phi: Callable) -> LabelMoments:
+        """Return the per-label moments at each row of loc.
+
+        Args:
+            loc: Logits h, shaped (n, K).
+            phi: Truncation oracle over latents shaped (n, m, K), returning
+                a mask or a survival probability.
+        """
+
+
+class StratifiedGumbelSampler(GumbelSampler):
+    """Draws each label's latents given that label wins, exactly.
+
+    Given ``argmax z = c``, ``exp(-g_c)`` is ``p_c E_c`` and each other
+    ``exp(-g_a)`` is ``p_a E_c + E_a``, for p the softmax and i.i.d.
+    ``E ~ Exp(1)``. So only phi is left to Monte Carlo, and a label of small
+    mass is estimated as well as a large one. Each E is drawn by inverse CDF,
+    Latin-hypercube stratified over the draws. A phi returning a survival
+    probability weights each draw by it.
+
+    Attributes:
+        num_samples: Draws per row and label.
+    """
+
+    def __init__(self, num_samples: int = 200):
+        """Initialize the sampler.
+
+        Args:
+            num_samples: Draws per row and label.
+        """
+        self.num_samples = num_samples
+
+    def label_moments(self, loc: ch.Tensor, phi: Callable) -> LabelMoments:
+        classes = loc.size(1)
+        chunk = max(MAX_DRAWS_PER_ROUND // (classes**2 * self.num_samples), 1)
+        parts = [
+            self._chunk_moments(rows, phi)
+            for rows in loc.detach().double().split(chunk)
+        ]
+        return LabelMoments(
+            mass=ch.cat([part.mass for part in parts]),
+            score=ch.cat([part.score for part in parts]),
+        )
+
+    def _chunk_moments(self, loc: ch.Tensor, phi: Callable) -> LabelMoments:
+        (n, classes), m = loc.shape, self.num_samples
+        log_prob = ch.log_softmax(loc, dim=1)
+        shape = (n, classes, m, classes)
+        strata = ch.rand(shape).argsort(dim=2) + ch.rand(shape, dtype=ch.float64)
+        exponential = -ch.log((strata / m).clamp_min(ch.finfo(ch.float64).tiny))
+        own = ch.eye(classes, dtype=ch.bool)[:, None]
+        winner = (exponential * own).sum(-1, keepdim=True)
+        exp_neg_noise = log_prob[:, None, None, :].exp() * winner + ch.where(
+            own, 0.0, exponential
+        )
+        latents = loc[:, None, None, :] - ch.log(exp_neg_noise)
+        weight = phi(latents.reshape(n, classes * m, classes))
+        weight = weight.reshape(n, classes, m).double()
+        kept = weight.sum(-1, keepdim=True)
+        score = (weight[..., None] * (1.0 - exp_neg_noise)).sum(2)
+        return LabelMoments(
+            mass=log_prob.exp() * kept[..., 0] / m,
             score=ch.where(kept > 0, score / kept.clamp_min(1e-300), 0.0),
         )

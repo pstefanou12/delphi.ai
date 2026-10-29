@@ -9,7 +9,7 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 
 
 class TruncatedClassificationConfig(TruncatedLinearModelConfig):
-    """Configuration shared by truncated probit and logistic regression.
+    """Configuration shared by the truncated classifiers.
 
     The descent is projected SGD with steps of 1 / (lambda i) from the
     Fisher schedule and every iterate averaged; Fisher scoring steps on the
@@ -20,7 +20,6 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
         radius: ``log(1 / alpha')`` for the smallest per-label mass alpha'
             R_alpha' admits; None takes alpha' = alpha^2, or starts from
             the descent's start when alpha is unknown.
-        interval_grid: Latent means the set's interval is searched over.
         refine_steps: Fisher scoring steps after the descent, as
             ``configs.RefinementConfig``.
     """
@@ -32,7 +31,6 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
     avg_burn_in: float = pydantic.Field(default=0.0, ge=0.0, lt=1.0)
     num_samples: int = pydantic.Field(default=200, ge=1)
     radius: Optional[float] = pydantic.Field(default=None, gt=0.0)
-    interval_grid: int = pydantic.Field(default=2001, ge=2)
     refine_steps: int = pydantic.Field(default=10, ge=0)
 
     @pydantic.model_validator(mode="after")
@@ -49,9 +47,30 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
         return self
 
 
-class TruncatedLogisticRegressionConfig(TruncatedClassificationConfig):
+class TruncatedBinaryRegressionConfig(TruncatedClassificationConfig):
+    """Configuration shared by truncated probit and logistic regression.
+
+    Attributes:
+        interval_grid: Latent means the set's interval is searched over.
+    """
+
+    interval_grid: int = pydantic.Field(default=2001, ge=2)
+
+
+class TruncatedLogisticRegressionConfig(TruncatedBinaryRegressionConfig):
     """Configuration for truncated logistic regression."""
 
 
-class TruncatedProbitRegressionConfig(TruncatedClassificationConfig):
+class TruncatedProbitRegressionConfig(TruncatedBinaryRegressionConfig):
     """Configuration for truncated probit regression."""
+
+
+class TruncatedMultinomialLogisticRegressionConfig(TruncatedClassificationConfig):
+    """Configuration for truncated multinomial logistic regression.
+
+    Attributes:
+        iterations: Gradient steps of the descent.
+    """
+
+    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
+    iterations: Optional[int] = pydantic.Field(default=1000, ge=1)

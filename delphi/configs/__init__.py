@@ -56,8 +56,10 @@ from delphi.configs.schedulers import (
 from delphi.configs.stats.classification import SoftmaxRegressionConfig
 from delphi.configs.stats.linear import LinearModelConfig
 from delphi.configs.stats.truncated.classification import (
+    TruncatedBinaryRegressionConfig,
     TruncatedClassificationConfig,
     TruncatedLogisticRegressionConfig,
+    TruncatedMultinomialLogisticRegressionConfig,
     TruncatedProbitRegressionConfig,
 )
 from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
@@ -88,6 +90,7 @@ __all__ = [
     "SoftmaxRegressionConfig",
     "StepLRConfig",
     "TrainerConfig",
+    "TruncatedBinaryRegressionConfig",
     "TruncatedClassificationConfig",
     "TruncatedExponentialFamilyDistributionConfig",
     "TruncatedGammaUnknownConcentrationConfig",
@@ -102,6 +105,7 @@ __all__ = [
     "TruncatedLinearDynamicalSystemConfig",
     "TruncatedLinearModelConfig",
     "TruncatedLogisticRegressionConfig",
+    "TruncatedMultinomialLogisticRegressionConfig",
     "TruncatedMultivariateNormalConfig",
     "TruncatedProbitRegressionConfig",
     "TruncatedRegressionConfig",

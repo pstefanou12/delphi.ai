@@ -1,18 +1,22 @@
 # Author: pstefanou12@
-"""Test harness for the truncated binary classifiers.
+"""Test harness for the truncated classifiers.
 
-The latent ``z = w^T x + b + e`` labels a sample ``y = 1{z >= 0}``, kept
-with probability ``phi(z)``. ``simulate`` draws such a sample with known
-parameters, and ``assert_recovers`` fits a model to it and checks every
-estimate the model returns against the truth.
+The binary latent ``z = w^T x + b + e`` labels a sample ``y = 1{z >= 0}``,
+and the multinomial latents ``z_k = w_k^T x + b_k + g_k``, with Gumbel g
+and class 0's weights zero, label it ``y = argmax_k z_k``; either is kept
+with probability ``phi(z)``. ``simulate`` and ``simulate_multinomial`` draw
+such a sample with known parameters, and ``assert_recovers`` fits a model
+to it and checks every estimate the model returns against the truth.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import dataclasses
 import math
 from typing import Optional
 
 import torch as ch
+import torch.distributions
+import torch.nn.functional
 
 from delphi.stats import linear_model
 from delphi.truncated import sampling
@@ -83,17 +87,86 @@ def _interval_mass(start, end, latent, noise) -> ch.Tensor:
     return ch.where(latent < start, upper_tail, lower_tail)
 
 
+class CoordinateSurvival:
+    """A truncation oracle on one coordinate of a Gumbel latent vector.
+
+    Piecewise in that coordinate as ``PiecewiseSurvival``. With the others
+    maximized out in closed form, so is each label's survival mass.
+
+    Attributes:
+        coordinate: The latent coordinate phi reads.
+        survival: The oracle on that coordinate.
+    """
+
+    def __init__(self, coordinate: int, *pieces: tuple[float, float, float]):
+        """Initialize the oracle.
+
+        Args:
+            coordinate: The latent coordinate phi reads.
+            *pieces: As ``PiecewiseSurvival``.
+        """
+        self.coordinate = coordinate
+        self.survival = PiecewiseSurvival(*pieces)
+
+    def __call__(self, z: ch.Tensor) -> ch.Tensor:
+        """Return a mask, or survival probabilities, shaped z's batch dims."""
+        return self.survival(z[..., self.coordinate])
+
+    def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
+        """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``.
+
+        With j the coordinate read, p the softmax and A the set, label j
+        keeps ``p_j P(Gumbel(logsumexp) in A)`` and another label c a share
+        ``p_c / (1 - p_j)`` of ``P(z_j in A)`` less that.
+
+        Args:
+            logits: Latent means, shaped (n, K).
+
+        Returns:
+            The masses, shaped (n, K).
+        """
+        j = self.coordinate
+        prob = ch.softmax(logits, dim=1)
+        top = ch.logsumexp(logits, dim=1, keepdim=True)
+        winner = ch.zeros_like(top)
+        own = ch.zeros_like(top)
+        for low, high, probability in self.survival.pieces:
+            winner = winner + probability * _gumbel_mass(low, high, top)
+            own = own + probability * _gumbel_mass(low, high, logits[:, j : j + 1])
+        share = prob / (1.0 - prob[:, j : j + 1])
+        mass = share * (own - prob[:, j : j + 1] * winner)
+        return ch.cat([mass[:, :j], prob[:, j : j + 1] * winner, mass[:, j + 1 :]], 1)
+
+
+def _gumbel_mass(low: float, high: float, loc: ch.Tensor) -> ch.Tensor:
+    """Return ``P(low < loc + g < high)`` for standard Gumbel g, in either tail."""
+
+    def cdf(t):
+        return ch.exp(-ch.exp(-t))
+
+    def survival(t):
+        return -ch.expm1(-ch.exp(-t))
+
+    if math.isinf(low) and math.isinf(high):
+        return ch.ones_like(loc)
+    if math.isinf(low):
+        return cdf(high - loc)
+    if math.isinf(high):
+        return survival(low - loc)
+    upper_tail = survival(low - loc) - survival(high - loc)
+    return ch.where(loc < low, upper_tail, cdf(high - loc) - cdf(low - loc))
+
+
 @dataclasses.dataclass(frozen=True)
-class Simulation:  # pylint: disable=too-many-instance-attributes
+class Simulation:
     """A truncated classification sample and the parameters that produced it.
 
     Attributes:
         X: Observed covariates, shaped (n, d).
         y: Observed labels, shaped (n, 1).
-        coef: True coefficients, shaped (1, d).
-        intercept: True intercept, shaped (1,).
+        coef: True coefficients, shaped (k, d).
+        intercept: True intercept, shaped (k,).
         phi: The truncation the sample passed.
-        noise: The law of the latent noise.
         alpha: The smallest per-label mass of any observed sample at the
             truth, the alpha of R_alpha.
     """
@@ -102,8 +175,7 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
     y: ch.Tensor
     coef: ch.Tensor
     intercept: ch.Tensor
-    phi: PiecewiseSurvival
-    noise: sampling.LatentNoise
+    phi: Callable
     alpha: float
 
     def error(self, coef: ch.Tensor, intercept: Optional[ch.Tensor]) -> float:
@@ -116,7 +188,37 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
         return float((estimate - truth).norm())
 
 
-def simulate(  # pylint: disable=too-many-arguments,too-many-locals
+def _survivors(
+    latent: Callable[[ch.Tensor], ch.Tensor],
+    phi: Callable,
+    n: int,
+    covariance: ch.Tensor,
+    seed: int,
+) -> tuple[ch.Tensor, ch.Tensor]:
+    """Draw x ~ N(0, covariance) and its latent until n pass phi.
+
+    Returns:
+        The first n survivors' covariates and latents.
+    """
+    ch.manual_seed(seed)
+    sampler = ch.distributions.MultivariateNormal(
+        ch.zeros(covariance.size(0)), covariance
+    )
+    kept_X: list[ch.Tensor] = []  # pylint: disable=invalid-name
+    kept_z: list[ch.Tensor] = []
+    survived = 0
+    while survived < n:
+        X = sampler.sample([_BLOCK])  # pylint: disable=invalid-name
+        z = latent(X)
+        kept = phi(z[:, None, :]).reshape(-1)
+        kept = ch.bernoulli(kept).bool() if kept.is_floating_point() else kept
+        kept_X.append(X[kept])
+        kept_z.append(z[kept])
+        survived += int(kept.sum())
+    return ch.cat(kept_X)[:n], ch.cat(kept_z)[:n]
+
+
+def simulate(  # pylint: disable=too-many-arguments
     coef: Sequence[float],
     intercept: float,
     phi: PiecewiseSurvival,
@@ -140,33 +242,66 @@ def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     Returns:
         The first n survivors.
     """
-    ch.manual_seed(seed)
     weight = ch.tensor(coef)[:, None]
+
+    def latent(X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        uniform = ch.rand(X.size(0), 1, dtype=ch.float64).clamp(1e-15, 1.0 - 1e-15)
+        return X @ weight + intercept + noise.icdf(uniform).float()
+
     covariance = ch.eye(weight.size(0)) if covariance is None else covariance
-    sampler = ch.distributions.MultivariateNormal(ch.zeros(weight.size(0)), covariance)
-    kept_X: list[ch.Tensor] = []  # pylint: disable=invalid-name
-    kept_z: list[ch.Tensor] = []
-    survived = 0
-    while survived < n:
-        X = sampler.sample([_BLOCK])  # pylint: disable=invalid-name
-        uniform = ch.rand(_BLOCK, 1, dtype=ch.float64).clamp(1e-15, 1.0 - 1e-15)
-        z = X @ weight + intercept + noise.icdf(uniform).float()
-        kept = phi(z[:, None, :]).reshape(-1)
-        kept = ch.bernoulli(kept).bool() if kept.is_floating_point() else kept
-        kept_X.append(X[kept])
-        kept_z.append(z[kept])
-        survived += int(kept.sum())
-    X, z = ch.cat(kept_X)[:n], ch.cat(kept_z)[:n]  # pylint: disable=invalid-name
-    y = (z >= 0).float()
-    latent = (X @ weight + intercept).double()
+    X, z = _survivors(latent, phi, n, covariance, seed)  # pylint: disable=invalid-name
+    mean = (X @ weight + intercept).double()
     return Simulation(
         X=X,
-        y=y,
+        y=(z >= 0).float(),
         coef=weight.T,
         intercept=ch.tensor([intercept]),
         phi=phi,
-        noise=noise,
-        alpha=float(phi.label_mass(latent, noise).min()),
+        alpha=float(phi.label_mass(mean, noise).min()),
+    )
+
+
+def simulate_multinomial(  # pylint: disable=too-many-arguments
+    coef: Sequence[Sequence[float]],
+    intercept: Sequence[float],
+    phi: CoordinateSurvival,
+    n: int,
+    *,
+    covariance: Optional[ch.Tensor] = None,
+    seed: int = 0,
+) -> Simulation:
+    """Draw ``y = argmax_k (w_k^T x + b_k + g_k)`` until n samples pass phi.
+
+    Args:
+        coef: True coefficients of classes 1 to K - 1, shaped (K - 1, d);
+            class 0's are zero.
+        intercept: True intercepts of classes 1 to K - 1.
+        phi: The truncation, applied to the latent vector.
+        n: Survivors to collect.
+        covariance: Covariance of x ~ N(0, covariance); identity if None.
+        seed: Seed for the draws.
+
+    Returns:
+        The first n survivors, labeled in {0, ..., K - 1}.
+    """
+    weight, bias = ch.tensor(coef), ch.tensor(intercept)
+
+    def logits(X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        return torch.nn.functional.pad(X @ weight.T + bias, (1, 0))
+
+    def latent(X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        mean = logits(X)
+        return mean + torch.distributions.Gumbel(0.0, 1.0).sample(mean.shape)
+
+    covariance = ch.eye(weight.size(1)) if covariance is None else covariance
+    X, z = _survivors(latent, phi, n, covariance, seed)  # pylint: disable=invalid-name
+    return Simulation(
+        X=X,
+        y=z.argmax(1, keepdim=True),
+        coef=weight,
+        intercept=bias,
+        phi=phi,
+        alpha=float(phi.label_mass(logits(X).double()).min()),
     )
 
 

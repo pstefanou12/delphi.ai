@@ -271,6 +271,7 @@ toward the set. All models live in `delphi.stats`.
 | `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
 | `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
+| `TruncatedMultinomialLogisticRegression` | [`truncated_multinomial_logistic_regression`](delphi/stats/truncated/truncated_multinomial_logistic_regression.py) | |
 
 ```python
 import torch as ch
@@ -340,6 +341,42 @@ model.predict_proba(X[:5])
   `log(1 / alpha')`. Pass `None` when it is unknown.
 - **`sampler`** estimates each label's mass and noise score for the loss;
   stratified inverse-CDF sampling by default.
+
+Multinomial logistic regression labels a sample with the largest of K
+latents `z_k = w_k^T x + b_k + g_k`, `g_k ~ Gumbel(0, 1)`, and keeps it only
+where `phi` admits the latent vector. Class 0 is the reference: its weights
+are zero, so `coef_` holds classes 1 to K - 1.
+
+```python
+import torch as ch
+import torch.nn.functional
+
+from delphi import stats
+
+X = ch.randn(20000, 10)
+coef = ch.randn(2, 10) / 3.0
+logits = torch.nn.functional.pad(X @ coef.T + 0.5, (1, 0))
+z = logits + ch.distributions.Gumbel(0.0, 1.0).sample(logits.shape)
+
+
+def phi(z):
+    return z[..., 1] > 0.0
+
+
+kept = phi(z)
+y = z.argmax(1, keepdim=True)
+model = stats.TruncatedMultinomialLogisticRegression({}, phi)
+model.fit(X[kept], y[kept])
+model.coef_, model.intercept_
+model.predict_proba(X[:5])
+```
+
+- **`phi` sees the latent vector**, shaped `(n, m, K)`, and returns a mask
+  or a survival probability shaped `(n, m)`.
+- **`alpha`** bounds every sample's mass on each label, at most 1/K. The
+  projection set keeps every sample's untruncated label probabilities above
+  `alpha^2`, unless the `radius` hyperparameter gives `log(1 / alpha')`.
+- **`sampler`** draws each label's latents given that label wins.
 
 ## Architecture
 

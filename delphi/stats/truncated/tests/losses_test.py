@@ -5,7 +5,8 @@ With unit noise and the set ``z > 0``, a prediction h has survival mass
 ``Phi(h)``, and ``z | S`` is a normal truncated at ``a = -h`` with inverse
 Mills ratio ``lambda = pdf(a) / (1 - Phi(a))``, mean ``h + lambda`` and
 variance ``1 + a lambda - lambda^2``. The classification losses are checked
-against the closed-form label masses of an interval and their derivatives.
+against the closed-form label masses, and their derivatives, of an interval
+of the binary latent and of a half-line of one multinomial latent.
 """
 
 import math
@@ -225,7 +226,7 @@ class _UntruncatedLogistic(sampling.LatentSampler):
         loc = loc.double()
         return sampling.LabelMoments(
             mass=ch.cat([ch.sigmoid(-loc), ch.sigmoid(loc)], dim=1),
-            score=ch.cat([-ch.sigmoid(loc), ch.sigmoid(-loc)], dim=1),
+            score=ch.stack([-ch.sigmoid(loc), ch.sigmoid(-loc)], dim=1),
         )
 
 
@@ -234,4 +235,100 @@ def test_truncated_bce_takes_any_sampler():
     targ = ch.tensor([[0.0], [1.0], [0.0]])
     losses.TruncatedBCE.apply(pred, targ, None, _UntruncatedLogistic()).sum().backward()
     expected = ch.sigmoid(pred.detach()) - targ
+    assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)
+
+
+# Kept where the latent of class 1 exceeds -1.
+_CLASS_ONE_ABOVE_MINUS_ONE = classification.CoordinateSurvival(1, (-1.0, math.inf, 1.0))
+_GUMBEL_SAMPLER = sampling.StratifiedGumbelSampler(num_samples=100_000)
+_LOGITS = ch.tensor([[0.0, -1.0, 0.5], [0.0, 0.5, 2.0], [0.0, 1.5, -1.0]])
+_LABELS = ch.tensor([[0], [1], [2]])
+
+
+def _closed_form_ce(pred: ch.Tensor, targ: ch.Tensor) -> ch.Tensor:
+    """Return each sample's truncated CE from the closed-form label masses."""
+    mass = _CLASS_ONE_ABOVE_MINUS_ONE.label_mass(pred.double())
+    return ch.log(mass.sum(1)) - ch.log(mass.gather(1, targ).flatten())
+
+
+def _everything(z: ch.Tensor) -> ch.Tensor:
+    return ch.ones(z.shape[:-1], dtype=ch.bool)
+
+
+def test_truncated_ce_without_truncation_is_the_cross_entropy():
+    ch.manual_seed(0)
+    pred = _LOGITS.clone().requires_grad_()
+    loss = losses.TruncatedCE.apply(pred, _LABELS, _everything, _GUMBEL_SAMPLER)
+    loss.sum().backward()
+    expected = torch.nn.functional.cross_entropy(
+        _LOGITS, _LABELS.flatten(), reduction="none"
+    )
+    assert ch.allclose(loss, expected, atol=1e-6), (loss, expected)
+    onehot = torch.nn.functional.one_hot(_LABELS.flatten(), 3)  # pylint: disable=not-callable
+    gradient = ch.softmax(_LOGITS, dim=1) - onehot
+    assert ch.allclose(pred.grad, gradient, atol=5e-3), (pred.grad, gradient)
+
+
+def test_truncated_ce_matches_the_closed_form_nll():
+    ch.manual_seed(0)
+    value = losses.TruncatedCE.apply(
+        _LOGITS, _LABELS, _CLASS_ONE_ABOVE_MINUS_ONE, _GUMBEL_SAMPLER
+    )
+    expected = _closed_form_ce(_LOGITS, _LABELS).float()
+    assert ch.allclose(value, expected, atol=5e-3), (value, expected)
+
+
+def test_truncated_ce_gradient_matches_the_closed_form_gradient():
+    ch.manual_seed(0)
+    pred = _LOGITS.clone().requires_grad_()
+    losses.TruncatedCE.apply(
+        pred, _LABELS, _CLASS_ONE_ABOVE_MINUS_ONE, _GUMBEL_SAMPLER
+    ).sum().backward()
+    exact = _LOGITS.double().requires_grad_()
+    _closed_form_ce(exact, _LABELS).sum().backward()
+    assert ch.allclose(pred.grad, exact.grad.float(), atol=5e-3), (
+        pred.grad,
+        exact.grad,
+    )
+
+
+def test_truncated_ce_hessian_is_the_fisher_information():
+    ch.manual_seed(0)
+    design = ch.tensor([[1.0, 0.0], [0.5, 1.0], [-1.0, 2.0]])
+    hessian = losses.TruncatedCE.hessian(
+        _LOGITS, design, _CLASS_ONE_ABOVE_MINUS_ONE, _GUMBEL_SAMPLER
+    )
+    information = ch.zeros(3, 3, 3, dtype=ch.float64)
+    for label in range(3):
+        exact = _LOGITS.double().requires_grad_()
+        nll = _closed_form_ce(exact, ch.full_like(_LABELS, label))
+        (score,) = ch.autograd.grad(nll.sum(), exact)
+        information += ch.exp(-nll.detach())[:, None, None] * (
+            score[:, :, None] * score[:, None, :]
+        )
+    design = design.double()
+    expected = ch.einsum("ni,nj,nab->iajb", design, design, information) / 3
+    assert ch.allclose(hessian, expected.reshape(6, 6), atol=5e-3), (
+        hessian,
+        expected,
+    )
+
+
+class _UntruncatedGumbel(sampling.GumbelSampler):
+    """Exact per-label moments of Gumbel latents with nothing truncated.
+
+    Given label c the score averages to ``onehot(c) - softmax(h)``.
+    """
+
+    def label_moments(self, loc, phi):
+        prob = ch.softmax(loc.double(), dim=1)
+        eye = ch.eye(loc.size(1), dtype=ch.float64)
+        return sampling.LabelMoments(mass=prob, score=eye - prob[:, None, :])
+
+
+def test_truncated_ce_takes_any_sampler():
+    pred = _LOGITS.clone().requires_grad_()
+    losses.TruncatedCE.apply(pred, _LABELS, None, _UntruncatedGumbel()).sum().backward()
+    onehot = torch.nn.functional.one_hot(_LABELS.flatten(), 3)  # pylint: disable=not-callable
+    expected = ch.softmax(_LOGITS, dim=1) - onehot
     assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)
