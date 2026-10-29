@@ -170,14 +170,21 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         variance, grad times the inverse of the untruncated Hessian at the
         phase's start, which the natural parameters' condition number, about
         10^3, calls for. It bounds the truncated Hessian above, so the steps
-        it scales cannot overshoot, and it needs no sampling.
+        it scales cannot overshoot, and it needs no sampling. Lambda's row
+        is then scaled by ``variance_lr_scale``, its own learning rate.
         """
         if self.dependent:
             return ch.linalg.solve(self.Sigma, grad)  # pylint: disable=not-callable,no-member
         if self._preconditioner is None:
             return grad
         flat = self._preconditioner @ grad.reshape(-1).to(self._preconditioner.dtype)
-        return flat.reshape(grad.shape).to(grad.dtype)
+        step = flat.reshape(grad.shape).to(grad.dtype)
+        hp = cast(
+            configs.TruncatedUnknownVarianceRegressionConfig, self.hyperparameters
+        )
+        scale = ch.ones_like(step)
+        scale[-1] = hp.variance_lr_scale
+        return step * scale
 
     def make_optimizer_and_schedule(
         self,

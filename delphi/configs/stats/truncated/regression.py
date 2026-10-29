@@ -56,10 +56,13 @@ class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
             keeps that transient.
         refine_damped: On, since a full Newton step from the descent's
             average can overshoot lambda to where phi keeps almost no mass.
+        variance_lr_scale: The precision's learning rate as a multiple of
+            the weight's, at every step of the descent's schedule.
     """
 
     avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
     refine_damped: bool = True
+    variance_lr_scale: float = pydantic.Field(default=1.0, gt=0.0)
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):
