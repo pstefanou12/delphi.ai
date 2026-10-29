@@ -7,7 +7,7 @@ and k = d for a linear dynamical system.
 """
 
 import logging
-from typing import Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar, Union
 
 import torch as ch
 import torch.nn
@@ -59,6 +59,8 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         covariate_scale: The design matrix, intercept column included, is
             divided by this before the descent, so the estimates are divided
             by it after.
+        response_scale: The responses are divided by this before the
+            descent, so the estimates are multiplied by it after.
     """
 
     # Created by register_buffer below, which pylint and mypy cannot see.
@@ -89,6 +91,7 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         self.k: Optional[int] = None  # pylint: disable=invalid-name
         self.base_radius = 2.0
         self.covariate_scale = 1.0
+        self.response_scale: Union[float, ch.Tensor] = 1.0
 
     @property
     def required_emp_weight(self) -> ch.Tensor:
@@ -136,7 +139,7 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
         if params is None:
             return None, None
         k = require_fitted(self.k, "k")
-        weight = params.reshape(-1, k) / self.covariate_scale
+        weight = params.reshape(-1, k) * self.response_scale / self.covariate_scale
         if not self.fit_intercept:
             return weight.T, None
         return weight[:-1].T, weight[-1]

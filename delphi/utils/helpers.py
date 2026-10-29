@@ -3,9 +3,10 @@
 Helper code (functions, classes, etc.)
 """
 
+from collections.abc import Callable
 import math
 import pprint
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import cox
 import torch as ch
@@ -190,6 +191,32 @@ def unvech(vector: ch.Tensor, dims: int) -> ch.Tensor:
     matrix[..., rows, cols] = vector
     matrix[..., cols, rows] = vector
     return matrix
+
+
+def whitened_hessian(
+    hessian: Callable[..., ch.Tensor], factor: ch.Tensor
+) -> Callable[..., ch.Tensor]:
+    """Return ``hessian`` in the coordinates ``factor`` whitens.
+
+    For a preconditioner ``C = L L^T`` and ``theta = L^{-T} psi``, the chain
+    rule gives the Hessian in psi as ``L^{-1} H L^{-T}``; it is the identity
+    where ``H = C``, so its spectrum measures how far C is from H.
+
+    Args:
+        hessian: Maps a parameter, or None for the current one, to H.
+        factor: The lower Cholesky factor L of C.
+
+    Returns:
+        The whitened Hessian, with hessian's signature.
+    """
+
+    def whitened(theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+        # Two triangular solves: L^{-1} H, then L^{-1} (L^{-1} H)^T, since
+        # H is symmetric.
+        left = ch.linalg.solve_triangular(factor, hessian(theta), upper=False)  # pylint: disable=not-callable
+        return ch.linalg.solve_triangular(factor, left.T, upper=False)  # pylint: disable=not-callable
+
+    return whitened
 
 
 def type_of_script():

@@ -11,14 +11,13 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 class TruncatedRegressionConfig(TruncatedLinearModelConfig):
     """Configuration for truncated linear regression with known variance.
 
-    The descent follows Daskalakis et al. (2020), Algorithm 1: one shuffled
-    pass, one sample per step, steps of 1 / (lambda i) from the Fisher
-    schedule, every sample used, and every iterate averaged. Newton steps on
+    One shuffled pass, one small batch per step, steps of 1 / (lambda i)
+    from the Fisher schedule, and every iterate averaged; Newton steps on
     the full sample then take that average to the empirical MLE.
 
     Attributes:
-        weight_bound: The B of D_{r,B}, on the weight in the normalized
-            coordinates the descent runs in; None drops the ball.
+        weight_bound: The B of the projection set, on the weight in the
+            normalized coordinates the descent runs in; None drops the ball.
         refine_steps: Newton steps after the descent, as
             ``configs.RefinementConfig``; on by default here.
     """
@@ -49,29 +48,14 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
 
 
 class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
-    """Configuration for truncated regression with the variance learned.
-
-    The defaults are the ones this estimator had before the known-variance
-    rework: projected SGD in (v, lambda) with a held-out split, no step
-    schedule and no Newton refinement.
+    """Configuration for truncated linear regression with the variance learned.
 
     Attributes:
-        var_lr: Learning rate for lambda; None trains it at lr.
-        r: Scale of the variance upper bound above the start's residual
-            variance.
+        refine_damped: On, since a full Newton step from the descent's
+            average can overshoot lambda to where phi keeps almost no mass.
     """
 
-    batch_size: int = 50
-    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
-    iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
-    val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
-    scheduler: Optional[str] = None
-    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
-    refine_steps: int = pydantic.Field(default=0, ge=0)
-    projection_set: Literal["default", "none"] = "none"
-    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
+    refine_damped: bool = True
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):

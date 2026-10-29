@@ -261,6 +261,7 @@ toward the set. All models live in `delphi.stats`.
 | Model | Module | Example |
 |---|---|---|
 | `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
 | `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
 
@@ -291,8 +292,11 @@ print(model.summary())
 - **`alpha`** sets the projection radius `r* = 4 log(2 / alpha) + 7`, unless
   the `radius` hyperparameter is given. Pass `None` when it is unknown: the
   radius then grows by `rate` each phase until the projection stops binding.
-- **`sampler`** estimates `P(z in S)` and `E[z | S]` for the loss; rejection
-  sampling by default.
+- **`noise_var=None`** learns the noise variance with the weight; read it
+  from `variance_` (and `avg_`, `ema_`, `final_`, `best_variance_`). There
+  `alpha` sets the projection set's `1 / alpha` instead, 1 when it is `None`.
+- **`sampler`** estimates `P(z in S)` and the conditional moments for the
+  loss; rejection sampling by default.
 
 ### Classification
 
