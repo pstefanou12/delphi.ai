@@ -114,7 +114,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         """
         if self.emp_weight is None:
             ols = ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
-            self.emp_weight = ols / self.covariate_scale
+            self.emp_weight = ols * self.response_scale / self.covariate_scale
         self.register_weight(self.emp_start)
 
     @property
@@ -124,7 +124,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         start = self.required_emp_weight.reshape(-1, k)
         if self.fit_intercept and start.size(0) == self.d:
             start = ch.cat([start, ch.zeros(1, k)])
-        return start * self.covariate_scale
+        return start * self.covariate_scale / self.response_scale
 
     def register_weight(self, weight: ch.Tensor) -> None:
         """Register the trained parameters from a start weight.
@@ -153,6 +153,17 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         """
         del X, y
         return delphi.projection_sets.Unconstrained(self.emp_start, radius)
+
+    def default_radius(self) -> float:
+        """Return the first phase's radius absent the radius hyperparameter.
+
+        A subclass whose projection set scales otherwise with alpha
+        overrides it.
+
+        Returns:
+            ``1 / alpha``, taking alpha = 1 when it is unknown.
+        """
+        return 1.0 if self.alpha is None else 1.0 / self.alpha
 
     def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples.
@@ -227,10 +238,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
             self.projection_set.radius = self.radius
             return
         hp = self.hyperparameters
-        radius = hp.radius
-        if radius is None:
-            alpha = 1.0 if self.alpha is None else self.alpha
-            radius = 4.0 * math.log(2.0 / alpha) + 7.0
+        radius = self.default_radius() if hp.radius is None else hp.radius
         if hp.projection_set == "default":
             X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
             self.projection_set = self.build_projection_set(X, y, radius)

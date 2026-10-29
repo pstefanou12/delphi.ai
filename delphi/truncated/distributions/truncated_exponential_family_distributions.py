@@ -14,7 +14,7 @@ import torch.utils.data
 
 from delphi import configs, trainer
 from delphi.truncated.distributions import distributions, losses, summary
-from delphi.utils import datasets
+from delphi.utils import datasets, helpers
 
 # Called as dist(theta, dims) in losses.py on every step.
 DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distribution]
@@ -345,7 +345,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         if getattr(self.hyperparameters, "precondition", False) and hessian is None:
             factor = ch.linalg.cholesky(self._empirical_hessian())  # pylint: disable=not-callable
             self._preconditioner = ch.cholesky_inverse(factor)
-            hessian = self._whitened(self.hessian, factor)
+            hessian = helpers.whitened_hessian(self.hessian, factor)
             # A tensor hook rather than step_pre_hook, which runs before
             # optimizer.step's closure recomputes the gradient.
             if self._gradient_hook is None:
@@ -355,25 +355,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def _empirical_hessian(self) -> ch.Tensor:
         """Return the covariance of ``T(x)`` over the training sample."""
         return ch.atleast_2d(self.train_loader_.dataset.S_grad.T.cov())
-
-    @staticmethod
-    def _whitened(
-        hessian: Callable[..., ch.Tensor], factor: ch.Tensor
-    ) -> Callable[..., ch.Tensor]:
-        """Return ``hessian`` in the coordinates ``factor`` whitens.
-
-        For ``C = L L^T`` and ``theta = L^{-T} psi``, the chain rule gives
-        the Hessian in psi as ``L^{-1} H L^{-T}``; it is the identity where
-        ``H = C``, so its spectrum measures how far C is from H.
-        """
-
-        def whitened(theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-            # Two triangular solves: L^{-1} H, then L^{-1} (L^{-1} H)^T, since
-            # H is symmetric.
-            left = ch.linalg.solve_triangular(factor, hessian(theta), upper=False)  # pylint: disable=not-callable
-            return ch.linalg.solve_triangular(factor, left.T, upper=False)  # pylint: disable=not-callable
-
-        return whitened
 
     def _precondition(self, grad: ch.Tensor) -> ch.Tensor:
         """Return the gradient times the run's preconditioner, if it has one."""

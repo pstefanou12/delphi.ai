@@ -16,12 +16,15 @@ gumbel = torch.distributions.Gumbel(0, 1)
 
 
 class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated NLL of regression with known Gaussian noise variance.
+    """Truncated NLL of regression with Gaussian noise.
 
-    Per sample, ``(y - h)^2 / (2 sigma^2) + log P(h + e in S)`` with
-    ``e ~ N(0, sigma^2)``; its gradient in h is ``(E[z | S] - y) / sigma^2``
-    for ``z ~ N(h, sigma^2)``. The sampler estimates ``P`` and ``E[z | S]``
-    at each sample's own h. Returns one loss per sample; the caller reduces.
+    Per sample, ``(y - h)^2 / (2 sigma^2) + log(sigma^2) / 2 +
+    log P(h + e in S)`` with ``e ~ N(0, sigma^2)``; without truncation it is
+    ``torch.nn.functional.gaussian_nll_loss``. Its gradients are
+    ``(E[z | S] - y) / sigma^2`` in h and
+    ``(E[(z - h)^2 | S] - (y - h)^2) / (2 sigma^4)`` in sigma^2, for
+    ``z ~ N(h, sigma^2)``, whose moments the sampler estimates. Returns one
+    loss per sample; the caller reduces.
     """
 
     @staticmethod
@@ -40,7 +43,8 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
             pred: Predictions h, shaped (n, k).
             targ: Observed responses, shaped (n, k).
             phi: Truncation oracle over latents shaped (n, m, k).
-            noise_var: Known noise variance, broadcastable to (k,).
+            noise_var: Noise variance, broadcastable to (n, k); a learned
+                one receives a gradient.
             sampler: Estimates the conditional moments.
             eps: Floor on the survival mass, so a sample phi rejects
                 entirely contributes a finite loss.
@@ -49,18 +53,29 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
             The losses, shaped (n,).
         """
         noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
-        moments = sampler.moments(pred, noise_var, phi)
-        conditional_mean = moments.mean.to(pred.dtype)
-        ctx.save_for_backward((conditional_mean - targ) / noise_var)
-        quadratic = 0.5 * (targ - pred).pow(2) / noise_var
+        learned = ctx.needs_input_grad[3]
+        moments = sampler.moments(pred, noise_var, phi, second_moment=learned)
+        mean = moments.mean.to(pred.dtype)
+        residual = (targ - pred).pow(2)
+        var_grad = None
+        if learned:
+            spread = cast(ch.Tensor, moments.second_moment).to(pred.dtype) - (
+                2.0 * pred * mean - pred.pow(2)
+            )
+            var_grad = (spread - residual) / (2.0 * noise_var.pow(2))
+        ctx.save_for_backward((mean - targ) / noise_var, var_grad, noise_var)
         log_mass = ch.log(moments.mass + eps)
-        return (quadratic + log_mass).sum(-1)
+        nll = 0.5 * residual / noise_var + 0.5 * ch.log(noise_var) + log_mass
+        return nll.sum(-1)
 
     @staticmethod
     def backward(ctx, grad_output):  # pylint: disable=arguments-differ
-        """Return the gradient in pred."""
-        (grad,) = ctx.saved_tensors
-        return (grad_output[:, None] * grad,) + (None,) * 5
+        """Return the gradients in pred and, when learned, noise_var."""
+        pred_grad, var_grad, noise_var = ctx.saved_tensors
+        weights = grad_output[:, None]
+        if var_grad is not None:
+            var_grad = (weights * var_grad).sum_to_size(noise_var.shape)
+        return weights * pred_grad, None, None, var_grad, None, None
 
     @staticmethod
     def hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
@@ -96,53 +111,45 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
             size = X.size(1) * pred.size(1)
             return hess.reshape(size, size) / pred.size(0)
 
-
-class TruncatedGaussianNLLUnknownVariance(ch.autograd.Function):  # pylint: disable=abstract-method
-    """MLE for truncated Gaussian regression with unknown noise variance.
-
-    Optimization variables: mu (pred) and lambda_ (1/sigma^2).
-    """
-
     @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ,too-many-locals
-        ctx,
-        pred,
-        targ,
-        lambda_,
-        phi,  # pylint: disable=invalid-name
-        num_samples=1000,
-        eps=1e-10,
-        noise=None,
-    ):
-        """Compute truncated MSE loss with unknown noise variance."""
-        noise_var = 1.0 / lambda_
-        sigma = ch.sqrt(noise_var)
+    def natural_hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
+        """Return the batch-mean Hessian of the NLL in ``(v, lambda)``.
 
-        stacked = pred[..., None].repeat(1, num_samples, 1)
-        noise = sigma * ch.randn_like(stacked)
-        noised = stacked + noise
+        For ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``, in which the NLL is
+        convex, it is ``mean_i Cov[(z x_i, -z^2 / 2) | S]`` per output.
 
-        mask = phi(noised).float()
-        filtered = mask * noised
-        z = filtered.sum(dim=1) / (mask.sum(dim=1) + eps)
-        z_2 = filtered.pow(2).sum(dim=1) / (mask.sum(dim=1) + eps)
-        P_hat = mask.mean(dim=1).clamp_min(eps)  # pylint: disable=invalid-name
+        Args:
+            pred: As ``hessian``.
+            X: As ``hessian``.
+            phi: As ``forward``.
+            noise_var: The noise variance, shaped (k,).
+            sampler: As ``forward``.
 
-        quadratic_loss = -0.5 * lambda_ * (targ - pred).pow(2)
-        log_lambda_ = -0.5 * ch.log(lambda_)
-        trunc_const = ch.log(P_hat)
-        ctx.save_for_backward(pred, targ, lambda_, z, z_2)
-        return -(quadratic_loss - log_lambda_ - trunc_const) / pred.size(0)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradients of truncated MSE w.r.t. pred and lambda."""
-        pred, targ, lambda_, z, z_2 = ctx.saved_tensors
-
-        mu_grad = lambda_ * (z - targ)
-        lambda_grad = 0.5 * (targ.pow(2).mean(0) - z_2.mean(0))[..., None]
-
-        return mu_grad / pred.size(0), None, lambda_grad, None, None, None, None
+        Returns:
+            The Hessian for the parameter of shape (d + 1, k), v's rows then
+            lambda's, flattened row-major, shaped ((d + 1) k, (d + 1) k), in
+            float64 as ``hessian``.
+        """
+        with ch.no_grad():
+            moments = sampler.moments(pred, noise_var, phi, fourth_moment=True)
+            mean = moments.mean
+            second = cast(ch.Tensor, moments.second_moment)
+            third = cast(ch.Tensor, moments.third_moment)
+            fourth = cast(ch.Tensor, moments.fourth_moment)
+            n, k = pred.shape
+            design = X.double()
+            block = ch.zeros(k, X.size(1) + 1, X.size(1) + 1, dtype=ch.float64)
+            block[:, :-1, :-1] = ch.einsum(
+                "ni,nj,na->aij", design, design, second - mean.pow(2)
+            )
+            block[:, :-1, -1] = -ch.einsum(
+                "ni,na->ai", design, 0.5 * (third - mean * second)
+            )
+            block[:, -1, :-1] = block[:, :-1, -1]
+            block[:, -1, -1] = (0.25 * (fourth - second.pow(2))).sum(0)
+            hess = ch.einsum("aij,ab->iajb", block, ch.eye(k, dtype=ch.float64))
+            size = (X.size(1) + 1) * k
+            return hess.reshape(size, size) / n
 
 
 class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method

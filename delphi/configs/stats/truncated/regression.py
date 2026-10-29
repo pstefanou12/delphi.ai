@@ -11,14 +11,13 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 class TruncatedRegressionConfig(TruncatedLinearModelConfig):
     """Configuration for truncated linear regression with known variance.
 
-    The descent follows Daskalakis et al. (2020), Algorithm 1: one shuffled
-    pass, one sample per step, steps of 1 / (lambda i) from the Fisher
-    schedule, every sample used, and every iterate averaged. Newton steps on
+    One shuffled pass, one small batch per step, steps of 1 / (lambda i)
+    from the Fisher schedule, and every iterate averaged; Newton steps on
     the full sample then take that average to the empirical MLE.
 
     Attributes:
-        weight_bound: The B of D_{r,B}, on the weight in the normalized
-            coordinates the descent runs in; None drops the ball.
+        weight_bound: The B of the projection set, on the weight in the
+            normalized coordinates the descent runs in; None drops the ball.
         refine_steps: Newton steps after the descent, as
             ``configs.RefinementConfig``; on by default here.
     """
@@ -49,29 +48,35 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
 
 
 class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
-    """Configuration for truncated regression with the variance learned.
+    """Configuration for truncated linear regression with the variance learned.
 
-    The defaults are the ones this estimator had before the known-variance
-    rework: projected SGD in (v, lambda) with a held-out split, no step
-    schedule and no Newton refinement.
+    The descent runs a fixed number of gradient steps rather than passes
+    over the data, and converges on its own: its tail average lands far
+    closer to the MLE's likelihood than the true parameters do, so the
+    sampled Newton steps would only add noise.
 
     Attributes:
-        var_lr: Learning rate for lambda; None trains it at lr.
-        r: Scale of the variance upper bound above the start's residual
-            variance.
+        batch_size: Larger than the known variance's: the precision's
+            gradient ``(y^2 - E[z^2 | S]) / 2`` is noisy enough at 10 to
+            jitter it by about 2%.
+        iterations: Gradient steps of the descent.
+        avg_burn_in: Half, since the descent starts at OLS, far from the
+            optimum along the precision, and an average over every iterate
+            keeps that transient.
+        refine_steps: Off; see above.
+        refine_damped: On, for refine_steps set, since a full Newton step
+            can overshoot lambda to where phi keeps almost no mass.
+        variance_lr_scale: The precision's learning rate as a multiple of
+            the weight's, at every step of the descent's schedule.
     """
 
     batch_size: int = 50
     epochs: Optional[int] = pydantic.Field(default=None, ge=1)
-    iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
-    val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
-    scheduler: Optional[str] = None
+    iterations: Optional[int] = pydantic.Field(default=5000, ge=1)
     avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
     refine_steps: int = pydantic.Field(default=0, ge=0)
-    projection_set: Literal["default", "none"] = "none"
-    var_lr: Optional[float] = pydantic.Field(default=1e-2, gt=0.0)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
+    refine_damped: bool = True
+    variance_lr_scale: float = pydantic.Field(default=1.0, gt=0.0)
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):

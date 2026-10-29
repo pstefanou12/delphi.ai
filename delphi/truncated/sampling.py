@@ -90,11 +90,15 @@ class ConditionalMoments:
             kept.
         second_moment: ``E[z^2 | S]`` per coordinate in float64, or None if
             not requested.
+        third_moment: ``E[z^3 | S]``, as second_moment.
+        fourth_moment: ``E[z^4 | S]``, as second_moment.
     """
 
     mass: ch.Tensor
     mean: ch.Tensor
     second_moment: Optional[ch.Tensor] = None
+    third_moment: Optional[ch.Tensor] = None
+    fourth_moment: Optional[ch.Tensor] = None
 
 
 class GaussianSampler(abc.ABC):
@@ -112,6 +116,7 @@ class GaussianSampler(abc.ABC):
         noise_var: ch.Tensor,
         phi: Callable,
         second_moment: bool = False,
+        fourth_moment: bool = False,
     ) -> ConditionalMoments:
         """Return the conditional moments at each row of loc.
 
@@ -121,7 +126,41 @@ class GaussianSampler(abc.ABC):
             phi: Truncation oracle over latents shaped (n, m, k), returning
                 a mask or a survival probability.
             second_moment: Also estimate ``E[z^2 | S]``.
+            fourth_moment: Also estimate ``E[z^2 | S]``, ``E[z^3 | S]`` and
+                ``E[z^4 | S]``.
         """
+
+
+class UntruncatedGaussianMoments(GaussianSampler):
+    """The exact moments of ``z ~ N(loc, noise_var)``, ignoring phi.
+
+    A loss's Hessian at these is the curvature without truncation, which
+    bounds the truncated one above.
+    """
+
+    def moments(
+        self,
+        loc: ch.Tensor,
+        noise_var: ch.Tensor,
+        phi: Callable,
+        second_moment: bool = False,
+        fourth_moment: bool = False,
+    ) -> ConditionalMoments:
+        del phi
+        mean = loc.double()
+        var = ch.as_tensor(noise_var, dtype=ch.float64).expand_as(mean)
+        second = mean.pow(2) + var
+        return ConditionalMoments(
+            mass=ch.ones_like(loc),
+            mean=mean,
+            second_moment=second if second_moment or fourth_moment else None,
+            third_moment=mean.pow(3) + 3.0 * mean * var if fourth_moment else None,
+            fourth_moment=(
+                mean.pow(4) + 6.0 * mean.pow(2) * var + 3.0 * var.pow(2)
+                if fourth_moment
+                else None
+            ),
+        )
 
 
 class GaussianRejectionSampler(GaussianSampler):
@@ -155,11 +194,12 @@ class GaussianRejectionSampler(GaussianSampler):
         noise_var: ch.Tensor,
         phi: Callable,
         second_moment: bool = False,
+        fourth_moment: bool = False,
     ) -> ConditionalMoments:
         n = loc.size(0)
         accepted, drawn = ch.zeros(n, 1), ch.zeros(n, 1)
-        total = ch.zeros_like(loc, dtype=ch.float64)
-        total_sq = ch.zeros_like(total) if second_moment else None
+        orders = 4 if fourth_moment else 2 if second_moment else 1
+        totals = ch.zeros(orders, *loc.shape, dtype=ch.float64)
         rows, block = ch.arange(n), self.num_samples
         while rows.numel() > 0:
             z = loc[rows, None, :] + noise_var.sqrt() * ch.randn(
@@ -169,9 +209,8 @@ class GaussianRejectionSampler(GaussianSampler):
             kept = ch.bernoulli(kept) if kept.is_floating_point() else kept.float()
             accepted[rows] += kept.sum(1)
             drawn[rows] += block
-            total[rows] += (kept * z).sum(1).double()
-            if total_sq is not None:
-                total_sq[rows] += (kept * z.pow(2)).sum(1).double()
+            for order in range(orders):
+                totals[order, rows] += (kept * z.pow(order + 1)).sum(1).double()
             short = (accepted[rows, 0] < self.min_accepted) & (
                 drawn[rows, 0] < MAX_DRAWS_PER_SAMPLE
             )
@@ -186,9 +225,12 @@ class GaussianRejectionSampler(GaussianSampler):
                         MAX_DRAWS_PER_SAMPLE - float(drawn[rows].max()),
                     )
                 )
-        count = accepted.double().clamp_min(1.0)
+        raw = list(totals / accepted.double().clamp_min(1.0))
+        raw += [None] * (4 - orders)
         return ConditionalMoments(
             mass=accepted / drawn,
-            mean=total / count,
-            second_moment=None if total_sq is None else total_sq / count,
+            mean=raw[0],
+            second_moment=raw[1],
+            third_moment=raw[2],
+            fourth_moment=raw[3],
         )
