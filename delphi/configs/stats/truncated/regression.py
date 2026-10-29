@@ -68,6 +68,9 @@ class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
             can overshoot lambda to where phi keeps almost no mass.
         variance_lr_scale: The precision's learning rate as a multiple of
             the weight's, at every step of the descent's schedule.
+        information_samples: Kept draws per sample for the conditional
+            moments behind ``covariance``'s information matrix; a sample's
+            moments from m draws shrink its variances by about 1 / m.
     """
 
     batch_size: int = 50
@@ -77,6 +80,7 @@ class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
     refine_steps: int = pydantic.Field(default=0, ge=0)
     refine_damped: bool = True
     variance_lr_scale: float = pydantic.Field(default=1.0, gt=0.0)
+    information_samples: int = pydantic.Field(default=1000, ge=2)
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):

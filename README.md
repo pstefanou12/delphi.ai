@@ -302,6 +302,10 @@ print(model.summary())
 - **`noise_var=None`** learns the noise variance with the weight; read it
   from `variance_` (and `avg_`, `ema_`, `final_`, `best_variance_`). There
   `alpha` sets the projection set's `1 / alpha` instead, 1 when it is `None`.
+  `model.confidence_intervals(level=0.95)` returns `(lower, upper)` for
+  `"coef"`, `"intercept"` and `"variance"` in y's units, and
+  `model.covariance()` their asymptotic covariance; `summary()` lists the
+  95% intervals.
 - **`sampler`** estimates `P(z in S)` and the conditional moments for the
   loss; rejection sampling by default.
 

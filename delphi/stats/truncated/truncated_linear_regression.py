@@ -7,7 +7,12 @@
 - ``noise_var=None``: Daskalakis, Stefanou, Yao and Zampetakis (2022),
   projected SGD on the truncated NLL in the natural parameters
   ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``, kept in their set D, then
-  Newton steps to the empirical MLE.
+  Newton steps to the empirical MLE. ``confidence_intervals`` are Wald
+  intervals at the inverse of their Hessian (4.3), mapped to
+  ``(w, sigma^2)`` by the delta method of their Section 5. Their Theorem 5.1
+  covariance, a Lyapunov solution, is single-pass SGD's last iterate's at
+  steps ``1 / (zeta t)``; the averaged iterate here sits at the empirical
+  MLE, whose covariance is the inverse information.
 - ``dependent=True``: a linear dynamical system, by the switching gradient
   with ``Sigma^-1`` preconditioning.
 """
@@ -17,6 +22,7 @@ import math
 from typing import Optional, Union, cast
 
 import torch as ch
+import torch.autograd.functional
 
 from delphi import configs
 import delphi.projection_sets
@@ -368,8 +374,139 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         params = self._estimate(name)
         if params is None:
             return None
+        return self._variance_at(params)
+
+    def _variance_at(self, params: ch.Tensor) -> ch.Tensor:
+        """Return the noise variance at a flat ``(v, lambda)``, shaped (k,)."""
         precision = params.reshape(-1, linear_model.require_fitted(self.k, "k"))[-1]
         return ch.as_tensor(self.response_scale).pow(2) / precision
+
+    def _reported(self, params: ch.Tensor) -> ch.Tensor:
+        """Return the estimates at a flat ``(v, lambda)``, in y's units.
+
+        Concatenated: the coefficients shaped (k, d) row-major, the
+        intercept's k entries when fit, then the k variances.
+        """
+        coef, intercept = self.coefficients(params)
+        parts = [cast(ch.Tensor, coef).flatten()]
+        if intercept is not None:
+            parts.append(intercept)
+        return ch.cat([*parts, self._variance_at(params)])
+
+    def _information(self, params: ch.Tensor) -> ch.Tensor:
+        """Return the batch-mean Fisher information in ``(v, lambda)``.
+
+        The NLL's Hessian, which does not depend on y in these coordinates,
+        so the observed information is the expected one. Rows go to the
+        sampler in chunks of ``MAX_DRAWS_PER_ROUND`` draws, and the same
+        seed every call gives every interval the same draws.
+        """
+        hp = cast(
+            configs.TruncatedUnknownVarianceRegressionConfig, self.hyperparameters
+        )
+        draws = hp.information_samples
+        sampler = sampling.GaussianRejectionSampler(draws, draws)
+        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        natural = params.reshape(-1, linear_model.require_fitted(self.k, "k"))
+        total = ch.zeros(natural.numel(), natural.numel(), dtype=ch.float64)
+        chunk = max(sampling.MAX_DRAWS_PER_ROUND // draws, 1)
+        with ch.random.fork_rng():
+            ch.manual_seed(self.rand_seed)
+            for rows in X.split(chunk):
+                hessian = losses.TruncatedGaussianNLL.natural_hessian(
+                    rows @ natural[:-1] / natural[-1],
+                    rows,
+                    self.latent_phi,
+                    1.0 / natural[-1],
+                    sampler,
+                )
+                total += rows.size(0) * hessian
+        return total / X.size(0)
+
+    def covariance(self, estimate: str = "avg") -> ch.Tensor:
+        """Return the asymptotic covariance of an estimate, in y's units.
+
+        The inverse Fisher information of the n samples at the estimate, in
+        the whitened ``(v, lambda)``, carried to the coefficients, intercept
+        and variance by the delta method.
+
+        Args:
+            estimate: One of ``linear_model.ESTIMATORS``.
+
+        Returns:
+            The covariance in float64, shaped (p, p), over the entries in
+            the order of ``_reported``: coefficients shaped (k, d)
+            row-major, the k intercepts when fit, then the k variances.
+
+        Raises:
+            ValueError: If the noise variance is known, the data dependent,
+                or estimate is not one of ``linear_model.ESTIMATORS``.
+            RuntimeError: If called before fit.
+        """
+        params = self._natural_estimate(estimate)
+        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        information = X.size(0) * self._information(params)
+        jacobian = torch.autograd.functional.jacobian(self._reported, params)
+        covariance = jacobian @ ch.linalg.solve(information, jacobian.T)  # pylint: disable=not-callable
+        return (covariance + covariance.T) / 2
+
+    def _natural_estimate(self, estimate: str) -> ch.Tensor:
+        """Return an estimate's flat ``(v, lambda)`` in float64.
+
+        Raises:
+            ValueError: As ``covariance``.
+            RuntimeError: If called before fit.
+        """
+        if self.noise_var is not None or self.dependent:
+            raise ValueError(
+                "covariance and confidence intervals cover noise_var=None only."
+            )
+        if estimate not in linear_model.ESTIMATORS:
+            raise ValueError(
+                f"estimate must be one of {linear_model.ESTIMATORS}; got {estimate!r}."
+            )
+        params = linear_model.require_fitted(self._estimate(estimate), estimate)
+        return params.detach().double().flatten()
+
+    def confidence_intervals(
+        self, level: float = 0.95, estimate: str = "avg"
+    ) -> dict[str, tuple[ch.Tensor, ch.Tensor]]:
+        """Return Wald intervals for the coefficients, intercept and variance.
+
+        Each entry's ``estimate +- z sd``, for sd from ``covariance`` and z
+        the normal's ``(1 + level) / 2`` quantile; each interval covers its
+        entry alone, not all jointly.
+
+        Args:
+            level: Coverage of each interval, in (0, 1).
+            estimate: One of ``linear_model.ESTIMATORS``.
+
+        Returns:
+            ``"coef"``, ``"intercept"`` when fit, and ``"variance"``, each
+            mapped to its (lower, upper) bounds, shaped as ``coef_``,
+            ``intercept_`` and ``variance_``.
+
+        Raises:
+            ValueError: If level lies outside (0, 1), or as ``covariance``.
+            RuntimeError: If called before fit.
+        """
+        if not 0.0 < level < 1.0:
+            raise ValueError(f"level must lie in (0, 1); got {level}.")
+        params = self._natural_estimate(estimate)
+        point = self._reported(params)
+        quantile = ch.special.ndtri(ch.tensor(0.5 + level / 2, dtype=ch.float64))  # pylint: disable=not-callable
+        half_width = quantile * self.covariance(estimate).diagonal().sqrt()
+        k, d = linear_model.require_fitted(self.k, "k"), self.d
+        names = ["coef", "intercept", "variance"]
+        sizes = [k * linear_model.require_fitted(d, "d"), k, k]
+        if not self.fit_intercept:
+            del names[1], sizes[1]
+        lowers = (point - half_width).split(sizes)
+        uppers = (point + half_width).split(sizes)
+        intervals = dict(zip(names, zip(lowers, uppers)))
+        lower, upper = intervals["coef"]
+        intervals["coef"] = (lower.reshape(k, -1), upper.reshape(k, -1))
+        return intervals
 
     @property
     def avg_variance_(self) -> Optional[ch.Tensor]:
@@ -402,6 +539,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             rows += [
                 (f"{name}_variance_", summary.tensor(self._variance(name)))
                 for name in linear_model.ESTIMATORS
+            ]
+            rows += [
+                (
+                    f"{name}_ 95% interval",
+                    f"{summary.tensor(lower)} to {summary.tensor(upper)}",
+                )
+                for name, (lower, upper) in self.confidence_intervals().items()
             ]
         return rows
 
