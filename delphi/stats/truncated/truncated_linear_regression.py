@@ -128,11 +128,14 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Fit the model, with y divided by OLS's residual sd when learning it.
 
         That puts the noise variance near 1 whatever its units, so lambda
-        and v share one scale. The estimates are reported in y's units.
+        and v share one scale. The estimates are reported in y's units. A
+        learned variance runs in float64: with covariates on scales far
+        apart, float32 rounds away the late steps of the scaled intercept.
         """
         self.response_scale = 1.0
         if self.noise_var is None and not self.dependent:
             self._check_inputs(X, y)
+            X, y = X.double(), y.double()  # pylint: disable=invalid-name
             design = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)
             residual = y - design @ ch.linalg.lstsq(design, y).solution  # pylint: disable=not-callable
             self.response_scale = residual.pow(2).mean(0).sqrt()

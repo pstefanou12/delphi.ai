@@ -50,17 +50,31 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
 class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
     """Configuration for truncated linear regression with the variance learned.
 
+    The descent runs a fixed number of gradient steps rather than passes
+    over the data, and converges on its own: its tail average lands far
+    closer to the MLE's likelihood than the true parameters do, so the
+    sampled Newton steps would only add noise.
+
     Attributes:
+        batch_size: Larger than the known variance's: the precision's
+            gradient ``(y^2 - E[z^2 | S]) / 2`` is noisy enough at 10 to
+            jitter it by about 2%.
+        iterations: Gradient steps of the descent.
         avg_burn_in: Half, since the descent starts at OLS, far from the
             optimum along the precision, and an average over every iterate
             keeps that transient.
-        refine_damped: On, since a full Newton step from the descent's
-            average can overshoot lambda to where phi keeps almost no mass.
+        refine_steps: Off; see above.
+        refine_damped: On, for refine_steps set, since a full Newton step
+            can overshoot lambda to where phi keeps almost no mass.
         variance_lr_scale: The precision's learning rate as a multiple of
             the weight's, at every step of the descent's schedule.
     """
 
+    batch_size: int = 50
+    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
+    iterations: Optional[int] = pydantic.Field(default=5000, ge=1)
     avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
+    refine_steps: int = pydantic.Field(default=0, ge=0)
     refine_damped: bool = True
     variance_lr_scale: float = pydantic.Field(default=1.0, gt=0.0)
 
