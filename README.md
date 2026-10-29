@@ -85,6 +85,13 @@ truth.
 | `TruncatedInverseGaussian` | [`truncated_inverse_gaussian`](delphi/truncated/distributions/truncated_inverse_gaussian.py) | |
 | `TruncatedGammaUnknownConcentration` | [`truncated_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_gamma_unknown_concentration.py) | |
 | `TruncatedWishart` | [`truncated_wishart`](delphi/truncated/distributions/truncated_wishart.py) | |
+| `TruncatedMaxwell` | [`truncated_maxwell`](delphi/truncated/distributions/truncated_maxwell.py) | |
+| `TruncatedGumbel` | [`truncated_gumbel`](delphi/truncated/distributions/truncated_gumbel.py) | |
+| `TruncatedLevy` | [`truncated_levy`](delphi/truncated/distributions/truncated_levy.py) | |
+| `TruncatedLogarithmic` | [`truncated_logarithmic`](delphi/truncated/distributions/truncated_logarithmic.py) | |
+| `TruncatedBetaPrime` | [`truncated_beta_prime`](delphi/truncated/distributions/truncated_beta_prime.py) | |
+| `TruncatedInverseGammaUnknownConcentration` | [`truncated_inverse_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_inverse_gamma_unknown_concentration.py) | |
+| `TruncatedInverseWishart` | [`truncated_inverse_wishart`](delphi/truncated/distributions/truncated_inverse_wishart.py) | |
 
 Without a membership oracle, see [Unknown truncation](#unknown-truncation):
 

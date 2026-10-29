@@ -25,6 +25,7 @@ from delphi.configs.distributions.truncated.exponential_family import (
 from delphi.configs.distributions.truncated.gamma_unknown_concentration import (
     TruncatedGammaUnknownConcentrationConfig,
 )
+from delphi.configs.distributions.truncated.gumbel import TruncatedGumbelConfig
 from delphi.configs.distributions.truncated.inverse_gaussian import (
     TruncatedInverseGaussianConfig,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "TruncatedClassificationConfig",
     "TruncatedExponentialFamilyDistributionConfig",
     "TruncatedGammaUnknownConcentrationConfig",
+    "TruncatedGumbelConfig",
     "TruncatedInverseGaussianConfig",
     "RefinementConfig",
     "StatisticalModelConfig",

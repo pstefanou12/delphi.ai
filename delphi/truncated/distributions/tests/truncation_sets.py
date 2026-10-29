@@ -239,7 +239,7 @@ def spiral_band(
     return phi
 
 
-def sum_threshold(threshold: float) -> helpers.Oracle:
+def sum_threshold(threshold: float, below: bool = False) -> helpers.Oracle:
     """Return membership in a lower bound on the coordinate sum.
 
     One scalar condition, so rejection sampling stays cheap, but it biases
@@ -248,13 +248,16 @@ def sum_threshold(threshold: float) -> helpers.Oracle:
     Args:
         threshold: Lower bound on the sum. Survival mass decreases as this
             grows, so it is the knob to search over.
+        below: Make threshold an upper bound instead, keeping the lower tail,
+            for families whose sufficient statistic flattens in the upper one.
 
     Returns:
         Oracle over a batch.
     """
 
     def phi(z: ch.Tensor) -> ch.Tensor:
-        return z.sum(dim=-1) > threshold
+        total = z.sum(dim=-1)
+        return total < threshold if below else total > threshold
 
     return phi
 
@@ -279,7 +282,9 @@ def norm_threshold(threshold: float) -> helpers.Oracle:
     return phi
 
 
-def coordinate_threshold(index: int, threshold: float) -> helpers.Oracle:
+def coordinate_threshold(
+    index: int, threshold: float, below: bool = False
+) -> helpers.Oracle:
     """Return membership in a one-sided bound on a single coordinate.
 
     The simplest truncation there is, kept here so a test can state the
@@ -290,13 +295,14 @@ def coordinate_threshold(index: int, threshold: float) -> helpers.Oracle:
         index: Coordinate the bound applies to.
         threshold: Lower bound. Survival mass decreases as this grows, so
             it is the knob to search over.
+        below: As ``sum_threshold``.
 
     Returns:
         Oracle over a batch.
     """
 
     def phi(z: ch.Tensor) -> ch.Tensor:
-        return z[:, index] > threshold
+        return z[:, index] < threshold if below else z[:, index] > threshold
 
     return phi
 
