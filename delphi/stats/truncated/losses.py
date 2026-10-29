@@ -6,7 +6,6 @@ from typing import cast
 
 import torch as ch
 import torch.distributions
-import torch.nn
 
 from delphi.truncated import sampling
 
@@ -245,39 +244,6 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
             None,
             None,
         )
-
-
-class GumbelCE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Gumbel cross-entropy gradient for multiclass classification."""
-
-    @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        num_samples=1000,
-        eps=1e-5,  # pylint: disable=invalid-name
-    ):
-        """Compute cross-entropy loss."""
-        ctx.save_for_backward(pred, targ)
-        ce_loss = ch.nn.CrossEntropyLoss()
-        ctx.num_samples = num_samples
-        ctx.eps = eps
-        return ce_loss(pred, targ)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of Gumbel CE w.r.t. pred."""
-        pred, targ = ctx.saved_tensors
-        gumbel_dist = torch.distributions.Gumbel(0, 1)  # pylint: disable=invalid-name
-        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
-        rand_noise = gumbel_dist.sample(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised.argmax(-1)
-        mask = noised_labs.eq(targ)[..., None]
-        inner_exp = 1 - ch.exp(-rand_noise)
-        avg = (inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps) / pred.size(0)
-        return -avg, None, None, None
 
 
 def _label_nll(
