@@ -9,35 +9,49 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 
 
 class TruncatedClassificationConfig(TruncatedLinearModelConfig):
-    """Fields shared by the truncated classification estimators.
+    """Configuration shared by truncated probit and logistic regression.
 
-    Logistic and probit regression differ only in their link function, so they
-    are siblings here rather than one deriving from the other, and each
-    overrides only the defaults it needs.
+    The descent is projected SGD with steps of 1 / (lambda i) from the
+    Fisher schedule and every iterate averaged; Fisher scoring steps on the
+    full sample then take that average to the empirical MLE.
 
     Attributes:
-        l1: L1 regularization weight.
-        r: Initial projection set radius.
-        rate: Multiplicative radius expansion factor.
+        num_samples: Draws per sample and label estimating the loss.
+        radius: ``log(1 / alpha')`` for the smallest per-label mass alpha'
+            R_alpha' admits; None takes alpha' = alpha^2, or starts from
+            the descent's start when alpha is unknown.
+        interval_grid: Latent means the set's interval is searched over.
+        refine_steps: Fisher scoring steps after the descent, as
+            ``configs.RefinementConfig``.
     """
 
-    l1: float = pydantic.Field(default=0.0, ge=0.0)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
-    rate: float = pydantic.Field(default=1.5, gt=0.0)
     batch_size: int = 10
+    epochs: Optional[int] = pydantic.Field(default=1, ge=1)
+    val: float = pydantic.Field(default=0.0, ge=0.0, le=1.0)
+    scheduler: Optional[str] = "fisher"
+    avg_burn_in: float = pydantic.Field(default=0.0, ge=0.0, lt=1.0)
+    num_samples: int = pydantic.Field(default=200, ge=1)
+    radius: Optional[float] = pydantic.Field(default=None, gt=0.0)
+    interval_grid: int = pydantic.Field(default=2001, ge=2)
+    refine_steps: int = pydantic.Field(default=10, ge=0)
+
+    @pydantic.model_validator(mode="after")
+    def drop_default_schedule_off_sgd(self) -> "TruncatedClassificationConfig":
+        """Leave a non-SGD optimizer unscheduled unless a schedule is set.
+
+        The 1 / (lambda i) schedule is SGD's; L-BFGS and Adam scale their
+        own steps, and decaying them as well stalls the descent.
+        """
+        if self.optimizer.lower() != "sgd" and "scheduler" not in (
+            self.model_fields_set
+        ):
+            object.__setattr__(self, "scheduler", None)
+        return self
 
 
 class TruncatedLogisticRegressionConfig(TruncatedClassificationConfig):
     """Configuration for truncated logistic regression."""
 
-    epochs: Optional[int] = pydantic.Field(default=1, ge=1)
-
 
 class TruncatedProbitRegressionConfig(TruncatedClassificationConfig):
-    """Configuration for truncated probit regression.
-
-    Attributes:
-        tol: Convergence tolerance.
-    """
-
-    tol: float = pydantic.Field(default=1e-3, ge=0.0)
+    """Configuration for truncated probit regression."""

@@ -13,6 +13,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
 - [Truncated Regression](#truncated-regression)
+  - [Classification](#classification)
 - [Architecture](#architecture)
   - [The trainer](#the-trainer)
   - [Models](#models)
@@ -268,6 +269,8 @@ toward the set. All models live in `delphi.stats`.
 |---|---|---|
 | `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
+| `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
 
 ```python
 import torch as ch
@@ -301,6 +304,42 @@ print(model.summary())
   `alpha` sets the projection set's `1 / alpha` instead, 1 when it is `None`.
 - **`sampler`** estimates `P(z in S)` and the conditional moments for the
   loss; rejection sampling by default.
+
+### Classification
+
+The classifiers label a sample `y = 1{w^T x + b + e >= 0}`, with
+`e ~ N(0, 1)` for probit and `e ~ Logistic(0, 1)` for logistic regression,
+and keep it only where `phi` admits the latent `w^T x + b + e`.
+
+```python
+import torch as ch
+
+from delphi import stats
+
+X = ch.randn(20000, 10)
+z = X @ ch.ones(10, 1) / 3.0 + 0.5 + ch.randn(20000, 1)
+
+
+def phi(z):
+    return z > -1.0
+
+
+kept = phi(z).flatten()
+y = (z >= 0).float()
+model = stats.TruncatedProbitRegression({}, phi)
+model.fit(X[kept], y[kept])
+model.coef_, model.intercept_
+model.predict_proba(X[:5])
+```
+
+- **`phi` sees the latent**, shaped `(n, m, 1)`, and returns a mask or a
+  survival probability. It must leave both labels some mass.
+- **`alpha`** bounds every sample's mass on each label, at most 1/2. It
+  sets the projection set, the weights whose latent means keep mass
+  `alpha^2` on each label, unless the `radius` hyperparameter gives
+  `log(1 / alpha')`. Pass `None` when it is unknown.
+- **`sampler`** estimates each label's mass and noise score for the loss;
+  stratified inverse-CDF sampling by default.
 
 ## Architecture
 

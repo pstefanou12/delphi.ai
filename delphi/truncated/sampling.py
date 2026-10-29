@@ -234,3 +234,134 @@ class GaussianRejectionSampler(GaussianSampler):
             third_moment=raw[2],
             fourth_moment=raw[3],
         )
+
+
+@dataclasses.dataclass(frozen=True)
+class LatentNoise:
+    """A symmetric noise law ``e`` of a latent-variable classifier.
+
+    The label is ``1{h + e >= 0}``; the loss reads the score
+    ``s(e) = -d/de log f(e)``, whose conditional means give its gradient.
+
+    Attributes:
+        cdf: The CDF F.
+        log_cdf: log F, accurate in the lower tail.
+        icdf: The inverse of F.
+        score: The score s.
+    """
+
+    cdf: Callable[[ch.Tensor], ch.Tensor]
+    log_cdf: Callable[[ch.Tensor], ch.Tensor]
+    icdf: Callable[[ch.Tensor], ch.Tensor]
+    score: Callable[[ch.Tensor], ch.Tensor]
+
+
+GAUSSIAN_NOISE = LatentNoise(
+    # ndtr computes (1 + erf) / 2, which underflows to 0 below -8.3.
+    cdf=lambda e: ch.special.log_ndtr(e).exp(),  # pylint: disable=not-callable
+    log_cdf=ch.special.log_ndtr,
+    icdf=ch.special.ndtri,
+    score=lambda e: e,
+)
+LOGISTIC_NOISE = LatentNoise(
+    cdf=ch.sigmoid,
+    log_cdf=ch.nn.functional.logsigmoid,
+    icdf=ch.logit,
+    score=lambda e: ch.tanh(e / 2.0),
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class LabelMoments:
+    """Per-label quantities of latents ``z = h + e`` given the truncation set.
+
+    Column c holds label c, the half-line ``z < 0`` for 0 and ``z >= 0``
+    for 1.
+
+    Attributes:
+        mass: ``P(z in S, label c)``, shaped (n, 2), in float64.
+        score: ``E[s(e) | z in S, label c]``, shaped (n, 2), in float64;
+            zero where the label keeps no mass.
+    """
+
+    mass: ch.Tensor
+    score: ch.Tensor
+
+
+class LatentSampler(abc.ABC):
+    """Estimates ``LabelMoments`` of a latent at each row of loc.
+
+    A truncated classification loss reads its value, gradient and Fisher
+    information from these, so a closed form for intervals replaces Monte
+    Carlo without changing the loss.
+    """
+
+    @abc.abstractmethod
+    def label_moments(
+        self, loc: ch.Tensor, noise: LatentNoise, phi: Callable
+    ) -> LabelMoments:
+        """Return the per-label moments at each row of loc.
+
+        Args:
+            loc: Latent means h, shaped (n, 1).
+            noise: The noise law of e.
+            phi: Truncation oracle over latents shaped (n, m, 1), returning
+                a mask or a survival probability.
+        """
+
+
+class StratifiedLatentSampler(LatentSampler):
+    """Draws each label's latents from its own half-line, by inverse CDF.
+
+    Sampling ``e`` given the label exactly leaves only phi to Monte Carlo,
+    so a label of small mass is estimated as well as a large one, and the
+    draws are stratified over the label's quantiles. A phi returning a
+    survival probability weights each draw by it.
+
+    Attributes:
+        num_samples: Draws per row and label.
+    """
+
+    def __init__(self, num_samples: int = 200):
+        """Initialize the sampler.
+
+        Args:
+            num_samples: Draws per row and label.
+        """
+        self.num_samples = num_samples
+
+    def label_moments(
+        self, loc: ch.Tensor, noise: LatentNoise, phi: Callable
+    ) -> LabelMoments:
+        chunk = max(MAX_DRAWS_PER_ROUND // (2 * self.num_samples), 1)
+        parts = [
+            self._chunk_moments(rows, noise, phi)
+            for rows in loc.detach().double().split(chunk)
+        ]
+        return LabelMoments(
+            mass=ch.cat([part.mass for part in parts]),
+            score=ch.cat([part.score for part in parts]),
+        )
+
+    def _chunk_moments(
+        self, loc: ch.Tensor, noise: LatentNoise, phi: Callable
+    ) -> LabelMoments:
+        n, m = loc.size(0), self.num_samples
+        # Label 0 is e < -h. By symmetry, label 1's -e is e conditioned
+        # below h, which keeps both quantile draws accurate in the tails.
+        label_mass = noise.cdf(ch.cat([-loc, loc], dim=1))
+        strata = (
+            ch.arange(m, dtype=ch.float64) + ch.rand(n, 2, m, dtype=ch.float64)
+        ) / m
+        quantile = (strata * label_mass[..., None]).clamp_min(ch.finfo(ch.float64).tiny)
+        noise_draws = (
+            noise.icdf(quantile) * ch.tensor([1.0, -1.0], dtype=ch.float64)[:, None]
+        )
+        latents = (loc[..., None] + noise_draws).reshape(n, 2 * m, 1)
+        weight = phi(latents).reshape(n, 2, m).double()
+        kept = weight.sum(-1)
+        score = (weight * noise.score(noise_draws)).sum(-1)
+        return LabelMoments(
+            mass=label_mass * kept / m,
+            score=ch.where(kept > 0, score / kept.clamp_min(1e-300), 0.0),
+        )

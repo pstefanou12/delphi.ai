@@ -11,9 +11,6 @@ from typing import NamedTuple, Optional
 import cox
 import torch as ch
 from torch import Tensor, nn
-from torch.distributions import Uniform
-from torch.distributions.transformed_distribution import TransformedDistribution
-from torch.distributions.transforms import SigmoidTransform
 import torch.linalg as LA
 
 from delphi.utils import constants as consts
@@ -464,12 +461,6 @@ class DataPrefetcher:
             yield inp, target
             if isinstance(self.stop_after, int) and (count > self.stop_after):
                 break
-
-
-# Logistic distribution.
-base_distribution = Uniform(0, 1)
-transforms_ = [SigmoidTransform().inv]
-logistic = TransformedDistribution(base_distribution, transforms_)
 
 
 class ProcedureComplete(Exception):
