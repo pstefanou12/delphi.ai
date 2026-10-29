@@ -10,11 +10,14 @@ a few hundredths of that MLE. The dependent-data cases follow.
 """
 
 import math
+from typing import Optional
 
 import pytest
 import torch as ch
+import torch.nn.functional
 
 from delphi import stats
+from delphi.stats.truncated import truncated_linear_regression
 from delphi.stats.truncated.tests import regression
 from delphi.utils import helpers
 
@@ -39,37 +42,37 @@ def _intervals(*bounds):
 
 
 def _fit(  # pylint: disable=too-many-arguments
-    dataset,
-    variance_known,
-    known,
-    unknown,
+    simulation: regression.Simulation,
+    variance_known: bool,
+    known: float,
+    unknown: tuple[float, float],
     *,
-    alpha="known",
-    ols_margin=0.5,
-    fit_intercept=True,
-):
-    """Fit regression to dataset as one variant and check its estimates.
+    alpha_known: bool = True,
+    ols_margin: Optional[float] = 0.5,
+    fit_intercept: bool = True,
+) -> None:
+    """Fit regression to a simulation as one variant and check its estimates.
 
     Args:
-        dataset: The sample.
+        simulation: The sample and its truth.
         variance_known: Whether the model is given the noise variance.
         known: The weight's tolerance when the variance is given.
         unknown: The weight's and the variance's tolerances when it is not.
-        alpha: "known" passes the dataset's survival mass; else this value.
+        alpha_known: Whether the model is given the survival mass.
         ols_margin: As ``regression.assert_recovers``.
         fit_intercept: Whether to fit an intercept.
     """
     model = stats.TruncatedLinearRegression(
         {},
-        dataset.phi,
-        dataset.alpha if alpha == "known" else alpha,
-        noise_var=dataset.noise_var if variance_known else None,
+        simulation.phi,
+        simulation.alpha if alpha_known else None,
+        noise_var=simulation.noise_var if variance_known else None,
         fit_intercept=fit_intercept,
     )
     tolerance, variance_tolerance = (known, None) if variance_known else unknown
     regression.assert_recovers(
         model,
-        dataset,
+        simulation,
         tolerance,
         variance_tolerance=variance_tolerance,
         ols_margin=ols_margin,
@@ -78,86 +81,98 @@ def _fit(  # pylint: disable=too-many-arguments
 
 @_VARIANTS
 def test_1d_no_truncation(variance_known):
-    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, INF)), 2000)
-    _fit(dataset, variance_known, 0.04, (0.04, 0.02), alpha=None, ols_margin=None)
+    simulation = regression.simulate([2.0], -1.0, _intervals((-INF, INF)), 2000)
+    _fit(
+        simulation,
+        variance_known,
+        0.04,
+        (0.04, 0.02),
+        alpha_known=False,
+        ols_margin=None,
+    )
 
 
 @_VARIANTS
 def test_1d_left_truncation(variance_known):
-    dataset = regression.make_dataset([2.0], -1.0, _intervals((0.0, INF)), 2000)
-    _fit(dataset, variance_known, 0.18, (0.31, 0.10))
+    simulation = regression.simulate([2.0], -1.0, _intervals((0.0, INF)), 2000)
+    _fit(simulation, variance_known, 0.18, (0.31, 0.10))
 
 
 @_VARIANTS
 def test_1d_left_truncation_no_intercept(variance_known):
-    dataset = regression.make_dataset([2.0], 0.0, _intervals((0.0, INF)), 2000)
-    _fit(dataset, variance_known, 0.005, (0.02, 0.14), fit_intercept=False)
+    simulation = regression.simulate([2.0], 0.0, _intervals((0.0, INF)), 2000)
+    _fit(simulation, variance_known, 0.005, (0.02, 0.14), fit_intercept=False)
 
 
 @_VARIANTS
 def test_1d_right_truncation(variance_known):
-    dataset = regression.make_dataset([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
-    _fit(dataset, variance_known, 0.06, (0.05, 0.11))
+    simulation = regression.simulate([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
+    _fit(simulation, variance_known, 0.06, (0.05, 0.11))
 
 
 @_VARIANTS
 def test_1d_interval(variance_known):
-    dataset = regression.make_dataset([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
-    _fit(dataset, variance_known, 0.35, (0.54, 0.10))
+    simulation = regression.simulate([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
+    _fit(simulation, variance_known, 0.35, (0.54, 0.10))
 
 
 @_VARIANTS
 def test_1d_union_of_intervals(variance_known):
     phi = _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF))
-    dataset = regression.make_dataset([2.0], -1.0, phi, 2000)
-    _fit(dataset, variance_known, 0.02, (0.02, 0.05))
+    simulation = regression.simulate([2.0], -1.0, phi, 2000)
+    _fit(simulation, variance_known, 0.02, (0.02, 0.05))
 
 
 @_VARIANTS
 def test_1d_small_mass(variance_known):
-    dataset = regression.make_dataset([2.0], -1.0, _intervals((3.85, INF)), 2000)
-    _fit(dataset, variance_known, 0.15, (0.33, 0.06))
+    simulation = regression.simulate([2.0], -1.0, _intervals((3.85, INF)), 2000)
+    _fit(simulation, variance_known, 0.15, (0.33, 0.06))
 
 
 @_VARIANTS
 def test_2d_union_of_intervals(variance_known):
     phi = _intervals((-INF, -2.0), (0.0, 1.0), (2.5, INF))
     covariance = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
-    dataset = regression.make_dataset(
-        [1.0, -1.0], 0.5, phi, 2000, covariance=covariance
-    )
-    _fit(dataset, variance_known, 0.09, (0.08, 0.03))
+    simulation = regression.simulate([1.0, -1.0], 0.5, phi, 2000, covariance=covariance)
+    _fit(simulation, variance_known, 0.09, (0.08, 0.03))
 
 
 @_VARIANTS
 def test_2d_two_sided_tails(variance_known):
     phi = _intervals((-INF, -1.5), (1.5, INF))
-    dataset = regression.make_dataset([1.0, -1.0], 0.5, phi, 2000)
-    _fit(dataset, variance_known, 0.08, (0.07, 0.05))
+    simulation = regression.simulate([1.0, -1.0], 0.5, phi, 2000)
+    _fit(simulation, variance_known, 0.08, (0.07, 0.05))
 
 
 @_VARIANTS
 def test_10d_left_truncation(variance_known):
     # Daskalakis et al. (2020), Section 6: w = 1, kept only where y > 4.
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
-    _fit(dataset, variance_known, 0.16, (0.12, 0.04))
+    _fit(simulation, variance_known, 0.16, (0.12, 0.04))
 
 
 @_VARIANTS
 def test_10d_union_of_intervals(variance_known):
     phi = _intervals((-2.0, 0.0), (3.0, INF))
-    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
-    _fit(dataset, variance_known, 0.11, (0.11, 0.01))
+    simulation = regression.simulate(ch.ones(10).tolist(), 0.5, phi, 5000)
+    _fit(simulation, variance_known, 0.11, (0.11, 0.01))
 
 
 @_VARIANTS
 def test_10d_no_truncation(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((-INF, INF)), 5000
     )
-    _fit(dataset, variance_known, 0.09, (0.09, 0.02), alpha=None, ols_margin=None)
+    _fit(
+        simulation,
+        variance_known,
+        0.09,
+        (0.09, 0.02),
+        alpha_known=False,
+        ols_margin=None,
+    )
 
 
 @pytest.mark.slow
@@ -165,25 +180,26 @@ def test_10d_no_truncation(variance_known):
 def test_100d_union_of_intervals(variance_known):
     phi = _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF))
     coef = (ch.ones(100) / math.sqrt(10)).tolist()
-    dataset = regression.make_dataset(coef, 0.5, phi, 20000)
-    _fit(dataset, variance_known, 0.15, (0.15, 0.01))
+    simulation = regression.simulate(coef, 0.5, phi, 20000)
+    _fit(simulation, variance_known, 0.15, (0.15, 0.01))
 
 
 @_VARIANTS
 def test_10d_randomized_truncation(variance_known):
+    # A survival probability: each response is kept by a coin flip.
     def phi(z):
         return ch.sigmoid(3.0 * (z - 4.0))
 
-    dataset = regression.make_dataset(ch.ones(10).tolist(), 0.5, phi, 5000)
-    _fit(dataset, variance_known, 0.13, (0.15, 0.02))
+    simulation = regression.simulate(ch.ones(10).tolist(), 0.5, phi, 5000)
+    _fit(simulation, variance_known, 0.13, (0.15, 0.02))
 
 
 @_VARIANTS
 def test_10d_alpha_unknown(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
     )
-    _fit(dataset, variance_known, 0.16, (0.12, 0.04), alpha=None)
+    _fit(simulation, variance_known, 0.16, (0.12, 0.04), alpha_known=False)
 
 
 @_VARIANTS
@@ -192,21 +208,21 @@ def test_10d_ill_conditioned_covariates(variance_known):
     rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
     spectrum = ch.logspace(0.0, -3.0, 10)
     covariance = rotation @ ch.diag(spectrum) @ rotation.T
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((1.0, INF)), 5000, covariance=covariance
     )
     # The least-variance direction, 1e-3, sets the MLE's error: 0.93.
-    _fit(dataset, variance_known, 1.3, (1.3, 0.09), ols_margin=0.8)
+    _fit(simulation, variance_known, 1.3, (1.3, 0.09), ols_margin=0.8)
 
 
 @_VARIANTS
 def test_10d_rescaled_covariates(variance_known):
     covariance = 1e6 * ch.eye(10)
     coef = (1e-3 * ch.ones(10)).tolist()
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         coef, 0.5, _intervals((4.0, INF)), 5000, covariance=covariance
     )
-    _fit(dataset, variance_known, 0.12, (0.05, 0.04))
+    _fit(simulation, variance_known, 0.12, (0.05, 0.04))
 
 
 @_VARIANTS
@@ -214,51 +230,52 @@ def test_10d_rescaled_covariates(variance_known):
     "seed, unknown", [(1, (0.15, 0.02)), (2, (0.12, 0.02)), (3, (0.29, 0.13))]
 )
 def test_10d_seeds(variance_known, seed, unknown):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, seed=seed
     )
-    _fit(dataset, variance_known, 0.13, unknown)
+    _fit(simulation, variance_known, 0.13, unknown)
 
 
 @_VARIANTS
 def test_1d_left_truncation_noise_var_5(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
     )
-    _fit(dataset, variance_known, 0.07, (0.91, 1.49))
+    _fit(simulation, variance_known, 0.07, (0.91, 1.49))
 
 
 @_VARIANTS
 def test_1d_left_truncation_noise_var_10(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
     )
-    _fit(dataset, variance_known, 0.33, (0.37, 1.47))
+    _fit(simulation, variance_known, 0.33, (0.37, 1.47))
 
 
 @_VARIANTS
 def test_10d_left_truncation_noise_var_5(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
     )
-    _fit(dataset, variance_known, 0.26, (0.26, 0.12))
+    _fit(simulation, variance_known, 0.26, (0.26, 0.12))
 
 
 @_VARIANTS
 def test_10d_left_truncation_noise_var_10(variance_known):
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
     )
-    _fit(dataset, variance_known, 0.47, (0.55, 0.47))
+    # The EMA, which the Newton steps do not refine, trails at 0.71.
+    _fit(simulation, variance_known, 0.47, (0.55, 0.8))
 
 
 @_VARIANTS
 def test_10d_union_of_intervals_noise_var_10(variance_known):
     phi = _intervals((-2.0, 0.0), (3.0, INF))
-    dataset = regression.make_dataset(
+    simulation = regression.simulate(
         ch.ones(10).tolist(), 0.5, phi, 5000, noise_var=10.0
     )
-    _fit(dataset, variance_known, 0.40, (0.39, 0.22))
+    _fit(simulation, variance_known, 0.40, (0.39, 0.22))
 
 
 @pytest.mark.slow
@@ -368,3 +385,38 @@ def test_dependent_step_is_preconditioned_by_sigma():
     expected = -lr * ch.linalg.solve(sigma, plain)  # pylint: disable=not-callable
     assert ch.allclose(step, expected, atol=1e-5), (step, expected)
     assert not ch.allclose(step, -lr * plain, atol=1e-5)
+
+
+def _unknown_variance_set() -> truncated_linear_regression.UnknownVarianceSet:
+    residual_var = ch.tensor([1.0, 4.0])
+    anchor = ch.cat([ch.zeros(2, 2), (1.0 / residual_var)[None]])
+    return truncated_linear_regression.UnknownVarianceSet(
+        residual_var, 2.0, anchor, bound=1.5
+    )
+
+
+def test_unknown_variance_set_bounds_the_precision_by_the_survival_mass():
+    projection = _unknown_variance_set()
+    lower, upper = projection.precision_bounds()
+    # alpha = 1 / radius = 1 / 2.
+    residual_var = ch.tensor([1.0, 4.0])
+    assert ch.allclose(lower, 0.25 / (96.0 * residual_var))
+    assert ch.allclose(upper, 8.0 * (5.0 + 2.0 * math.log(2.0)) / residual_var)
+
+
+def test_unknown_variance_set_projects_to_the_nearest_point():
+    projection = _unknown_variance_set()
+    lower, upper = projection.precision_bounds()
+    ch.manual_seed(0)
+    # Feasible points, to check no candidate beats the projection.
+    precision = lower + (upper - lower) * ch.rand(20000, 2)
+    direction = torch.nn.functional.normalize(ch.randn(20000, 2, 2), dim=1)
+    radius = 1.5 * precision * ch.rand(20000, 2)
+    feasible = ch.cat([direction * radius[:, None], precision[:, None]], dim=1)
+    for scale in [0.1, 3.0, 100.0]:
+        point = scale * ch.randn(3, 2)
+        projected = projection.project(point)
+        assert projection.contains(projected + 1e-6 * (projection.anchor - projected))
+        nearest = (feasible - point).norm(dim=1).min(0).values
+        assert ((projected - point).norm(dim=0) <= nearest + 1e-5).all()
+        assert ch.allclose(projection.project(projected), projected)

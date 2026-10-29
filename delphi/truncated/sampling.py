@@ -131,6 +131,38 @@ class GaussianSampler(abc.ABC):
         """
 
 
+class UntruncatedGaussianMoments(GaussianSampler):
+    """The exact moments of ``z ~ N(loc, noise_var)``, ignoring phi.
+
+    A loss's Hessian at these is the curvature without truncation, which
+    bounds the truncated one above.
+    """
+
+    def moments(
+        self,
+        loc: ch.Tensor,
+        noise_var: ch.Tensor,
+        phi: Callable,
+        second_moment: bool = False,
+        fourth_moment: bool = False,
+    ) -> ConditionalMoments:
+        del phi
+        mean = loc.double()
+        var = ch.as_tensor(noise_var, dtype=ch.float64).expand_as(mean)
+        second = mean.pow(2) + var
+        return ConditionalMoments(
+            mass=ch.ones_like(loc),
+            mean=mean,
+            second_moment=second if second_moment or fourth_moment else None,
+            third_moment=mean.pow(3) + 3.0 * mean * var if fourth_moment else None,
+            fourth_moment=(
+                mean.pow(4) + 6.0 * mean.pow(2) * var + 3.0 * var.pow(2)
+                if fourth_moment
+                else None
+            ),
+        )
+
+
 class GaussianRejectionSampler(GaussianSampler):
     """Rejection-samples each row until phi keeps enough draws.
 

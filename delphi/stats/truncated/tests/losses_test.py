@@ -10,6 +10,7 @@ variance ``1 + a lambda - lambda^2``.
 import torch as ch
 import torch.autograd.functional
 import torch.distributions
+import torch.nn.functional
 
 from delphi.stats.truncated import losses
 from delphi.truncated import sampling
@@ -83,8 +84,23 @@ def test_truncated_gaussian_nll_takes_any_sampler():
     assert ch.allclose(pred.grad, expected, atol=1e-6), (pred.grad, expected)
 
 
+def _all(z: ch.Tensor) -> ch.Tensor:
+    return ch.ones_like(z, dtype=ch.bool)
+
+
+def test_truncated_gaussian_nll_without_truncation_is_the_gaussian_nll():
+    pred = ch.tensor([[-0.5], [0.0], [1.0]])
+    targ = ch.tensor([[0.5], [1.0], [2.0]])
+    noise_var = ch.tensor([2.0])
+    loss = losses.TruncatedGaussianNLL.apply(pred, targ, _all, noise_var, _SAMPLER, 0.0)
+    expected = torch.nn.functional.gaussian_nll_loss(
+        pred, targ, noise_var.expand_as(pred), reduction="none"
+    ).flatten()
+    assert ch.allclose(loss, expected, atol=1e-6), (loss, expected)
+
+
 def _natural_nll(eta: ch.Tensor, lambda_: ch.Tensor, targ: ch.Tensor) -> ch.Tensor:
-    """Return the closed-form NLL in ``(eta, lambda)`` given ``z > 0``."""
+    """Return the closed-form NLL in ``(v^T x, lambda)`` given ``z > 0``."""
     pred = eta / lambda_
     return (
         0.5 * lambda_ * (targ - pred).pow(2)
@@ -93,31 +109,31 @@ def _natural_nll(eta: ch.Tensor, lambda_: ch.Tensor, targ: ch.Tensor) -> ch.Tens
     ).flatten()
 
 
-def test_truncated_gaussian_nll_unknown_variance_matches_the_closed_form_nll():
+def test_truncated_gaussian_nll_with_learned_variance_matches_the_closed_form():
     ch.manual_seed(0)
     eta, lambda_ = ch.tensor([[-1.0], [0.0], [2.0]]), ch.tensor([2.0])
     targ = ch.tensor([[0.5], [1.0], [2.0]])
-    loss = losses.TruncatedGaussianNLLUnknownVariance.apply(
-        eta, lambda_, targ, _positive, _SAMPLER
+    loss = losses.TruncatedGaussianNLL.apply(
+        eta / lambda_, targ, _positive, 1.0 / lambda_, _SAMPLER
     )
     expected = _natural_nll(eta, lambda_, targ)
     assert ch.allclose(loss, expected, atol=1e-2), (loss, expected)
 
 
-def test_truncated_gaussian_nll_unknown_variance_gradient_matches_autograd():
+def test_truncated_gaussian_nll_natural_gradient_matches_autograd():
     ch.manual_seed(0)
     eta = ch.tensor([[-1.0], [0.0], [2.0]], requires_grad=True)
     lambda_ = ch.tensor([2.0], requires_grad=True)
     targ = ch.tensor([[0.5], [1.0], [2.0]])
-    losses.TruncatedGaussianNLLUnknownVariance.apply(
-        eta, lambda_, targ, _positive, _SAMPLER
+    losses.TruncatedGaussianNLL.apply(
+        eta / lambda_, targ, _positive, 1.0 / lambda_, _SAMPLER
     ).mean().backward()
     exact = ch.autograd.grad(_natural_nll(eta, lambda_, targ).mean(), [eta, lambda_])
     assert ch.allclose(eta.grad, exact[0], atol=5e-3), (eta.grad, exact[0])
     assert ch.allclose(lambda_.grad, exact[1], atol=5e-3), (lambda_.grad, exact[1])
 
 
-def test_truncated_gaussian_nll_unknown_variance_hessian_matches_autograd():
+def test_truncated_gaussian_nll_natural_hessian_matches_autograd():
     ch.manual_seed(0)
     design = ch.tensor([[1.0, 0.0], [0.5, 1.0], [-1.0, 2.0]])
     targ = ch.tensor([[0.5], [1.0], [2.0]])
@@ -127,7 +143,11 @@ def test_truncated_gaussian_nll_unknown_variance_hessian_matches_autograd():
         return _natural_nll(design @ flat[:-1, None], flat[-1:], targ).mean()
 
     expected = torch.autograd.functional.hessian(mean_nll, natural.flatten())
-    hessian = losses.TruncatedGaussianNLLUnknownVariance.hessian(
-        design @ natural[:-1], natural[-1], design, _positive, _SAMPLER
+    hessian = losses.TruncatedGaussianNLL.natural_hessian(
+        design @ natural[:-1] / natural[-1],
+        design,
+        _positive,
+        1.0 / natural[-1],
+        _SAMPLER,
     )
     assert ch.allclose(hessian, expected.double(), atol=2e-2), (hessian, expected)

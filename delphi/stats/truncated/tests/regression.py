@@ -3,7 +3,7 @@
 
 Any model fit to ``y = w^T x + b + e`` observed through a set on y, the
 known- and unknown-variance regressions and the lasso among them:
-``make_dataset`` draws such a sample with known parameters, and
+``simulate`` draws such a sample with known parameters, and
 ``assert_recovers`` fits a model to it and checks every estimate the model
 returns against the truth. Models observing something else, such as the
 classifiers' labels, get a harness module of their own.
@@ -23,7 +23,7 @@ _BLOCK = 100_000
 
 
 @dataclasses.dataclass(frozen=True)
-class TruncatedDataset:  # pylint: disable=too-many-instance-attributes
+class Simulation:  # pylint: disable=too-many-instance-attributes
     """A truncated regression sample and the parameters that produced it.
 
     Attributes:
@@ -58,7 +58,7 @@ class TruncatedDataset:  # pylint: disable=too-many-instance-attributes
         return float((estimate - truth).norm())
 
 
-def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
+def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     coef: Sequence[float],
     intercept: float,
     phi: Callable,
@@ -67,7 +67,7 @@ def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
     noise_var: float = 1.0,
     covariance: Optional[ch.Tensor] = None,
     seed: int = 0,
-) -> TruncatedDataset:
+) -> Simulation:
     """Draw ``y = coef^T x + intercept + e`` until n samples pass phi.
 
     Args:
@@ -102,7 +102,7 @@ def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
     X, y = ch.cat(kept_X)[:n], ch.cat(kept_y)[:n]  # pylint: disable=invalid-name
     design = ch.cat([X, ch.ones(n, 1)], dim=1).double()
     ols = ch.linalg.lstsq(design, y.double()).solution.flatten().float()  # pylint: disable=not-callable
-    return TruncatedDataset(
+    return Simulation(
         X=X,
         y=y,
         coef=weight.T,
@@ -117,35 +117,35 @@ def make_dataset(  # pylint: disable=too-many-arguments,too-many-locals
 
 def assert_recovers(
     model,
-    dataset: TruncatedDataset,
+    simulation: Simulation,
     tolerance: float,
     *,
     variance_tolerance: Optional[float] = None,
     ols_margin: Optional[float] = 0.5,
 ) -> None:
-    """Fit a regression model to dataset and check each estimate it returns.
+    """Fit a regression model to a simulation and check each estimate it returns.
 
     Args:
         model: An unfitted truncated regression model, exposing
             ``{avg,ema,final,best}_coef_`` and ``_intercept_``, and
             ``_variance_`` when its ``noise_var`` is None.
-        dataset: The sample, with its truth.
+        simulation: The sample, with its truth.
         tolerance: Largest L2 error allowed for (coef, intercept).
         variance_tolerance: Largest error allowed for the variance when the
             model learns it; tolerance if None.
         ols_margin: Each estimate's error must also be below this fraction
             of OLS's; None skips the comparison, as without truncation.
     """
-    model.fit(dataset.X, dataset.y)
+    model.fit(simulation.X, simulation.y)
     if variance_tolerance is None:
         variance_tolerance = tolerance
-    ols = dataset.error(dataset.ols_coef, dataset.ols_intercept)
+    ols = simulation.error(simulation.ols_coef, simulation.ols_intercept)
     names = [*linear_model.ESTIMATORS, ""]
     for name in names:
         prefix = f"{name}_" if name else ""
         coef = getattr(model, f"{prefix}coef_")
         intercept = getattr(model, f"{prefix}intercept_")
-        error = dataset.error(coef, intercept)
+        error = simulation.error(coef, intercept)
         label = f"{prefix}coef_ and {prefix}intercept_"
         assert error <= tolerance, (
             f"{label}: error {error:.4f} above {tolerance} (OLS {ols:.4f})"
@@ -156,7 +156,7 @@ def assert_recovers(
             )
         if getattr(model, "noise_var", 1.0) is None:
             variance = float(getattr(model, f"{prefix}variance_"))
-            assert abs(variance - dataset.noise_var) <= variance_tolerance, (
+            assert abs(variance - simulation.noise_var) <= variance_tolerance, (
                 f"{prefix}variance_: {variance:.4f} against "
-                f"{dataset.noise_var}, beyond {variance_tolerance}"
+                f"{simulation.noise_var}, beyond {variance_tolerance}"
             )

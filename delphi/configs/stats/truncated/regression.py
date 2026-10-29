@@ -11,14 +11,13 @@ from delphi.configs.stats.truncated.linear import TruncatedLinearModelConfig
 class TruncatedRegressionConfig(TruncatedLinearModelConfig):
     """Configuration for truncated linear regression with known variance.
 
-    The descent follows Daskalakis et al. (2020), Algorithm 1: one shuffled
-    pass, one sample per step, steps of 1 / (lambda i) from the Fisher
-    schedule, every sample used, and every iterate averaged. Newton steps on
+    One shuffled pass, one small batch per step, steps of 1 / (lambda i)
+    from the Fisher schedule, and every iterate averaged; Newton steps on
     the full sample then take that average to the empirical MLE.
 
     Attributes:
-        weight_bound: The B of D_{r,B}, on the weight in the normalized
-            coordinates the descent runs in; None drops the ball.
+        weight_bound: The B of the projection set, on the weight in the
+            normalized coordinates the descent runs in; None drops the ball.
         refine_steps: Newton steps after the descent, as
             ``configs.RefinementConfig``; on by default here.
     """
@@ -51,24 +50,11 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
 class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
     """Configuration for truncated linear regression with the variance learned.
 
-    The descent follows Daskalakis, Stefanou, Yao and Zampetakis (2022),
-    Algorithm 1, in the natural parameters ``(v, lambda)``, on the schedule
-    and refinement of ``TruncatedRegressionConfig``.
-
     Attributes:
-        radius: The ``1 / a`` of the projection set D, for a the survival
-            mass; None takes ``1 / alpha``, or 1 when alpha is unknown.
-        weight_bound: The B of D, on the weight in the normalized
-            coordinates the descent runs in; None drops the ball.
-        batch_size: Larger than the known variance's: the lambda gradient
-            ``(y^2 - E[z^2 | S]) / 2`` is noisy enough at 10 that the
-            average drifts away from the MLE.
-        refine_damped: On, since full Newton steps from the descent's
-            average can overshoot lambda out of D.
+        refine_damped: On, since a full Newton step from the descent's
+            average can overshoot lambda to where phi keeps almost no mass.
     """
 
-    batch_size: int = 100
-    epochs: Optional[int] = pydantic.Field(default=5, ge=1)
     refine_damped: bool = True
 
 

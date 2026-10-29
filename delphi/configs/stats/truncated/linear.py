@@ -27,8 +27,8 @@ class TruncatedLinearModelConfig(LinearModelConfig):
             before its conditional mean is taken.
         eps: Numerical stability constant for the criterion.
         projection_set: The model's own projection set, or "none".
-        radius: The projection set's radius; None derives it from alpha as
-            ``4 log(2 / alpha) + 7``, taking alpha = 1 when it is unknown.
+        radius: The projection set's radius; None lets the model derive it
+            from alpha.
         rate: Factor the projection radius grows by per phase when alpha
             is not given.
         max_radius: Largest projection radius those phases reach.
