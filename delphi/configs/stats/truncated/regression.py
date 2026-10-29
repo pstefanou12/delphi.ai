@@ -51,10 +51,14 @@ class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
     """Configuration for truncated linear regression with the variance learned.
 
     Attributes:
+        avg_burn_in: Half, since the descent starts at OLS, far from the
+            optimum along the precision, and an average over every iterate
+            keeps that transient.
         refine_damped: On, since a full Newton step from the descent's
             average can overshoot lambda to where phi keeps almost no mass.
     """
 
+    avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
     refine_damped: bool = True
 
 

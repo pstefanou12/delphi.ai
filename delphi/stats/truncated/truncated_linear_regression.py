@@ -195,7 +195,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if self.noise_var is None and hessian is None and not self._refining:
             factor = ch.linalg.cholesky(self._untruncated_hessian())  # pylint: disable=not-callable
             self._preconditioner = ch.cholesky_inverse(factor)
-            hessian = helpers.whitened_hessian(self._untruncated_hessian, factor)
+            hessian = helpers.whitened_hessian(self.hessian, factor)
         return super().make_optimizer_and_schedule(checkpoint, hessian)
 
     def _untruncated_hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
