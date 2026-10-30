@@ -69,8 +69,16 @@ class TruncatedMultinomialLogisticRegressionConfig(TruncatedClassificationConfig
     """Configuration for truncated multinomial logistic regression.
 
     Attributes:
+        batch_size: Samples per step. The Fisher schedule's first step is
+            1 / smoothness, so its noise grows with the parameter count over
+            the batch; ten samples throw a margin set's iterate far from the
+            truth, where the sampler's gradient is too weak to return.
         iterations: Gradient steps of the descent.
+        refine_steps: Fisher scoring steps after the descent; the average
+            is close enough by then that more only add sampler noise.
     """
 
+    batch_size: int = 100
     epochs: Optional[int] = pydantic.Field(default=None, ge=1)
-    iterations: Optional[int] = pydantic.Field(default=1000, ge=1)
+    iterations: Optional[int] = pydantic.Field(default=300, ge=1)
+    refine_steps: int = pydantic.Field(default=3, ge=0)

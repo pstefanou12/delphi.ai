@@ -360,7 +360,9 @@ z = logits + ch.distributions.Gumbel(0.0, 1.0).sample(logits.shape)
 
 
 def phi(z):
-    return z[..., 1] > 0.0
+    """Keep the hard samples: those whose top two latents are close."""
+    top = z.topk(2, dim=-1).values
+    return top[..., 0] - top[..., 1] < 0.8
 
 
 kept = phi(z)
@@ -377,6 +379,8 @@ model.predict_proba(X[:5])
   projection set keeps every sample's untruncated label probabilities above
   `alpha^2`, unless the `radius` hyperparameter gives `log(1 / alpha')`.
 - **`sampler`** draws each label's latents given that label wins.
+- **`batch_size`** is 100 by default. The first step's gradient noise grows
+  with the (K - 1)(d + 1) parameters, so raise it with them: 1000 for 202.
 
 ## Architecture
 

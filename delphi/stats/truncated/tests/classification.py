@@ -12,7 +12,7 @@ to it and checks every estimate the model returns against the truth.
 from collections.abc import Callable, Sequence
 import dataclasses
 import math
-from typing import Optional
+from typing import Optional, Union
 
 import torch as ch
 import torch.distributions
@@ -136,6 +136,57 @@ class CoordinateSurvival:
         share = prob / (1.0 - prob[:, j : j + 1])
         mass = share * (own - prob[:, j : j + 1] * winner)
         return ch.cat([mass[:, :j], prob[:, j : j + 1] * winner, mass[:, j + 1 :]], 1)
+
+
+class MarginSurvival:
+    """A truncation oracle on the margin of a Gumbel latent vector.
+
+    The margin, the top latent less the runner-up, measures how hard the
+    sample is to classify. Piecewise in it as ``PiecewiseSurvival``, so each
+    label's survival mass has a closed form.
+
+    Attributes:
+        survival: The oracle on the margin.
+    """
+
+    def __init__(self, *pieces: tuple[float, float, float]):
+        """Initialize the oracle.
+
+        Args:
+            *pieces: As ``PiecewiseSurvival``, over margins in [0, inf).
+        """
+        self.survival = PiecewiseSurvival(*pieces)
+
+    def __call__(self, z: ch.Tensor) -> ch.Tensor:
+        """Return a mask, or survival probabilities, shaped z's batch dims."""
+        top = z.topk(2, dim=-1).values
+        return self.survival(top[..., 0] - top[..., 1])
+
+    def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
+        """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``.
+
+        ``z_c`` and ``max_{j != c} z_j`` are independent Gumbels, so their
+        gap is ``Logistic(a_c, 1)`` for ``a_c = h_c - logsumexp_{j != c}
+        h_j``, and given label c it is the margin.
+
+        Args:
+            logits: Latent means, shaped (n, K).
+
+        Returns:
+            The masses, shaped (n, K).
+        """
+        others = logits[:, None, :].masked_fill(
+            ch.eye(logits.size(1), dtype=ch.bool), -math.inf
+        )
+        gap = logits - ch.logsumexp(others, dim=2)
+        mass = ch.zeros_like(gap)
+        for low, high, probability in self.survival.pieces:
+            start, end = max(low, 0.0), high
+            if start < end:
+                mass = mass + probability * _interval_mass(
+                    start, end, gap, sampling.LOGISTIC_NOISE
+                )
+        return mass
 
 
 def _gumbel_mass(low: float, high: float, loc: ch.Tensor) -> ch.Tensor:
@@ -264,7 +315,7 @@ def simulate(  # pylint: disable=too-many-arguments
 def simulate_multinomial(  # pylint: disable=too-many-arguments
     coef: Sequence[Sequence[float]],
     intercept: Sequence[float],
-    phi: CoordinateSurvival,
+    phi: Union[CoordinateSurvival, MarginSurvival],
     n: int,
     *,
     covariance: Optional[ch.Tensor] = None,
