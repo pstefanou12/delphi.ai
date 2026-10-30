@@ -302,6 +302,14 @@ print(model.summary())
 - **`noise_var=None`** learns the noise variance with the weight; read it
   from `variance_` (and `avg_`, `ema_`, `final_`, `best_variance_`). There
   `alpha` sets the projection set's `1 / alpha` instead, 1 when it is `None`.
+- **`model.confidence_intervals(level=0.95)`** returns Wald intervals,
+  `(lower, upper)` for `"coef"`, `"intercept"` and, when `noise_var=None`,
+  `"variance"`, in y's units; `model.covariance()` is their asymptotic
+  covariance, the inverse Fisher information of the sample at the estimate:
+  the truncated NLL's Hessian in the weight for a known variance, and in the
+  natural parameters `(w / sigma^2, 1 / sigma^2)`, carried to `(w, sigma^2)`
+  by the delta method, for a learned one. `summary()` lists the 95%
+  intervals. Dependent data has none.
 - **`sampler`** estimates `P(z in S)` and the conditional moments for the
   loss; rejection sampling by default.
 

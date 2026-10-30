@@ -6,14 +6,18 @@ variance given, and with it learned (``noise_var=None``). Each tolerance is
 about twice the error of the exact truncated MLE on the same sample,
 measured with the closed-form NLL, over the weight alone when the variance is
 known and over (weight, variance) when it is not; every estimate lands within
-a few hundredths of that MLE. The dependent-data cases follow.
+a few hundredths of that MLE. The dependent-data cases follow, then both
+variants' confidence intervals: their covariance against the exact NLL's,
+and their coverage over repeated samples.
 """
 
 import math
-from typing import Optional
+import os
+from typing import Optional, cast
 
 import pytest
 import torch as ch
+import torch.autograd.functional
 import torch.nn.functional
 
 from delphi import stats
@@ -423,3 +427,194 @@ def test_unknown_variance_set_projects_to_the_nearest_point():
         nearest = (feasible - point).norm(dim=1).min(0).values
         assert ((projected - point).norm(dim=0) <= nearest + 1e-5).all()
         assert ch.allclose(projection.project(projected), projected)
+
+
+def _log_mass(loc: ch.Tensor, scale: ch.Tensor, bounds) -> ch.Tensor:
+    """Return log P(z in the union of bounds) for z ~ N(loc, scale^2).
+
+    A finite interval above loc is reflected below it, where the difference
+    of normal CDFs keeps its precision.
+    """
+    terms = []
+    for low, high in bounds:
+        lower, upper = (low - loc) / scale, (high - loc) / scale
+        if low == -INF:
+            terms.append(ch.special.log_ndtr(upper))  # pylint: disable=not-callable
+        elif high == INF:
+            terms.append(ch.special.log_ndtr(-lower))  # pylint: disable=not-callable
+        else:
+            above = lower > 0.0
+            left = ch.where(above, -upper, lower)
+            right = ch.special.log_ndtr(ch.where(above, -lower, upper))  # pylint: disable=not-callable
+            terms.append(right + ch.log1p(-ch.exp(ch.special.log_ndtr(left) - right)))  # pylint: disable=not-callable
+    return ch.logsumexp(ch.stack(terms), 0)
+
+
+def _exact_nll(natural: ch.Tensor, design: ch.Tensor, y: ch.Tensor, bounds):
+    """Return the mean truncated NLL at ``(v, lambda)``, without sampling."""
+    mean_term, precision = design @ natural[:-1], natural[-1]
+    nll = (
+        0.5 * precision * y.pow(2)
+        - y * mean_term
+        + mean_term.pow(2) / (2.0 * precision)
+        - 0.5 * ch.log(precision)
+        + _log_mass(mean_term / precision, precision.rsqrt(), bounds)
+    )
+    return nll.mean()
+
+
+def _exact_known_variance_nll(
+    weight: ch.Tensor, design: ch.Tensor, y: ch.Tensor, noise_var: float, bounds
+):
+    """Return the mean truncated NLL at w for a known variance."""
+    loc = design @ weight
+    scale = ch.tensor(math.sqrt(noise_var), dtype=ch.float64)
+    nll = (y - loc).pow(2) / (2.0 * noise_var) + _log_mass(loc, scale, bounds)
+    return nll.mean()
+
+
+_UNION = [(-INF, -2.0), (0.0, 1.0), (2.5, INF)]
+
+
+def _union_of_intervals(seed: int = 0, n: int = 1000) -> regression.Simulation:
+    """Return the 2d union-of-intervals sample with correlated covariates."""
+    return regression.simulate(
+        [1.0, -1.0],
+        0.5,
+        _intervals(*_UNION),
+        n,
+        covariance=ch.tensor([[1.0, 0.5], [0.5, 1.0]]),
+        seed=seed,
+    )
+
+
+def test_unknown_variance_covariance_inverts_the_exact_information():
+    simulation = _union_of_intervals(n=2000)
+    model = stats.TruncatedLinearRegression(
+        {}, simulation.phi, simulation.alpha, noise_var=None
+    ).fit(simulation.X, simulation.y)
+    variance = model.avg_variance_
+    weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_])
+    natural = ch.cat([weight / variance, 1.0 / variance])
+    X = ch.cat([simulation.X, ch.ones(2000, 1)], dim=1).double()  # pylint: disable=invalid-name
+    y = simulation.y.double().flatten()
+    hessian = torch.autograd.functional.hessian(
+        lambda theta: _exact_nll(theta, X, y, _UNION), natural
+    )
+    jacobian = torch.autograd.functional.jacobian(
+        lambda theta: ch.cat([theta[:-1], ch.ones(1)]) / theta[-1], natural
+    )
+    expected = jacobian @ ch.linalg.solve(2000 * hessian, jacobian.T)  # pylint: disable=not-callable
+    error = (model.covariance() - expected).norm() / expected.norm()
+    assert error <= 0.02, (model.covariance(), expected)
+
+
+def test_known_variance_covariance_inverts_the_exact_information():
+    simulation = _union_of_intervals(n=2000)
+    model = stats.TruncatedLinearRegression(
+        {}, simulation.phi, simulation.alpha, noise_var=simulation.noise_var
+    ).fit(simulation.X, simulation.y)
+    weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
+    X = ch.cat([simulation.X, ch.ones(2000, 1)], dim=1).double()  # pylint: disable=invalid-name
+    y = simulation.y.double().flatten()
+    hessian = torch.autograd.functional.hessian(
+        lambda theta: _exact_known_variance_nll(
+            theta, X, y, simulation.noise_var, _UNION
+        ),
+        weight,
+    )
+    expected = ch.linalg.inv(2000 * hessian)  # pylint: disable=not-callable
+    error = (model.covariance() - expected).norm() / expected.norm()
+    assert error <= 0.02, (model.covariance(), expected)
+    assert set(model.confidence_intervals()) == {"coef", "intercept"}
+
+
+_COVERAGE_CASES = {
+    "1d_left_truncation": lambda seed: regression.simulate(
+        [2.0], -1.0, _intervals((0.0, INF)), 1000, seed=seed
+    ),
+    "2d_union_of_intervals": _union_of_intervals,
+}
+_REPLICATIONS = 200
+_CHUNKS = 8
+# These move the learned variance's estimates by about a hundredth of their
+# sd, at a fifth of the default's time.
+_FAST_UNKNOWN = {"iterations": 2000, "num_samples": 100}
+# This keeps the known variance's within 0.04 sd of the exact MLE.
+_FAST_KNOWN = {"num_samples": 100}
+
+
+def _coverage_hits(simulate, variance_known: bool, seeds: range) -> ch.Tensor:
+    """Return how many samples' 95% intervals cover each true entry.
+
+    Args:
+        simulate: Maps a seed to a ``regression.Simulation``.
+        variance_known: Whether the model is given the noise variance.
+        seeds: The samples' seeds.
+
+    Returns:
+        Each entry's hits: coefficients, intercept, then the learned
+        variance.
+    """
+    hits = None
+    for seed in seeds:
+        simulation = simulate(seed)
+        model = stats.TruncatedLinearRegression(
+            _FAST_KNOWN if variance_known else _FAST_UNKNOWN,
+            simulation.phi,
+            simulation.alpha,
+            noise_var=simulation.noise_var if variance_known else None,
+        ).fit(simulation.X, simulation.y)
+        truth = {
+            "coef": simulation.coef,
+            "intercept": simulation.intercept,
+            "variance": ch.tensor([simulation.noise_var]),
+        }
+        covered = ch.cat(
+            [
+                ((lower <= truth[name]) & (truth[name] <= upper)).flatten()
+                for name, (lower, upper) in model.confidence_intervals().items()
+            ]
+        ).long()
+        hits = covered if hits is None else hits + covered
+    return cast(ch.Tensor, hits)
+
+
+def _pool(
+    tmp_path_factory: pytest.TempPathFactory, case: str, chunk: int, hits
+) -> Optional[ch.Tensor]:
+    """Record a chunk's hits; return all chunks' summed once each has run.
+
+    xdist workers share no memory, so the hits go to files under the run's
+    temporary root, which every worker's basetemp sits in. A chunk writes
+    before it lists, so whichever finishes last sees every file.
+    """
+    root = tmp_path_factory.getbasetemp()
+    if "PYTEST_XDIST_WORKER" in os.environ:
+        root = root.parent
+    folder = root / "coverage" / case
+    folder.mkdir(parents=True, exist_ok=True)
+    partial = folder / f"{chunk}.partial"
+    ch.save(hits, partial)
+    os.replace(partial, folder / f"{chunk}.pt")
+    done = list(folder.glob("*.pt"))
+    if len(done) < _CHUNKS:
+        return None
+    return sum((ch.load(path) for path in done), ch.zeros_like(hits))
+
+
+# The 200 replications run in chunks that xdist spreads over its workers;
+# the chunk finishing last checks the pooled coverage, whose standard error
+# is sqrt(0.95 * 0.05 / 200) = 0.015, against bounds three of them from 0.95.
+@pytest.mark.slow
+@pytest.mark.parametrize("chunk", range(_CHUNKS))
+@pytest.mark.parametrize("case", list(_COVERAGE_CASES))
+@_VARIANTS
+def test_intervals_cover_at_their_level(variance_known, case, chunk, tmp_path_factory):
+    size = _REPLICATIONS // _CHUNKS
+    seeds = range(chunk * size, (chunk + 1) * size)
+    hits = _coverage_hits(_COVERAGE_CASES[case], variance_known, seeds)
+    pooled = _pool(tmp_path_factory, f"{variance_known}-{case}", chunk, hits)
+    if pooled is not None:
+        coverage = pooled.double() / _REPLICATIONS
+        assert ((coverage >= 0.905) & (coverage <= 0.995)).all(), coverage
