@@ -20,6 +20,7 @@ import torch as ch
 import torch.distributions
 import torch.nn.functional
 
+import delphi.oracle
 from delphi.stats import linear_model
 from delphi.truncated import sampling
 
@@ -95,36 +96,36 @@ def _interval_mass(start, end, latent, noise) -> ch.Tensor:
     return ch.where(latent < start, upper_tail, lower_tail)
 
 
-class CoordinateSurvival:
-    """A truncation oracle on one coordinate of a Gumbel latent vector.
+class ClassLatentSurvival:
+    """A truncation oracle on one class's latent, whatever the label.
 
-    Piecewise in that coordinate as ``PiecewiseSurvival``. With the others
-    maximized out in closed form, so is each label's survival mass. The
-    piece ``(-inf, t)`` caps one class's latent whatever the label.
+    phi reads ``z_k = h_k + g_k`` for one class k, its logit plus its
+    Gumbel noise rather than the logit alone, piecewise as
+    ``PiecewiseSurvival``. The piece ``(-inf, t)`` caps that latent.
 
     Attributes:
-        coordinate: The latent coordinate phi reads.
-        survival: The oracle on that coordinate.
+        latent_class: The class k whose latent phi reads.
+        survival: The oracle on that latent.
     """
 
-    def __init__(self, coordinate: int, *pieces: tuple[float, float, float]):
+    def __init__(self, latent_class: int, *pieces: tuple[float, float, float]):
         """Initialize the oracle.
 
         Args:
-            coordinate: The latent coordinate phi reads.
+            latent_class: The class k whose latent phi reads.
             *pieces: As ``PiecewiseSurvival``.
         """
-        self.coordinate = coordinate
+        self.latent_class = latent_class
         self.survival = PiecewiseSurvival(*pieces)
 
     def __call__(self, z: ch.Tensor) -> ch.Tensor:
         """Return a mask, or survival probabilities, shaped z's batch dims."""
-        return self.survival(z[..., self.coordinate])
+        return self.survival(z[..., self.latent_class])
 
     def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
         """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``.
 
-        With j the coordinate read, p the softmax and A the set, label j
+        With j the class read, p the softmax and A the set, label j
         keeps ``p_j P(Gumbel(logsumexp) in A)`` and another label c a share
         ``p_c / (1 - p_j)`` of ``P(z_j in A)`` less that.
 
@@ -134,7 +135,7 @@ class CoordinateSurvival:
         Returns:
             The masses, shaped (n, K).
         """
-        j = self.coordinate
+        j = self.latent_class
         prob = ch.softmax(logits, dim=1)
         top = ch.logsumexp(logits, dim=1, keepdim=True)
         winner = ch.zeros_like(top)
@@ -174,9 +175,8 @@ class MarginSurvival:
     def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
         """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``.
 
-        ``z_c`` and ``max_{j != c} z_j`` are independent Gumbels, so their
-        gap is ``Logistic(a_c, 1)`` for ``a_c = h_c - logsumexp_{j != c}
-        h_j``, and given label c it is the margin.
+        Label c wins exactly when ``z_c - max_{j != c} z_j`` is positive,
+        and that difference is then the margin; see ``_margin_mass``.
 
         Args:
             logits: Latent means, shaped (n, K).
@@ -184,10 +184,10 @@ class MarginSurvival:
         Returns:
             The masses, shaped (n, K).
         """
-        return _margin_mass(_gap(logits), self.survival.pieces)
+        return _margin_mass(_margin_location(logits), self.survival.pieces)
 
 
-def _gap(logits: ch.Tensor) -> ch.Tensor:
+def _margin_location(logits: ch.Tensor) -> ch.Tensor:
     """Return ``h_c - logsumexp_{j != c} h_j`` for each class c, (n, K)."""
     others = logits[:, None, :].masked_fill(
         ch.eye(logits.size(1), dtype=ch.bool), -math.inf
@@ -196,15 +196,25 @@ def _gap(logits: ch.Tensor) -> ch.Tensor:
 
 
 def _margin_mass(
-    gap: ch.Tensor, pieces: Sequence[tuple[float, float, float]]
+    location: ch.Tensor, pieces: Sequence[tuple[float, float, float]]
 ) -> ch.Tensor:
-    """Return ``P(margin in S, label c)`` from each label's logistic gap."""
-    mass = ch.zeros_like(gap)
+    """Return ``P(margin in S, label c)`` for each class c, (n, K).
+
+    ``max_{j != c} z_j`` is a Gumbel at ``logsumexp_{j != c} h_j``, and the
+    difference of two independent unit Gumbels is a unit logistic, so
+    ``z_c - max_{j != c} z_j`` is ``Logistic(location_c, 1)``. Label c wins
+    where it is positive, and the margin is that difference.
+
+    Args:
+        location: ``_margin_location`` of the logits, shaped (n, K).
+        pieces: As ``PiecewiseSurvival``, over margins in [0, inf).
+    """
+    mass = ch.zeros_like(location)
     for low, high, probability in pieces:
         start, end = max(low, 0.0), high
         if start < end:
             mass = mass + probability * _interval_mass(
-                start, end, gap, sampling.LOGISTIC_NOISE
+                start, end, location, sampling.LOGISTIC_NOISE
             )
     return mass
 
@@ -271,7 +281,9 @@ class LabelMarginSurvival:
         """
         c = self.label
         prob = ch.softmax(logits, dim=1)
-        mass = _margin_mass(_gap(logits)[:, c : c + 1], self.survival.pieces)
+        mass = _margin_mass(
+            _margin_location(logits)[:, c : c + 1], self.survival.pieces
+        )
         return ch.cat([prob[:, :c], mass, prob[:, c + 1 :]], 1)
 
 
@@ -404,7 +416,7 @@ def simulate(  # pylint: disable=too-many-arguments
 def simulate_multinomial(  # pylint: disable=too-many-arguments
     coef: Sequence[Sequence[float]],
     intercept: Sequence[float],
-    phi: Union[CoordinateSurvival, MarginSurvival, LabelSurvival, LabelMarginSurvival],
+    phi: Union[ClassLatentSurvival, MarginSurvival, LabelSurvival, LabelMarginSurvival],
     n: int,
     *,
     covariance: Optional[ch.Tensor] = None,
@@ -438,7 +450,7 @@ def simulate_multinomial(  # pylint: disable=too-many-arguments
     # Forked so the population leaves the fit's random draws as they were.
     with ch.random.fork_rng():
         population_X, population_z = _survivors(  # pylint: disable=invalid-name
-            latent, _keep_all, _POPULATION, covariance, seed + 1
+            latent, delphi.oracle.Identity(), _POPULATION, covariance, seed + 1
         )
     return Simulation(
         X=X,
@@ -449,10 +461,6 @@ def simulate_multinomial(  # pylint: disable=too-many-arguments
         alpha=float(phi.label_mass(logits(X).double()).min()),
         population=(population_X, population_z.argmax(1)),
     )
-
-
-def _keep_all(z: ch.Tensor) -> ch.Tensor:
-    return ch.ones(z.shape[:-1], dtype=ch.bool)
 
 
 def assert_recovers(
@@ -551,23 +559,25 @@ def calibration_metrics(
         bins: Equal-width confidence bins for the calibration error.
 
     Returns:
-        ``log_loss``, the mean of -log P(y | x), and ``ece``, the
-        sample-weighted mean over bins of |accuracy - mean confidence| of
-        the top predicted class.
+        ``log_loss``, the mean of -log P(y | x), and
+        ``expected_calibration_error``: the samples binned by the top
+        class's predicted probability, the sample-weighted mean over bins
+        of |accuracy - mean predicted probability|. Zero when predictions
+        that say 80% are right 80% of the time.
     """
     picked = probabilities.gather(1, labels[:, None]).flatten()
     confidence, predicted = probabilities.max(1)
     hits = (predicted == labels).double()
     which = (confidence * bins).long().clamp_max(bins - 1)
-    ece = 0.0
+    calibration_error = 0.0
     for index in range(bins):
         members = which == index
         if members.any():
             gap = hits[members].mean() - confidence[members].mean()
-            ece += float(members.double().mean() * gap.abs())
+            calibration_error += float(members.double().mean() * gap.abs())
     return {
         "log_loss": float(-picked.clamp_min(1e-300).log().mean()),
-        "ece": ece,
+        "expected_calibration_error": calibration_error,
     }
 
 
@@ -578,7 +588,7 @@ def assert_classifies(  # pylint: disable=too-many-arguments
     accuracy_tolerance: float = 0.01,
     class_tolerance: float = 0.05,
     log_loss_tolerance: float = 0.015,
-    ece_tolerance: float = 0.025,
+    calibration_error_tolerance: float = 0.025,
     naive_miscalibrated: bool = True,
 ) -> None:
     """Check a fitted multinomial model's predictions on the population.
@@ -586,8 +596,9 @@ def assert_classifies(  # pylint: disable=too-many-arguments
     Compares the model's accuracy, each class's precision and recall, and
     its log loss to those of the true weights (the Bayes classifier) on the
     simulation's held-out untruncated draws, and bounds its expected
-    calibration error, which the naive fit's must be twice. Precision is skipped for classes the truth predicts
-    on under 1% of the samples, where it rests on a handful of predictions.
+    calibration error, which the naive fit's must be twice. Precision is
+    skipped for classes the truth predicts on under 1% of the samples,
+    where it rests on a handful of predictions.
 
     Args:
         model: A fitted classifier with ``predict_proba``.
@@ -595,8 +606,9 @@ def assert_classifies(  # pylint: disable=too-many-arguments
         accuracy_tolerance: Largest accuracy shortfall from the truth.
         class_tolerance: Largest per-class precision or recall difference.
         log_loss_tolerance: Largest log-loss excess over the truth's.
-        ece_tolerance: Largest expected calibration error; the exact MLE's
-            reaches 0.012 on the test cases.
+        calibration_error_tolerance: Largest expected calibration error,
+            as ``calibration_metrics``; the exact MLE's reaches 0.012 on
+            the test cases.
         naive_miscalibrated: Whether the naive fit, ``emp_coef_`` and
             ``emp_intercept_``, must have twice the model's calibration
             error; False without truncation, where the naive fit is the MLE.
@@ -614,16 +626,18 @@ def assert_classifies(  # pylint: disable=too-many-arguments
         f"log loss {ours_calibration['log_loss']:.4f} above the truth's "
         f"{truth_calibration['log_loss']:.4f} by more than {log_loss_tolerance}"
     )
-    assert ours_calibration["ece"] <= ece_tolerance, (
-        f"calibration error {ours_calibration['ece']:.4f} above "
-        f"{ece_tolerance} (truth {truth_calibration['ece']:.4f})"
+    ours_error = ours_calibration["expected_calibration_error"]
+    truth_error = truth_calibration["expected_calibration_error"]
+    assert ours_error <= calibration_error_tolerance, (
+        f"calibration error {ours_error:.4f} above "
+        f"{calibration_error_tolerance} (truth {truth_error:.4f})"
     )
     if naive_miscalibrated:
         naive = multinomial_probabilities(X, model.emp_coef_, model.emp_intercept_)
-        naive_ece = calibration_metrics(naive, labels)["ece"]
-        assert naive_ece > 2.0 * ours_calibration["ece"], (
-            f"the naive fit's calibration error {naive_ece:.4f} is not twice "
-            f"the model's {ours_calibration['ece']:.4f}"
+        naive_error = calibration_metrics(naive, labels)["expected_calibration_error"]
+        assert naive_error > 2.0 * ours_error, (
+            f"the naive fit's calibration error {naive_error:.4f} is not "
+            f"twice the model's {ours_error:.4f}"
         )
 
 

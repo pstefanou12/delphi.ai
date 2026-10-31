@@ -4,8 +4,8 @@
 One case per truncation set on the shared harness, each checked against the
 true weights and the naive fit. Most sets read the margin, the gap between
 the top two latents: keeping the hard samples shrinks every class's naive
-weights, keeping the easy ones inflates them. The others read one latent
-coordinate or the winning label. Undersampling one label, truncating its
+weights, keeping the easy ones inflates them. The others read one class's
+latent or the winning label. Undersampling one label, truncating its
 margin alone, or capping its latent biases that class against the rest,
 which moves the naive fit's predictions, so those cases also require
 beating its accuracy. Each set leaves every label's mass in closed form,
@@ -27,10 +27,12 @@ from delphi.stats.truncated.tests import classification
 
 INF = math.inf
 _COEF_1D = [[1.0], [-1.0]]
-_NONE = classification.CoordinateSurvival(1, (-INF, INF, 1.0))
-# Class 1's latent outside (0, 2), which biases its weights the most.
-_CLASS_ONE = classification.CoordinateSurvival(1, (-INF, 0.0, 1.0), (2.0, INF, 1.0))
-_COMPLEX = classification.CoordinateSurvival(
+_NONE = classification.ClassLatentSurvival(1, (-INF, INF, 1.0))
+# Drops class 1's latent in [0, 2], which biases its weights the most.
+_CLASS_ONE_DROPS_0_TO_2 = classification.ClassLatentSurvival(
+    1, (-INF, 0.0, 1.0), (2.0, INF, 1.0)
+)
+_CLASS_ONE_DROPS_TWO_BANDS = classification.ClassLatentSurvival(
     1, (-INF, -1.0, 1.0), (0.0, 1.0, 1.0), (2.0, INF, 1.0)
 )
 # Each threshold keeps 15 to 40% of the samples, at that K.
@@ -126,22 +128,23 @@ def test_1d_no_truncation():
 def test_1d_label_prior_shift():
     # Class 0's latent is pure noise, so a set on it alone moves the label
     # prior, which the naive fit absorbs into the intercepts.
-    simulation = _simulate_1d(classification.CoordinateSurvival(0, (0.0, INF, 1.0)))
+    simulation = _simulate_1d(classification.ClassLatentSurvival(0, (0.0, INF, 1.0)))
     # Margin sets mostly rescale the weights, which leaves argmax alone; a
     # prior shift is what moves the naive fit's predictions.
     _assert_beats_naive(_fit(simulation, 0.06), simulation, 0.03)
 
 
 def test_1d_class_one_truncation():
-    _fit(_simulate_1d(_CLASS_ONE), 0.13)
+    _fit(_simulate_1d(_CLASS_ONE_DROPS_0_TO_2), 0.13)
 
 
-def test_1d_complex_truncation():
-    _fit(_simulate_1d(_COMPLEX), 0.09)
+def test_1d_class_one_two_bands():
+    _fit(_simulate_1d(_CLASS_ONE_DROPS_TWO_BANDS), 0.09)
 
 
-def test_2d_complex_truncation():
-    phi = classification.CoordinateSurvival(1, (-2.0, -0.5, 1.0), (0.5, INF, 1.0))
+def test_2d_class_one_two_bands():
+    # Drops class 1's latent below -2 and in [-0.5, 0.5].
+    phi = classification.ClassLatentSurvival(1, (-2.0, -0.5, 1.0), (0.5, INF, 1.0))
     covariance = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
     coef = [[1.0, -1.0], [-0.5, 1.0]]
     simulation = classification.simulate_multinomial(
@@ -166,7 +169,7 @@ def test_10d_randomized_margin():
 
 @pytest.mark.slow
 def test_10d_class_one_truncation():
-    _fit(_simulate_10d(_CLASS_ONE), 0.41)
+    _fit(_simulate_10d(_CLASS_ONE_DROPS_0_TO_2), 0.41)
 
 
 @pytest.mark.slow
@@ -221,7 +224,7 @@ def test_10d_class_margin():
 def test_10d_capped_class():
     # A high class 1 latent is rarely seen, whatever the label: a clinic
     # that misses the obvious cases. Kept at 2%, not 0, so alpha is positive.
-    phi = classification.CoordinateSurvival(1, (-INF, 0.5, 1.0), (0.5, INF, 0.02))
+    phi = classification.ClassLatentSurvival(1, (-INF, 0.5, 1.0), (0.5, INF, 0.02))
     simulation = _simulate_10d(phi)
     _assert_beats_naive(_fit(simulation, 0.58), simulation, 0.04)
 

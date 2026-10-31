@@ -17,6 +17,7 @@ import torch.autograd.functional
 import torch.distributions
 import torch.nn.functional
 
+import delphi.oracle
 from delphi.stats.truncated import losses
 from delphi.stats.truncated.tests import classification
 from delphi.truncated import sampling
@@ -239,7 +240,9 @@ def test_truncated_bce_takes_any_sampler():
 
 
 # Kept where the latent of class 1 exceeds -1.
-_CLASS_ONE_ABOVE_MINUS_ONE = classification.CoordinateSurvival(1, (-1.0, math.inf, 1.0))
+_CLASS_ONE_ABOVE_MINUS_ONE = classification.ClassLatentSurvival(
+    1, (-1.0, math.inf, 1.0)
+)
 _GUMBEL_SAMPLER = sampling.StratifiedGumbelSampler(num_samples=100_000)
 _LOGITS = ch.tensor([[0.0, -1.0, 0.5], [0.0, 0.5, 2.0], [0.0, 1.5, -1.0]])
 _LABELS = ch.tensor([[0], [1], [2]])
@@ -251,14 +254,12 @@ def _closed_form_ce(pred: ch.Tensor, targ: ch.Tensor) -> ch.Tensor:
     return ch.log(mass.sum(1)) - ch.log(mass.gather(1, targ).flatten())
 
 
-def _everything(z: ch.Tensor) -> ch.Tensor:
-    return ch.ones(z.shape[:-1], dtype=ch.bool)
-
-
 def test_truncated_ce_without_truncation_is_the_cross_entropy():
     ch.manual_seed(0)
     pred = _LOGITS.clone().requires_grad_()
-    loss = losses.TruncatedCE.apply(pred, _LABELS, _everything, _GUMBEL_SAMPLER)
+    loss = losses.TruncatedCE.apply(
+        pred, _LABELS, delphi.oracle.Identity(), _GUMBEL_SAMPLER
+    )
     loss.sum().backward()
     expected = torch.nn.functional.cross_entropy(
         _LOGITS, _LABELS.flatten(), reduction="none"

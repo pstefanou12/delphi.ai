@@ -39,12 +39,12 @@ class Identity(oracle):  # pylint: disable=too-few-public-methods
         """Return membership for every sample.
 
         Args:
-            x: Samples of shape (n, dims).
+            x: Samples of shape (..., dims).
 
         Returns:
-            Mask over the batch, all true.
+            Mask over the batch dims, all true.
         """
-        return ch.ones(x.size(0), dtype=ch.bool)
+        return ch.ones(x.shape[:-1], dtype=ch.bool)
 
 
 class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
