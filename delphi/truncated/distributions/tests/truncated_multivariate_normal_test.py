@@ -12,7 +12,6 @@ from torch.distributions import kl
 import delphi.oracle
 from delphi.truncated.distributions import truncated_multivariate_normal
 from delphi.truncated.distributions.tests import helpers, truncation_sets
-from delphi.utils import helpers as delphi_helpers
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
@@ -67,7 +66,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
             @ emp_sigma_diag,
         ),
         divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=distributions.MultivariateNormal(emp_loc, delphi_helpers.cov(S)),
+        baseline=distributions.MultivariateNormal(emp_loc, ch.atleast_2d(ch.cov(S.T))),
         baseline_must_fail=baseline_must_fail,
         tolerances=tolerances,
     )

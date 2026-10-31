@@ -6,11 +6,10 @@ Helper code (functions, classes, etc.)
 from collections.abc import Callable
 import math
 import pprint
-from typing import NamedTuple, Optional
+from typing import Optional
 
 import cox
 import torch as ch
-from torch import Tensor
 import torch.linalg as LA
 
 
@@ -81,54 +80,6 @@ class Parameters:
 
     def __setstate__(self, x):
         super().__setattr__("params", x)  # pylint: disable=attribute-defined-outside-init
-
-
-def cov(m, rowvar=False):
-    """
-    Estimate a covariance matrix given data.
-
-    Covariance indicates the level to which two variables vary together.
-    If we examine N-dimensional samples, `X = [x_1, x_2, ... x_N]^T`,
-    then the covariance matrix element `C_{ij}` is the covariance of
-    `x_i` and `x_j`. The element `C_{ii}` is the variance of `x_i`.
-
-    Args:
-        m: A 1-D or 2-D array containing multiple variables and observations.
-            Each row of `m` represents a variable, and each column a single
-            observation of all those variables.
-        rowvar: If `rowvar` is True, then each row represents a
-            variable, with observations in the columns. Otherwise, the
-            relationship is transposed: each column represents a variable,
-            while the rows contain observations.
-
-    Returns:
-        The covariance matrix of the variables.
-    """
-    if m.dim() > 2:
-        raise ValueError("m has more than 2 dimensions")
-    # Clone array so that data is not manipulated in-place.
-    m_ = m.clone().detach()
-    if m_.dim() < 2:
-        m_ = m_.view(1, -1)
-    if not rowvar and m_.size(0) != 1:
-        m_ = m_.t()
-    # m = m.type(torch.double)  # Uncomment this line if desired.
-    fact = 1.0 / (m_.size(1) - 1)
-    m_ -= ch.mean(m_, dim=1, keepdim=True)
-    mt = m_.t()  # if complex: mt = m.t().conj()
-    return fact * m_.matmul(mt)
-
-
-# For real symmetric matrices.
-def is_psd(matrix, tol=1e-8):
-    """Check if a matrix is positive semi-definite."""
-    try:
-        eig_vals = ch.linalg.eigvalsh(  # pylint: disable=not-callable
-            matrix
-        )  # More stable for symmetric
-        return (eig_vals >= -tol).all()
-    except Exception:  # pylint: disable=broad-except
-        return False
 
 
 def vech_size(dims: int) -> int:
@@ -298,73 +249,6 @@ class AverageMeter:
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
-
-class Bounds(NamedTuple):
-    """Named tuple holding lower and upper bounds as Tensors."""
-
-    lower: Tensor
-    upper: Tensor
-
-
-class DataPrefetcher:
-    """Prefetches data onto the GPU asynchronously for faster training."""
-
-    def __init__(self, loader, stop_after=None):
-        """Initialize the prefetcher with a data loader."""
-        self.loader = loader
-        self.dataset = loader.dataset
-        self.stream = ch.cuda.Stream()
-        self.stop_after = stop_after
-        self.next_input = None
-        self.next_target = None
-        self.loaditer = None
-
-    def __len__(self):
-        return len(self.loader)
-
-    def preload(self):
-        """Preload the next batch onto the GPU stream."""
-        try:
-            self.next_input, self.next_target = next(self.loaditer)
-        except StopIteration:
-            self.next_input = None
-            self.next_target = None
-            return
-        with ch.cuda.stream(self.stream):
-            self.next_input = self.next_input.cuda(non_blocking=True)
-            self.next_target = self.next_target.cuda(non_blocking=True)
-
-    def __iter__(self):
-        count = 0
-        self.loaditer = iter(self.loader)
-        self.preload()
-        while self.next_input is not None:
-            ch.cuda.current_stream().wait_stream(self.stream)
-            inp = self.next_input
-            target = self.next_target
-            self.preload()
-            count += 1
-            yield inp, target
-            if isinstance(self.stop_after, int) and (count > self.stop_after):
-                break
-
-
-class ProcedureComplete(Exception):
-    """Exception raised when a procedure has completed."""
-
-    def __init__(self, message="procedure complete"):
-        """Initialize with a completion message."""
-        super().__init__(message)
-
-
-class PSDError(Exception):
-    """Exception raised when a matrix is not positive semi-definite."""
-
-    def __init__(self, message="psd error"):
-        """Initialize with a PSD error message."""
-        super().__init__(message)
-        self.message = message
 
 
 def calc_spectral_norm(A):  # pylint: disable=invalid-name

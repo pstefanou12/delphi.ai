@@ -3,19 +3,6 @@
 
 from enum import StrEnum
 
-JUPYTER = "jupyter"
-TERMINAL = "terminal"
-IPYTHON = "ipython"
-
-# Base schema for the training logs table.  Model-specific metric columns
-# (prefixed with "train_" or "val_") are appended dynamically at runtime.
-LOGS_SCHEMA = {
-    "epoch": int,
-    "train_loss": float,
-    "val_loss": float,
-    "time": float,
-}
-
 EVAL_LOGS_SCHEMA = {"test_loss": float, "time": float}
 
 LOGS_TABLE = "logs"
