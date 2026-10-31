@@ -19,7 +19,7 @@ from delphi.stats import linear_model
 from delphi.stats.truncated.truncated_linear_regression import (
     TruncatedLinearRegression,
 )
-from delphi.utils.helpers import calc_spectral_norm, calc_thickness
+from delphi.utils import helpers
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -136,7 +136,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         while (
             num_trajectories < self.hyperparameters.num_traj_phase_one
             and X.size(0) < self.hyperparameters.T_phase_one
-            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
+            and helpers.calc_thickness(covariate_matrix)
+            < self.hyperparameters.target_thickness
         ):
             sample = self.gen_data(x_t, u_t=ch.zeros((1, self.m)))
             total_samples += 1
@@ -181,7 +182,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         while (
             total_samples < self.hyperparameters.num_traj_phase_two
             and U.size(0) < self.hyperparameters.T_phase_two
-            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
+            and helpers.calc_thickness(covariate_matrix)
+            < self.hyperparameters.target_thickness
         ):
             u = (self.c * id_[index])[None, ...]
             sample = self.gen_data(xt, u_t=u)
@@ -229,7 +231,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         for mat in mat_list:
             counter = 0
             for mat2 in mat_list:
-                if calc_spectral_norm(mat - mat2) < eps:
+                if helpers.calc_spectral_norm(mat - mat2) < eps:
                     counter += 1
                 if counter > max_count:
                     output = mat
@@ -260,7 +262,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         while (
             traj < self.hyperparameters.num_traj_gen_samples_B
             and X.size(0) < self.hyperparameters.T_gen_samples_B
-            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
+            and helpers.calc_thickness(covariate_matrix)
+            < self.hyperparameters.target_thickness
         ):
             traj += 1
             xt = ch.zeros((1, self.d))
@@ -324,7 +327,8 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         while (
             traj < self.hyperparameters.num_traj_gen_samples_A
             and X.size(0) < self.hyperparameters.T_gen_samples_A
-            and calc_thickness(covariate_matrix) < self.hyperparameters.target_thickness
+            and helpers.calc_thickness(covariate_matrix)
+            < self.hyperparameters.target_thickness
         ):
             xt = ch.zeros(1, self.d)
             traj += 1

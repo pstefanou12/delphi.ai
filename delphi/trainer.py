@@ -19,9 +19,7 @@ from tqdm import tqdm
 
 from delphi import configs
 from delphi.delphi import delphi
-from delphi.utils import constants as consts
-from delphi.utils.constants import CheckpointKey, ProcedureStage, StopReason
-from delphi.utils.helpers import AverageMeter, setup_store_with_metadata
+from delphi.utils import constants, helpers
 
 
 @dataclasses.dataclass(frozen=True)
@@ -44,7 +42,7 @@ class RunResult:  # pylint: disable=too-many-instance-attributes
     ema_steps: int
     iterations: int
     epochs: int
-    stop_reason: Optional[StopReason]
+    stop_reason: Optional[constants.StopReason]
     seconds: float
     # Algorithm-specific facts about the run, from the model's run_metrics.
     metrics: dict
@@ -198,7 +196,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         # Either a state_dict (in-memory) or a filesystem path (disk) to the
         # best checkpoint; None when neither saving mode is active.
         self._best_model_state: Optional[Union[dict, str]] = None
-        self.stop_reason: Optional[StopReason] = None
+        self.stop_reason: Optional[constants.StopReason] = None
         # Size of the training dataset; set by train_model for ELBO scaling etc.
         self.dataset_size: Optional[int] = None
 
@@ -264,7 +262,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             # Metadata table captures hyperparameter config; the logs table
             # is created lazily in _log_epoch after the first epoch so its
             # schema can include model-specific metric columns.
-            setup_store_with_metadata(hp, store)
+            helpers.setup_store_with_metadata(hp, store)
 
         started = time()
         warm_start = None
@@ -430,7 +428,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             )
 
         if checkpoint:
-            self.epoch = checkpoint.get(CheckpointKey.EPOCH, 0)
+            self.epoch = checkpoint.get(constants.CheckpointKey.EPOCH, 0)
             if val_loader is not None:
                 with ch.no_grad():
                     self.model.eval()
@@ -476,7 +474,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.hyperparameters.epochs is not None
                 and self.epoch == self.hyperparameters.epochs
             ):
-                self.stop_reason = StopReason.MAX_EPOCHS
+                self.stop_reason = constants.StopReason.MAX_EPOCHS
                 self.t_end = time()
                 self.procedure_duration = self.t_end - self.t_start
                 self.logger.info(
@@ -519,9 +517,13 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             Tuple of (avg_loss, metrics_dict) where metrics_dict maps each
             metric name to its epoch-averaged value.
         """
-        mode = ProcedureStage.TRAIN if self.model.training else ProcedureStage.VAL
-        loss_ = AverageMeter()
-        metric_meters: dict[str, AverageMeter] = {}
+        mode = (
+            constants.ProcedureStage.TRAIN
+            if self.model.training
+            else constants.ProcedureStage.VAL
+        )
+        loss_ = helpers.AverageMeter()
+        metric_meters: dict[str, helpers.AverageMeter] = {}
 
         if loader is None:
             loss = self._loaderless_step(loss_)
@@ -532,7 +534,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.model.post_epoch_hook(self.epoch, self.model.training, loss)
         return loss_.avg, {k: m.avg for k, m in metric_meters.items()}
 
-    def _loaderless_step(self, loss_: AverageMeter) -> ch.Tensor:
+    def _loaderless_step(self, loss_: helpers.AverageMeter) -> ch.Tensor:
         """Run one loader-free step and return the loss tensor.
 
         Called by ``run_epoch`` when no DataLoader is provided.  On the
@@ -577,9 +579,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self,
         loader: DataLoader,
         val_loader: Optional[DataLoader],
-        mode: ProcedureStage,
-        loss_: AverageMeter,
-        metric_meters: dict[str, AverageMeter],
+        mode: constants.ProcedureStage,
+        loss_: helpers.AverageMeter,
+        metric_meters: dict[str, helpers.AverageMeter],
     ) -> ch.Tensor:
         """Iterate over a DataLoader for one full epoch.
 
@@ -786,7 +788,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.val_param_history_indices.append(len(self.param_history) - 1)
         return loss
 
-    def _update_metric_meters(self, metric_meters: dict[str, AverageMeter]) -> None:
+    def _update_metric_meters(
+        self, metric_meters: dict[str, helpers.AverageMeter]
+    ) -> None:
         """Accumulate per-batch model metrics into running averages.
 
         Args:
@@ -795,7 +799,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
         for name, val in self.model.batch_metrics().items():
             if name not in metric_meters:
-                metric_meters[name] = AverageMeter()
+                metric_meters[name] = helpers.AverageMeter()
             metric_meters[name].update(
                 val.item() if isinstance(val, ch.Tensor) else float(val)
             )
@@ -817,18 +821,18 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self.hyperparameters.iterations is not None
             and self.iterations >= self.hyperparameters.iterations
         ):
-            return True, StopReason.MAX_ITERATIONS
+            return True, constants.StopReason.MAX_ITERATIONS
 
         if self.hyperparameters.early_stopping and self.hyperparameters.grad_tol > 0:
             window = max(1, self.hyperparameters.grad_tol_window)
             if len(self.grad_norms) >= window:
                 smoothed = sum(self.grad_norms[-window:]) / window
                 if smoothed < self.hyperparameters.grad_tol:
-                    return True, StopReason.GRAD_TOL
+                    return True, constants.StopReason.GRAD_TOL
 
         model_stop, _ = self.model.should_stop()
         if model_stop:
-            return True, StopReason.MODEL_STOP
+            return True, constants.StopReason.MODEL_STOP
 
         return False, None
 
@@ -878,7 +882,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """
         ckpt_dir = self._resolve_checkpoint_dir()
         if ckpt_dir is not None:
-            ckpt_path = os.path.join(ckpt_dir, consts.CKPT_NAME_BEST)
+            ckpt_path = os.path.join(ckpt_dir, constants.CKPT_NAME_BEST)
             ch.save(self.model.state_dict(), ckpt_path)
             self._best_model_state = ckpt_path
             return
@@ -906,9 +910,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def _log_epoch_summary(
         self,
-        mode: ProcedureStage,
-        loss_: AverageMeter,
-        metric_meters: dict[str, AverageMeter],
+        mode: constants.ProcedureStage,
+        loss_: helpers.AverageMeter,
+        metric_meters: dict[str, helpers.AverageMeter],
     ) -> None:
         """Emit the single end-of-epoch log line.
 
@@ -992,14 +996,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         ):
             delta = abs(self.epoch_train_losses[-1] - self.epoch_train_losses[-2])
             if delta < self.hyperparameters.loss_tol:
-                self.stop_reason = StopReason.LOSS_TOL
+                self.stop_reason = constants.StopReason.LOSS_TOL
                 return True
 
         patience = self.hyperparameters.patience
         if patience is not None and len(self.epoch_val_losses) > patience:
             recent = self.epoch_val_losses[-patience - 1 :]
             if recent[-1] > min(recent[:-1]):
-                self.stop_reason = StopReason.EARLY_STOP
+                self.stop_reason = constants.StopReason.EARLY_STOP
                 return True
 
         return False
@@ -1033,7 +1037,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         }
         row.update({f"train_{k}": float(v) for k, v in train_metrics.items()})
         row.update({f"val_{k}": float(v) for k, v in val_metrics.items()})
-        store[consts.LOGS_TABLE].append_row(row)
+        store[constants.LOGS_TABLE].append_row(row)
 
     def _init_logs_table(
         self,
@@ -1061,7 +1065,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         }
         schema.update({f"train_{k}": float for k in train_metrics})
         schema.update({f"val_{k}": float for k in val_metrics})
-        store.add_table(consts.LOGS_TABLE, schema)
+        store.add_table(constants.LOGS_TABLE, schema)
         self._store_logs_ready = True
 
     def _save_periodic_checkpoint(self) -> None:
@@ -1076,25 +1080,25 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             return
 
         checkpoint = {
-            CheckpointKey.EPOCH: self.epoch,
-            CheckpointKey.MODEL: self.model.state_dict(),
-            CheckpointKey.OPTIMIZER: (
+            constants.CheckpointKey.EPOCH: self.epoch,
+            constants.CheckpointKey.MODEL: self.model.state_dict(),
+            constants.CheckpointKey.OPTIMIZER: (
                 self.model.optimizer.state_dict()
                 if self.model.optimizer is not None
                 else None
             ),
-            CheckpointKey.SCHEDULER: (
+            constants.CheckpointKey.SCHEDULER: (
                 self.model.schedule.state_dict()
                 if self.model.schedule is not None
                 else None
             ),
-            CheckpointKey.RANDOM_STATES: {
+            constants.CheckpointKey.RANDOM_STATES: {
                 "python": random.getstate(),
                 "numpy": np.random.get_state(),
                 "pytorch": ch.get_rng_state(),
             },
         }
-        ckpt_path = os.path.join(ckpt_dir, consts.CKPT_NAME_LATEST)
+        ckpt_path = os.path.join(ckpt_dir, constants.CKPT_NAME_LATEST)
         ch.save(checkpoint, ckpt_path)
         self.logger.info(f"Saved checkpoint at epoch {self.epoch} to {ckpt_path}.")
 
@@ -1167,14 +1171,14 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         start_time = time()
 
         if store is not None:
-            store.add_table(consts.EVAL_LOGS_TABLE, consts.EVAL_LOGS_SCHEMA)
+            store.add_table(constants.EVAL_LOGS_TABLE, constants.EVAL_LOGS_SCHEMA)
 
         self.model.eval()
         test_loss, test_metrics = self.run_epoch(loader)
 
         log_info = {"test_loss": test_loss, "time": time() - start_time, **test_metrics}
         if store:
-            store[consts.EVAL_LOGS_TABLE].append_row(log_info)
+            store[constants.EVAL_LOGS_TABLE].append_row(log_info)
         return log_info
 
     @property

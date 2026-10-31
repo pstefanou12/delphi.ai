@@ -1,7 +1,5 @@
 # Author: pstefanou12@
-"""
-Helper code (functions, classes, etc.)
-"""
+"""Matrix, metric and logging helpers shared by the statistical models."""
 
 from collections.abc import Callable
 import math
