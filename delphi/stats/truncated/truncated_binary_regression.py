@@ -8,7 +8,7 @@ regression differ only in the noise e.
 
 from collections.abc import Callable
 import math
-from typing import Generic, Optional, TypeVar
+from typing import Optional
 
 import torch as ch
 
@@ -19,17 +19,13 @@ from delphi.stats.truncated.truncated_classification import (
 )
 from delphi.truncated import sampling
 
-_BinaryConfigT = TypeVar(
-    "_BinaryConfigT", bound=configs.TruncatedBinaryRegressionConfig
-)
-
 # Fraction of the segment a LatentIntervalSet projection stops short of
 # its boundary.
 _INTERIOR = 1e-6
 
 
 class TruncatedBinaryRegression(
-    TruncatedClassification[_BinaryConfigT], Generic[_BinaryConfigT]
+    TruncatedClassification[configs.TruncatedBinaryRegressionConfig]
 ):
     """Truncated binary regression with a known noise law.
 
@@ -37,6 +33,7 @@ class TruncatedBinaryRegression(
     ``phi`` sees latents shaped (n, m, 1); alpha is at most 1/2.
     """
 
+    defaults = configs.TruncatedBinaryRegressionConfig
     noise: sampling.LatentNoise
     sampler: sampling.LatentSampler
     default_sampler = sampling.StratifiedLatentSampler
@@ -77,7 +74,7 @@ class TruncatedBinaryRegression(
             return math.inf, -math.inf
         reach = -float(self.noise.icdf(ch.tensor(floor, dtype=ch.float64)))
         grid = ch.linspace(
-            -reach, reach, self.hyperparameters.interval_grid, dtype=ch.float64
+            -reach, reach, self.hyperparameters.latent_grid_size, dtype=ch.float64
         )
         feasible = (self._label_mass(grid[:, None]).min(1).values >= floor).nonzero()
         if feasible.numel() == 0:

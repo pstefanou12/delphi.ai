@@ -48,21 +48,16 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
 
 
 class TruncatedBinaryRegressionConfig(TruncatedClassificationConfig):
-    """Configuration shared by truncated probit and logistic regression.
+    """Configuration for truncated probit and logistic regression.
 
     Attributes:
-        interval_grid: Latent means the set's interval is searched over.
+        latent_grid_size: Evenly spaced values of the latent mean ``w^T x``
+            at which the label masses are evaluated. R_alpha holds the
+            weights whose every latent mean lies where both masses reach
+            alpha, an interval whose ends this grid locates.
     """
 
-    interval_grid: int = pydantic.Field(default=2001, ge=2)
-
-
-class TruncatedLogisticRegressionConfig(TruncatedBinaryRegressionConfig):
-    """Configuration for truncated logistic regression."""
-
-
-class TruncatedProbitRegressionConfig(TruncatedBinaryRegressionConfig):
-    """Configuration for truncated probit regression."""
+    latent_grid_size: int = pydantic.Field(default=2001, ge=2)
 
 
 class TruncatedMultinomialLogisticRegressionConfig(TruncatedClassificationConfig):
