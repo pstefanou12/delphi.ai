@@ -7,7 +7,10 @@ the top two latents: keeping the hard samples shrinks every class's naive
 weights, keeping the easy ones inflates them. The others read one latent
 coordinate. Either leaves each label's mass in closed form, and each
 tolerance is about twice the error of the exact truncated MLE on the same
-sample, measured offline with the closed-form NLL.
+sample, measured offline with the closed-form NLL. Each fit's predictions
+must also match the true weights' accuracy, and every class's precision and
+recall, and its log loss, on held-out untruncated data, and be calibrated
+where the naive fit is not.
 """
 
 import math
@@ -54,7 +57,7 @@ def _fit(
     naive_margin: Optional[float] = 0.5,
     **hyperparameters,
 ) -> stats.TruncatedMultinomialLogisticRegression:
-    """Fit the model to a simulation and check its estimates.
+    """Fit the model to a simulation and check its estimates and predictions.
 
     Args:
         simulation: The sample and its truth.
@@ -71,6 +74,9 @@ def _fit(
     )
     classification.assert_recovers(
         model, simulation, tolerance, naive_margin=naive_margin
+    )
+    classification.assert_classifies(
+        model, simulation, naive_miscalibrated=naive_margin is not None
     )
     return model
 
@@ -96,7 +102,15 @@ def test_1d_no_truncation():
 def test_1d_label_prior_shift():
     # Class 0's latent is pure noise, so a set on it alone moves the label
     # prior, which the naive fit absorbs into the intercepts.
-    _fit(_simulate_1d(classification.CoordinateSurvival(0, (0.0, INF, 1.0))), 0.06)
+    simulation = _simulate_1d(classification.CoordinateSurvival(0, (0.0, INF, 1.0)))
+    model = _fit(simulation, 0.06)
+    # Margin sets mostly rescale the weights, which leaves argmax alone; a
+    # prior shift is what moves the naive fit's predictions.
+    X, labels = simulation.population  # pylint: disable=invalid-name
+    naive = classification.multinomial_labels(X, model.emp_coef_, model.emp_intercept_)
+    naive_accuracy = float((naive == labels).float().mean())
+    accuracy = float((model.predict(X).flatten() == labels).float().mean())
+    assert accuracy - naive_accuracy > 0.03, (accuracy, naive_accuracy)
 
 
 def test_1d_class_one_truncation():
@@ -149,6 +163,18 @@ def test_10d_five_classes_hard_margin():
 @pytest.mark.slow
 def test_10d_five_classes_easy_margin():
     _fit(_simulate_10d(_EASY_5, classes=5, n=10000), 0.66)
+
+
+@pytest.mark.slow
+def test_10d_unequal_classes_hard_margin():
+    # Weight norms 3, 2, 1 and 0.5, and a rare last class, so the margin set
+    # biases each class differently instead of rescaling them all alike.
+    norms = ch.tensor([3.0, 2.0, 1.0, 0.5])[:, None]
+    coef = (ch.tensor(_coef_10d(5)) * norms / 2.0).tolist()
+    simulation = classification.simulate_multinomial(
+        coef, [0.5, 0.0, 0.0, -1.5], _HARD_5, 10000
+    )
+    _fit(simulation, 0.67)
 
 
 @pytest.mark.slow

@@ -382,6 +382,17 @@ model.predict_proba(X[:5])
 - **`batch_size`** is 100 by default. The first step's gradient noise grows
   with the (K - 1)(d + 1) parameters, so raise it with them: 1000 for 202.
 
+What truncation costs a classifier fit as if the data were untruncated
+depends on the set. A set that keeps the hard samples, those near the
+decision boundary, shrinks every class's weights; one that keeps the easy
+samples inflates them. Either leaves the most likely label nearly where it
+was but skews the probabilities: the naive fit is under-confident after the
+first and over-confident after the second. A set that shifts the label mix
+moves the predictions themselves. Recalibrating on held-out data cannot
+undo this, since that data is truncated too. The truncated fit recovers the
+untruncated `predict_proba` from the truncated sample alone, which is what
+thresholds, abstention and expected-cost decisions rely on.
+
 ## Architecture
 
 delphi separates *how a model is fit*, which the trainer owns, from *what is
