@@ -68,7 +68,9 @@ class TruncatedMultinomialLogisticRegressionConfig(TruncatedClassificationConfig
             1 / smoothness, so its noise grows with the parameter count over
             the batch; ten samples throw a margin set's iterate far from the
             truth, where the sampler's gradient is too weak to return.
-        iterations: Gradient steps of the descent.
+        iterations: Gradient steps of the descent. The refine steps take
+            its average to the MLE, and more steps leave the fit no
+            closer to it; the gap left is the sampler's noise.
         refine_steps: Fisher scoring steps after the descent; the average
             is close enough by then that more only add sampler noise.
     """
