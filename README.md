@@ -271,6 +271,7 @@ toward the set. All models live in `delphi.stats`.
 | `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
 | `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
+| `TruncatedMultinomialLogisticRegression` | [`truncated_multinomial_logistic_regression`](delphi/stats/truncated/truncated_multinomial_logistic_regression.py) | |
 
 ```python
 import torch as ch
@@ -340,6 +341,57 @@ model.predict_proba(X[:5])
   `log(1 / alpha')`. Pass `None` when it is unknown.
 - **`sampler`** estimates each label's mass and noise score for the loss;
   stratified inverse-CDF sampling by default.
+
+Multinomial logistic regression labels a sample with the largest of K
+latents `z_k = w_k^T x + b_k + g_k`, `g_k ~ Gumbel(0, 1)`, and keeps it only
+where `phi` admits the latent vector. Class 0 is the reference: its weights
+are zero, so `coef_` holds classes 1 to K - 1.
+
+```python
+import torch as ch
+import torch.nn.functional
+
+from delphi import stats
+
+X = ch.randn(20000, 10)
+coef = ch.randn(2, 10) / 3.0
+logits = torch.nn.functional.pad(X @ coef.T + 0.5, (1, 0))
+z = logits + ch.distributions.Gumbel(0.0, 1.0).sample(logits.shape)
+
+
+def phi(z):
+    """Keep the hard samples: those whose top two latents are close."""
+    top = z.topk(2, dim=-1).values
+    return top[..., 0] - top[..., 1] < 0.8
+
+
+kept = phi(z)
+y = z.argmax(1, keepdim=True)
+model = stats.TruncatedMultinomialLogisticRegression({}, phi)
+model.fit(X[kept], y[kept])
+model.coef_, model.intercept_
+model.predict_proba(X[:5])
+```
+
+- **`phi` sees the latent vector**, shaped `(n, m, K)`, and returns a mask
+  or a survival probability shaped `(n, m)`.
+- **`alpha`** bounds every sample's mass on each label, at most 1/K. The
+  projection set keeps every sample's untruncated label probabilities above
+  `alpha^2`, unless the `radius` hyperparameter gives `log(1 / alpha')`.
+- **`sampler`** draws each label's latents given that label wins.
+- **`batch_size`** is 100 by default. The first step's gradient noise grows
+  with the (K - 1)(d + 1) parameters, so raise it with them: 1000 for 202.
+
+What truncation costs a classifier fit as if the data were untruncated
+depends on the set. A set that keeps the hard samples, those near the
+decision boundary, shrinks every class's weights; one that keeps the easy
+samples inflates them. Either leaves the most likely label nearly where it
+was but skews the probabilities: the naive fit is under-confident after the
+first and over-confident after the second. A set that shifts the label mix
+moves the predictions themselves. Recalibrating on held-out data cannot
+undo this, since that data is truncated too. The truncated fit recovers the
+untruncated `predict_proba` from the truncated sample alone, which is what
+thresholds, abstention and expected-cost decisions rely on.
 
 ## Architecture
 

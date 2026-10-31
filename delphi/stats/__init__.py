@@ -8,13 +8,14 @@ from delphi.stats.truncated.truncated_linear_regression import TruncatedLinearRe
 from delphi.stats.truncated.truncated_logistic_regression import (
     TruncatedLogisticRegression,
 )
+from delphi.stats.truncated.truncated_multinomial_logistic_regression import (
+    TruncatedMultinomialLogisticRegression,
+)
 from delphi.stats.truncated.truncated_probit_regression import (
     TruncatedProbitRegression,
 )
 
 # from delphi.stats import truncated_lqr
-# from delphi.stats.gumbel_ce import GumbelCEModel
-# from delphi.stats.softmax import SoftmaxModel
 
 __all__ = [
     "LinearModel",
@@ -22,5 +23,6 @@ __all__ = [
     "TruncatedLinearModel",
     "TruncatedLinearRegression",
     "TruncatedLogisticRegression",
+    "TruncatedMultinomialLogisticRegression",
     "TruncatedProbitRegression",
 ]

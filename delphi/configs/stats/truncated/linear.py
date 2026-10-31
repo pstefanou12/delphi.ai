@@ -16,9 +16,9 @@ class TruncatedLinearModelConfig(LinearModelConfig):
     """Shared configuration for the truncated delphi.stats linear models.
 
     Separate from LinearModelConfig because alpha describes a truncation set,
-    which an untruncated linear model such as softmax regression does not
-    have. alpha belongs here rather than lower down because both the
-    truncated regression and the LQR estimator read it.
+    which an untruncated linear model does not have. alpha belongs here
+    rather than lower down because both the truncated regression and the
+    LQR estimator read it.
 
     Attributes:
         alpha: Survival probability lower bound of the truncation set.
