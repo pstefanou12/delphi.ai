@@ -261,12 +261,15 @@ def test_10d_seeds(seed):
     _fit(_simulate_10d(_HARD_3, seed=seed), 0.6)
 
 
-def test_summary_reports_the_classes():
+def test_summary_reports_the_classes_and_accuracy():
     simulation = _simulate_1d(_NONE, 200)
     model = stats.TruncatedMultinomialLogisticRegression(
         {"iterations": 20, "refine_steps": 0}, _NONE
     ).fit(simulation.X, simulation.y)
+    accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
     assert "classes" in model.summary()
+    assert f"{accuracy:.4f} on the observed sample" in model.summary()
+    assert 0.0 <= model.batch_metrics()["accuracy"] <= 1.0
     assert model.predict_proba(simulation.X).shape == (200, 3)
 
 

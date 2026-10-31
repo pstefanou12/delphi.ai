@@ -39,7 +39,9 @@ class TruncatedClassification(
 
     A subclass sets ``loss``, the criterion, and ``default_sampler``, and
     supplies the untruncated NLL its start minimizes, each sample's label
-    masses and its form of R_alpha.
+    masses, its form of R_alpha and the label its latent means predict.
+    The training log and ``summary`` report the accuracy of those labels on
+    the observed sample.
 
     Attributes:
         sampler: Estimates the per-label masses and scores of the latent.
@@ -88,6 +90,7 @@ class TruncatedClassification(
             self.hyperparameters.num_samples
         )
         self.criterion = self.loss.apply
+        self._batch_accuracy: Optional[float] = None
 
     def criterion_parameters(self, X: ch.Tensor, y: ch.Tensor) -> list:  # pylint: disable=invalid-name
         return [self.phi, self.sampler, self.hyperparameters.eps]
@@ -99,6 +102,14 @@ class TruncatedClassification(
     def _latent_mean(self, linear: ch.Tensor) -> ch.Tensor:
         """Return the latent means from ``X W``; the identity unless overridden."""
         return linear
+
+    @abc.abstractmethod
+    def _predicted_label(self, latent: ch.Tensor) -> ch.Tensor:
+        """Return the most likely label at latent means latent, shaped (n, 1)."""
+
+    def _accuracy(self, latent: ch.Tensor, y: ch.Tensor) -> float:
+        """Return the share of labels y the latent means predict."""
+        return float((self._predicted_label(latent) == y.long()).double().mean())
 
     @abc.abstractmethod
     def _untruncated_nll(self, latent: ch.Tensor, y: ch.Tensor) -> ch.Tensor:
@@ -150,7 +161,16 @@ class TruncatedClassification(
 
     def compute_loss(self, batch, criterion=None) -> ch.Tensor:
         """Average the NLL, which is per sample, over the batch."""
+        X, y = batch  # pylint: disable=invalid-name
+        with ch.no_grad():
+            self._batch_accuracy = self._accuracy(self(X), y)
         return super().compute_loss(batch, criterion).mean()
+
+    def batch_metrics(self) -> dict:
+        """Return the accuracy on the last batch at the current iterate."""
+        if self._batch_accuracy is None:
+            return {}
+        return {"accuracy": self._batch_accuracy}
 
     def default_radius(self) -> float:
         """Return ``2 log(1 / alpha)``, or the start's when alpha is unknown.
@@ -189,6 +209,15 @@ class TruncatedClassification(
             projection.radius = radius
             self.logger.warning(f"emp_weight lies outside R_alpha; r -> {radius:.4f}.")
         return projection
+
+    def _summary_estimates(self) -> list[tuple[str, str]]:
+        X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        k = linear_model.require_fitted(self.k, "k")
+        weight = linear_model.require_fitted(self._estimate("avg"), "coef_")
+        weight = weight.reshape(-1, k)
+        accuracy = self._accuracy(self._latent_mean(X @ weight), y)
+        rows = [("accuracy of coef_", f"{accuracy:.4f} on the observed sample")]
+        return rows + super()._summary_estimates()
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the NLL's Fisher information, by default at the iterate."""

@@ -83,6 +83,9 @@ class TruncatedMultinomialLogisticRegression(
         """Return the K logits, class 0's fixed at zero."""
         return torch.nn.functional.pad(linear, (1, 0))
 
+    def _predicted_label(self, latent: ch.Tensor) -> ch.Tensor:
+        return latent.argmax(1, keepdim=True)
+
     def _untruncated_nll(self, latent: ch.Tensor, y: ch.Tensor) -> ch.Tensor:
         return torch.nn.functional.cross_entropy(latent, y.flatten().long())
 
@@ -122,7 +125,7 @@ class TruncatedMultinomialLogisticRegression(
         Args:
             X: Covariates, shaped (n, d).
         """
-        return self._latent_mean(super().predict(X)).argmax(1, keepdim=True)
+        return self._predicted_label(self._latent_mean(super().predict(X)))
 
     def _summary_data(self) -> list[tuple[str, str]]:
         return [

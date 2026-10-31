@@ -47,6 +47,9 @@ class TruncatedBinaryRegression(
         if y.min() == y.max():
             raise ValueError("y holds one label; both are needed.")
 
+    def _predicted_label(self, latent: ch.Tensor) -> ch.Tensor:
+        return (latent >= 0).long()
+
     def _untruncated_nll(self, latent: ch.Tensor, y: ch.Tensor) -> ch.Tensor:
         return -self.noise.log_cdf((2.0 * y.double() - 1.0) * latent).mean()
 
@@ -107,7 +110,7 @@ class TruncatedBinaryRegression(
         Args:
             X: Covariates, shaped (n, d).
         """
-        return (super().predict(X) >= 0).float()
+        return self._predicted_label(super().predict(X)).float()
 
 
 class LatentIntervalSet(delphi.projection_sets.ProjectionSet):

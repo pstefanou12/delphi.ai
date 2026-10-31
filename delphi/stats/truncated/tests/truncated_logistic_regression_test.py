@@ -121,6 +121,16 @@ def test_10d_seeds(seed):
     _fit(_simulate(_COEF_10D, _SIMPLE, 5000, seed=seed), 0.39)
 
 
+def test_summary_reports_accuracy():
+    simulation = _simulate([2.0], _NONE, 200)
+    model = stats.TruncatedLogisticRegression({"refine_steps": 0}, _NONE).fit(
+        simulation.X, simulation.y
+    )
+    accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
+    assert f"{accuracy:.4f} on the observed sample" in model.summary()
+    assert 0.0 <= model.batch_metrics()["accuracy"] <= 1.0
+
+
 def test_alpha_above_one_half_raises():
     with pytest.raises(ValueError, match="alpha"):
         stats.TruncatedLogisticRegression({}, _SIMPLE, 0.6)
