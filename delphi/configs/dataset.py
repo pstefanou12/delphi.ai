@@ -1,12 +1,10 @@
 # Author: pstefanou12@
 """Dataset and DataLoader configuration.
 
-These are loading concerns rather than model hyperparameters, which is how the
-pre-pydantic code grouped them too (``DATASET_DEFAULTS`` in
-``delphi.utils.defaults``). ``DatasetConfig`` is mixed into the concrete model
-configs so the hyperparameter dict callers pass stays flat, while the fields
-themselves are declared once and the loaders in ``delphi.utils.datasets`` can
-be typed against them.
+These are loading concerns rather than model hyperparameters. ``DatasetConfig``
+is mixed into the concrete model configs so the hyperparameter dict callers
+pass stays flat, while the fields themselves are declared once and the loaders
+in ``delphi.utils.datasets`` can be typed against them.
 """
 
 import pydantic

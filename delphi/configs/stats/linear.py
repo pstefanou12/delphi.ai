@@ -7,12 +7,7 @@ from delphi.configs.base import StatisticalModelConfig
 
 
 class LinearModelConfig(StatisticalModelConfig):
-    """Shared configuration for the delphi.stats truncated linear models.
-
-    Transcribed from the pre-pydantic ``*_DEFAULTS`` mappings in
-    ``delphi.utils.defaults`` so defaults match the previous
-    ``check_and_fill_args`` behavior exactly.
-    """
+    """Shared configuration for the delphi.stats truncated linear models."""
 
     model_config = pydantic.ConfigDict(extra="ignore", arbitrary_types_allowed=True)
 

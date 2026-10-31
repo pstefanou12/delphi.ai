@@ -5,81 +5,11 @@ Helper code (functions, classes, etc.)
 
 from collections.abc import Callable
 import math
-import pprint
 from typing import Optional
 
 import cox
 import torch as ch
 import torch.linalg as LA
-
-
-class Parameters:
-    """Parameters class: a thin wrapper around a dictionary.
-
-    Example::
-
-        ps = Parameters({"a": 1, "b": 3})
-        ps.a  # returns 1
-    """
-
-    def __init__(self, params):
-        super().__setattr__("params", params)
-
-        # ensure no overlapping (in case) params
-        collisions = set()
-        for k in self.params.keys():
-            collisions.add(k.lower())
-
-        assert len(collisions) == len(self.params.keys())
-
-    def as_dict(self):
-        """Return the underlying params dictionary."""
-        return self.params
-
-    def __getattr__(self, x):
-        if x in vars(self):
-            return vars(self)[x]
-
-        if x not in self.params:
-            return None
-
-        return self.params[x]
-
-    def __setattr__(self, x, v):
-        # Fix for some back-compatibility with some pickling bugs
-        if x == "params":
-            super().__setattr__(x, v)
-            return
-
-        if x in vars(self):
-            vars(self)[x] = v
-
-        self.params[x] = v
-
-    def __delattr__(self, key):
-        del self.params[key]
-
-    def __iter__(self):
-        return iter(self.params)
-
-    def __len__(self):
-        return len(self.params)
-
-    def __str__(self):
-        pp = pprint.PrettyPrinter()
-        return pp.pformat(self.params)
-
-    def __repr__(self):
-        return str(self)
-
-    def __getstate__(self):
-        return self.params
-
-    def __contains__(self, x):
-        return x in self.params
-
-    def __setstate__(self, x):
-        super().__setattr__("params", x)  # pylint: disable=attribute-defined-outside-init
 
 
 def vech_size(dims: int) -> int:
@@ -168,16 +98,6 @@ def setup_store_with_metadata(args, store):
     schema = cox.store.schema_from_dict(args_dict)
     store.add_table("metadata", schema)
     store["metadata"].append_row(args_dict)
-
-
-def has_attr(obj, k):
-    """Check both that obj.k exists and is not equal to None."""
-    try:
-        return k in obj
-    except KeyError:
-        return False
-    except AttributeError:
-        return False
 
 
 def accuracy(output, target, topk=(1,), exact=False):

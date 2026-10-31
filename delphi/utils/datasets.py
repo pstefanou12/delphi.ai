@@ -2,15 +2,13 @@
 """DataLoader factories and datasets for the statistical estimators."""
 
 from collections.abc import Sized
-from typing import Union, cast
+from typing import cast
 
 import torch as ch
 import torch.linalg as LA
 from torch.utils.data import DataLoader, TensorDataset
 
 from delphi import configs
-from delphi.utils import helpers
-from delphi.utils.defaults import DATASET_DEFAULTS, check_and_fill_args
 
 
 class Normalize:
@@ -53,23 +51,18 @@ class Normalize:
 
 
 def make_train_and_val(  # pylint: disable=invalid-name
-    args: Union[configs.DatasetConfig, helpers.Parameters], X, y
+    args: configs.DatasetConfig, X, y
 ):
     """Create training and validation DataLoaders from tensors X and y.
 
     Args:
-        args: A DatasetConfig, or a helpers.Parameters from an estimator that
-            has not been ported yet.
+        args: The estimator's config.
         X: Input covariates.
         y: Targets.
 
     Returns:
         The training and validation DataLoaders.
     """
-    # TODO: pstefanou12@ - drop the Parameters branch, the Union and this fill
-    # once every delphi/stats/ estimator passes a config.
-    if not isinstance(args, configs.DatasetConfig):
-        args = check_and_fill_args(args, DATASET_DEFAULTS)
     # separate into training and validation set
     val = int(args.val * X.size(0))
 
@@ -98,7 +91,7 @@ def make_train_and_val(  # pylint: disable=invalid-name
 
 
 def make_train_and_val_distr(  # pylint: disable=invalid-name
-    args: Union[configs.DatasetConfig, helpers.Parameters], S, ds, kwargs=None
+    args: configs.DatasetConfig, S, ds, kwargs=None
 ):
     """Create training and validation DataLoaders from a distribution dataset S."""
     if kwargs is None:
