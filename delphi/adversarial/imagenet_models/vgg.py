@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """VGG model implementations for ImageNet-scale datasets.
 
 Reference:
@@ -9,7 +10,7 @@ Reference:
 from torch import nn
 from torch.hub import load_state_dict_from_url
 
-from delphi.utils.helpers import FakeReLUM
+from delphi.adversarial import layers
 
 __all__ = [
     "VGG",
@@ -54,7 +55,7 @@ class VGG(nn.Module):
             nn.Linear(4096, num_classes),
         )
         self.last_relu = nn.ReLU()
-        self.last_relu_fake = FakeReLUM()
+        self.last_relu_fake = layers.FakeReLUM()
         if init_weights:
             self._initialize_weights()
 

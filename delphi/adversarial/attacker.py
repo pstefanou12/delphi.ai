@@ -1,16 +1,17 @@
+# Author: pstefanou12@
 # pylint: disable=anomalous-backslash-in-string
 """
 **For most use cases, this can just be considered an internal class and
 ignored.**
-This module houses the :class:`delphi.attacker.Attacker` and
-:class:`delphi.attacker.AttackerModel` classes.
-:class:`~delphi.attacker.Attacker` is an internal class that should not be
+This module houses the :class:`delphi.adversarial.attacker.Attacker` and
+:class:`delphi.adversarial.attacker.AttackerModel` classes.
+:class:`~delphi.adversarial.attacker.Attacker` is an internal class that should not be
 imported/called from outside the library.
-:class:`~delphi.attacker.AttackerModel` is a "wrapper" class which is fed a
+:class:`~delphi.adversarial.attacker.AttackerModel` is a "wrapper" class which is fed a
 model and adds to it adversarial attack functionalities as well as other useful
-options. See :meth:`delphi.attacker.AttackerModel.forward` for documentation
+options. See :meth:`delphi.adversarial.attacker.AttackerModel.forward` for documentation
 on which arguments AttackerModel supports, and see
-:meth:`delphi.attacker.Attacker.forward` for the arguments pertaining to
+:meth:`delphi.adversarial.attacker.Attacker.forward` for the arguments pertaining to
 adversarial examples specifically.
 For a demonstration of this module in action, see the walkthrough
 ":doc:`../example_usage/input_space_manipulation`"
@@ -18,9 +19,9 @@ For a demonstration of this module in action, see the walkthrough
 AttackerModel object itself should be called, just like with any
 :samp:`nn.Module` subclass.
 **Note 2**: Even though the adversarial example arguments are documented in
-:meth:`delphi.attacker.Attacker.forward`, this function should never be
+:meth:`delphi.adversarial.attacker.Attacker.forward`, this function should never be
 called directly---instead, these arguments are passed along from
-:meth:`delphi.attacker.AttackerModel.forward`.
+:meth:`delphi.adversarial.attacker.AttackerModel.forward`.
 Cite: code for attacker model shamelessly taken from:
 @misc{robustness,
    title={Robustness (Python Library)},
@@ -37,22 +38,77 @@ import time
 import dill
 import torch as ch
 
-from delphi import attack_steps
+from delphi.adversarial import attack_steps, layers
 from delphi.delphi import delphi
 from delphi.utils import constants as consts
-from delphi.utils.helpers import (
-    AverageMeter,
-    InputNormalize,
-    accuracy,
-    calc_est_grad,
-    ckpt_at_epoch,
-    has_attr,
-    type_of_script,
-)
+from delphi.utils import helpers
+
+JUPYTER = "jupyter"
+TERMINAL = "terminal"
+IPYTHON = "ipython"
+ZMQ = "zmqshell"
+COLAB = "google.colab"
+
+
+def type_of_script():
+    """
+    Check the program's running environment.
+    """
+    try:
+        ipy_str = str(type(get_ipython()))  # pylint: disable=undefined-variable  # noqa: F821
+        if ZMQ in ipy_str:
+            return JUPYTER
+        if TERMINAL in ipy_str:
+            return IPYTHON
+        if COLAB in ipy_str:
+            return COLAB
+        return IPYTHON
+    except Exception:  # pylint: disable=broad-except
+        return TERMINAL
+
+
+def calc_est_grad(func, x, y, rad, num_samples):
+    """Calculate estimated gradient using random sampling."""
+    B, *_ = x.shape  # pylint: disable=invalid-name
+    Q = num_samples // 2  # pylint: disable=invalid-name
+    N = len(x.shape) - 1  # pylint: disable=invalid-name
+    with ch.no_grad():
+        # Q * B * C * H * W
+        extender = [1] * N
+        queries = x.repeat(Q, *extender)
+        noise = ch.randn_like(queries)
+        norm = noise.view(B * Q, -1).norm(dim=-1).view(B * Q, *extender)
+        noise = noise / norm
+        noise = ch.cat([-noise, noise])
+        queries = ch.cat([queries, queries])
+        y_shape = [1] * (len(y.shape) - 1)
+        loss_vals = func(queries + rad * noise, y.repeat(2 * Q, *y_shape)).view(
+            -1, *extender
+        )
+        grad = (
+            loss_vals.view(2 * Q, B, *extender) * noise.view(2 * Q, B, *noise.shape[1:])
+        ).mean(dim=0)
+    return grad
+
+
+def ckpt_at_epoch(num):
+    """Return checkpoint filename for a given epoch number."""
+    return f"{num}_{consts.CKPT_NAME}"
+
+
+def has_attr(obj, k):
+    """Check both that obj.k exists and is not equal to None."""
+    try:
+        return k in obj
+    except KeyError:
+        return False
+    except AttributeError:
+        return False
+
 
 # determine running environment
 SCRIPT = type_of_script()  # pylint: disable=invalid-name
-if SCRIPT == consts.JUPYTER:
+if SCRIPT == JUPYTER:
     from tqdm.autonotebook import tqdm  # pylint: disable=import-outside-toplevel
 else:
     from tqdm import tqdm  # pylint: disable=import-outside-toplevel
@@ -79,7 +135,7 @@ class Attacker(ch.nn.Module):
     """
     Attacker class, used to make adversarial examples.
     This is primarily an internal class, you probably want to be looking at
-    :class:`delphi.attacker.AttackerModel`, which is how models are actually
+    :class:`delphi.adversarial.attacker.AttackerModel`, which is how models are actually
     served (AttackerModel uses this Attacker class).
     However, the :meth:`delphi.Attacker.forward` function below
     documents the arguments supported for adversarial attacks specifically.
@@ -94,7 +150,7 @@ class Attacker(ch.nn.Module):
             mean and std for normalization
         """
         super().__init__()
-        self.normalize = InputNormalize(dataset.mean, dataset.std)
+        self.normalize = layers.InputNormalize(dataset.mean, dataset.std)
         self.model = model
 
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-statements
@@ -121,12 +177,12 @@ class Attacker(ch.nn.Module):
         """
         Implementation of forward (finds adversarial examples). Note that
         this does **not** perform inference and should not be called
-        directly; refer to :meth:`delphi.attacker.AttackerModel.forward`
+        directly; refer to :meth:`delphi.adversarial.attacker.AttackerModel.forward`
         for the function you should actually be calling.
         Args:
-            x, target (ch.tensor) : see :meth:`delphi.attacker.AttackerModel.forward`
+            x, target (ch.tensor) : see :meth:`delphi.adversarial.attacker.AttackerModel.forward`
             constraint
-                ("2"|"inf"|"unconstrained"|"fourier"|:class:`~delphi.attack_steps.AttackerStep`)
+                ("2"|"inf"|"unconstrained"|"fourier"|:class:`~delphi.adversarial.attack_steps.AttackerStep`)
                 : threat model for adversarial attacks (:math:`\ell_2` ball,
                 :math:`\ell_\infty` ball, :math:`[0, 1]^n`, Fourier basis, or
                 custom AttackerStep subclass).
@@ -288,7 +344,7 @@ class Attacker(ch.nn.Module):
                     to_ret = adv.detach()
 
                 _, output = calc_loss(adv, target)
-                (corr,) = accuracy(output.cpu(), target, topk=(1,), exact=True)
+                (corr,) = helpers.accuracy(output.cpu(), target, topk=(1,), exact=True)
                 corr = corr.byte()
                 misclass = ~corr
                 to_ret[misclass] = adv[misclass]
@@ -335,7 +391,7 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
         self.parallel = parallel
         self.dp_device_ids = dp_device_ids
         self.update_params = update_params
-        self.normalizer = InputNormalize(dataset.mean, dataset.std)
+        self.normalizer = layers.InputNormalize(dataset.mean, dataset.std)
         self.attacker = Attacker(model, dataset)
         # keep track of the best performing neural network on the validation set
         self.best_prec1 = 0.0
@@ -434,14 +490,14 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
         """
         # training and validation set metric counters
         self.train_losses, self.train_top1, self.train_top5 = (
-            AverageMeter(),
-            AverageMeter(),
-            AverageMeter(),
+            helpers.AverageMeter(),
+            helpers.AverageMeter(),
+            helpers.AverageMeter(),
         )
         self.val_losses, self.val_top1, self.val_top5 = (
-            AverageMeter(),
-            AverageMeter(),
-            AverageMeter(),
+            helpers.AverageMeter(),
+            helpers.AverageMeter(),
+            helpers.AverageMeter(),
         )
 
     def step(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -481,7 +537,7 @@ class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too
         if has_attr(self.hyperparameters, "custom_accuracy"):
             prec1, prec5 = self.hyperparameters.custom_accuracy(model_logits, targ)  # pylint: disable=unsubscriptable-object
         else:
-            prec1, prec5 = accuracy(model_logits, targ, topk=(1, maxk))
+            prec1, prec5 = helpers.accuracy(model_logits, targ, topk=(1, maxk))
             prec1, prec5 = prec1[0], prec5[0]  # pylint: disable=unsubscriptable-object
         # udpate model metric meters
         losses.update(loss.item(), batch[0].size(0))

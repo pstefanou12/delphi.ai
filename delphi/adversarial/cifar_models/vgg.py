@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """VGG11/13/16/19 in Pytorch."""
 # pylint: disable=duplicate-code
 

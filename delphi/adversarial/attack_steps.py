@@ -1,10 +1,11 @@
+# Author: pstefanou12@
 # pylint: disable=anomalous-backslash-in-string
 """
 For most use cases, this can just be considered an internal class and
 ignored.**
 This module contains the abstract class AttackerStep as well as a few subclasses.
 AttackerStep is a generic way to implement optimizers specifically for use with
-:class:`robustness.attacker.AttackerModel`. In general, except for when you want
+:class:`delphi.adversarial.attacker.AttackerModel`. In general, except for when you want
 to :ref:`create a custom optimization method <adding-custom-steps>`, you probably
 do not need to import or edit this module and can just think of it as internal.
 Cite: code for attack steps shamelessly taken from:

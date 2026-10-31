@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """ResNet in PyTorch.
 
 For Pre-activation ResNet, see 'preact_resnet.py'.
@@ -10,7 +11,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from delphi.utils.helpers import FakeReLU, SequentialWithArgs
+from delphi.adversarial import layers as adversarial_layers
 
 
 class BasicBlock(nn.Module):
@@ -49,7 +50,7 @@ class BasicBlock(nn.Module):
         out = self.bn2(self.conv2(out))
         out += self.shortcut(x)
         if fake_relu:
-            return FakeReLU.apply(out)
+            return adversarial_layers.FakeReLU.apply(out)
         return F.relu(out)
 
 
@@ -92,7 +93,7 @@ class Bottleneck(nn.Module):
         out = self.bn3(self.conv3(out))
         out += self.shortcut(x)
         if fake_relu:
-            return FakeReLU.apply(out)
+            return adversarial_layers.FakeReLU.apply(out)
         return F.relu(out)
 
 
@@ -127,7 +128,7 @@ class ResNet_(nn.Module):  # pylint: disable=invalid-name,too-many-instance-attr
         for s in strides:  # pylint: disable=invalid-name
             layers.append(block(self.in_planes, planes, s))
             self.in_planes = planes * block.expansion
-        return SequentialWithArgs(*layers)
+        return adversarial_layers.SequentialWithArgs(*layers)
 
     def forward(  # pylint: disable=arguments-differ
         self, x, with_latent=False, fake_relu=False, no_relu=False

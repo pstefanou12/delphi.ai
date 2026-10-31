@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """
 Image folder dataset utilities with support for label mappings and custom loaders.
 """

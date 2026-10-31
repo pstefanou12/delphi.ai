@@ -9,7 +9,7 @@ import dill
 import torch as ch
 from torch import nn
 
-from delphi.attacker import AttackerModel
+from delphi.adversarial import attacker
 
 
 class DummyModel(nn.Module):
@@ -81,7 +81,7 @@ def make_and_restore_model(  # pylint: disable=too-many-arguments,too-many-posit
     elif resume_path:
         raise ValueError(f"=> no checkpoint found at '{resume_path}'")
 
-    model = AttackerModel(
+    model = attacker.AttackerModel(
         args,
         classifier_model,
         dataset,

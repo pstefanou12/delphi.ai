@@ -10,16 +10,8 @@ from typing import NamedTuple, Optional
 
 import cox
 import torch as ch
-from torch import Tensor, nn
+from torch import Tensor
 import torch.linalg as LA
-
-from delphi.utils import constants as consts
-
-JUPYTER = "jupyter"
-TERMINAL = "terminal"
-IPYTHON = "ipython"
-ZMQ = "zmqshell"
-COLAB = "google.colab"
 
 
 class Parameters:
@@ -219,74 +211,6 @@ def whitened_hessian(
     return whitened
 
 
-def type_of_script():
-    """
-    Check the program's running environment.
-    """
-    try:
-        ipy_str = str(type(get_ipython()))  # pylint: disable=undefined-variable  # noqa: F821
-        if ZMQ in ipy_str:
-            return JUPYTER
-        if TERMINAL in ipy_str:
-            return IPYTHON
-        if COLAB in ipy_str:
-            return COLAB
-        return IPYTHON
-    except Exception:  # pylint: disable=broad-except
-        return TERMINAL
-
-
-def calc_est_grad(func, x, y, rad, num_samples):
-    """Calculate estimated gradient using random sampling."""
-    B, *_ = x.shape  # pylint: disable=invalid-name
-    Q = num_samples // 2  # pylint: disable=invalid-name
-    N = len(x.shape) - 1  # pylint: disable=invalid-name
-    with ch.no_grad():
-        # Q * B * C * H * W
-        extender = [1] * N
-        queries = x.repeat(Q, *extender)
-        noise = ch.randn_like(queries)
-        norm = noise.view(B * Q, -1).norm(dim=-1).view(B * Q, *extender)
-        noise = noise / norm
-        noise = ch.cat([-noise, noise])
-        queries = ch.cat([queries, queries])
-        y_shape = [1] * (len(y.shape) - 1)
-        loss_vals = func(queries + rad * noise, y.repeat(2 * Q, *y_shape)).view(
-            -1, *extender
-        )
-        grad = (
-            loss_vals.view(2 * Q, B, *extender) * noise.view(2 * Q, B, *noise.shape[1:])
-        ).mean(dim=0)
-    return grad
-
-
-class InputNormalize(ch.nn.Module):
-    """
-    A module (custom layer) for normalizing the input to have a fixed
-    mean and standard deviation (user-specified).
-    """
-
-    def __init__(self, new_mean, new_std):
-        """Initialize InputNormalize with mean and standard deviation."""
-        super().__init__()
-        new_std = new_std[..., None, None]
-        new_mean = new_mean[..., None, None]
-
-        self.register_buffer("new_mean", new_mean)
-        self.register_buffer("new_std", new_std)
-
-    def forward(self, x):
-        """Normalize x by clamping to [0,1] and applying stored mean/std."""
-        x = ch.clamp(x, 0, 1)
-        x_normalized = (x - self.new_mean) / self.new_std
-        return x_normalized
-
-
-def ckpt_at_epoch(num):
-    """Return checkpoint filename for a given epoch number."""
-    return f"{num}_{consts.CKPT_NAME}"
-
-
 def setup_store_with_metadata(args, store):
     """Set up a store for training by recording all args as metadata."""
     args_dict = args.as_dict()
@@ -381,43 +305,6 @@ class Bounds(NamedTuple):
 
     lower: Tensor
     upper: Tensor
-
-
-class FakeReLU(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Custom autograd function implementing a fake ReLU (identity backward)."""
-
-    @staticmethod
-    def forward(ctx, inp):  # pylint: disable=arguments-differ,unused-argument
-        """Forward pass: clamp input to be non-negative."""
-        return inp.clamp(min=0)
-
-    @staticmethod
-    def backward(ctx, grad_output):  # pylint: disable=arguments-differ,unused-argument
-        """Backward pass: pass gradient through unchanged."""
-        return grad_output
-
-
-class FakeReLUM(nn.Module):
-    """Module wrapper around FakeReLU autograd function."""
-
-    def forward(self, x):
-        """Apply FakeReLU to x."""
-        return FakeReLU.apply(x)
-
-
-class SequentialWithArgs(ch.nn.Sequential):
-    """Sequential module that passes extra args/kwargs to the last layer."""
-
-    def forward(self, inp, *args, **kwargs):  # pylint: disable=arguments-differ
-        """Forward pass, passing args and kwargs to the final module only."""
-        vs = list(self._modules.values())
-        num_layers = len(vs)
-        for i in range(num_layers):
-            if i == num_layers - 1:
-                inp = vs[i](inp, *args, **kwargs)
-            else:
-                inp = vs[i](inp)
-        return inp
 
 
 class DataPrefetcher:

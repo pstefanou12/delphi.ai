@@ -5,13 +5,11 @@ Data loader wrappers providing per-epoch recomputation and real-time transformat
 
 import torch as ch
 
-from delphi.utils import constants as consts
-from delphi.utils import folder
-from delphi.utils.helpers import type_of_script
+from delphi.adversarial import attacker, folder
 
 # Determine running environment.
-SCRIPT = type_of_script()
-if SCRIPT == consts.JUPYTER:
+SCRIPT = attacker.type_of_script()
+if SCRIPT == attacker.JUPYTER:
     from tqdm.autonotebook import tqdm
 else:
     from tqdm import tqdm
