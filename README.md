@@ -388,10 +388,13 @@ decision boundary, shrinks every class's weights; one that keeps the easy
 samples inflates them. Either leaves the most likely label nearly where it
 was but skews the probabilities: the naive fit is under-confident after the
 first and over-confident after the second. A set that shifts the label mix
-moves the predictions themselves. Recalibrating on held-out data cannot
-undo this, since that data is truncated too. The truncated fit recovers the
-untruncated `predict_proba` from the truncated sample alone, which is what
-thresholds, abstention and expected-cost decisions rely on.
+or biases one class against the rest, such as undersampling it, keeping it
+only when clear-cut, or rarely seeing its strong cases, moves the
+predictions themselves: the naive fit misses that class. Recalibrating on
+held-out data cannot undo this, since that data is truncated too. The
+truncated fit recovers the untruncated `predict_proba` from the truncated
+sample alone, which is what thresholds, abstention and expected-cost
+decisions rely on.
 
 ## Architecture
 

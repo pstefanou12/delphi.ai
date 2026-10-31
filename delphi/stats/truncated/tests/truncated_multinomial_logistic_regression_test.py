@@ -5,8 +5,11 @@ One case per truncation set on the shared harness, each checked against the
 true weights and the naive fit. Most sets read the margin, the gap between
 the top two latents: keeping the hard samples shrinks every class's naive
 weights, keeping the easy ones inflates them. The others read one latent
-coordinate. Either leaves each label's mass in closed form, and each
-tolerance is about twice the error of the exact truncated MLE on the same
+coordinate or the winning label. Undersampling one label, truncating its
+margin alone, or capping its latent biases that class against the rest,
+which moves the naive fit's predictions, so those cases also require
+beating its accuracy. Each set leaves every label's mass in closed form,
+and each tolerance is about twice the error of the exact truncated MLE on the same
 sample, measured offline with the closed-form NLL. Each fit's predictions
 must also match the true weights' accuracy, and every class's precision and
 recall, and its log loss, on held-out untruncated data, and be calibrated
@@ -49,6 +52,12 @@ def _coef_10d(classes: int) -> list[list[float]]:
     return rows
 
 
+def _unequal_coef_5() -> list[list[float]]:
+    """Return class weights of norms 3, 2, 1 and 0.5 on disjoint features."""
+    norms = ch.tensor([3.0, 2.0, 1.0, 0.5])[:, None]
+    return (ch.tensor(_coef_10d(5)) * norms / 2.0).tolist()
+
+
 def _fit(
     simulation: classification.Simulation,
     tolerance: float,
@@ -81,6 +90,21 @@ def _fit(
     return model
 
 
+def _assert_beats_naive(
+    model: stats.TruncatedMultinomialLogisticRegression,
+    simulation: classification.Simulation,
+    margin: float,
+) -> None:
+    """Assert the fit's population accuracy beats the naive fit's by margin."""
+    assert simulation.population is not None
+    assert model.emp_coef_ is not None and model.emp_intercept_ is not None
+    X, labels = simulation.population  # pylint: disable=invalid-name
+    naive = classification.multinomial_labels(X, model.emp_coef_, model.emp_intercept_)
+    naive_accuracy = float((naive == labels).float().mean())
+    accuracy = float((model.predict(X).flatten() == labels).float().mean())
+    assert accuracy - naive_accuracy > margin, (accuracy, naive_accuracy)
+
+
 def _simulate_1d(phi, n: int = 2000) -> classification.Simulation:
     return classification.simulate_multinomial(_COEF_1D, [0.5, -0.5], phi, n)
 
@@ -103,14 +127,9 @@ def test_1d_label_prior_shift():
     # Class 0's latent is pure noise, so a set on it alone moves the label
     # prior, which the naive fit absorbs into the intercepts.
     simulation = _simulate_1d(classification.CoordinateSurvival(0, (0.0, INF, 1.0)))
-    model = _fit(simulation, 0.06)
     # Margin sets mostly rescale the weights, which leaves argmax alone; a
     # prior shift is what moves the naive fit's predictions.
-    X, labels = simulation.population  # pylint: disable=invalid-name
-    naive = classification.multinomial_labels(X, model.emp_coef_, model.emp_intercept_)
-    naive_accuracy = float((naive == labels).float().mean())
-    accuracy = float((model.predict(X).flatten() == labels).float().mean())
-    assert accuracy - naive_accuracy > 0.03, (accuracy, naive_accuracy)
+    _assert_beats_naive(_fit(simulation, 0.06), simulation, 0.03)
 
 
 def test_1d_class_one_truncation():
@@ -169,12 +188,42 @@ def test_10d_five_classes_easy_margin():
 def test_10d_unequal_classes_hard_margin():
     # Weight norms 3, 2, 1 and 0.5, and a rare last class, so the margin set
     # biases each class differently instead of rescaling them all alike.
-    norms = ch.tensor([3.0, 2.0, 1.0, 0.5])[:, None]
-    coef = (ch.tensor(_coef_10d(5)) * norms / 2.0).tolist()
     simulation = classification.simulate_multinomial(
-        coef, [0.5, 0.0, 0.0, -1.5], _HARD_5, 10000
+        _unequal_coef_5(), [0.5, 0.0, 0.0, -1.5], _HARD_5, 10000
     )
     _fit(simulation, 0.67)
+
+
+def test_10d_undersampled_class():
+    # Class 1 kept at 10%: label shift, which the naive intercepts absorb.
+    simulation = _simulate_10d(classification.LabelSurvival(1.0, 0.1, 1.0))
+    _assert_beats_naive(_fit(simulation, 0.48), simulation, 0.1)
+
+
+@pytest.mark.slow
+def test_10d_five_classes_undersampled_class():
+    # The dominant class, of weight norm 3, kept at 5%.
+    simulation = classification.simulate_multinomial(
+        _unequal_coef_5(),
+        [0.5, 0.0, 0.0, -1.5],
+        classification.LabelSurvival(1.0, 0.05, 1.0, 1.0, 1.0),
+        10000,
+    )
+    _assert_beats_naive(_fit(simulation, 0.8), simulation, 0.1)
+
+
+def test_10d_class_margin():
+    # Class 1 seen only when clear-cut, as a disease diagnosed when severe.
+    simulation = _simulate_10d(classification.LabelMarginSurvival(1, (2.5, INF, 1.0)))
+    _assert_beats_naive(_fit(simulation, 0.36), simulation, 0.04)
+
+
+def test_10d_capped_class():
+    # A high class 1 latent is rarely seen, whatever the label: a clinic
+    # that misses the obvious cases. Kept at 2%, not 0, so alpha is positive.
+    phi = classification.CoordinateSurvival(1, (-INF, 0.5, 1.0), (0.5, INF, 0.02))
+    simulation = _simulate_10d(phi)
+    _assert_beats_naive(_fit(simulation, 0.58), simulation, 0.04)
 
 
 @pytest.mark.slow

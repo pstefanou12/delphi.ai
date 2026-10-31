@@ -99,7 +99,8 @@ class CoordinateSurvival:
     """A truncation oracle on one coordinate of a Gumbel latent vector.
 
     Piecewise in that coordinate as ``PiecewiseSurvival``. With the others
-    maximized out in closed form, so is each label's survival mass.
+    maximized out in closed form, so is each label's survival mass. The
+    piece ``(-inf, t)`` caps one class's latent whatever the label.
 
     Attributes:
         coordinate: The latent coordinate phi reads.
@@ -183,18 +184,95 @@ class MarginSurvival:
         Returns:
             The masses, shaped (n, K).
         """
-        others = logits[:, None, :].masked_fill(
-            ch.eye(logits.size(1), dtype=ch.bool), -math.inf
-        )
-        gap = logits - ch.logsumexp(others, dim=2)
-        mass = ch.zeros_like(gap)
-        for low, high, probability in self.survival.pieces:
-            start, end = max(low, 0.0), high
-            if start < end:
-                mass = mass + probability * _interval_mass(
-                    start, end, gap, sampling.LOGISTIC_NOISE
-                )
-        return mass
+        return _margin_mass(_gap(logits), self.survival.pieces)
+
+
+def _gap(logits: ch.Tensor) -> ch.Tensor:
+    """Return ``h_c - logsumexp_{j != c} h_j`` for each class c, (n, K)."""
+    others = logits[:, None, :].masked_fill(
+        ch.eye(logits.size(1), dtype=ch.bool), -math.inf
+    )
+    return logits - ch.logsumexp(others, dim=2)
+
+
+def _margin_mass(
+    gap: ch.Tensor, pieces: Sequence[tuple[float, float, float]]
+) -> ch.Tensor:
+    """Return ``P(margin in S, label c)`` from each label's logistic gap."""
+    mass = ch.zeros_like(gap)
+    for low, high, probability in pieces:
+        start, end = max(low, 0.0), high
+        if start < end:
+            mass = mass + probability * _interval_mass(
+                start, end, gap, sampling.LOGISTIC_NOISE
+            )
+    return mass
+
+
+class LabelSurvival:
+    """A truncation oracle keeping each label with its own probability.
+
+    Undersampling: phi reads only the winning class, so each label's mass
+    is its probability times the softmax.
+
+    Attributes:
+        probabilities: The chance a sample of each label survives, (K,).
+    """
+
+    def __init__(self, *probabilities: float):
+        """Initialize the oracle.
+
+        Args:
+            *probabilities: The chance a sample of each label survives.
+        """
+        self.probabilities = ch.tensor(probabilities)
+
+    def __call__(self, z: ch.Tensor) -> ch.Tensor:
+        """Return survival probabilities, shaped z's batch dims."""
+        return self.probabilities.to(z.dtype)[z.argmax(-1)]
+
+    def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
+        """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``, (n, K)."""
+        return self.probabilities.to(logits.dtype) * ch.softmax(logits, dim=1)
+
+
+class LabelMarginSurvival:
+    """A truncation oracle on one label's margin, keeping the other labels.
+
+    Samples of that label survive as ``MarginSurvival`` would keep them,
+    so only that label's mass changes.
+
+    Attributes:
+        label: The label phi truncates.
+        survival: The oracle on that label's margin.
+    """
+
+    def __init__(self, label: int, *pieces: tuple[float, float, float]):
+        """Initialize the oracle.
+
+        Args:
+            label: The label phi truncates.
+            *pieces: As ``MarginSurvival``.
+        """
+        self.label = label
+        self.survival = PiecewiseSurvival(*pieces)
+
+    def __call__(self, z: ch.Tensor) -> ch.Tensor:
+        """Return a mask, or survival probabilities, shaped z's batch dims."""
+        top = z.topk(2, dim=-1).values
+        margin = self.survival(top[..., 0] - top[..., 1])
+        other = z.argmax(-1) != self.label
+        return ch.where(other, ch.ones_like(margin), margin)
+
+    def label_mass(self, logits: ch.Tensor) -> ch.Tensor:
+        """Return ``P(z in S, argmax z = c)`` for ``z = logits + g``, (n, K).
+
+        The label's column is ``MarginSurvival``'s, the others the softmax.
+        """
+        c = self.label
+        prob = ch.softmax(logits, dim=1)
+        mass = _margin_mass(_gap(logits)[:, c : c + 1], self.survival.pieces)
+        return ch.cat([prob[:, :c], mass, prob[:, c + 1 :]], 1)
 
 
 def _gumbel_mass(low: float, high: float, loc: ch.Tensor) -> ch.Tensor:
@@ -326,7 +404,7 @@ def simulate(  # pylint: disable=too-many-arguments
 def simulate_multinomial(  # pylint: disable=too-many-arguments
     coef: Sequence[Sequence[float]],
     intercept: Sequence[float],
-    phi: Union[CoordinateSurvival, MarginSurvival],
+    phi: Union[CoordinateSurvival, MarginSurvival, LabelSurvival, LabelMarginSurvival],
     n: int,
     *,
     covariance: Optional[ch.Tensor] = None,
