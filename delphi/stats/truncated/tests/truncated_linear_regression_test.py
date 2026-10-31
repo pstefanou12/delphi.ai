@@ -8,12 +8,15 @@ measured with the closed-form NLL, over the weight alone when the variance is
 known and over (weight, variance) when it is not; every estimate lands within
 a few hundredths of that MLE. The dependent-data cases follow, then both
 variants' confidence intervals: their covariance against the exact NLL's,
-and their coverage over repeated samples.
+and their coverage over repeated samples, on two cases by default and on
+every regression case with ``--coverage-sweep``.
 """
 
+from collections.abc import Callable, Sequence
 import math
 import os
-from typing import Optional, cast
+import shutil
+from typing import Optional
 
 import pytest
 import torch as ch
@@ -27,6 +30,9 @@ from delphi.utils import helpers
 
 INF = math.inf
 SEED = 69
+
+# The (low, high) intervals whose union is a truncation set.
+Bounds = Sequence[tuple[float, float]]
 
 _VARIANTS = pytest.mark.parametrize(
     "variance_known", [True, False], ids=["known_variance", "unknown_variance"]
@@ -83,11 +89,105 @@ def _fit(  # pylint: disable=too-many-arguments
     )
 
 
+def _case(
+    coef: Sequence[float],
+    intercept: float,
+    phi: Callable[[ch.Tensor], ch.Tensor],
+    n: int,
+    **options,
+) -> Callable[[int], regression.Simulation]:
+    """Return a map from a seed to a sample, as ``regression.simulate``'s."""
+
+    def simulate(seed: int) -> regression.Simulation:
+        return regression.simulate(coef, intercept, phi, n, seed=seed, **options)
+
+    return simulate
+
+
+def _ill_conditioned_covariates(seed: int) -> regression.Simulation:
+    """Return the 10d sample whose covariance spans three decades."""
+    ch.manual_seed(1)
+    rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
+    spectrum = ch.logspace(0.0, -3.0, 10)
+    covariance = rotation @ ch.diag(spectrum) @ rotation.T
+    return regression.simulate(
+        _ONES_10D, 0.5, _intervals((1.0, INF)), 5000, covariance=covariance, seed=seed
+    )
+
+
+def _coin_flip(z: ch.Tensor) -> ch.Tensor:
+    """Return a survival probability: each response is kept by a coin flip."""
+    return ch.sigmoid(3.0 * (z - 4.0))
+
+
+_ONES_10D = ch.ones(10).tolist()
+_UNION_2D = [(-INF, -2.0), (0.0, 1.0), (2.5, INF)]
+_CORRELATED_2D = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
+# The truncation cases of the regression tests, which the opt-in coverage
+# sweep reuses.
+_CASES: dict[str, Callable[[int], regression.Simulation]] = {
+    "1d_no_truncation": _case([2.0], -1.0, _intervals((-INF, INF)), 2000),
+    "1d_left_truncation": _case([2.0], -1.0, _intervals((0.0, INF)), 2000),
+    "1d_left_truncation_no_intercept": _case([2.0], 0.0, _intervals((0.0, INF)), 2000),
+    "1d_right_truncation": _case([2.0], -1.0, _intervals((-INF, -1.0)), 2000),
+    "1d_interval": _case([2.0], -1.0, _intervals((-1.0, 1.0)), 2000),
+    "1d_union_of_intervals": _case(
+        [2.0], -1.0, _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF)), 2000
+    ),
+    "1d_small_mass": _case([2.0], -1.0, _intervals((3.85, INF)), 2000),
+    "2d_union_of_intervals": _case(
+        [1.0, -1.0], 0.5, _intervals(*_UNION_2D), 2000, covariance=_CORRELATED_2D
+    ),
+    "2d_two_sided_tails": _case(
+        [1.0, -1.0], 0.5, _intervals((-INF, -1.5), (1.5, INF)), 2000
+    ),
+    "10d_left_truncation": _case(_ONES_10D, 0.5, _intervals((4.0, INF)), 5000),
+    "10d_union_of_intervals": _case(
+        _ONES_10D, 0.5, _intervals((-2.0, 0.0), (3.0, INF)), 5000
+    ),
+    "10d_no_truncation": _case(_ONES_10D, 0.5, _intervals((-INF, INF)), 5000),
+    "100d_union_of_intervals": _case(
+        (ch.ones(100) / math.sqrt(10)).tolist(),
+        0.5,
+        _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF)),
+        20000,
+    ),
+    "10d_randomized_truncation": _case(_ONES_10D, 0.5, _coin_flip, 5000),
+    "10d_ill_conditioned_covariates": _ill_conditioned_covariates,
+    "10d_rescaled_covariates": _case(
+        (1e-3 * ch.ones(10)).tolist(),
+        0.5,
+        _intervals((4.0, INF)),
+        5000,
+        covariance=1e6 * ch.eye(10),
+    ),
+    "1d_left_truncation_noise_var_5": _case(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
+    ),
+    "1d_left_truncation_noise_var_10": _case(
+        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
+    ),
+    "10d_left_truncation_noise_var_5": _case(
+        _ONES_10D, 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
+    ),
+    "10d_left_truncation_noise_var_10": _case(
+        _ONES_10D, 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
+    ),
+    "10d_union_of_intervals_noise_var_10": _case(
+        _ONES_10D, 0.5, _intervals((-2.0, 0.0), (3.0, INF)), 5000, noise_var=10.0
+    ),
+}
+
+
+def _simulate(case: str, seed: int = 0) -> regression.Simulation:
+    """Return one of ``_CASES``' samples."""
+    return _CASES[case](seed)
+
+
 @_VARIANTS
 def test_1d_no_truncation(variance_known):
-    simulation = regression.simulate([2.0], -1.0, _intervals((-INF, INF)), 2000)
     _fit(
-        simulation,
+        _simulate("1d_no_truncation"),
         variance_known,
         0.04,
         (0.04, 0.02),
@@ -98,82 +198,63 @@ def test_1d_no_truncation(variance_known):
 
 @_VARIANTS
 def test_1d_left_truncation(variance_known):
-    simulation = regression.simulate([2.0], -1.0, _intervals((0.0, INF)), 2000)
-    _fit(simulation, variance_known, 0.18, (0.31, 0.10))
+    _fit(_simulate("1d_left_truncation"), variance_known, 0.18, (0.31, 0.10))
 
 
 @_VARIANTS
 def test_1d_left_truncation_no_intercept(variance_known):
-    simulation = regression.simulate([2.0], 0.0, _intervals((0.0, INF)), 2000)
+    simulation = _simulate("1d_left_truncation_no_intercept")
     _fit(simulation, variance_known, 0.005, (0.02, 0.14), fit_intercept=False)
 
 
 @_VARIANTS
 def test_1d_right_truncation(variance_known):
-    simulation = regression.simulate([2.0], -1.0, _intervals((-INF, -1.0)), 2000)
-    _fit(simulation, variance_known, 0.06, (0.05, 0.11))
+    _fit(_simulate("1d_right_truncation"), variance_known, 0.06, (0.05, 0.11))
 
 
 @_VARIANTS
 def test_1d_interval(variance_known):
-    simulation = regression.simulate([2.0], -1.0, _intervals((-1.0, 1.0)), 2000)
-    _fit(simulation, variance_known, 0.35, (0.54, 0.10))
+    _fit(_simulate("1d_interval"), variance_known, 0.35, (0.54, 0.10))
 
 
 @_VARIANTS
 def test_1d_union_of_intervals(variance_known):
-    phi = _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF))
-    simulation = regression.simulate([2.0], -1.0, phi, 2000)
-    _fit(simulation, variance_known, 0.02, (0.02, 0.05))
+    _fit(_simulate("1d_union_of_intervals"), variance_known, 0.02, (0.02, 0.05))
 
 
 @_VARIANTS
 def test_1d_small_mass(variance_known):
-    simulation = regression.simulate([2.0], -1.0, _intervals((3.85, INF)), 2000)
     # The sampled loss picking best_ cannot resolve this flat valley (Hessian
     # condition number 2,300): best_ lands at 0.39 and variance error 0.08,
     # the others at 0.16 and 0.03.
-    _fit(simulation, variance_known, 0.15, (0.45, 0.09))
+    _fit(_simulate("1d_small_mass"), variance_known, 0.15, (0.45, 0.09))
 
 
 @_VARIANTS
 def test_2d_union_of_intervals(variance_known):
-    phi = _intervals((-INF, -2.0), (0.0, 1.0), (2.5, INF))
-    covariance = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
-    simulation = regression.simulate([1.0, -1.0], 0.5, phi, 2000, covariance=covariance)
-    _fit(simulation, variance_known, 0.09, (0.08, 0.03))
+    _fit(_simulate("2d_union_of_intervals"), variance_known, 0.09, (0.08, 0.03))
 
 
 @_VARIANTS
 def test_2d_two_sided_tails(variance_known):
-    phi = _intervals((-INF, -1.5), (1.5, INF))
-    simulation = regression.simulate([1.0, -1.0], 0.5, phi, 2000)
-    _fit(simulation, variance_known, 0.08, (0.07, 0.05))
+    _fit(_simulate("2d_two_sided_tails"), variance_known, 0.08, (0.07, 0.05))
 
 
 @_VARIANTS
 def test_10d_left_truncation(variance_known):
     # Daskalakis et al. (2020), Section 6: w = 1, kept only where y > 4.
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
-    )
-    _fit(simulation, variance_known, 0.16, (0.12, 0.04))
+    _fit(_simulate("10d_left_truncation"), variance_known, 0.16, (0.12, 0.04))
 
 
 @_VARIANTS
 def test_10d_union_of_intervals(variance_known):
-    phi = _intervals((-2.0, 0.0), (3.0, INF))
-    simulation = regression.simulate(ch.ones(10).tolist(), 0.5, phi, 5000)
-    _fit(simulation, variance_known, 0.11, (0.11, 0.01))
+    _fit(_simulate("10d_union_of_intervals"), variance_known, 0.11, (0.11, 0.01))
 
 
 @_VARIANTS
 def test_10d_no_truncation(variance_known):
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((-INF, INF)), 5000
-    )
     _fit(
-        simulation,
+        _simulate("10d_no_truncation"),
         variance_known,
         0.09,
         (0.09, 0.02),
@@ -185,51 +266,31 @@ def test_10d_no_truncation(variance_known):
 @pytest.mark.slow
 @_VARIANTS
 def test_100d_union_of_intervals(variance_known):
-    phi = _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF))
-    coef = (ch.ones(100) / math.sqrt(10)).tolist()
-    simulation = regression.simulate(coef, 0.5, phi, 20000)
-    _fit(simulation, variance_known, 0.15, (0.15, 0.01))
+    _fit(_simulate("100d_union_of_intervals"), variance_known, 0.15, (0.15, 0.01))
 
 
 @_VARIANTS
 def test_10d_randomized_truncation(variance_known):
-    # A survival probability: each response is kept by a coin flip.
-    def phi(z):
-        return ch.sigmoid(3.0 * (z - 4.0))
-
-    simulation = regression.simulate(ch.ones(10).tolist(), 0.5, phi, 5000)
+    simulation = _simulate("10d_randomized_truncation")
     _fit(simulation, variance_known, 0.13, (0.15, 0.02))
 
 
 @_VARIANTS
 def test_10d_alpha_unknown(variance_known):
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000
-    )
+    simulation = _simulate("10d_left_truncation")
     _fit(simulation, variance_known, 0.16, (0.12, 0.04), alpha_known=False)
 
 
 @_VARIANTS
 def test_10d_ill_conditioned_covariates(variance_known):
-    ch.manual_seed(1)
-    rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
-    spectrum = ch.logspace(0.0, -3.0, 10)
-    covariance = rotation @ ch.diag(spectrum) @ rotation.T
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((1.0, INF)), 5000, covariance=covariance
-    )
+    simulation = _simulate("10d_ill_conditioned_covariates")
     # The least-variance direction, 1e-3, sets the MLE's error: 0.93.
     _fit(simulation, variance_known, 1.3, (1.3, 0.09), ols_margin=0.8)
 
 
 @_VARIANTS
 def test_10d_rescaled_covariates(variance_known):
-    covariance = 1e6 * ch.eye(10)
-    coef = (1e-3 * ch.ones(10)).tolist()
-    simulation = regression.simulate(
-        coef, 0.5, _intervals((4.0, INF)), 5000, covariance=covariance
-    )
-    _fit(simulation, variance_known, 0.12, (0.05, 0.04))
+    _fit(_simulate("10d_rescaled_covariates"), variance_known, 0.12, (0.05, 0.04))
 
 
 @_VARIANTS
@@ -237,51 +298,37 @@ def test_10d_rescaled_covariates(variance_known):
     "seed, unknown", [(1, (0.15, 0.02)), (2, (0.12, 0.02)), (3, (0.29, 0.13))]
 )
 def test_10d_seeds(variance_known, seed, unknown):
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, seed=seed
-    )
-    _fit(simulation, variance_known, 0.13, unknown)
+    _fit(_simulate("10d_left_truncation", seed), variance_known, 0.13, unknown)
 
 
 @_VARIANTS
 def test_1d_left_truncation_noise_var_5(variance_known):
-    simulation = regression.simulate(
-        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
-    )
+    simulation = _simulate("1d_left_truncation_noise_var_5")
     _fit(simulation, variance_known, 0.07, (0.91, 1.49))
 
 
 @_VARIANTS
 def test_1d_left_truncation_noise_var_10(variance_known):
-    simulation = regression.simulate(
-        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
-    )
+    simulation = _simulate("1d_left_truncation_noise_var_10")
     _fit(simulation, variance_known, 0.33, (0.37, 1.47))
 
 
 @_VARIANTS
 def test_10d_left_truncation_noise_var_5(variance_known):
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
-    )
+    simulation = _simulate("10d_left_truncation_noise_var_5")
     _fit(simulation, variance_known, 0.26, (0.26, 0.12))
 
 
 @_VARIANTS
 def test_10d_left_truncation_noise_var_10(variance_known):
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
-    )
+    simulation = _simulate("10d_left_truncation_noise_var_10")
     # The EMA, which the Newton steps do not refine, trails at 0.71.
     _fit(simulation, variance_known, 0.47, (0.55, 0.8))
 
 
 @_VARIANTS
 def test_10d_union_of_intervals_noise_var_10(variance_known):
-    phi = _intervals((-2.0, 0.0), (3.0, INF))
-    simulation = regression.simulate(
-        ch.ones(10).tolist(), 0.5, phi, 5000, noise_var=10.0
-    )
+    simulation = _simulate("10d_union_of_intervals_noise_var_10")
     _fit(simulation, variance_known, 0.40, (0.39, 0.22))
 
 
@@ -429,15 +476,22 @@ def test_unknown_variance_set_projects_to_the_nearest_point():
         assert ch.allclose(projection.project(projected), projected)
 
 
-def _log_mass(loc: ch.Tensor, scale: ch.Tensor, bounds) -> ch.Tensor:
-    """Return log P(z in the union of bounds) for z ~ N(loc, scale^2).
+def _log_survival_mass(
+    mean: ch.Tensor, noise_sd: ch.Tensor, bounds: Bounds
+) -> ch.Tensor:
+    """Return log P(z in the union of bounds) for z ~ N(mean, noise_sd^2).
 
-    A finite interval above loc is reflected below it, where the difference
-    of normal CDFs keeps its precision.
+    A finite interval above the mean is reflected below it, where the
+    difference of normal CDFs keeps its precision.
+
+    Args:
+        mean: The untruncated conditional mean ``w^T x`` at each sample.
+        noise_sd: The noise's sd: the known one, or ``lambda^(-1/2)``.
+        bounds: The intervals whose union is the truncation set.
     """
     terms = []
     for low, high in bounds:
-        lower, upper = (low - loc) / scale, (high - loc) / scale
+        lower, upper = (low - mean) / noise_sd, (high - mean) / noise_sd
         if low == -INF:
             terms.append(ch.special.log_ndtr(upper))  # pylint: disable=not-callable
         elif high == INF:
@@ -450,80 +504,102 @@ def _log_mass(loc: ch.Tensor, scale: ch.Tensor, bounds) -> ch.Tensor:
     return ch.logsumexp(ch.stack(terms), 0)
 
 
-def _exact_nll(natural: ch.Tensor, design: ch.Tensor, y: ch.Tensor, bounds):
-    """Return the mean truncated NLL at ``(v, lambda)``, without sampling."""
-    mean_term, precision = design @ natural[:-1], natural[-1]
+def _truncated_nll_unknown_variance(
+    natural_params: ch.Tensor, design: ch.Tensor, y: ch.Tensor, bounds: Bounds
+) -> ch.Tensor:
+    """Return the mean truncated NLL of regression with unknown noise variance.
+
+    In closed form through normal CDFs, so exact where the model samples.
+
+    Args:
+        natural_params: The natural parameters the model trains, ``(v,
+            lambda) = (w / sigma^2, 1 / sigma^2)``: v's entries, then the
+            noise precision lambda.
+        design: The design matrix, intercept column included, shaped (n, d).
+        y: The responses, shaped (n,).
+        bounds: As ``_log_survival_mass``.
+    """
+    v, precision = natural_params[:-1], natural_params[-1]
+    mean = design @ v / precision
     nll = (
-        0.5 * precision * y.pow(2)
-        - y * mean_term
-        + mean_term.pow(2) / (2.0 * precision)
+        0.5 * precision * (y - mean).pow(2)
         - 0.5 * ch.log(precision)
-        + _log_mass(mean_term / precision, precision.rsqrt(), bounds)
+        + _log_survival_mass(mean, precision.rsqrt(), bounds)
     )
     return nll.mean()
 
 
-def _exact_known_variance_nll(
-    weight: ch.Tensor, design: ch.Tensor, y: ch.Tensor, noise_var: float, bounds
-):
-    """Return the mean truncated NLL at w for a known variance."""
-    loc = design @ weight
-    scale = ch.tensor(math.sqrt(noise_var), dtype=ch.float64)
-    nll = (y - loc).pow(2) / (2.0 * noise_var) + _log_mass(loc, scale, bounds)
+def _truncated_nll_known_variance(
+    weight: ch.Tensor,
+    design: ch.Tensor,
+    y: ch.Tensor,
+    noise_var: float,
+    bounds: Bounds,
+) -> ch.Tensor:
+    """Return the mean truncated NLL of regression with known noise variance.
+
+    Exact, as ``_truncated_nll_unknown_variance``.
+
+    Args:
+        weight: The weight w, intercept last, shaped (d,).
+        design: As ``_truncated_nll_unknown_variance``.
+        y: As ``_truncated_nll_unknown_variance``.
+        noise_var: The known noise variance sigma^2.
+        bounds: As ``_log_survival_mass``.
+    """
+    mean = design @ weight
+    noise_sd = ch.tensor(math.sqrt(noise_var), dtype=ch.float64)
+    nll = (y - mean).pow(2) / (2.0 * noise_var) + _log_survival_mass(
+        mean, noise_sd, bounds
+    )
     return nll.mean()
 
 
-_UNION = [(-INF, -2.0), (0.0, 1.0), (2.5, INF)]
-
-
-def _union_of_intervals(seed: int = 0, n: int = 1000) -> regression.Simulation:
-    """Return the 2d union-of-intervals sample with correlated covariates."""
-    return regression.simulate(
-        [1.0, -1.0],
-        0.5,
-        _intervals(*_UNION),
-        n,
-        covariance=ch.tensor([[1.0, 0.5], [0.5, 1.0]]),
-        seed=seed,
-    )
+def _design_and_responses(
+    simulation: regression.Simulation,
+) -> tuple[ch.Tensor, ch.Tensor]:
+    """Return a sample's design, with an intercept column, and y in float64."""
+    ones = ch.ones(simulation.X.size(0), 1)
+    design = ch.cat([simulation.X, ones], dim=1).double()
+    return design, simulation.y.double().flatten()
 
 
 def test_unknown_variance_covariance_inverts_the_exact_information():
-    simulation = _union_of_intervals(n=2000)
+    simulation = _simulate("2d_union_of_intervals")
     model = stats.TruncatedLinearRegression(
         {}, simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_])
-    natural = ch.cat([weight / variance, 1.0 / variance])
-    X = ch.cat([simulation.X, ch.ones(2000, 1)], dim=1).double()  # pylint: disable=invalid-name
-    y = simulation.y.double().flatten()
+    natural_params = ch.cat([weight / variance, 1.0 / variance])
+    design, y = _design_and_responses(simulation)
     hessian = torch.autograd.functional.hessian(
-        lambda theta: _exact_nll(theta, X, y, _UNION), natural
+        lambda theta: _truncated_nll_unknown_variance(theta, design, y, _UNION_2D),
+        natural_params,
     )
     jacobian = torch.autograd.functional.jacobian(
-        lambda theta: ch.cat([theta[:-1], ch.ones(1)]) / theta[-1], natural
+        lambda theta: ch.cat([theta[:-1], ch.ones(1)]) / theta[-1], natural_params
     )
-    expected = jacobian @ ch.linalg.solve(2000 * hessian, jacobian.T)  # pylint: disable=not-callable
+    n = design.size(0)
+    expected = jacobian @ ch.linalg.solve(n * hessian, jacobian.T)  # pylint: disable=not-callable
     error = (model.covariance() - expected).norm() / expected.norm()
     assert error <= 0.02, (model.covariance(), expected)
 
 
 def test_known_variance_covariance_inverts_the_exact_information():
-    simulation = _union_of_intervals(n=2000)
+    simulation = _simulate("2d_union_of_intervals")
     model = stats.TruncatedLinearRegression(
         {}, simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
-    X = ch.cat([simulation.X, ch.ones(2000, 1)], dim=1).double()  # pylint: disable=invalid-name
-    y = simulation.y.double().flatten()
+    design, y = _design_and_responses(simulation)
     hessian = torch.autograd.functional.hessian(
-        lambda theta: _exact_known_variance_nll(
-            theta, X, y, simulation.noise_var, _UNION
+        lambda theta: _truncated_nll_known_variance(
+            theta, design, y, simulation.noise_var, _UNION_2D
         ),
         weight,
     )
-    expected = ch.linalg.inv(2000 * hessian)  # pylint: disable=not-callable
+    expected = ch.linalg.inv(design.size(0) * hessian)  # pylint: disable=not-callable
     error = (model.covariance() - expected).norm() / expected.norm()
     assert error <= 0.02, (model.covariance(), expected)
     intervals = model.confidence_intervals()
@@ -531,10 +607,10 @@ def test_known_variance_covariance_inverts_the_exact_information():
 
 
 _COVERAGE_CASES = {
-    "1d_left_truncation": lambda seed: regression.simulate(
-        [2.0], -1.0, _intervals((0.0, INF)), 1000, seed=seed
+    "1d_left_truncation": _case([2.0], -1.0, _intervals((0.0, INF)), 1000),
+    "2d_union_of_intervals": _case(
+        [1.0, -1.0], 0.5, _intervals(*_UNION_2D), 1000, covariance=_CORRELATED_2D
     ),
-    "2d_union_of_intervals": _union_of_intervals,
 }
 _REPLICATIONS = 200
 _CHUNKS = 8
@@ -545,55 +621,66 @@ _FAST_UNKNOWN = {"iterations": 2000, "num_samples": 100}
 _FAST_KNOWN = {"num_samples": 100}
 
 
-def _coverage_hits(simulate, variance_known: bool, seeds: range) -> ch.Tensor:
-    """Return how many samples' 95% intervals cover each true entry.
+def _coverage_hits(
+    simulate: Callable[[int], regression.Simulation],
+    variance_known: bool,
+    chunk: int,
+    hyperparameters: dict,
+) -> ch.Tensor:
+    """Return how many of a chunk's samples' 95% intervals cover each truth.
 
     Args:
-        simulate: Maps a seed to a ``regression.Simulation``.
+        simulate: Maps a seed to a sample.
         variance_known: Whether the model is given the noise variance.
-        seeds: The samples' seeds.
+        chunk: Which of the ``_CHUNKS`` slices of the replications' seeds.
+        hyperparameters: The model's.
 
     Returns:
         Each entry's hits: coefficients, intercept, then the learned
         variance.
     """
-    hits = None
-    for seed in seeds:
+    size = _REPLICATIONS // _CHUNKS
+    covered = []
+    for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
         model = stats.TruncatedLinearRegression(
-            _FAST_KNOWN if variance_known else _FAST_UNKNOWN,
+            hyperparameters,
             simulation.phi,
             simulation.alpha,
             noise_var=simulation.noise_var if variance_known else None,
         ).fit(simulation.X, simulation.y)
-        truth = {
-            "coef": simulation.coef,
-            "intercept": simulation.intercept,
-            "variance": ch.tensor([simulation.noise_var]),
-        }
-        covered = ch.cat(
-            [
-                ((ci.lower <= truth[name]) & (truth[name] <= ci.upper)).flatten()
-                for name, ci in model.confidence_intervals().items()
-            ]
-        ).long()
-        hits = covered if hits is None else hits + covered
-    return cast(ch.Tensor, hits)
+        intervals = model.confidence_intervals()
+        truths = [
+            (intervals.coef, simulation.coef),
+            (intervals.intercept, simulation.intercept),
+            (intervals.variance, ch.tensor([simulation.noise_var])),
+        ]
+        covered.append(
+            ch.cat(
+                [
+                    ((interval.lower <= truth) & (truth <= interval.upper)).flatten()
+                    for interval, truth in truths
+                    if interval is not None
+                ]
+            )
+        )
+    return ch.stack(covered).long().sum(0)
 
 
 def _pool(
-    tmp_path_factory: pytest.TempPathFactory, case: str, chunk: int, hits
+    tmp_path_factory: pytest.TempPathFactory, run: str, chunk: int, hits: ch.Tensor
 ) -> Optional[ch.Tensor]:
     """Record a chunk's hits; return all chunks' summed once each has run.
 
     xdist workers share no memory, so the hits go to files under the run's
     temporary root, which every worker's basetemp sits in. A chunk writes
-    before it lists, so whichever finishes last sees every file.
+    before it lists, so whichever finishes last sees every file; the first
+    to claim the folder sums and deletes it.
     """
     root = tmp_path_factory.getbasetemp()
     if "PYTEST_XDIST_WORKER" in os.environ:
         root = root.parent
-    folder = root / "coverage" / case
+    folder = root / "coverage" / run
     folder.mkdir(parents=True, exist_ok=True)
     partial = folder / f"{chunk}.partial"
     ch.save(hits, partial)
@@ -601,21 +688,68 @@ def _pool(
     done = list(folder.glob("*.pt"))
     if len(done) < _CHUNKS:
         return None
-    return sum((ch.load(path) for path in done), ch.zeros_like(hits))
+    try:
+        (folder / "claimed").mkdir()
+    except FileExistsError:
+        return None
+    pooled = sum((ch.load(path) for path in done), ch.zeros_like(hits))
+    shutil.rmtree(folder)
+    try:
+        folder.parent.rmdir()
+    except OSError:
+        pass  # Another run's chunks are still pooling there.
+    return pooled
 
 
-# The 200 replications run in chunks that xdist spreads over its workers;
-# the chunk finishing last checks the pooled coverage, whose standard error
-# is sqrt(0.95 * 0.05 / 200) = 0.015, against bounds three of them from 0.95.
+def _check_coverage(  # pylint: disable=too-many-arguments
+    simulate: Callable[[int], regression.Simulation],
+    variance_known: bool,
+    hyperparameters: dict,
+    run: str,
+    chunk: int,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Run a chunk; once all have, check the pooled coverage of each entry.
+
+    Its standard error is sqrt(0.95 * 0.05 / 200) = 0.015, and the bounds
+    sit three of them from 0.95.
+    """
+    hits = _coverage_hits(simulate, variance_known, chunk, hyperparameters)
+    pooled = _pool(tmp_path_factory, run, chunk, hits)
+    if pooled is not None:
+        coverage = pooled.double() / _REPLICATIONS
+        assert ((coverage >= 0.905) & (coverage <= 0.995)).all(), coverage
+
+
+# The replications run in chunks that xdist spreads over its workers.
 @pytest.mark.slow
 @pytest.mark.parametrize("chunk", range(_CHUNKS))
 @pytest.mark.parametrize("case", list(_COVERAGE_CASES))
 @_VARIANTS
 def test_intervals_cover_at_their_level(variance_known, case, chunk, tmp_path_factory):
-    size = _REPLICATIONS // _CHUNKS
-    seeds = range(chunk * size, (chunk + 1) * size)
-    hits = _coverage_hits(_COVERAGE_CASES[case], variance_known, seeds)
-    pooled = _pool(tmp_path_factory, f"{variance_known}-{case}", chunk, hits)
-    if pooled is not None:
-        coverage = pooled.double() / _REPLICATIONS
-        assert ((coverage >= 0.905) & (coverage <= 0.995)).all(), coverage
+    _check_coverage(
+        _COVERAGE_CASES[case],
+        variance_known,
+        _FAST_KNOWN if variance_known else _FAST_UNKNOWN,
+        f"{variance_known}-{case}",
+        chunk,
+        tmp_path_factory,
+    )
+
+
+# Every regression case, at the defaults; deselected unless --coverage-sweep.
+@pytest.mark.coverage_sweep
+@pytest.mark.parametrize("chunk", range(_CHUNKS))
+@pytest.mark.parametrize("case", list(_CASES))
+@_VARIANTS
+def test_intervals_cover_at_their_level_on_every_case(
+    variance_known, case, chunk, tmp_path_factory
+):
+    _check_coverage(
+        _CASES[case],
+        variance_known,
+        {},
+        f"sweep-{variance_known}-{case}",
+        chunk,
+        tmp_path_factory,
+    )
