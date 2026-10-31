@@ -14,11 +14,12 @@ import torch.nn
 
 from delphi import configs
 from delphi.statistical_model import StatisticalModel
+from delphi.utils import constants
 
 _LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
 _T = TypeVar("_T")
 
-ESTIMATORS = ("avg", "ema", "final", "best")
+ESTIMATORS = tuple(constants.Estimator)
 
 
 def require_fitted(value: Optional[_T], name: str) -> _T:

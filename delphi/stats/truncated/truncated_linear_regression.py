@@ -20,6 +20,7 @@
 """
 
 from collections.abc import Callable
+import dataclasses
 import math
 from typing import Optional, Union, cast
 
@@ -33,7 +34,43 @@ from delphi.stats.truncated import losses
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.truncated import sampling
 from delphi.truncated.distributions import summary
-from delphi.utils import helpers
+from delphi.utils import constants, helpers
+
+
+@dataclasses.dataclass(frozen=True)
+class Interval:
+    """Elementwise bounds on an estimate.
+
+    Attributes:
+        lower: Lower bounds, shaped as the estimate.
+        upper: Upper bounds, shaped as the estimate.
+    """
+
+    lower: ch.Tensor
+    upper: ch.Tensor
+
+
+@dataclasses.dataclass(frozen=True)
+class ConfidenceIntervals:
+    """Wald intervals for a truncated regression's estimates.
+
+    Attributes:
+        coef: For ``coef_``, shaped (k, d).
+        intercept: For ``intercept_``, shaped (k,); None without one.
+        variance: For ``variance_``, shaped (k,); None when it is known.
+    """
+
+    coef: Interval
+    intercept: Optional[Interval] = None
+    variance: Optional[Interval] = None
+
+    def items(self) -> list[tuple[str, Interval]]:
+        """Return each present interval with its field's name."""
+        named = [
+            (field.name, getattr(self, field.name))
+            for field in dataclasses.fields(self)
+        ]
+        return [(name, interval) for name, interval in named if interval is not None]
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
@@ -106,6 +143,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self.sampler = sampler or sampling.GaussianRejectionSampler(
             self.hyperparameters.num_samples, self.hyperparameters.min_accepted
         )
+        self._untruncated_moments = sampling.UntruncatedGaussianMoments()
+        draws = self.hyperparameters.information_samples
+        self._information_sampler = sampling.GaussianRejectionSampler(draws, draws)
         if dependent:
             lds = cast(
                 configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
@@ -136,9 +176,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Fit the model, with y divided by OLS's residual sd when learning it.
 
         That puts the noise variance near 1 whatever its units, so lambda
-        and v share one scale. The estimates are reported in y's units. A
-        learned variance runs in float64: with covariates on scales far
-        apart, float32 rounds away the late steps of the scaled intercept.
+        and v share one scale. The estimates are reported on the scale of
+        the y given. A learned variance runs in float64: with covariates on
+        scales far apart, float32 rounds away the late steps of the scaled
+        intercept.
         """
         self.response_scale = 1.0
         if self.noise_var is None and not self.dependent:
@@ -222,8 +263,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         natural = (
             self.weight.detach() if theta is None else theta.reshape(self.weight.shape)
         )
-        untruncated = sampling.UntruncatedGaussianMoments()
-        return self._batch_hessian(X, natural, untruncated)
+        return self._hessian(X, natural, self._untruncated_moments)
 
     def _hessian_spectrum(
         self,
@@ -341,15 +381,15 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         weight = self.weight.detach() if theta is None else theta
         weight = weight.reshape(-1, linear_model.require_fitted(self.k, "k"))
-        return self._batch_hessian(X, weight, self.sampler)
+        return self._hessian(X, weight, self.sampler)
 
-    def _batch_hessian(
+    def _hessian(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         weight: ch.Tensor,
         sampler: sampling.GaussianSampler,
     ) -> ch.Tensor:
-        """Return the NLL's batch-mean Hessian over X's rows at a weight.
+        """Return the NLL's mean Hessian over X's rows at a weight.
 
         In w for a known variance; in ``(v, lambda)`` for a learned one.
         """
@@ -372,33 +412,32 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             params = (natural[:-1] / natural[-1]).flatten()
         return super().coefficients(params)
 
-    def _variance(self, name: str) -> Optional[ch.Tensor]:
-        """Return the noise variance at one of the estimates."""
+    def variance(self, params: Optional[ch.Tensor]) -> Optional[ch.Tensor]:
+        """Return the noise variance at a flat iterate, shaped (k,).
+
+        The given ``noise_var`` when known. Otherwise ``1 / lambda`` at a
+        ``(v, lambda)`` iterate, times ``response_scale ** 2`` to undo
+        ``fit``'s scaling of y; None when params is.
+        """
         if self.noise_var is not None:
             return self.noise_var
-        params = self._estimate(name)
         if params is None:
             return None
-        return self._variance_at(params)
-
-    def _variance_at(self, params: ch.Tensor) -> ch.Tensor:
-        """Return the noise variance at a flat ``(v, lambda)``, shaped (k,)."""
         precision = params.reshape(-1, linear_model.require_fitted(self.k, "k"))[-1]
-        return ch.as_tensor(self.response_scale).pow(2) / precision
+        return self.response_scale**2 / precision
 
-    def _reported(self, params: ch.Tensor) -> ch.Tensor:
-        """Return the estimates at a flat trained weight, in y's units.
+    def _flat_estimates(self, params: ch.Tensor) -> ch.Tensor:
+        """Return ``coefficients`` and, when learned, ``variance`` at params.
 
-        Concatenated: the coefficients shaped (k, d) row-major, the
-        intercept's k entries when fit, then the k variances when learned.
+        A function of the trained weight rather than a property, so that
+        ``covariance`` can differentiate it for the delta method. Flattened
+        in order: the coefficients shaped (k, d) row-major, the k
+        intercepts when fit, then the k variances when learned.
         """
         coef, intercept = self.coefficients(params)
-        parts = [cast(ch.Tensor, coef).flatten()]
-        if intercept is not None:
-            parts.append(intercept)
-        if self.noise_var is None:
-            parts.append(self._variance_at(params))
-        return ch.cat(parts)
+        variance = self.variance(params) if self.noise_var is None else None
+        parts = [coef, intercept, variance]
+        return ch.cat([part.flatten() for part in parts if part is not None])
 
     def _information(self, params: ch.Tensor) -> ch.Tensor:
         """Return the batch-mean Fisher information in the trained weight.
@@ -408,8 +447,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         Rows go to the sampler in chunks of ``MAX_DRAWS_PER_ROUND`` draws,
         and the same seed every call gives every interval the same draws.
         """
-        draws = self.hyperparameters.information_samples
-        sampler = sampling.GaussianRejectionSampler(draws, draws)
+        draws = self._information_sampler.num_samples
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         weight = params.reshape(-1, linear_model.require_fitted(self.k, "k"))
         total = ch.zeros(weight.numel(), weight.numel(), dtype=ch.float64)
@@ -417,40 +455,41 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         with ch.random.fork_rng():
             ch.manual_seed(self.rand_seed)
             for rows in X.double().split(chunk):
-                hessian = self._batch_hessian(rows, weight, sampler)
+                hessian = self._hessian(rows, weight, self._information_sampler)
                 total += rows.size(0) * hessian
         return total / X.size(0)
 
-    def covariance(self, estimate: str = "avg") -> ch.Tensor:
-        """Return the asymptotic covariance of an estimate, in y's units.
+    def covariance(
+        self, estimate: constants.Estimator = constants.Estimator.AVG
+    ) -> ch.Tensor:
+        """Return the asymptotic covariance of an estimate.
 
         The inverse Fisher information of the n samples at the estimate, in
         the trained weight's scaled coordinates, carried to the
-        coefficients, intercept and, when learned, the variance by the
-        delta method.
+        coefficients, intercept and, when learned, the variance on the scale
+        of the data passed to ``fit`` by the delta method.
 
         Args:
-            estimate: One of ``linear_model.ESTIMATORS``.
+            estimate: The iterate whose estimates to cover.
 
         Returns:
-            The covariance in float64, shaped (p, p), over the entries in
-            the order of ``_reported``: coefficients shaped (k, d)
-            row-major, the k intercepts when fit, then the k variances when
-            learned.
+            The covariance in float64, shaped (p, p), over the coefficients
+            shaped (k, d) row-major, the k intercepts when fit, then the k
+            variances when learned.
 
         Raises:
-            ValueError: If the data is dependent, or estimate is not one of
-                ``linear_model.ESTIMATORS``.
+            ValueError: If the data is dependent, or estimate is not a
+                ``constants.Estimator``.
             RuntimeError: If called before fit.
         """
-        params = self._flat_estimate(estimate)
+        params = self._trained_weight(estimate)
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         information = X.size(0) * self._information(params)
-        jacobian = torch.autograd.functional.jacobian(self._reported, params)
+        jacobian = torch.autograd.functional.jacobian(self._flat_estimates, params)
         covariance = jacobian @ ch.linalg.solve(information, jacobian.T)  # pylint: disable=not-callable
         return (covariance + covariance.T) / 2
 
-    def _flat_estimate(self, estimate: str) -> ch.Tensor:
+    def _trained_weight(self, estimate: constants.Estimator) -> ch.Tensor:
         """Return an estimate's flat trained weight in float64.
 
         Raises:
@@ -461,16 +500,15 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             raise ValueError(
                 "covariance and confidence intervals need independent data."
             )
-        if estimate not in linear_model.ESTIMATORS:
-            raise ValueError(
-                f"estimate must be one of {linear_model.ESTIMATORS}; got {estimate!r}."
-            )
-        params = linear_model.require_fitted(self._estimate(estimate), estimate)
+        name = constants.Estimator(estimate)
+        params = linear_model.require_fitted(self._estimate(name), name)
         return params.detach().double().flatten()
 
     def confidence_intervals(
-        self, level: float = 0.95, estimate: str = "avg"
-    ) -> dict[str, tuple[ch.Tensor, ch.Tensor]]:
+        self,
+        level: float = 0.95,
+        estimate: constants.Estimator = constants.Estimator.AVG,
+    ) -> ConfidenceIntervals:
         """Return Wald intervals for the coefficients, intercept and variance.
 
         Each entry's ``estimate +- z sd``, for sd from ``covariance`` and z
@@ -479,12 +517,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
         Args:
             level: Coverage of each interval, in (0, 1).
-            estimate: One of ``linear_model.ESTIMATORS``.
+            estimate: The iterate whose estimates to cover.
 
         Returns:
-            ``"coef"``, ``"intercept"`` when fit, and ``"variance"`` when
-            learned, each mapped to its (lower, upper) bounds, shaped as
-            ``coef_``, ``intercept_`` and ``variance_``.
+            The intervals, on the scale of the data passed to ``fit``.
 
         Raises:
             ValueError: If level lies outside (0, 1), or as ``covariance``.
@@ -492,43 +528,46 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """
         if not 0.0 < level < 1.0:
             raise ValueError(f"level must lie in (0, 1); got {level}.")
-        params = self._flat_estimate(estimate)
-        point = self._reported(params)
+        point = self._flat_estimates(self._trained_weight(estimate))
         quantile = ch.special.ndtri(ch.tensor(0.5 + level / 2, dtype=ch.float64))  # pylint: disable=not-callable
         half_width = quantile * self.covariance(estimate).diagonal().sqrt()
-        k, d = linear_model.require_fitted(self.k, "k"), self.d
-        names = ["coef", "intercept", "variance"]
-        sizes = [k * linear_model.require_fitted(d, "d"), k, k]
-        if self.noise_var is not None:
-            del names[2], sizes[2]
-        if not self.fit_intercept:
-            del names[1], sizes[1]
-        lowers = (point - half_width).split(sizes)
-        uppers = (point + half_width).split(sizes)
-        intervals = dict(zip(names, zip(lowers, uppers)))
-        lower, upper = intervals["coef"]
-        intervals["coef"] = (lower.reshape(k, -1), upper.reshape(k, -1))
-        return intervals
+        k = linear_model.require_fitted(self.k, "k")
+        extra = int(self.fit_intercept) + int(self.noise_var is None)
+        sizes = [point.numel() - extra * k] + [k] * extra
+        intervals = [
+            Interval(lower, upper)
+            for lower, upper in zip(
+                (point - half_width).split(sizes), (point + half_width).split(sizes)
+            )
+        ]
+        coef = Interval(
+            intervals[0].lower.reshape(k, -1), intervals[0].upper.reshape(k, -1)
+        )
+        return ConfidenceIntervals(
+            coef=coef,
+            intercept=intervals[1] if self.fit_intercept else None,
+            variance=intervals[-1] if self.noise_var is None else None,
+        )
 
     @property
     def avg_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the averaged iterate."""
-        return self._variance("avg")
+        return self.variance(self._estimate("avg"))
 
     @property
     def ema_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the moving average of the iterates."""
-        return self._variance("ema")
+        return self.variance(self._estimate("ema"))
 
     @property
     def final_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the last iterate."""
-        return self._variance("final")
+        return self.variance(self._estimate("final"))
 
     @property
     def best_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the iterate with the lowest validation loss."""
-        return self._variance("best")
+        return self.variance(self._estimate("best"))
 
     @property
     def variance_(self) -> Optional[ch.Tensor]:
@@ -539,16 +578,20 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         rows = super()._summary_estimates()
         if self.noise_var is None:
             rows += [
-                (f"{name}_variance_", summary.tensor(self._variance(name)))
+                (
+                    f"{name}_variance_",
+                    summary.tensor(getattr(self, f"{name}_variance_")),
+                )
                 for name in linear_model.ESTIMATORS
             ]
         if not self.dependent:
             rows += [
                 (
                     f"{name}_ 95% interval",
-                    f"{summary.tensor(lower)} to {summary.tensor(upper)}",
+                    f"{summary.tensor(interval.lower)} to "
+                    f"{summary.tensor(interval.upper)}",
                 )
-                for name, (lower, upper) in self.confidence_intervals().items()
+                for name, interval in self.confidence_intervals().items()
             ]
         return rows
 

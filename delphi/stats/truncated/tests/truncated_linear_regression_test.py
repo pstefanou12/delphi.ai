@@ -526,7 +526,8 @@ def test_known_variance_covariance_inverts_the_exact_information():
     expected = ch.linalg.inv(2000 * hessian)  # pylint: disable=not-callable
     error = (model.covariance() - expected).norm() / expected.norm()
     assert error <= 0.02, (model.covariance(), expected)
-    assert set(model.confidence_intervals()) == {"coef", "intercept"}
+    intervals = model.confidence_intervals()
+    assert intervals.intercept is not None and intervals.variance is None
 
 
 _COVERAGE_CASES = {
@@ -572,8 +573,8 @@ def _coverage_hits(simulate, variance_known: bool, seeds: range) -> ch.Tensor:
         }
         covered = ch.cat(
             [
-                ((lower <= truth[name]) & (truth[name] <= upper)).flatten()
-                for name, (lower, upper) in model.confidence_intervals().items()
+                ((ci.lower <= truth[name]) & (truth[name] <= ci.upper)).flatten()
+                for name, ci in model.confidence_intervals().items()
             ]
         ).long()
         hits = covered if hits is None else hits + covered
