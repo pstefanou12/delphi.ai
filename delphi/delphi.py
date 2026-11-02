@@ -434,8 +434,8 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
             )
         if hessian is None:
             # nn.Module.__getattr__ types every attribute as a Tensor.
-            hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))
-        estimate = hessian(getattr(self, "theta").detach()) if current else hessian()
+            hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))  # noqa: B009
+        estimate = hessian(getattr(self, "theta").detach()) if current else hessian()  # noqa: B009
         return fisher.FisherLR.spectrum(
             estimate, getattr(self, "independent_coordinates", True)
         )

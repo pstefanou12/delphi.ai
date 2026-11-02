@@ -13,6 +13,7 @@ every regression case with ``--coverage-sweep``.
 """
 
 from collections.abc import Callable, Sequence
+import contextlib
 import math
 import os
 import shutil
@@ -356,7 +357,7 @@ def test_truncated_dependent_regression():
     NOISE_VAR = ch.eye(D)
     M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR)
     x_t = ch.zeros((1, D))
-    for i in range(T):
+    for _ in range(T):
         noise = M.sample()
         y_t = x_t @ A + noise
         if phi(y_t):  # returns a boolean
@@ -695,10 +696,9 @@ def _pool(
         return None
     pooled = sum((ch.load(path) for path in done), ch.zeros_like(hits))
     shutil.rmtree(folder)
-    try:
+    # Another run's chunks may still be pooling there.
+    with contextlib.suppress(OSError):
         folder.parent.rmdir()
-    except OSError:
-        pass  # Another run's chunks are still pooling there.
     return pooled
 
 

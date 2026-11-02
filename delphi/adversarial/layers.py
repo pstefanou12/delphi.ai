@@ -54,8 +54,6 @@ class SequentialWithArgs(ch.nn.Sequential):
         vs = list(self._modules.values())
         num_layers = len(vs)
         for i in range(num_layers):
-            if i == num_layers - 1:
-                inp = vs[i](inp, *args, **kwargs)
-            else:
-                inp = vs[i](inp)
+            last = i == num_layers - 1
+            inp = vs[i](inp, *args, **kwargs) if last else vs[i](inp)
         return inp

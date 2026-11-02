@@ -6,7 +6,7 @@ callable. The sets here carry state: ``Identity`` admits everything, and
 ``RecoveredSet`` is not given but estimated from samples drawn inside it.
 """
 
-from abc import ABC
+import abc
 import copy
 from typing import Optional
 
@@ -17,9 +17,10 @@ from delphi.torchnomials import hermite
 import delphi.transformations.transformation
 
 
-class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods
+class oracle(abc.ABC):  # pylint: disable=invalid-name,too-few-public-methods
     """Base class for stateful truncation sets."""
 
+    @abc.abstractmethod
     def __call__(self, x):
         """Return membership of each sample.
 

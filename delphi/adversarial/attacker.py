@@ -588,7 +588,7 @@ class AttackerModel(DelphiModel):  # pylint: disable=too-many-instance-attribute
         if self.writer is not None:
             descs = ["loss", "top1", "top5"]
             vals = [losses, top1, top5]
-            for d, v in zip(descs, vals):
+            for d, v in zip(descs, vals, strict=True):
                 self.writer.add_scalar("_".join([loop_type, d]), v.avg, epoch)
 
         # check for logging/checkpoint

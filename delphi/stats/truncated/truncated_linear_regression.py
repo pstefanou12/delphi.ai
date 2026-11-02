@@ -542,7 +542,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         upper = self._unflatten_estimates(point + half_width)
         optional = [
             None if low is None or high is None else Interval(low, high)
-            for low, high in zip(lower[1:], upper[1:])
+            for low, high in zip(lower[1:], upper[1:], strict=True)
         ]
         return ConfidenceIntervals(Interval(lower[0], upper[0]), *optional)
 
@@ -783,7 +783,7 @@ class UnknownVarianceSet(delphi.projection_sets.ProjectionSet):
             dtype=ch.float64,
         )
         candidates = []
-        for start, end in zip(corners, corners.roll(-1, 0)):
+        for start, end in zip(corners, corners.roll(-1, 0), strict=True):
             edge = end - start
             share = float((point - start) @ edge / (edge @ edge))
             candidates.append(start + min(max(share, 0.0), 1.0) * edge)

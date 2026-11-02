@@ -105,10 +105,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
-        if self.fit_intercept:
-            k = X.size(1) - 1
-        else:
-            k = X.size(1)
+        k = X.size(1) - 1 if self.fit_intercept else X.size(1)
 
         # Normalization factor: B * sqrt(k).
         # Compute B as the maximum L-inf norm across all samples.
@@ -207,7 +204,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Best intercept from training."""
         if self.fit_intercept:
             return self.best_intercept
-        warnings.warn("intercept not fit, check inputs.")
+        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
         return None
 
     @property
@@ -220,7 +217,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Final intercept from training."""
         if self.fit_intercept:
             return self.final_intercept
-        warnings.warn("intercept not fit, check inputs.")
+        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
         return None
 
     @property
@@ -233,5 +230,5 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Regression intercept."""
         if self.best_intercept:
             return self.best_intercept.clone()
-        warnings.warn("intercept not fit, check args input.")
+        warnings.warn("intercept not fit, check args input.", stacklevel=2)
         return None

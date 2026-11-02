@@ -87,7 +87,7 @@ class DataSet:
         extra_args = set(kwargs.keys()) - set(required_args + optional_args)
         if len(extra_args) > 0:
             raise ValueError(f"Got unrecognized args {extra_args}")
-        final_kwargs = {k: kwargs.get(k, None) for k in required_args + optional_args}
+        final_kwargs = {k: kwargs.get(k) for k in required_args + optional_args}
 
         self.ds_name = ds_name
         self.data_path = data_path

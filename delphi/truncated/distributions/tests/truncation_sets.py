@@ -123,7 +123,7 @@ def triangle(vertices: Sequence[Sequence[float]]) -> helpers.Oracle:
 
     def phi(z: ch.Tensor) -> ch.Tensor:
         inside = ch.ones(z.size(0), dtype=ch.bool)
-        for corner, edge in zip(corners, edges):
+        for corner, edge in zip(corners, edges, strict=True):
             offset = z[:, :2] - corner
             cross = edge[0] * offset[:, 1] - edge[1] * offset[:, 0]
             inside &= orientation * cross >= 0.0

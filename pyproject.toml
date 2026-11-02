@@ -84,8 +84,14 @@ omit = ["*/tests/*"]
 
 [tool.ruff.lint]
 # Default rules plus I (isort): import grouping and ordering, which CLAUDE.md
-# specifies but nothing enforced.
-extend-select = ["I"]
+# specifies but nothing enforced; B (bugbear) and SIM (simplify) catch likely
+# bugs and needless constructs.
+extend-select = ["B", "I", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# torch.Size() is immutable, so it is safe as a default argument, as in
+# torch.distributions' own expand(batch_shape) signatures.
+extend-immutable-calls = ["torch.Size", "ch.Size"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["delphi"]
