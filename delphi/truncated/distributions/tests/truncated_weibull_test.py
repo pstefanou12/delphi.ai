@@ -82,8 +82,8 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
-        scale=ch.Tensor([1.0]),
+        concentration=ch.tensor([2.0]),
+        scale=ch.tensor([1.0]),
         phi=lambda z: z > 1.5,
         hyperparameters={"iterations": 1500, "batch_size": 1},
     )
@@ -92,8 +92,8 @@ def test_one_dimension():
 def test_two_dimensions():
     _recovers(
         dims=2,
-        concentration=ch.Tensor([1.0, 1.0]),
-        scale=ch.Tensor([1.0, 2.0]),
+        concentration=ch.tensor([1.0, 1.0]),
+        scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
     )
 
@@ -101,8 +101,8 @@ def test_two_dimensions():
 def test_two_dimensions_differing_shapes():
     _recovers(
         dims=2,
-        concentration=ch.Tensor([2.0, 3.0]),
-        scale=ch.Tensor([1.0, 2.0]),
+        concentration=ch.tensor([2.0, 3.0]),
+        scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
         hyperparameters={"batch_size": 100},
     )
@@ -111,14 +111,14 @@ def test_two_dimensions_differing_shapes():
 def test_twenty_dimensions_differing_shapes():
     _recovers(
         dims=20,
-        concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4),
-        scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4),
+        concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4),
+        scale=ch.tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4),
         phi=lambda z: z[:, 0] > 1.0,
     )
 
 
 def test_two_dimensions_random_half_space():
-    concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
+    concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 2, 2),
         torch.distributions.Weibull(scale, concentration),
@@ -133,7 +133,7 @@ def test_two_dimensions_random_half_space():
 
 
 def test_two_dimensions_random_disc_union():
-    concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
+    concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_disc_union, 1, 2, 6),
         torch.distributions.Weibull(scale, concentration),
@@ -150,8 +150,8 @@ def test_two_dimensions_random_disc_union():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
-        scale=ch.Tensor([1.0]),
+        concentration=ch.tensor([2.0]),
+        scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -162,8 +162,8 @@ def test_one_dimension_identity():
 def test_ten_dimensions_identity():
     _recovers(
         dims=10,
-        concentration=ch.Tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
-        scale=ch.Tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
+        concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
+        scale=ch.tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -172,7 +172,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    scale, concentration = ch.Tensor([1.0]), ch.Tensor([2.0])
+    scale, concentration = ch.tensor([1.0]), ch.tensor([2.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
@@ -192,8 +192,8 @@ def test_one_dimension_small_mass():
 def test_indistinguishable_pair():
     # Truncated to a narrow window the two samples agree to within sampling
     # error, so only an estimator that knows the window can tell them apart.
-    concentration = ch.Tensor([2.0])
-    scales = (ch.Tensor([1.0]), ch.Tensor([2.0]))
+    concentration = ch.tensor([2.0])
+    scales = (ch.tensor([1.0]), ch.tensor([2.0]))
 
     def phi(z):
         return (z[:, 0] > 1.0) & (z[:, 0] < 1.2)

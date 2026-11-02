@@ -353,7 +353,7 @@ def test_truncated_dependent_regression():
     def phi(x):
         return x.norm(dim=-1, keepdim=True) <= phi_bound
 
-    X, Y = ch.Tensor([]), ch.Tensor([])
+    X, Y = ch.tensor([]), ch.tensor([])
     NOISE_VAR = ch.eye(D)
     M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR)
     x_t = ch.zeros((1, D))

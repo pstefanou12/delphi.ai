@@ -39,14 +39,14 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        rate=ch.Tensor([1.0]),
+        rate=ch.tensor([1.0]),
         phi=lambda z: z > 1,
         hyperparameters={"batch_size": 1},
     )
 
 
 def test_two_dimensions():
-    rate = ch.Tensor([1.0, 2.0])
+    rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Exponential(rate),
@@ -75,7 +75,7 @@ def test_twenty_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    rate = ch.Tensor([1.0, 2.0])
+    rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 1, 2),
         torch.distributions.Exponential(rate),
@@ -89,7 +89,7 @@ def test_two_dimensions_random_half_space():
 
 
 def test_two_dimensions_random_ellipsoid():
-    rate = ch.Tensor([1.0, 2.0])
+    rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_ellipsoid, 0, 2),
         torch.distributions.Exponential(rate),
@@ -108,7 +108,7 @@ def test_two_dimensions_random_ellipsoid():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        rate=ch.Tensor([1.0]),
+        rate=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -146,7 +146,7 @@ def test_ten_dimensions_sum_threshold():
 
 
 def test_one_dimension_small_mass():
-    rate = ch.Tensor([1.0])
+    rate = ch.tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
@@ -195,8 +195,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_exponential.TruncatedExponential,
         targets=(
-            torch.distributions.Exponential(ch.Tensor([0.5])),
-            torch.distributions.Exponential(ch.Tensor([1.5])),
+            torch.distributions.Exponential(ch.tensor([0.5])),
+            torch.distributions.Exponential(ch.tensor([1.5])),
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
         dims=1,
@@ -208,7 +208,7 @@ def test_indistinguishable_pair():
 def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
-        torch.distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
+        torch.distributions.Exponential(ch.tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
     )
     model = truncated_exponential.TruncatedExponential(
         {"iterations": 10},
@@ -219,4 +219,4 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     model.fit(sample.S)
     # Rate 100 puts exp(-50) of its mass above 0.5.
     with pytest.raises(ValueError, match="almost no mass on the truncation set"):
-        model.hessian(ch.Tensor([-100.0]))
+        model.hessian(ch.tensor([-100.0]))

@@ -14,7 +14,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 def test_one_dimension():
     ch.manual_seed(0)
     target = torch.distributions.MultivariateNormal(ch.zeros(1), ch.eye(1))
-    left = ch.Tensor([0.0])
+    left = ch.tensor([0.0])
 
     def phi(x):
         return (x > left).prod(dim=-1, keepdim=True)

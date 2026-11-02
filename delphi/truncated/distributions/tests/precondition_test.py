@@ -15,7 +15,7 @@ def _phi(z):
 def _sample():
     ch.manual_seed(0)
     target = inverse_gaussian.InverseGaussian(
-        inverse_gaussian.InverseGaussian.to_natural(ch.Tensor([1.0, 2.0])), 1
+        inverse_gaussian.InverseGaussian.to_natural(ch.tensor([1.0, 2.0])), 1
     )
     return helpers.generate_truncated_distribution_dataset(target, _phi, 1000)
 

@@ -12,7 +12,7 @@ from delphi.utils import constants
 
 def _fitted():
     ch.manual_seed(0)
-    target = torch.distributions.Exponential(ch.Tensor([1.0, 2.0]))
+    target = torch.distributions.Exponential(ch.tensor([1.0, 2.0]))
 
     def phi(z):
         return z[:, 0] > 0.5

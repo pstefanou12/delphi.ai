@@ -43,11 +43,11 @@ def _recovers(
 
 
 def test_three_categories():
-    _recovers(concentration=ch.Tensor([2.0, 3.0, 4.0]), phi=lambda z: z[:, 0] > 0.3)
+    _recovers(concentration=ch.tensor([2.0, 3.0, 4.0]), phi=lambda z: z[:, 0] > 0.3)
 
 
 def test_three_categories_random_half_space():
-    concentration = ch.Tensor([2.0, 3.0, 4.0])
+    concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 3),
         torch.distributions.Dirichlet(concentration),
@@ -59,14 +59,14 @@ def test_three_categories_random_half_space():
 
 def test_three_categories_triangle():
     _recovers(
-        concentration=ch.Tensor([2.0, 3.0, 4.0]),
+        concentration=ch.tensor([2.0, 3.0, 4.0]),
         phi=truncation_sets.triangle([(0.3, 0.0), (0.7, 0.0), (0.3, 0.4)]),
     )
 
 
 def test_three_categories_identity():
     _recovers(
-        concentration=ch.Tensor([2.0, 3.0, 4.0]),
+        concentration=ch.tensor([2.0, 3.0, 4.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -84,7 +84,7 @@ def test_ten_categories_identity():
 
 @pytest.mark.slow
 def test_three_categories_small_mass():
-    concentration = ch.Tensor([2.0, 3.0, 4.0])
+    concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Dirichlet(concentration),
@@ -117,8 +117,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_dirichlet.TruncatedDirichlet,
         targets=(
-            torch.distributions.Dirichlet(ch.Tensor([2.0, 3.0, 4.0])),
-            torch.distributions.Dirichlet(ch.Tensor([5.0, 3.0, 4.0])),
+            torch.distributions.Dirichlet(ch.tensor([2.0, 3.0, 4.0])),
+            torch.distributions.Dirichlet(ch.tensor([5.0, 3.0, 4.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.35),
         dims=3,

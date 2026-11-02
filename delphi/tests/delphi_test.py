@@ -83,7 +83,7 @@ def test_fisher_scheduler_derives_its_constants_from_a_hessian() -> None:
 
         def hessian(self) -> torch.Tensor:
             """Return a diagonal Hessian with eigenvalues 2 and 50."""
-            return torch.diag(torch.Tensor([2.0, 50.0]))
+            return torch.diag(torch.tensor([2.0, 50.0]))
 
     _, schedule = CurvedModel(
         {"scheduler": "fisher", "epochs": 5, "constant": False}

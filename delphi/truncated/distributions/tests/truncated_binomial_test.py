@@ -41,14 +41,14 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        total_count=ch.Tensor([10.0]),
-        probs=ch.Tensor([0.3]),
+        total_count=ch.tensor([10.0]),
+        probs=ch.tensor([0.3]),
         phi=lambda z: z[:, 0] > 4,
     )
 
 
 def test_two_dimensions():
-    total_count, probs = ch.Tensor([10.0, 20.0]), ch.Tensor([0.3, 0.5])
+    total_count, probs = ch.tensor([10.0, 20.0]), ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Binomial(total_count, probs),
@@ -59,7 +59,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    total_count, probs = ch.Tensor([10.0, 20.0]), ch.Tensor([0.3, 0.5])
+    total_count, probs = ch.tensor([10.0, 20.0]), ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Binomial(total_count, probs),
@@ -72,8 +72,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        total_count=ch.Tensor([10.0]),
-        probs=ch.Tensor([0.3]),
+        total_count=ch.tensor([10.0]),
+        probs=ch.tensor([0.3]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -93,7 +93,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    total_count, probs = ch.Tensor([10.0]), ch.Tensor([0.3])
+    total_count, probs = ch.tensor([10.0]), ch.tensor([0.3])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Binomial(total_count, probs),
@@ -115,12 +115,12 @@ def test_ten_dimensions_sum_threshold():
 
 
 def test_indistinguishable_pair():
-    total_count = ch.Tensor([20.0])
+    total_count = ch.tensor([20.0])
     helpers.assert_family_distinguishes(
         model_class=truncated_binomial.TruncatedBinomial,
         targets=(
-            torch.distributions.Binomial(total_count, ch.Tensor([0.35])),
-            torch.distributions.Binomial(total_count, ch.Tensor([0.5])),
+            torch.distributions.Binomial(total_count, ch.tensor([0.35])),
+            torch.distributions.Binomial(total_count, ch.tensor([0.5])),
         ),
         phi=lambda z: (z[:, 0] > 7.5) & (z[:, 0] < 9.5),
         dims=1,

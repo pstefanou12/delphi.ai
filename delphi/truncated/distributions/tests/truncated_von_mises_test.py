@@ -69,14 +69,14 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        concentration=ch.Tensor([2.0]),
+        loc=ch.tensor([0.0]),
+        concentration=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 0.3,
     )
 
 
 def test_two_dimensions():
-    loc, concentration = ch.Tensor([0.0, 1.0]), ch.Tensor([2.0, 1.0])
+    loc, concentration = ch.tensor([0.0, 1.0]), ch.tensor([2.0, 1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.VonMises(loc, concentration),
@@ -87,7 +87,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    loc, concentration = ch.Tensor([0.0, 1.0]), ch.Tensor([2.0, 1.0])
+    loc, concentration = ch.tensor([0.0, 1.0]), ch.tensor([2.0, 1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.VonMises(loc, concentration),
@@ -100,8 +100,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        concentration=ch.Tensor([2.0]),
+        loc=ch.tensor([0.0]),
+        concentration=ch.tensor([2.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -122,7 +122,7 @@ def test_ten_dimensions_identity():
 
 @pytest.mark.slow
 def test_one_dimension_small_mass():
-    loc, concentration = ch.Tensor([0.0]), ch.Tensor([2.0])
+    loc, concentration = ch.tensor([0.0]), ch.tensor([2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.VonMises(loc, concentration),
@@ -155,8 +155,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_von_mises.TruncatedVonMises,
         targets=(
-            torch.distributions.VonMises(ch.Tensor([0.0]), ch.Tensor([2.0])),
-            torch.distributions.VonMises(ch.Tensor([0.0]), ch.Tensor([0.5])),
+            torch.distributions.VonMises(ch.tensor([0.0]), ch.tensor([2.0])),
+            torch.distributions.VonMises(ch.tensor([0.0]), ch.tensor([0.5])),
         ),
         phi=lambda z: (z[:, 0] > -1.0) & (z[:, 0] < 1.0),
         dims=1,

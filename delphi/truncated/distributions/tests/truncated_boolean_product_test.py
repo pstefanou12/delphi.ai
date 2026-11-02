@@ -50,7 +50,7 @@ def _not_both_set(z):
 def test_two_dimensions():
     _recovers(
         dims=2,
-        probability=ch.Tensor([0.5, 0.75]),
+        probability=ch.tensor([0.5, 0.75]),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
     )
@@ -59,7 +59,7 @@ def test_two_dimensions():
 def test_twenty_dimensions():
     _recovers(
         dims=20,
-        probability=ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
+        probability=ch.tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1},
     )
@@ -68,7 +68,7 @@ def test_twenty_dimensions():
 def test_five_dimensions_random_polytope():
     # Two dimensions would leave four atoms, too few for a set carrying
     # survival mass near a third to keep every coordinate identifiable.
-    probability = ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8])
+    probability = ch.tensor([0.5, 0.75, 0.3, 0.4, 0.8])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_polytope, 0, 5, 4),
         torch.distributions.Bernoulli(probability),
@@ -85,7 +85,7 @@ def test_five_dimensions_random_polytope():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        probability=ch.Tensor([0.4]),
+        probability=ch.tensor([0.4]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,

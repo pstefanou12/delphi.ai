@@ -36,11 +36,11 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 
 def test_one_dimension():
-    _recovers(dims=1, df=ch.Tensor([4.0]), phi=lambda z: z[:, 0] > 5.0)
+    _recovers(dims=1, df=ch.tensor([4.0]), phi=lambda z: z[:, 0] > 5.0)
 
 
 def test_two_dimensions():
-    df = ch.Tensor([4.0, 8.0])
+    df = ch.tensor([4.0, 8.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Chi2(df),
@@ -51,7 +51,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    df = ch.Tensor([4.0, 8.0])
+    df = ch.tensor([4.0, 8.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Chi2(df),
@@ -64,7 +64,7 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        df=ch.Tensor([4.0]),
+        df=ch.tensor([4.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -83,7 +83,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    df = ch.Tensor([4.0])
+    df = ch.tensor([4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Chi2(df),
@@ -108,8 +108,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_chi2.TruncatedChi2,
         targets=(
-            torch.distributions.Chi2(ch.Tensor([2.0])),
-            torch.distributions.Chi2(ch.Tensor([6.0])),
+            torch.distributions.Chi2(ch.tensor([2.0])),
+            torch.distributions.Chi2(ch.tensor([6.0])),
         ),
         phi=lambda z: (z[:, 0] > 2.0) & (z[:, 0] < 3.0),
         dims=1,

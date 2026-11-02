@@ -19,7 +19,7 @@ from delphi.utils import helpers as helpers_lib
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
-_SCALE = ch.Tensor([[2.0, 0.5], [0.5, 1.0]])
+_SCALE = ch.tensor([[2.0, 0.5], [0.5, 1.0]])
 
 
 def _wishart(df: ch.Tensor, scale: ch.Tensor) -> wishart.Wishart:
@@ -58,7 +58,7 @@ def _calibrated(set_family, df: ch.Tensor, scale: ch.Tensor, bounds, **kwargs):
 
 
 def test_first_diagonal_threshold():
-    df = ch.Tensor([5.0])
+    df = ch.tensor([5.0])
     _recovers(
         df=df,
         scale=_SCALE,
@@ -76,11 +76,11 @@ def test_determinant_threshold():
     def phi(z):
         return ch.linalg.det(helpers_lib.unvech(z, 2)) > 60.0  # pylint: disable=not-callable
 
-    _recovers(df=ch.Tensor([5.0]), scale=_SCALE, phi=phi)
+    _recovers(df=ch.tensor([5.0]), scale=_SCALE, phi=phi)
 
 
 def test_random_half_space():
-    df = ch.Tensor([5.0])
+    df = ch.tensor([5.0])
     _recovers(
         df=df,
         scale=_SCALE,
@@ -96,7 +96,7 @@ def test_random_half_space():
 
 def test_identity():
     _recovers(
-        df=ch.Tensor([5.0]),
+        df=ch.tensor([5.0]),
         scale=_SCALE,
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -106,8 +106,8 @@ def test_identity():
 
 def test_three_by_three_identity():
     _recovers(
-        df=ch.Tensor([6.0]),
-        scale=ch.Tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]]),
+        df=ch.tensor([6.0]),
+        scale=ch.tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -115,8 +115,8 @@ def test_three_by_three_identity():
 
 
 def test_three_by_three_sum_threshold():
-    df = ch.Tensor([6.0])
-    scale = ch.Tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]])
+    df = ch.tensor([6.0])
+    scale = ch.tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]])
     _recovers(
         df=df,
         scale=scale,
@@ -132,7 +132,7 @@ def test_three_by_three_sum_threshold():
 
 @pytest.mark.slow
 def test_small_mass():
-    df = ch.Tensor([5.0])
+    df = ch.tensor([5.0])
     _recovers(
         df=df,
         scale=_SCALE,
@@ -150,12 +150,12 @@ def test_small_mass():
 def test_indistinguishable_pair():
     # Shifting theta by s (1, -vech(X*^-1)) keeps grad log p at X*, so a
     # small box around X* hides df 5 from df 9.
-    first = _wishart(ch.Tensor([5.0]), _SCALE)
+    first = _wishart(ch.tensor([5.0]), _SCALE)
     center = 5.0 * _SCALE
     shift = 2.0
     second = wishart.Wishart(
         first.theta
-        + ch.cat([ch.Tensor([shift]), -shift * helpers_lib.vech(center.inverse())]),
+        + ch.cat([ch.tensor([shift]), -shift * helpers_lib.vech(center.inverse())]),
         3,
     )
     point = helpers_lib.vech(center)
@@ -183,7 +183,7 @@ def test_indistinguishable_pair():
 @pytest.mark.slow
 def test_six_by_six_small_mass():
     # Twenty-one vech entries, so a sample lives in twenty-one dimensions.
-    df = ch.Tensor([10.0])
+    df = ch.tensor([10.0])
     off_diagonal = ch.full((5,), 0.3)
     scale = ch.eye(6) + ch.diag(off_diagonal, 1) + ch.diag(off_diagonal, -1)
     _recovers(

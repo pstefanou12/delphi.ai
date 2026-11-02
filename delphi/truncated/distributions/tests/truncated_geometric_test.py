@@ -36,11 +36,11 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 
 def test_one_dimension():
-    _recovers(dims=1, probs=ch.Tensor([0.3]), phi=lambda z: z[:, 0] > 2)
+    _recovers(dims=1, probs=ch.tensor([0.3]), phi=lambda z: z[:, 0] > 2)
 
 
 def test_two_dimensions():
-    probs = ch.Tensor([0.3, 0.5])
+    probs = ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Geometric(probs),
@@ -51,7 +51,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    probs = ch.Tensor([0.3, 0.5])
+    probs = ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Geometric(probs),
@@ -64,7 +64,7 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        probs=ch.Tensor([0.3]),
+        probs=ch.tensor([0.3]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -83,7 +83,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    probs = ch.Tensor([0.3])
+    probs = ch.tensor([0.3])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Geometric(probs),
@@ -108,8 +108,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_geometric.TruncatedGeometric,
         targets=(
-            torch.distributions.Geometric(ch.Tensor([0.2])),
-            torch.distributions.Geometric(ch.Tensor([0.5])),
+            torch.distributions.Geometric(ch.tensor([0.2])),
+            torch.distributions.Geometric(ch.tensor([0.5])),
         ),
         phi=lambda z: (z[:, 0] > 2.5) & (z[:, 0] < 4.5),
         dims=1,

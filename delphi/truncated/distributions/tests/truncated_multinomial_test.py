@@ -72,11 +72,11 @@ def _recovers(
 
 
 def test_three_categories():
-    _recovers(probs=ch.Tensor([0.2, 0.3, 0.5]), phi=lambda z: z[:, 0] >= 4)
+    _recovers(probs=ch.tensor([0.2, 0.3, 0.5]), phi=lambda z: z[:, 0] >= 4)
 
 
 def test_three_categories_random_half_space():
-    probs = ch.Tensor([0.2, 0.3, 0.5])
+    probs = ch.tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 3),
         torch.distributions.Multinomial(_TRIALS, probs),
@@ -88,7 +88,7 @@ def test_three_categories_random_half_space():
 
 def test_three_categories_identity():
     _recovers(
-        probs=ch.Tensor([0.2, 0.3, 0.5]),
+        probs=ch.tensor([0.2, 0.3, 0.5]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -107,7 +107,7 @@ def test_ten_categories_identity():
 
 @pytest.mark.slow
 def test_three_categories_small_mass():
-    probs = ch.Tensor([0.2, 0.3, 0.5])
+    probs = ch.tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Multinomial(_TRIALS, probs),
@@ -136,8 +136,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_multinomial.TruncatedMultinomial,
         targets=(
-            torch.distributions.Multinomial(_TRIALS, ch.Tensor([0.2, 0.3, 0.5])),
-            torch.distributions.Multinomial(_TRIALS, ch.Tensor([0.4, 0.225, 0.375])),
+            torch.distributions.Multinomial(_TRIALS, ch.tensor([0.2, 0.3, 0.5])),
+            torch.distributions.Multinomial(_TRIALS, ch.tensor([0.4, 0.225, 0.375])),
         ),
         phi=lambda z: (z[:, 0] > 2.5) & (z[:, 0] < 4.5),
         dims=3,

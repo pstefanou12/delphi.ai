@@ -45,14 +45,14 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        first=ch.Tensor([2.0]),
-        second=ch.Tensor([3.0]),
+        first=ch.tensor([2.0]),
+        second=ch.tensor([3.0]),
         phi=lambda z: z[:, 0] > 0.5,
     )
 
 
 def test_two_dimensions_random_half_space():
-    first, second = ch.Tensor([2.0, 4.0]), ch.Tensor([3.0, 2.0])
+    first, second = ch.tensor([2.0, 4.0]), ch.tensor([3.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Beta(first, second),
@@ -69,8 +69,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        first=ch.Tensor([2.0]),
-        second=ch.Tensor([3.0]),
+        first=ch.tensor([2.0]),
+        second=ch.tensor([3.0]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -113,8 +113,8 @@ def test_indistinguishable_pair():
         # enough to carry the curvature a second parameter needs: on
         # (0.45, 0.55) the Cramer-Rao bound on a is 3.35, more than a itself.
         targets=(
-            torch.distributions.Beta(ch.Tensor([2.0]), ch.Tensor([2.0])),
-            torch.distributions.Beta(ch.Tensor([5.0]), ch.Tensor([5.0])),
+            torch.distributions.Beta(ch.tensor([2.0]), ch.tensor([2.0])),
+            torch.distributions.Beta(ch.tensor([5.0]), ch.tensor([5.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.75),
         dims=1,

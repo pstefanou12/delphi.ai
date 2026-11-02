@@ -82,14 +82,14 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
     )
 
 
 def test_two_dimensions():
-    loc, scale = ch.Tensor([0.0, 0.5]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.LogNormal(loc, scale),
@@ -100,7 +100,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    loc, scale = ch.Tensor([0.0, 0.5]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.LogNormal(loc, scale),
@@ -112,8 +112,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -132,7 +132,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    loc, scale = ch.Tensor([0.0]), ch.Tensor([1.0])
+    loc, scale = ch.tensor([0.0]), ch.tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.LogNormal(loc, scale),
@@ -157,8 +157,8 @@ def test_indistinguishable_pair():
     # Two parameters need a window wide enough to carry curvature: on
     # (1.5, 1.8) the Cramer-Rao bound on the natural parameters is 4.05.
     targets = (
-        torch.distributions.LogNormal(ch.Tensor([0.3]), ch.Tensor([0.4])),
-        torch.distributions.LogNormal(ch.Tensor([0.0]), ch.Tensor([0.8])),
+        torch.distributions.LogNormal(ch.tensor([0.3]), ch.tensor([0.4])),
+        torch.distributions.LogNormal(ch.tensor([0.0]), ch.tensor([0.8])),
     )
 
     def phi(z):

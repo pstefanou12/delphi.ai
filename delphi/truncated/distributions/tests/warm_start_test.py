@@ -15,7 +15,7 @@ def _phi(z):
 
 def _sample():
     ch.manual_seed(0)
-    target = torch.distributions.Beta(ch.Tensor([2.0]), ch.Tensor([5.0]))
+    target = torch.distributions.Beta(ch.tensor([2.0]), ch.tensor([5.0]))
     return helpers.generate_truncated_distribution_dataset(target, _phi, 10000)
 
 

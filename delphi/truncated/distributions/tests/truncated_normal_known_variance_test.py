@@ -15,7 +15,7 @@ def test_one_dimension():
     ch.manual_seed(0)
     covariance_matrix = ch.eye(1)
     target = torch.distributions.MultivariateNormal(ch.zeros(1), covariance_matrix)
-    left = ch.Tensor([0.0])
+    left = ch.tensor([0.0])
 
     def phi(x):
         return (x > left).prod(dim=-1, keepdim=True)

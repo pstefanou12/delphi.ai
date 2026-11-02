@@ -127,7 +127,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         num_trajectories = 1
         total_samples = 0
         x_t = ch.zeros((1, self.d))
-        X, Y, U = ch.Tensor([]), ch.Tensor([]), ch.Tensor([])  # pylint: disable=invalid-name
+        X, Y, U = ch.tensor([]), ch.tensor([]), ch.tensor([])  # pylint: disable=invalid-name
         covariate_matrix = ch.zeros([self.d, self.d])
 
         while (
@@ -175,7 +175,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         logger.info("begin cold start phase two...")
         total_samples, index = 0, 0
         xt, id_ = ch.zeros([1, self.d]), ch.eye(self.m)
-        U, Y = ch.Tensor([]), ch.Tensor([])  # pylint: disable=invalid-name
+        U, Y = ch.tensor([]), ch.tensor([])  # pylint: disable=invalid-name
         covariate_matrix = ch.zeros([self.m, self.m])
 
         while (
@@ -393,7 +393,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             f"repeat must be greater than or equal to 1; repeat: {repeat}"
         )
 
-        A_results, B_results = ch.Tensor([]), ch.Tensor([])  # pylint: disable=invalid-name
+        A_results, B_results = ch.tensor([]), ch.tensor([])  # pylint: disable=invalid-name
 
         coef_concat = ch.cat([self.A_hat_, self.B_hat_])
         for _ in range(repeat):

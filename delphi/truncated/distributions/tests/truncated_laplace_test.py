@@ -41,14 +41,14 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 1.0,
     )
 
 
 def test_two_dimensions():
-    loc, scale = ch.Tensor([0.0, 1.0]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 1.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Laplace(loc, scale),
@@ -59,7 +59,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    loc, scale = ch.Tensor([0.0, 1.0]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 1.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Laplace(loc, scale),
@@ -72,8 +72,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -93,7 +93,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    loc, scale = ch.Tensor([0.0]), ch.Tensor([1.0])
+    loc, scale = ch.tensor([0.0]), ch.tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Laplace(loc, scale),
@@ -117,12 +117,12 @@ def test_ten_dimensions_norm_threshold():
 
 
 def test_indistinguishable_pair():
-    loc = ch.Tensor([0.0])
+    loc = ch.tensor([0.0])
     helpers.assert_family_distinguishes(
         model_class=truncated_laplace.TruncatedLaplace,
         targets=(
-            torch.distributions.Laplace(loc, ch.Tensor([0.5])),
-            torch.distributions.Laplace(loc, ch.Tensor([2.0])),
+            torch.distributions.Laplace(loc, ch.tensor([0.5])),
+            torch.distributions.Laplace(loc, ch.tensor([2.0])),
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.3),
         dims=1,

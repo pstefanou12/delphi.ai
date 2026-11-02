@@ -40,14 +40,14 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        rate=ch.Tensor([1.0]),
+        rate=ch.tensor([1.0]),
         phi=lambda z: z > 1,
         hyperparameters={"batch_size": 1},
     )
 
 
 def test_two_dimensions():
-    rate = ch.Tensor([1.0, 2.0])
+    rate = ch.tensor([1.0, 2.0])
     # A discrete family reaches only the masses its integer thresholds give,
     # so the band is wider than the continuous families use.
     calibrated = truncation_sets.calibrate(
@@ -82,14 +82,14 @@ def test_twenty_dimensions():
 def test_two_dimensions_triangle():
     _recovers(
         dims=2,
-        rate=ch.Tensor([1.0, 2.0]),
+        rate=ch.tensor([1.0, 2.0]),
         phi=truncation_sets.triangle([[-0.5, -0.5], [3.0, 0.5], [0.5, 3.0]]),
         hyperparameters={"batch_size": 1},
     )
 
 
 def test_two_dimensions_random_half_space():
-    rate = ch.Tensor([1.0, 2.0])
+    rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Poisson(rate),
@@ -121,7 +121,7 @@ def test_five_dimensions_random_polytope():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        rate=ch.Tensor([1.0]),
+        rate=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -159,7 +159,7 @@ def test_ten_dimensions_sum_threshold():
 
 
 def test_one_dimension_small_mass():
-    rate = ch.Tensor([1.0])
+    rate = ch.tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
@@ -181,8 +181,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_poisson.TruncatedPoisson,
         targets=(
-            torch.distributions.Poisson(ch.Tensor([2.0])),
-            torch.distributions.Poisson(ch.Tensor([5.0])),
+            torch.distributions.Poisson(ch.tensor([2.0])),
+            torch.distributions.Poisson(ch.tensor([5.0])),
         ),
         phi=lambda z: (z[:, 0] >= 3) & (z[:, 0] <= 4),
         dims=1,
@@ -192,7 +192,7 @@ def test_indistinguishable_pair():
 
 
 def test_phases_widen_a_budget_too_small_for_the_fit():
-    target = torch.distributions.Poisson(ch.Tensor([3.0]))
+    target = torch.distributions.Poisson(ch.tensor([3.0]))
 
     def phi(z):
         return z[:, 0] >= 4

@@ -77,7 +77,7 @@ def rejection_sample(
                 int((num_samples - num_accepted) / rate) + 1,
                 _MAX_BLOCK * num_samples,
             )
-    return ch.cat(accepted_samples), ch.Tensor([num_accepted / num_sampled])
+    return ch.cat(accepted_samples), ch.tensor([num_accepted / num_sampled])
 
 
 @dataclasses.dataclass(frozen=True)

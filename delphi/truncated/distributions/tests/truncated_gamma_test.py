@@ -41,14 +41,14 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
-        rate=ch.Tensor([1.0]),
+        concentration=ch.tensor([2.0]),
+        rate=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
     )
 
 
 def test_two_dimensions():
-    concentration, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
+    concentration, rate = ch.tensor([2.0, 3.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Gamma(concentration, rate),
@@ -64,7 +64,7 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    concentration, rate = ch.Tensor([2.0, 3.0]), ch.Tensor([1.0, 0.5])
+    concentration, rate = ch.tensor([2.0, 3.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
         torch.distributions.Gamma(concentration, rate),
@@ -81,8 +81,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        concentration=ch.Tensor([2.0]),
-        rate=ch.Tensor([1.0]),
+        concentration=ch.tensor([2.0]),
+        rate=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -103,7 +103,7 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    concentration, rate = ch.Tensor([2.0]), ch.Tensor([1.0])
+    concentration, rate = ch.tensor([2.0]), ch.tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
         torch.distributions.Gamma(concentration, rate),
@@ -138,13 +138,13 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_gamma.TruncatedGamma,
         targets=(
-            torch.distributions.Gamma(ch.Tensor([2.0]), ch.Tensor([0.5])),
-            torch.distributions.Gamma(ch.Tensor([2.0]), ch.Tensor([1.5])),
+            torch.distributions.Gamma(ch.tensor([2.0]), ch.tensor([0.5])),
+            torch.distributions.Gamma(ch.tensor([2.0]), ch.tensor([1.5])),
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
         dims=1,
         parameter="rate_",
         empirical=lambda s: 2.0 / s.mean(0),
-        model_args=(ch.Tensor([2.0]),),
-        rebuild=functools.partial(torch.distributions.Gamma, ch.Tensor([2.0])),
+        model_args=(ch.tensor([2.0]),),
+        rebuild=functools.partial(torch.distributions.Gamma, ch.tensor([2.0])),
     )
