@@ -19,8 +19,6 @@ from delphi.utils import constants
 _LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
 _T = TypeVar("_T")
 
-ESTIMATORS = tuple(constants.Estimator)
-
 
 def require_fitted(value: Optional[_T], name: str) -> _T:
     """Return value, which fit sets.
@@ -145,7 +143,7 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
             return weight.T, None
         return weight[:-1].T, weight[-1]
 
-    def _estimate(self, name: str) -> Optional[ch.Tensor]:
+    def _estimate(self, name: constants.Estimator) -> Optional[ch.Tensor]:
         """Return one of final_run's iterate estimates.
 
         Raises:
@@ -156,42 +154,42 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
     @property
     def avg_coef_(self) -> Optional[ch.Tensor]:
         """Coefficients at the averaged iterate."""
-        return self.coefficients(self._estimate("avg"))[0]
+        return self.coefficients(self._estimate(constants.Estimator.AVG))[0]
 
     @property
     def avg_intercept_(self) -> Optional[ch.Tensor]:
         """Intercept at the averaged iterate."""
-        return self.coefficients(self._estimate("avg"))[1]
+        return self.coefficients(self._estimate(constants.Estimator.AVG))[1]
 
     @property
     def ema_coef_(self) -> Optional[ch.Tensor]:
         """Coefficients at the moving average of the iterates."""
-        return self.coefficients(self._estimate("ema"))[0]
+        return self.coefficients(self._estimate(constants.Estimator.EMA))[0]
 
     @property
     def ema_intercept_(self) -> Optional[ch.Tensor]:
         """Intercept at the moving average of the iterates."""
-        return self.coefficients(self._estimate("ema"))[1]
+        return self.coefficients(self._estimate(constants.Estimator.EMA))[1]
 
     @property
     def final_coef_(self) -> Optional[ch.Tensor]:
         """Coefficients at the last iterate."""
-        return self.coefficients(self._estimate("final"))[0]
+        return self.coefficients(self._estimate(constants.Estimator.FINAL))[0]
 
     @property
     def final_intercept_(self) -> Optional[ch.Tensor]:
         """Intercept at the last iterate."""
-        return self.coefficients(self._estimate("final"))[1]
+        return self.coefficients(self._estimate(constants.Estimator.FINAL))[1]
 
     @property
     def best_coef_(self) -> Optional[ch.Tensor]:
         """Coefficients at the iterate with the lowest validation loss."""
-        return self.coefficients(self._estimate("best"))[0]
+        return self.coefficients(self._estimate(constants.Estimator.BEST))[0]
 
     @property
     def best_intercept_(self) -> Optional[ch.Tensor]:
         """Intercept at the iterate with the lowest validation loss."""
-        return self.coefficients(self._estimate("best"))[1]
+        return self.coefficients(self._estimate(constants.Estimator.BEST))[1]
 
     @property
     def coef_(self) -> Optional[ch.Tensor]:

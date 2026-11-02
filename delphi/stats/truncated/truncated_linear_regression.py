@@ -450,13 +450,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         draws = self._information_sampler.num_samples
         X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         weight = params.reshape(-1, linear_model.require_fitted(self.k, "k"))
-        total = ch.zeros(weight.numel(), weight.numel(), dtype=ch.float64)
+        total = params.new_zeros(weight.numel(), weight.numel())
         chunk = max(sampling.MAX_DRAWS_PER_ROUND // draws, 1)
         with ch.random.fork_rng():
             ch.manual_seed(self.rand_seed)
-            for rows in X.double().split(chunk):
+            for rows in X.to(params.dtype).split(chunk):
                 hessian = self._hessian(rows, weight, self._information_sampler)
-                total += rows.size(0) * hessian
+                total += rows.size(0) * hessian.to(params.dtype)
         return total / X.size(0)
 
     def covariance(
@@ -473,9 +473,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             estimate: The iterate whose estimates to cover.
 
         Returns:
-            The covariance in float64, shaped (p, p), over the coefficients
-            shaped (k, d) row-major, the k intercepts when fit, then the k
-            variances when learned.
+            The covariance in the dtype the model was fit in, shaped (p, p),
+            over the coefficients shaped (k, d) row-major, the k intercepts
+            when fit, then the k variances when learned.
 
         Raises:
             ValueError: If the data is dependent, or estimate is not a
@@ -490,7 +490,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         return (covariance + covariance.T) / 2
 
     def _trained_weight(self, estimate: constants.Estimator) -> ch.Tensor:
-        """Return an estimate's flat trained weight in float64.
+        """Return an estimate's flat trained weight, detached.
 
         Raises:
             ValueError: As ``covariance``.
@@ -502,7 +502,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             )
         name = constants.Estimator(estimate)
         params = linear_model.require_fitted(self._estimate(name), name)
-        return params.detach().double().flatten()
+        return params.detach().flatten()
 
     def confidence_intervals(
         self,
@@ -529,45 +529,48 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if not 0.0 < level < 1.0:
             raise ValueError(f"level must lie in (0, 1); got {level}.")
         point = self._flat_estimates(self._trained_weight(estimate))
-        quantile = ch.special.ndtri(ch.tensor(0.5 + level / 2, dtype=ch.float64))  # pylint: disable=not-callable
+        quantile = ch.special.ndtri(point.new_tensor(0.5 + level / 2))  # pylint: disable=not-callable
         half_width = quantile * self.covariance(estimate).diagonal().sqrt()
-        k = linear_model.require_fitted(self.k, "k")
-        extra = int(self.fit_intercept) + int(self.noise_var is None)
-        sizes = [point.numel() - extra * k] + [k] * extra
-        intervals = [
-            Interval(lower, upper)
-            for lower, upper in zip(
-                (point - half_width).split(sizes), (point + half_width).split(sizes)
-            )
+        lower = self._unflatten_estimates(point - half_width)
+        upper = self._unflatten_estimates(point + half_width)
+        optional = [
+            None if low is None or high is None else Interval(low, high)
+            for low, high in zip(lower[1:], upper[1:])
         ]
-        coef = Interval(
-            intervals[0].lower.reshape(k, -1), intervals[0].upper.reshape(k, -1)
-        )
-        return ConfidenceIntervals(
-            coef=coef,
-            intercept=intervals[1] if self.fit_intercept else None,
-            variance=intervals[-1] if self.noise_var is None else None,
-        )
+        return ConfidenceIntervals(Interval(lower[0], upper[0]), *optional)
+
+    def _unflatten_estimates(
+        self, flat: ch.Tensor
+    ) -> tuple[ch.Tensor, Optional[ch.Tensor], Optional[ch.Tensor]]:
+        """Invert ``_flat_estimates``: return coef, intercept and variance."""
+        k = linear_model.require_fitted(self.k, "k")
+        intercept: Optional[ch.Tensor] = None
+        variance: Optional[ch.Tensor] = None
+        if self.noise_var is None:
+            flat, variance = flat[:-k], flat[-k:]
+        if self.fit_intercept:
+            flat, intercept = flat[:-k], flat[-k:]
+        return flat.reshape(k, -1), intercept, variance
 
     @property
     def avg_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the averaged iterate."""
-        return self.variance(self._estimate("avg"))
+        return self.variance(self._estimate(constants.Estimator.AVG))
 
     @property
     def ema_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the moving average of the iterates."""
-        return self.variance(self._estimate("ema"))
+        return self.variance(self._estimate(constants.Estimator.EMA))
 
     @property
     def final_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the last iterate."""
-        return self.variance(self._estimate("final"))
+        return self.variance(self._estimate(constants.Estimator.FINAL))
 
     @property
     def best_variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the iterate with the lowest validation loss."""
-        return self.variance(self._estimate("best"))
+        return self.variance(self._estimate(constants.Estimator.BEST))
 
     @property
     def variance_(self) -> Optional[ch.Tensor]:
@@ -582,7 +585,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                     f"{name}_variance_",
                     summary.tensor(getattr(self, f"{name}_variance_")),
                 )
-                for name in linear_model.ESTIMATORS
+                for name in constants.Estimator
             ]
         if not self.dependent:
             rows += [

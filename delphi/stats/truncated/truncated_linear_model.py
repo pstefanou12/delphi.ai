@@ -21,7 +21,7 @@ import delphi.projection_sets
 from delphi.stats import linear_model
 import delphi.trainer
 from delphi.truncated.distributions import summary
-from delphi.utils import datasets
+from delphi.utils import constants, datasets
 
 _TruncatedConfigT = TypeVar(
     "_TruncatedConfigT", bound=configs.TruncatedLinearModelConfig
@@ -364,7 +364,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
 
     def _summary_estimates(self) -> list[tuple[str, str]]:
         rows = []
-        for name in linear_model.ESTIMATORS:
+        for name in constants.Estimator:
             rows.append(
                 (f"{name}_coef_", summary.tensor(getattr(self, f"{name}_coef_")))
             )
