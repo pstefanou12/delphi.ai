@@ -27,22 +27,23 @@ class TruncatedMultivariateNormalKnownCovariance(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedMultivariateNormalKnownCovariance.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             covariance_matrix: Known covariance matrix.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.covariance_matrix = covariance_matrix
 
     def _build_distribution(self):

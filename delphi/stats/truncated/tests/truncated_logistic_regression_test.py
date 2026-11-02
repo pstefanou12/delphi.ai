@@ -48,7 +48,9 @@ def _fit(
         The fitted model.
     """
     model = truncated_logistic_regression.TruncatedLogisticRegression(
-        hyperparameters, simulation.phi, simulation.alpha if alpha_known else None
+        simulation.phi,
+        simulation.alpha if alpha_known else None,
+        hyperparameters=hyperparameters,
     )
     classification.assert_recovers(
         model, simulation, tolerance, naive_margin=naive_margin
@@ -124,7 +126,7 @@ def test_10d_seeds(seed):
 def test_summary_reports_accuracy():
     simulation = _simulate([2.0], _NONE, 200)
     model = truncated_logistic_regression.TruncatedLogisticRegression(
-        {"refine_steps": 0}, _NONE
+        _NONE, hyperparameters={"refine_steps": 0}
     ).fit(simulation.X, simulation.y)
     accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
     assert f"{accuracy:.4f} on the observed sample" in model.summary()
@@ -133,10 +135,10 @@ def test_summary_reports_accuracy():
 
 def test_alpha_above_one_half_raises():
     with pytest.raises(ValueError, match="alpha"):
-        truncated_logistic_regression.TruncatedLogisticRegression({}, _SIMPLE, 0.6)
+        truncated_logistic_regression.TruncatedLogisticRegression(_SIMPLE, 0.6)
 
 
 def test_one_label_raises():
-    model = truncated_logistic_regression.TruncatedLogisticRegression({}, _SIMPLE)
+    model = truncated_logistic_regression.TruncatedLogisticRegression(_SIMPLE)
     with pytest.raises(ValueError, match="one label"):
         model.fit(ch.randn(10, 2), ch.ones(10, 1))

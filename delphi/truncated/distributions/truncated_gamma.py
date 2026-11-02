@@ -30,22 +30,23 @@ class TruncatedGamma(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         concentration: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedGamma.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             concentration: Known shape, one per coordinate.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.concentration = concentration
 
     def _build_distribution(self):

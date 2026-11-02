@@ -27,20 +27,21 @@ class TruncatedDirichlet(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedDirichlet.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of categories.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Start at the moment estimate, refined by the warm start."""

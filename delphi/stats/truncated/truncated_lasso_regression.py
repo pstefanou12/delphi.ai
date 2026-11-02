@@ -35,7 +35,6 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         l1: float = 1.0,
@@ -43,11 +42,12 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         noise_var: float = 1.0,
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedLassoRegression.
 
         Args:
-            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             l1 (float): L1 regularization coefficient
@@ -55,8 +55,9 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             noise_var (float): known noise variance
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
+            hyperparameters: hyperparameter dict
         """
-        super().__init__(hyperparameters, emp_weight=emp_weight)
+        super().__init__(emp_weight=emp_weight, hyperparameters=hyperparameters)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1

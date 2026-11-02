@@ -217,10 +217,10 @@ def untruncated_mle(
     def estimate(sample: ch.Tensor) -> Any:
         # The start is the estimate; one phase of one step completes the fit.
         untruncated = model_class(
-            {"iterations": 1, "max_phases": 1},
             delphi.oracle.Identity(),
             dims,
             *model_args,
+            hyperparameters={"iterations": 1, "max_phases": 1},
         )
         untruncated.fit(sample)
         untruncated.best_params = untruncated.emp_theta
@@ -259,7 +259,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
+            ``model_class(phi, dims, alpha, hyperparameters=hyperparameters)``.
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle.
         dims: Number of dimensions.
@@ -267,7 +267,6 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
             ``f"avg_{parameter}"`` names the averaged iterate, or several.
         empirical: Maps the truncated data to the naive estimate, a tuple
             when there are several.
-        hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
         pass_alpha: Supply the measured survival mass to the model. False
             leaves the model to fall back on ``min_radius``, which is what a
@@ -277,6 +276,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         rebuild: Maps the estimates to a distribution; ``type(target)`` by
             default.
         divergence: Scores a fitted distribution against the target.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Raises:
         AssertionError: If any estimator exceeds its bound.
@@ -284,7 +284,9 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
     args = (sample.alpha,) if pass_alpha else ()
-    truncated = model_class(hyperparameters or {}, phi, dims, *model_args, *args)
+    truncated = model_class(
+        phi, dims, *model_args, *args, hyperparameters=hyperparameters
+    )
     truncated.fit(sample.S)
 
     family = _family(target, parameter, rebuild)
@@ -378,17 +380,17 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
+            ``model_class(phi, dims, alpha, hyperparameters=hyperparameters)``.
         targets: The two untruncated distributions.
         phi: The one truncation set both are cut to.
         dims: Number of dimensions.
         parameter: Attribute suffix holding the canonical estimate.
         empirical: Maps a truncated sample to the naive estimate.
-        hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
         model_args: As ``assert_family_recovers``.
         rebuild: As ``assert_family_recovers``.
         divergence: As ``assert_family_recovers``.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Raises:
         AssertionError: As ``assert_distinguishes``.
@@ -399,7 +401,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
         ch.manual_seed(0)
         sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
         truncated = model_class(
-            hyperparameters or {}, phi, dims, *model_args, sample.alpha
+            phi, dims, *model_args, sample.alpha, hyperparameters=hyperparameters
         )
         truncated.fit(sample.S)
         fits.append(truncated)

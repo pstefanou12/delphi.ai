@@ -38,7 +38,7 @@ def test_one_dimension():
         "tol": 5e-2,
     }
     truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
-        hyperparameters or {}, phi_centred, covariance_matrix, alpha
+        phi_centred, covariance_matrix, alpha, hyperparameters=hyperparameters
     )
     truncated.fit(S - emp_loc)
 

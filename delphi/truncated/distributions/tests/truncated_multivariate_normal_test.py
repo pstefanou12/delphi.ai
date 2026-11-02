@@ -54,7 +54,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
     args = (alpha,) if pass_alpha else ()
     truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
-        hyperparameters or {}, phi_standardised, dims, *args
+        phi_standardised, dims, *args, hyperparameters=hyperparameters
     )
     truncated.fit((S - emp_loc) / emp_scale)
 

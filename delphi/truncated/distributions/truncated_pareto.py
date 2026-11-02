@@ -30,23 +30,24 @@ class TruncatedPareto(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         scale: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedPareto.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             scale: Known scale, one per coordinate.
             alpha: Survival probability lower bound. Unrelated to the tail
                 index, which the estimates call ``alpha_``.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.scale = scale
 
     def _build_distribution(self):

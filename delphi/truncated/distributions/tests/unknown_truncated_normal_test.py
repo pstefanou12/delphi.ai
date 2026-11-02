@@ -17,7 +17,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(target: torch.distributions.Normal, phi: helpers.Oracle) -> None:
-    model = unknown_truncated_normal.UnknownTruncationNormal({})
+    model = unknown_truncated_normal.UnknownTruncationNormal()
     unknown_truncation.assert_recovers(
         model,
         target,

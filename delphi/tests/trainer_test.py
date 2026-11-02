@@ -25,7 +25,7 @@ class Mean(delphi.delphi.DelphiModel[base.DelphiConfig]):
     defaults = base.DelphiConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.mu = ch.nn.Parameter(ch.zeros(1))
         self.criterion = _squared_error
 
@@ -37,7 +37,7 @@ class PhasedMean(Mean):
     """Mean that runs a set number of phases, recording what its hooks see."""
 
     def __init__(self, hyperparameters: dict, phases: int = 1):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.phases = phases
         self.warm_start_results: list = []
         self.phase_results: list = []
@@ -168,7 +168,7 @@ class CurvedMean(PhasedMean):
     """Mean whose criteria report curvature, recording who asked for it."""
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.curvature_calls: list[str] = []
 
     def hessian(self, theta=None):  # pylint: disable=unused-argument

@@ -182,10 +182,10 @@ def test_ten_dimensions_norm_threshold():
 def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         truncated_exponential.TruncatedExponential(
-            {"iterations": 10},
             delphi.oracle.Identity(),
             1,
             alpha=1.0,
+            hyperparameters={"iterations": 10},
         )
 
 
@@ -211,10 +211,10 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
         torch.distributions.Exponential(ch.tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
     )
     model = truncated_exponential.TruncatedExponential(
-        {"iterations": 10},
         lambda z: z[:, 0] > 0.5,
         1,
         sample.alpha,
+        hyperparameters={"iterations": 10},
     )
     model.fit(sample.S)
     # Rate 100 puts exp(-50) of its mass above 0.5.

@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Parent class for all distribution models."""
 
-from typing import Generic
+from typing import Generic, Optional
 
 from delphi.configs import base
 from delphi.delphi import DelphiModel
@@ -10,11 +10,11 @@ from delphi.delphi import DelphiModel
 class distributions(DelphiModel[base.ConfigT], Generic[base.ConfigT]):  # pylint: disable=invalid-name,abstract-method
     """Parent class for distribution models."""
 
-    def __init__(self, hyperparameters: dict):
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
         """Initialize the distributions model.
 
         Args:
             hyperparameters: Hyperparameter dict, validated via the subclass
                 defaults config.
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)

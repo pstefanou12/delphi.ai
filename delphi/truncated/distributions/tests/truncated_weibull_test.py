@@ -55,9 +55,9 @@ def _recovers(
         concentration: Known shape per dimension.
         scale: True scale per dimension.
         phi: Truncation set oracle.
-        hyperparameters: Hyperparameter dict for the procedure.
         pass_alpha: Supply the measured survival mass to the model.
         baseline_must_fail: Forwarded to ``assert_recovers``.
+        hyperparameters: Hyperparameter dict for the procedure.
     """
     ch.manual_seed(0)
     target = torch.distributions.Weibull(scale, concentration)
@@ -66,7 +66,7 @@ def _recovers(
     )
     args = (alpha,) if pass_alpha else ()
     truncated = truncated_weibull.TruncatedWeibull(
-        hyperparameters or {}, phi, dims, concentration, *args
+        phi, dims, concentration, *args, hyperparameters=hyperparameters
     )
     truncated.fit(S)
 
@@ -205,7 +205,6 @@ def test_indistinguishable_pair():
             torch.distributions.Weibull(scale, concentration), phi, 10000
         )
         truncated = truncated_weibull.TruncatedWeibull(
-            {},
             phi,
             1,
             concentration,

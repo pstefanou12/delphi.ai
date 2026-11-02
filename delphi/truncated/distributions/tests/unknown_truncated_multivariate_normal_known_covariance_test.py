@@ -32,7 +32,7 @@ def _recovers(
     tolerances: Optional[dict[str, float]] = None,
 ) -> None:
     target = torch.distributions.MultivariateNormal(loc, covariance_matrix)
-    model = _ESTIMATOR({}, loc.numel(), covariance_matrix)
+    model = _ESTIMATOR(loc.numel(), covariance_matrix)
     unknown_truncation.assert_recovers(
         model,
         target,
@@ -105,7 +105,7 @@ def test_sierpinski_pair_is_told_apart():
     for target in targets:
         ch.manual_seed(0)
         sample = helpers.generate_truncated_distribution_dataset(target, phi, 20000)
-        model = _ESTIMATOR({}, 2, ch.eye(2), sample.alpha)
+        model = _ESTIMATOR(2, ch.eye(2), sample.alpha)
         model.fit(sample.S)
         fits.append(model)
         naive.append(
@@ -127,4 +127,4 @@ def test_sierpinski_pair_is_told_apart():
 
 def test_rejects_a_covariance_of_the_wrong_shape():
     with pytest.raises(ValueError, match="covariance_matrix"):
-        _ESTIMATOR({}, 2, ch.eye(3))
+        _ESTIMATOR(2, ch.eye(3))

@@ -33,7 +33,7 @@ def _model(
     dims: int, alpha: Optional[float] = None, hyperparameters: Optional[dict] = None
 ) -> unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal:
     return unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        hyperparameters or {}, dims, alpha
+        dims, alpha, hyperparameters=hyperparameters
     )
 
 
@@ -127,12 +127,14 @@ def test_terms_are_the_papers_objective(known_covariance: bool) -> None:
     model: unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalBase
     if known_covariance:
         model = unknown_truncated_multivariate_normal_known_covariance.UnknownTruncationMultivariateNormalKnownCovariance(
-            {"iterations": 1, "degree": 4}, 2, unknown_truncation.CORRELATED
+            2,
+            unknown_truncation.CORRELATED,
+            hyperparameters={"iterations": 1, "degree": 4},
         )
     else:
         model = (
             unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-                {"iterations": 1, "degree": 4}, 2
+                2, hyperparameters={"iterations": 1, "degree": 4}
             )
         )
     model.fit(sample.S)
@@ -182,7 +184,7 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
         target, unknown_truncation.two_half_spaces, 20000
     )
     model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        {"iterations": 1, "degree": 2}, 2, sample.alpha
+        2, sample.alpha, hyperparameters={"iterations": 1, "degree": 2}
     )
     model.fit(sample.S)
     z = model.standardization_.transform(sample.S.double())
@@ -269,7 +271,8 @@ def test_hessian_matches_autograd():
 
 def test_projection_bounds_the_precision_and_the_mean():
     model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        {"min_precision": 0.5, "max_precision": 2.0, "loc_radius": 1.0}, 3
+        3,
+        hyperparameters={"min_precision": 0.5, "max_precision": 2.0, "loc_radius": 1.0},
     )
     target = torch.distributions.MultivariateNormal(ch.zeros(3), ch.eye(3))
     ch.manual_seed(0)
@@ -293,22 +296,18 @@ def test_projection_bounds_the_precision_and_the_mean():
 def test_rejects_an_alpha_outside_the_unit_interval():
     with pytest.raises(ValueError, match="alpha"):
         unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-            {}, 2, 1.0
+            2, 1.0
         )
 
 
 def test_rejects_samples_of_the_wrong_shape():
-    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        {}, 2
-    )
+    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(2)
     with pytest.raises(ValueError, match="shape"):
         model.fit(ch.randn(100, 3))
 
 
 def test_estimates_need_a_fit():
-    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        {}, 2
-    )
+    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(2)
     with pytest.raises(RuntimeError, match="fit"):
         _ = model.avg_loc_
 

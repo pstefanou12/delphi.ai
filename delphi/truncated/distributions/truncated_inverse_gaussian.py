@@ -28,20 +28,21 @@ class TruncatedInverseGaussian(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedInverseGaussian.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE, ``mean(x)`` and ``1 / mean(1/x - 1/loc)``."""

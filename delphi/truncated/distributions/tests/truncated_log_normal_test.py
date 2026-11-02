@@ -31,8 +31,8 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle, in the original coordinates.
         dims: Number of dimensions.
-        hyperparameters: Hyperparameter dict for the procedure.
         pass_alpha: Supply the measured survival mass to the model.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Returns:
         The naive estimate, and each estimator's fit, in the original
@@ -44,10 +44,10 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     mean, std = log_s.mean(0), log_s.std(0)
     args = (sample.alpha,) if pass_alpha else ()
     truncated = truncated_log_normal.TruncatedLogNormal(
-        hyperparameters or {},
         lambda z: phi(ch.exp(ch.log(z) * std + mean)),
         dims,
         *args,
+        hyperparameters=hyperparameters,
     )
     truncated.fit(ch.exp((log_s - mean) / std))
     fits = {

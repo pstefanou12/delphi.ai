@@ -29,22 +29,23 @@ class TruncatedLaplace(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         loc: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedLaplace.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             loc: Known location, one per coordinate.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.loc = loc
 
     def _build_distribution(self):

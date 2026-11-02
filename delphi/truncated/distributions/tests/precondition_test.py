@@ -22,16 +22,16 @@ def _sample():
 
 def _one_step(sample, precondition: bool):
     model = truncated_inverse_gaussian.TruncatedInverseGaussian(
-        {
+        _phi,
+        1,
+        sample.alpha,
+        hyperparameters={
             "iterations": 1,
             "max_phases": 1,
             "scheduler": None,
             "project": False,
             "precondition": precondition,
         },
-        _phi,
-        1,
-        sample.alpha,
     )
     # The same seed gives both fits the same batch and rejection draws.
     ch.manual_seed(1)
@@ -52,9 +52,9 @@ def test_steps_by_the_inverse_sample_covariance():
 
 def test_off_by_default_outside_the_families_that_need_it():
     model = truncated_inverse_gaussian.TruncatedInverseGaussian(
-        {"precondition": False}, _phi, 1
+        _phi, 1, hyperparameters={"precondition": False}
     )
     assert not model.hyperparameters.precondition
     assert truncated_inverse_gaussian.TruncatedInverseGaussian(
-        {}, _phi, 1
+        _phi, 1
     ).hyperparameters.precondition

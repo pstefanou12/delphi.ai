@@ -38,7 +38,7 @@ def test_one_dimension():
         "val_interval": 100,
     }
     truncated = truncated_normal.TruncatedNormal(
-        hyperparameters or {}, phi_standardised, alpha
+        phi_standardised, alpha, hyperparameters=hyperparameters
     )
     truncated.fit((S - emp_loc) / emp_scale)
 

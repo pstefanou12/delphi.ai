@@ -81,7 +81,9 @@ def _fit(
         The fitted model.
     """
     model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
-        hyperparameters, simulation.phi, simulation.alpha if alpha_known else None
+        simulation.phi,
+        simulation.alpha if alpha_known else None,
+        hyperparameters=hyperparameters,
     )
     classification.assert_recovers(
         model, simulation, tolerance, naive_margin=naive_margin
@@ -264,7 +266,7 @@ def test_10d_seeds(seed):
 def test_summary_reports_the_classes_and_accuracy():
     simulation = _simulate_1d(_NONE, 200)
     model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
-        {"iterations": 20, "refine_steps": 0}, _NONE
+        _NONE, hyperparameters={"iterations": 20, "refine_steps": 0}
     ).fit(simulation.X, simulation.y)
     accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
     assert "classes" in model.summary()
@@ -276,7 +278,7 @@ def test_summary_reports_the_classes_and_accuracy():
 def test_alpha_above_one_over_k_raises():
     simulation = _simulate_1d(_NONE, 200)
     model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
-        {}, _NONE, 0.4
+        _NONE, 0.4
     )
     with pytest.raises(ValueError, match="alpha"):
         model.fit(simulation.X, simulation.y)
@@ -284,7 +286,7 @@ def test_alpha_above_one_over_k_raises():
 
 def test_missing_label_raises():
     model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
-        {}, _NONE
+        _NONE
     )
     with pytest.raises(ValueError, match="every label"):
         model.fit(ch.randn(10, 2), ch.tensor([0, 2] * 5)[:, None])

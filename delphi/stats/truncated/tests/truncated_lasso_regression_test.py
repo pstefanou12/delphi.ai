@@ -68,12 +68,12 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
         "trials": 1,
     }
     trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
-        train_kwargs,
         phi_scale,
         alpha,
         l1=L1,
         fit_intercept=False,
         noise_var=ch.ones(1, 1),
+        hyperparameters=train_kwargs,
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat([(trunc_reg.best_coef_).flatten()]) * ch.sqrt(NOISE_VAR)
@@ -163,7 +163,7 @@ def test_truncated_lasso_regression_one_dimension():
         "trials": 1,
     }
     trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
+        phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1), hyperparameters=train_kwargs
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(
@@ -254,7 +254,7 @@ def test_truncated_lasso_regression_ten_dimensions():
         "trials": 1,
     }
     trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
+        phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1), hyperparameters=train_kwargs
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(

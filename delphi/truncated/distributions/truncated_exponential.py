@@ -25,20 +25,21 @@ class TruncatedExponential(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedExponential.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical rate."""

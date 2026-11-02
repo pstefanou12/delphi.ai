@@ -14,18 +14,19 @@ class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal)
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedNormal.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, 1, alpha)
+        super().__init__(phi, 1, alpha, hyperparameters=hyperparameters)
 
     @property
     def best_scale_(self):

@@ -95,17 +95,20 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
 
     defaults: type[base.ConfigT]
 
-    def __init__(self, hyperparameters: dict):
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
         """Initialize DelphiModel.
 
         Args:
-            hyperparameters: Hyperparameter dict, validated and stored as
-                ``self.hyperparameters`` via the subclass ``defaults`` config.
+            hyperparameters: Overrides of the ``defaults`` config's fields,
+                validated and stored as ``self.hyperparameters``; None keeps
+                every default.
 
         Raises:
-            TypeError: If hyperparameters is not a dict.
+            TypeError: If hyperparameters is neither None nor a dict.
         """
         super().__init__()
+        if hyperparameters is None:
+            hyperparameters = {}
         if not isinstance(hyperparameters, dict):
             raise TypeError(
                 f"hyperparameters is type {type(hyperparameters).__name__}; expected a dict."

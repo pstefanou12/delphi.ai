@@ -205,7 +205,9 @@ def test_phases_widen_a_budget_too_small_for_the_fit():
     fits = {}
     for label, cap in (("one phase", {"max_phases": 1}), ("phases", {})):
         ch.manual_seed(1)
-        model = truncated_poisson.TruncatedPoisson(hyperparameters | cap, phi, 1)
+        model = truncated_poisson.TruncatedPoisson(
+            phi, 1, hyperparameters=hyperparameters | cap
+        )
         fits[label] = model.fit(sample.S)
 
     def divergence(model):

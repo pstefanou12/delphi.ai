@@ -29,14 +29,14 @@ class StatisticalModel(DelphiModel[_StatisticalConfigT], Generic[_StatisticalCon
         refinement: The refinement's record, or None if it did not run.
     """
 
-    def __init__(self, hyperparameters: dict):
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
         """Initialize the model.
 
         Args:
             hyperparameters: Hyperparameter dict, validated by the subclass
                 ``defaults`` config.
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         self.refinement: Optional[delphi.trainer.ProcedureResult] = None
 

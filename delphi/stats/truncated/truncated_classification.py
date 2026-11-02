@@ -54,10 +54,10 @@ class TruncatedClassification(
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: Optional[float] = None,
         *,
+        hyperparameters: Optional[dict] = None,
         sampler: Optional[object] = None,
         fit_intercept: bool = True,
         emp_weight: Optional[ch.Tensor] = None,
@@ -66,7 +66,6 @@ class TruncatedClassification(
         """Initialize the model.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation oracle over the latent, returning a mask or a
                 survival probability.
             alpha: Lower bound on every training sample's mass on each
@@ -77,6 +76,7 @@ class TruncatedClassification(
             emp_weight: Start in place of the naive fit, which ignores
                 phi; see ``TruncatedLinearModel``.
             rand_seed: Seed applied at the start of every run.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha exceeds 1/2, which no two label masses
@@ -85,7 +85,12 @@ class TruncatedClassification(
         if alpha is not None and alpha > 0.5:
             raise ValueError(f"alpha bounds every label mass, so <= 1/2; got {alpha}.")
         super().__init__(
-            hyperparameters, phi, alpha, fit_intercept, emp_weight, rand_seed
+            phi,
+            alpha,
+            fit_intercept,
+            emp_weight,
+            rand_seed,
+            hyperparameters=hyperparameters,
         )
         self.sampler = sampler or type(self).default_sampler(
             self.hyperparameters.num_samples

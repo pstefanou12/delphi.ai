@@ -37,20 +37,23 @@ class TruncatedInverseWishart(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedInverseWishart.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle, over vech rows.
             dims: Side of the sampled matrices.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, helpers.vech_size(dims), alpha)
+        super().__init__(
+            phi, helpers.vech_size(dims), alpha, hyperparameters=hyperparameters
+        )
         self.size = dims
 
     def _calc_emp_model(self):

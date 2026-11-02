@@ -88,18 +88,24 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
     # Read by FisherLR.spectrum: the coordinates of (u, B) are correlated.
     independent_coordinates = False
 
-    def __init__(self, hyperparameters: dict, dims: int, alpha: Optional[float] = None):
+    def __init__(
+        self,
+        dims: int,
+        alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
+    ):
         """Initialize the estimator.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             dims: Number of dimensions.
             alpha: Survival mass of the set in (0, 1), if known.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha lies outside (0, 1).
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
                 f"alpha is the survival mass and must lie in (0, 1); got {alpha}."

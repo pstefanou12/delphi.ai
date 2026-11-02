@@ -72,24 +72,25 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability in (0, 1]; estimated from phi at the
                 empirical initialization when omitted.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha is given and lies outside (0, 1).
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
         if alpha is not None and not 0.0 < alpha < 1.0:

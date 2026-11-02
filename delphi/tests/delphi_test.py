@@ -20,7 +20,7 @@ class Model(DelphiModel[regression.TruncatedRegressionConfig]):
     defaults = regression.TruncatedRegressionConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.linear = torch.nn.Linear(2, 1)
 
 
@@ -35,7 +35,7 @@ class SiblingModel(DelphiModel[regression.TruncatedRegressionConfig]):
     defaults = regression.TruncatedRegressionConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.linear = torch.nn.Linear(2, 1)
 
 

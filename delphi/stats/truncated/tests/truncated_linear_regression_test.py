@@ -75,7 +75,6 @@ def _fit(  # pylint: disable=too-many-arguments
         fit_intercept: Whether to fit an intercept.
     """
     model = truncated_linear_regression_module.TruncatedLinearRegression(
-        {},
         simulation.phi,
         simulation.alpha if alpha_known else None,
         noise_var=simulation.noise_var if variance_known else None,
@@ -382,12 +381,12 @@ def test_truncated_dependent_regression():
         "c_gamma": 2.0,
     }
     trunc_lds = truncated_linear_regression_module.TruncatedLinearRegression(
-        train_kwargs,
         phi,
         train_kwargs["alpha"],
         noise_var=NOISE_VAR,
         dependent=True,
         rand_seed=SEED,
+        hyperparameters=train_kwargs,
     )
     trunc_lds.fit(X, Y)
     # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
@@ -417,11 +416,11 @@ def test_dependent_step_is_preconditioned_by_sigma():
         return x.norm(dim=-1, keepdim=True) <= 10.0
 
     model = truncated_linear_regression_module.TruncatedLinearRegression(
-        {"iterations": 1, "num_samples": 10},
         phi,
         0.9,
         noise_var=ch.eye(dims),
         dependent=True,
+        hyperparameters={"iterations": 1, "num_samples": 10},
     ).fit(X, Y)
     model.trainer._reset_run_state()  # pylint: disable=protected-access
     design, targets = model._data  # pylint: disable=protected-access
@@ -569,7 +568,7 @@ def _design_and_responses(
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
     model = truncated_linear_regression_module.TruncatedLinearRegression(
-        {}, simulation.phi, simulation.alpha, noise_var=None
+        simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_])
@@ -591,7 +590,7 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
     model = truncated_linear_regression_module.TruncatedLinearRegression(
-        {}, simulation.phi, simulation.alpha, noise_var=simulation.noise_var
+        simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
     design, y = _design_and_responses(simulation)
@@ -646,10 +645,10 @@ def _coverage_hits(
     for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
         model = truncated_linear_regression_module.TruncatedLinearRegression(
-            hyperparameters,
             simulation.phi,
             simulation.alpha,
             noise_var=simulation.noise_var if variance_known else None,
+            hyperparameters=hyperparameters,
         ).fit(simulation.X, simulation.y)
         intervals = model.confidence_intervals()
         truths = [

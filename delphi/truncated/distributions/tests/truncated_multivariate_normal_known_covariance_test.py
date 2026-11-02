@@ -47,7 +47,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
     args = (alpha,) if pass_alpha else ()
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        hyperparameters or {}, phi, dims, covariance_matrix, *args
+        phi, dims, covariance_matrix, *args, hyperparameters=hyperparameters
     )
     truncated.fit(S)
 
@@ -136,7 +136,11 @@ def test_ten_dimensions():
 
     hyperparameters = {"epochs": 2, "batch_size": 1}
     truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
-        hyperparameters or {}, phi_standardised, dims, scaled_covariance, alpha
+        phi_standardised,
+        dims,
+        scaled_covariance,
+        alpha,
+        hyperparameters=hyperparameters,
     )
     truncated.fit((S - emp_loc) / true_scale)
 

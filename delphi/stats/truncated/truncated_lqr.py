@@ -7,7 +7,7 @@ truncation bias in a LQR dynamical system.
 """
 
 import logging
-from typing import Protocol
+from typing import Optional, Protocol
 
 from cox.store import Store
 import numpy as np
@@ -36,22 +36,23 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        hyperparameters: dict,
         gen_data: DataGenerator,
         d: int,  # pylint: disable=invalid-name
         m: int,  # pylint: disable=invalid-name
         rand_seed: int = 0,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedLQR.
 
         Args:
-            hyperparameters: hyperparameter dict
             gen_data (Callable): data-generating function for the dynamical system
             d (int): state dimension of matrix A
             m (int): input dimension of matrix B; must satisfy m >= d
             rand_seed (int): random seed for reproducibility
+            hyperparameters: hyperparameter dict
         """
-        self.hyperparameters = lqr.TruncatedLQRConfig(**hyperparameters)
+        self.hyperparameters = lqr.TruncatedLQRConfig(**(hyperparameters or {}))
         assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
         assert (
             self.hyperparameters.target_thickness != float("inf")
@@ -152,12 +153,12 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
         self.trunc_lds_phase_one = (
             truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                self._lds_hyperparameters(),
                 self.hyperparameters.phi,
                 self.hyperparameters.alpha,
                 noise_var=self.gen_data.noise_var,
                 dependent=True,
                 rand_seed=self.rand_seed,
+                hyperparameters=self._lds_hyperparameters(),
             )
         )
         self.trunc_lds_phase_one.fit(X, Y)
@@ -199,12 +200,12 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
         self.trunc_lds_phase_two = (
             truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                self._lds_hyperparameters(),
                 self.hyperparameters.phi,
                 self.hyperparameters.alpha,
                 noise_var=self.gen_data.noise_var,
                 dependent=True,
                 rand_seed=self.rand_seed,
+                hyperparameters=self._lds_hyperparameters(),
             )
         )
         self.trunc_lds_phase_two.fit(U, Y)
@@ -407,13 +408,13 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
 
             self.trunc_lds_phase_three = (
                 truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                    self._lds_hyperparameters(),
                     self.hyperparameters.phi,
                     self.hyperparameters.alpha,
                     noise_var=self.gen_data.noise_var,
                     emp_weight=coef_concat,
                     dependent=True,
                     rand_seed=self.rand_seed,
+                    hyperparameters=self._lds_hyperparameters(),
                 )
             )
             self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())

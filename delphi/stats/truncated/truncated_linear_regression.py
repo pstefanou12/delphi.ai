@@ -95,10 +95,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: Optional[float] = None,
         *,
+        hyperparameters: Optional[dict] = None,
         noise_var: Optional[Union[float, ch.Tensor]] = None,
         dependent: bool = False,
         sampler: Optional[sampling.GaussianSampler] = None,
@@ -109,7 +109,6 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Initialize TruncatedLinearRegression.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation oracle over responses shaped (n, m, k).
             alpha: Survival probability in (0, 1]; None if unknown, which
                 dependent data does not support.
@@ -122,6 +121,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             fit_intercept: Whether to fit an intercept.
             emp_weight: Start in place of OLS; see ``TruncatedLinearModel``.
             rand_seed: Seed applied at the start of every run.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If dependent data lacks noise_var or alpha.
@@ -133,7 +133,12 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         elif noise_var is None:
             self.defaults = regression.TruncatedUnknownVarianceRegressionConfig
         super().__init__(
-            hyperparameters, phi, alpha, fit_intercept, emp_weight, rand_seed
+            phi,
+            alpha,
+            fit_intercept,
+            emp_weight,
+            rand_seed,
+            hyperparameters=hyperparameters,
         )
         self.noise_var = None if noise_var is None else ch.as_tensor(noise_var)
         self.dependent = dependent

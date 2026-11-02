@@ -385,7 +385,7 @@ class AttackerModel(DelphiModel):  # pylint: disable=too-many-instance-attribute
         update_params=None,
     ):
         """Initialize AttackerModel with model, dataset, and optional checkpoint/parallel args."""
-        super().__init__(args)  # pylint: disable=no-value-for-parameter
+        super().__init__(hyperparameters=args)
         self._model = model
         self.checkpoint = checkpoint
         self.parallel = parallel

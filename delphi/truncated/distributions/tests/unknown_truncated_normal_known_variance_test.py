@@ -17,7 +17,7 @@ def _recovers(target: torch.distributions.Normal, phi: helpers.Oracle) -> None:
     variance = (target.scale**2)[:, None]
     model = (
         unknown_truncated_normal_known_variance.UnknownTruncationNormalKnownVariance(
-            {}, variance
+            variance
         )
     )
     unknown_truncation.assert_recovers(
