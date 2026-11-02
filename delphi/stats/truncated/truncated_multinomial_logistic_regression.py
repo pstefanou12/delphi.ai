@@ -15,7 +15,6 @@ up to a shared shift, which this fixes; phi sees the latents in these
 coordinates.
 """
 
-
 import torch as ch
 import torch.nn.functional
 
