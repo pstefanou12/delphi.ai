@@ -80,7 +80,8 @@ def test_switch_grad_switches_at_twice_gamma():
     ch.manual_seed(0)
     pred = ch.tensor([[-3.0], [1.0]], requires_grad=True)
     targ = ch.tensor([[0.5], [2.0]])
-    loss = losses.SwitchGrad.apply(pred, targ, _positive, 0.4, _TEST)
+    loss, aware = losses.SwitchGrad.apply(pred, targ, _positive, 0.4, _TEST)
+    assert aware.tolist() == [False, True]
     (grad,) = ch.autograd.grad(loss.sum(), pred)
     oblivious = pred.detach() - targ
     aware = pred.detach() + _mills(pred.detach()) - targ

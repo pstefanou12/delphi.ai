@@ -7,9 +7,11 @@ about twice the error of the exact truncated MLE on the same sample,
 measured with the closed-form NLL, over the weight alone when the variance is
 known and over (weight, variance) when it is not; every estimate lands within
 a few hundredths of that MLE. The dependent-data cases follow: the observed
-pairs of one trajectory of a stable linear dynamical system, each tolerance
-about twice the error at its seed, checked against least squares on the
-same pairs. Then both variants' confidence intervals: their covariance
+pairs of one trajectory of a stable linear dynamical system, through a set
+whose threshold is calibrated to a fraction of steps yielding a pair. Each
+tolerance is about twice the worst estimate's error at its seed, checked
+against least squares on the same pairs; the small-mass and mode-excluding
+sets must also exercise the censor-oblivious gradient. Then both variants' confidence intervals: their covariance
 against the exact NLL's, and their coverage over repeated samples, on two
 cases by default and on every regression case with ``--coverage-sweep``.
 """
@@ -335,32 +337,174 @@ def test_10d_union_of_intervals_noise_var_10(variance_known):
 
 
 _TRANSITION_2D = ch.tensor([[0.7, 0.2], [-0.1, 0.8]])
+# Slow along x_1 and fast along x_2, so a state can sit outside a set
+# around the mode while its successor's mean lies deep inside it.
+_ANISOTROPIC_2D = ch.diag(ch.tensor([0.9, 0.3]))
+_CORRELATED_NOISE_2D = ch.tensor([[2.0, 0.8], [0.8, 1.0]])
+_DRIFT_2D = ch.tensor([0.5, -0.3])
+
+# Maps a threshold to an oracle over states shaped (n, m, d).
+Family = Callable[[float], Callable[[ch.Tensor], ch.Tensor]]
 
 
-def _transition_10d() -> ch.Tensor:
+def _symmetric_transition(dims: int) -> ch.Tensor:
     """Return a symmetric A with eigenvalues spread over [0.3, 0.8]."""
-    ch.manual_seed(1)
-    rotation, _ = ch.linalg.qr(ch.randn(10, 10))  # pylint: disable=not-callable
-    return rotation @ ch.diag(ch.linspace(0.3, 0.8, 10)) @ rotation.T
+    draws = ch.randn(dims, dims, generator=ch.Generator().manual_seed(1))
+    rotation, _ = ch.linalg.qr(draws)  # pylint: disable=not-callable
+    return rotation @ ch.diag(ch.linspace(0.3, 0.8, dims)) @ rotation.T
 
 
-def _half_space(normal: Sequence[float], offset: float) -> Callable:
-    """Return an oracle admitting the states x with ``normal^T x >= offset``."""
-    direction = ch.tensor(normal)
+def _half_spaces(normal: ch.Tensor) -> Family:
+    """Return the sets ``{x : normal^T x >= c}``."""
+
+    def family(offset):
+        return lambda x: (x @ normal >= offset)[..., None]
+
+    return family
+
+
+def _norm_at_least(radius: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the states outside the ball of the given radius around 0."""
+    return lambda x: x.norm(dim=-1, keepdim=True) >= radius
+
+
+def _figure_1b(offset: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the states with ``x_1 >= c + 0.2`` and ``x_2 >= c``."""
+    return lambda x: (x[..., :1] >= offset + 0.2) & (x[..., 1:] >= offset)
+
+
+def _discs(radius: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the union of four discs centred 1.5 from the origin on the axes."""
+    centres = 1.5 * ch.cat([ch.eye(2), -ch.eye(2)])
 
     def phi(x):
-        return (x @ direction >= offset)[..., None]
+        distances = (x[..., None, :] - centres).norm(dim=-1)
+        return (distances <= radius).any(-1, keepdim=True)
 
     return phi
 
 
-def _quadrant(x: ch.Tensor) -> ch.Tensor:
-    """Admit the states with ``x_1 >= 0.4`` and ``x_2 >= 0.2``."""
-    return (x[..., :1] >= 0.4) & (x[..., 1:] >= 0.2)
-
-
 def _everything(x: ch.Tensor) -> ch.Tensor:
     return ch.ones_like(x[..., :1], dtype=ch.bool)
+
+
+def _dynamics_case(  # pylint: disable=too-many-arguments
+    transition: ch.Tensor,
+    family: Family,
+    target: float,
+    bounds: tuple[float, float],
+    steps: int,
+    **options,
+) -> Callable[[], regression.Simulation]:
+    """Return a map to the pairs of a trajectory through a calibrated set.
+
+    The set is family's member whose observed-pair fraction is target on
+    another trajectory, seed 1; the pairs come from seed 0, whose fraction
+    must land within a quarter of target.
+
+    Args:
+        transition: The A.
+        family: The sets, by threshold.
+        target: The fraction of steps that yield a pair.
+        bounds: Thresholds whose fractions straddle target.
+        steps: Length of each trajectory.
+        **options: ``drift`` and ``noise_var``, as ``regression.trajectory``,
+            and ``fit_intercept``, as ``regression.simulate_dynamics``.
+    """
+
+    def simulate() -> regression.Simulation:
+        motion = {key: options[key] for key in ("drift", "noise_var") if key in options}
+        calibration = regression.trajectory(transition, steps, seed=1, **motion)
+        threshold = regression.calibrate(family, calibration, target, bounds)
+        simulation = regression.simulate_dynamics(
+            transition, family(threshold), steps, **options
+        )
+        fraction = simulation.X.size(0) / steps
+        assert 0.75 * target <= fraction <= 1.25 * target, fraction
+        return simulation
+
+    return simulate
+
+
+_HALF_LINES_1D = _half_spaces(ch.tensor([1.0]))
+_HALF_PLANES_2D = _half_spaces(ch.tensor([1.0, 1.0]))
+_DYNAMICS: dict[str, Callable[[], regression.Simulation]] = {
+    "1d_half_line": _dynamics_case(
+        ch.tensor([[0.5]]), _HALF_LINES_1D, 0.2, (-3.0, 5.0), 25000
+    ),
+    "1d_half_line_no_intercept": _dynamics_case(
+        ch.tensor([[0.5]]),
+        _HALF_LINES_1D,
+        0.2,
+        (-3.0, 5.0),
+        25000,
+        fit_intercept=False,
+    ),
+    "1d_union_of_intervals": _dynamics_case(
+        ch.tensor([[0.5]]),
+        lambda c: _intervals((-INF, -c), (0.0, c / 2.0), (c, INF)),
+        0.3,
+        (0.01, 5.0),
+        17000,
+    ),
+    "1d_interval": _dynamics_case(
+        ch.tensor([[0.5]]), lambda c: _intervals((0.0, c)), 0.3, (0.01, 8.0), 17000
+    ),
+    # A thin window at the mode, whose successors rarely survive, and a far
+    # half-line, whose usually do: in all about 5% of the trajectory.
+    "1d_small_mass": _dynamics_case(
+        ch.tensor([[0.95]]),
+        lambda c: _intervals((-0.1, 0.1), (c, INF)),
+        0.02,
+        (0.5, 15.0),
+        200000,
+    ),
+    "2d_half_plane": _dynamics_case(
+        _TRANSITION_2D, _HALF_PLANES_2D, 0.25, (-5.0, 8.0), 20000
+    ),
+    "2d_half_plane_drift": _dynamics_case(
+        _TRANSITION_2D,
+        _HALF_PLANES_2D,
+        0.25,
+        (-5.0, 12.0),
+        20000,
+        drift=_DRIFT_2D,
+    ),
+    "2d_half_plane_correlated_noise": _dynamics_case(
+        _TRANSITION_2D,
+        _HALF_PLANES_2D,
+        0.25,
+        (-5.0, 8.0),
+        20000,
+        noise_var=_CORRELATED_NOISE_2D,
+    ),
+    "2d_figure_1b": _dynamics_case(
+        _TRANSITION_2D, _figure_1b, 0.15, (-5.0, 5.0), 33000
+    ),
+    "2d_union_of_discs": _dynamics_case(
+        _TRANSITION_2D, _discs, 0.25, (0.01, 1.5), 20000
+    ),
+    "2d_ball_removed": _dynamics_case(
+        _ANISOTROPIC_2D, _norm_at_least, 0.3, (0.0, 10.0), 17000
+    ),
+    "5d_random_half_space": _dynamics_case(
+        _symmetric_transition(5),
+        _half_spaces(
+            torch.nn.functional.normalize(
+                ch.randn(5, generator=ch.Generator().manual_seed(2)), dim=0
+            )
+        ),
+        0.25,
+        (-8.0, 8.0),
+        20000,
+    ),
+    "10d_sum": _dynamics_case(
+        _symmetric_transition(10), _half_spaces(ch.ones(10)), 0.3, (-20.0, 20.0), 40000
+    ),
+    "10d_ball_removed": _dynamics_case(
+        _symmetric_transition(10), _norm_at_least, 0.3, (0.0, 15.0), 40000
+    ),
+}
 
 
 def _fit_dynamics(
@@ -369,6 +513,7 @@ def _fit_dynamics(
     ols_margin: float,
     *,
     alpha: Optional[float] = None,
+    oblivious: Optional[float] = None,
     fit_intercept: bool = True,
 ) -> None:
     """Fit dependent regression to a trajectory's pairs and check its estimates.
@@ -378,6 +523,9 @@ def _fit_dynamics(
         tolerance: As ``regression.assert_recovers``, over A and b together.
         ols_margin: As ``regression.assert_recovers``.
         alpha: The model's alpha; the observed pairs' fraction if None.
+        oblivious: Least share of the descent's pairs that must take the
+            censor-oblivious gradient, and of those that must not; None
+            skips the check.
         fit_intercept: Whether the model fits b.
     """
     model = truncated_linear_regression_module.TruncatedLinearRegression(
@@ -388,76 +536,84 @@ def _fit_dynamics(
         fit_intercept=fit_intercept,
     )
     regression.assert_recovers(model, simulation, tolerance, ols_margin=ols_margin)
+    if oblivious is not None:
+        metrics = model.final_run.metrics
+        pairs = metrics["censor_oblivious"] + metrics["censor_aware"]
+        share = metrics["censor_oblivious"] / pairs
+        assert oblivious <= share <= 1.0 - oblivious, share
 
 
-def test_1d_half_line():
-    simulation = regression.simulate_dynamics(
-        ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000
+def test_lds_1d_half_line():
+    _fit_dynamics(_DYNAMICS["1d_half_line"](), 0.16, 0.15)
+
+
+def test_lds_1d_half_line_no_intercept():
+    _fit_dynamics(
+        _DYNAMICS["1d_half_line_no_intercept"](), 0.0065, 0.02, fit_intercept=False
     )
-    _fit_dynamics(simulation, 0.15, 0.13)
-
-
-def test_1d_half_line_no_intercept():
-    simulation = regression.simulate_dynamics(
-        ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000, fit_intercept=False
-    )
-    _fit_dynamics(simulation, 0.012, 0.035, fit_intercept=False)
 
 
 # alpha is a lower bound on the survival mass, here well below it.
-def test_1d_half_line_loose_alpha():
-    simulation = regression.simulate_dynamics(
-        ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000
-    )
-    _fit_dynamics(simulation, 0.17, 0.15, alpha=0.2)
+def test_lds_1d_half_line_loose_alpha():
+    _fit_dynamics(_DYNAMICS["1d_half_line"](), 0.15, 0.15, alpha=0.1)
 
 
-def test_2d_half_plane():
-    simulation = regression.simulate_dynamics(
-        _TRANSITION_2D, _half_space([1.0, 1.0], 1.0), 20000
-    )
-    _fit_dynamics(simulation, 0.18, 0.2)
+def test_lds_1d_union_of_intervals():
+    _fit_dynamics(_DYNAMICS["1d_union_of_intervals"](), 0.025, 0.12)
+
+
+def test_lds_1d_interval():
+    _fit_dynamics(_DYNAMICS["1d_interval"](), 0.33, 0.4)
+
+
+def test_lds_1d_small_mass():
+    _fit_dynamics(_DYNAMICS["1d_small_mass"](), 0.39, 0.9, oblivious=0.005)
+
+
+def test_lds_2d_half_plane():
+    _fit_dynamics(_DYNAMICS["2d_half_plane"](), 0.16, 0.17)
 
 
 # The drift moves the stationary mean (I - A)^-1 b against the set.
-def test_2d_half_plane_drift():
-    simulation = regression.simulate_dynamics(
-        _TRANSITION_2D,
-        _half_space([1.0, 1.0], 1.0),
-        40000,
-        drift=ch.tensor([0.5, -0.3]),
-    )
-    _fit_dynamics(simulation, 0.15, 0.14)
+def test_lds_2d_half_plane_drift():
+    _fit_dynamics(_DYNAMICS["2d_half_plane_drift"](), 0.09, 0.14)
 
 
-def test_2d_quadrant():
-    simulation = regression.simulate_dynamics(_TRANSITION_2D, _quadrant, 40000)
-    _fit_dynamics(simulation, 0.12, 0.12)
+def test_lds_2d_half_plane_correlated_noise():
+    _fit_dynamics(_DYNAMICS["2d_half_plane_correlated_noise"](), 0.22, 0.15)
 
 
-def test_2d_half_plane_correlated_noise():
-    simulation = regression.simulate_dynamics(
-        _TRANSITION_2D,
-        _half_space([1.0, 1.0], 1.0),
-        20000,
-        noise_var=ch.tensor([[2.0, 0.8], [0.8, 1.0]]),
-    )
-    _fit_dynamics(simulation, 0.11, 0.08)
+def test_lds_2d_figure_1b():
+    _fit_dynamics(_DYNAMICS["2d_figure_1b"](), 0.3, 0.3)
+
+
+def test_lds_2d_union_of_discs():
+    _fit_dynamics(_DYNAMICS["2d_union_of_discs"](), 0.11, 0.46)
+
+
+def test_lds_2d_ball_removed():
+    _fit_dynamics(_DYNAMICS["2d_ball_removed"](), 0.09, 0.88, oblivious=0.005)
 
 
 # Without truncation least squares on every pair is the MLE, while the
 # descent steps on three quarters of them at a step above 1.
-def test_2d_no_truncation():
+def test_lds_2d_no_truncation():
     simulation = regression.simulate_dynamics(_TRANSITION_2D, _everything, 5000)
     _fit_dynamics(simulation, 0.065, 2.7)
 
 
+def test_lds_5d_random_half_space():
+    _fit_dynamics(_DYNAMICS["5d_random_half_space"](), 0.31, 0.32)
+
+
 @pytest.mark.slow
-def test_10d_half_space():
-    simulation = regression.simulate_dynamics(
-        _transition_10d(), _half_space([1.0] + [0.0] * 9, 0.0), 80000
-    )
-    _fit_dynamics(simulation, 0.17, 0.21)
+def test_lds_10d_sum():
+    _fit_dynamics(_DYNAMICS["10d_sum"](), 0.31, 0.37)
+
+
+@pytest.mark.slow
+def test_lds_10d_ball_removed():
+    _fit_dynamics(_DYNAMICS["10d_ball_removed"](), 0.18, 0.7)
 
 
 def test_dependent_alpha_unknown_raises():

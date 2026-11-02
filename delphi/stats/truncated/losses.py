@@ -154,8 +154,8 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
     h is the censor-aware ``mean(kept z) - y``, an unbiased estimate of the
     truncated NLL's ``E[z | S] - y``; otherwise it is the censor-oblivious
     ``h - y``. The loss is the matching NLL, ``||y - h||^2 / 2`` plus, when
-    censor-aware, the log of the kept fraction. Returns one loss per sample;
-    the caller reduces.
+    censor-aware, the log of the kept fraction. Returns one loss per sample,
+    which the caller reduces, and which samples were censor-aware.
     """
 
     @staticmethod
@@ -180,17 +180,20 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
                 number per sample.
 
         Returns:
-            The losses, shaped (n,).
+            The losses, shaped (n,), and a mask of the censor-aware samples,
+            shaped (n,).
         """
         moments = sampler.moments(pred, ch.ones(pred.size(1)), phi)
         aware = moments.mass >= 2.0 * gamma
         latent = ch.where(aware, moments.mean.to(pred.dtype), pred)
         ctx.save_for_backward(latent - targ)
         log_mass = ch.where(aware, ch.log(moments.mass), 0.0).to(pred.dtype)
-        return 0.5 * (targ - pred).pow(2).sum(-1) + log_mass[:, 0]
+        loss = 0.5 * (targ - pred).pow(2).sum(-1) + log_mass[:, 0]
+        ctx.mark_non_differentiable(aware)
+        return loss, aware[:, 0]
 
     @staticmethod
-    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+    def backward(ctx, grad_output, _grad_aware):  # pylint: disable=arguments-differ
         """Return the switched gradient in pred."""
         (grad,) = ctx.saved_tensors
         return grad_output[:, None] * grad, None, None, None, None

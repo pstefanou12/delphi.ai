@@ -163,6 +163,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self.survival_threshold = 1.0
         self._noise_factor: Optional[ch.Tensor] = None
         self._warmup_size = 0
+        self._aware_pairs = 0
+        self._oblivious_pairs = 0
         self.sampler = sampler or sampling.GaussianRejectionSampler(
             self.hyperparameters.num_samples, self.hyperparameters.min_accepted
         )
@@ -389,10 +391,10 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     def compute_loss(self, batch, criterion=None) -> ch.Tensor:
         """Reduce the per-sample NLL: its mean, or its sum for dependent data."""
+        if self.dependent:
+            return self._switching_loss(batch)
         if self.noise_var is not None or criterion is not None:
-            loss = super().compute_loss(batch, criterion)
-            # Sigma grows by the batch's sum of x x^T, so the gradient sums too.
-            return loss.sum() if self.dependent else loss.mean()
+            return super().compute_loss(batch, criterion).mean()
         X, y = batch  # pylint: disable=invalid-name
         noise_var = 1.0 / self.weight[-1]
         return losses.TruncatedGaussianNLL.apply(
@@ -409,6 +411,29 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if self.noise_var is None:
             return X @ self.weight[:-1] / self.weight[-1]
         return X @ self.weight
+
+    def _switching_loss(self, batch) -> ch.Tensor:
+        """Return SwitchGrad's summed loss, counting a training batch's branches."""
+        X, y = batch  # pylint: disable=invalid-name
+        loss, aware = self.required_criterion(self(X), y, *self.criterion_params)  # pylint: disable=not-callable
+        if self.training:
+            self._aware_pairs += int(aware.sum())
+            self._oblivious_pairs += int((~aware).sum())
+        # Sigma grows by the batch's sum of x x^T, so the gradient sums too.
+        return loss.sum()
+
+    def pre_phase_hook(self) -> None:
+        """Build or resize the projection set, and zero the branch counts."""
+        super().pre_phase_hook()
+        self._aware_pairs, self._oblivious_pairs = 0, 0
+
+    def run_metrics(self) -> dict:
+        """Add dependent data's censor-aware and censor-oblivious pair counts."""
+        metrics = super().run_metrics()
+        if self.dependent:
+            metrics["censor_aware"] = self._aware_pairs
+            metrics["censor_oblivious"] = self._oblivious_pairs
+        return metrics
 
     def train_batch(self, batch) -> Optional[dict]:
         """Grow dependent data's Sigma by the batch, then let the trainer step.
@@ -718,6 +743,15 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def variance_(self) -> Optional[ch.Tensor]:
         """Noise variance at the averaged iterate."""
         return self.avg_variance_
+
+    def _summary_procedure(self) -> list[tuple[str, str]]:
+        rows = super()._summary_procedure()
+        if self.dependent:
+            procedure = linear_model.require_fitted(self.procedure, "procedure")
+            oblivious = sum(procedure.series("censor_oblivious"))
+            total = oblivious + sum(procedure.series("censor_aware"))
+            rows.append(("censor-oblivious pairs", f"{oblivious} of {total}"))
+        return rows
 
     def _summary_estimates(self) -> list[tuple[str, str]]:
         rows = super()._summary_estimates()
