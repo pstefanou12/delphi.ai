@@ -15,8 +15,17 @@
   covariance, a Lyapunov solution, is single-pass SGD's last iterate's at
   steps ``1 / (zeta t)``; the averaged iterate here sits at the empirical
   MLE, whose covariance is the inverse information.
-- ``dependent=True``: a linear dynamical system, by the switching gradient
-  with ``Sigma^-1`` preconditioning.
+- ``dependent=True``: Plevrakis, "Learning from Censored and Dependent
+  Data: The case of Linear Dynamics" (arXiv:2104.05087), a linear dynamical
+  system ``x_{t+1} = A x_t + w_t`` seen through the pairs of consecutive
+  states both observed, in temporal order. Algorithm 4: least squares on
+  the first half of the pairs gives the start ``A_0`` and the confidence
+  ellipsoid ``||A - A_0||_{Sigma_0} <= 1``, for ``Sigma_0`` their covariance
+  divided by s. SON-SG (Algorithm 1) then takes one step per pair of the
+  second half, ``A - eta g Sigma_i^-1`` with ``Sigma_i = Sigma_{i-1} + x
+  x^T``, projected onto the ellipsoid in the ``Sigma_i`` norm; g is
+  SwitchGrad's (Algorithms 2 and 3). The paper's noise is N(0, I); a known
+  covariance ``L L^T`` is reduced to it by fitting ``L^-1 x_{t+1}``.
 """
 
 from collections.abc import Callable
@@ -85,10 +94,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     Attributes:
         noise_var: The known noise variance, or None when it is learned.
         dependent: Whether the samples come from one trajectory.
-        survival_threshold: The threshold s of dependent data; 1 otherwise.
+        survival_threshold: The s dividing dependent data's ``Sigma_0``; 1
+            otherwise.
     """
 
-    # Created by register_buffer during fit.
+    # Created by register_buffer during fit; SON-SG's preconditioner.
     Sigma: ch.Tensor  # pylint: disable=invalid-name
 
     defaults = regression.TruncatedRegressionConfig
@@ -114,10 +124,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
                 dependent data does not support.
             noise_var: The known noise variance; None learns it, training
                 ``weight`` as ``(v, lambda)``: v's rows, then lambda's.
-            dependent: Whether the samples form one trajectory, x_{t+1} =
-                A x_t + e; needs noise_var, its noise covariance.
+            dependent: Whether each row of X is a state x_t and its row of y
+                the next state x_{t+1}, both observed, the rows in temporal
+                order; needs noise_var, the noise covariance, and alpha, a
+                lower bound on ``P(x_{t+1} in S | x_t)``.
             sampler: Estimates the loss's conditional moments; rejection
                 sampling at ``num_samples`` and ``min_accepted`` by default.
+                Unused for dependent data, whose test draws a fixed number.
             fit_intercept: Whether to fit an intercept.
             emp_weight: Start in place of OLS; see ``TruncatedLinearModel``.
             rand_seed: Seed applied at the start of every run.
@@ -145,6 +158,8 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self._preconditioner: Optional[ch.Tensor] = None
         self._refining = False
         self.survival_threshold = 1.0
+        self._noise_factor: Optional[ch.Tensor] = None
+        self._warmup_size = 0
         self.sampler = sampler or sampling.GaussianRejectionSampler(
             self.hyperparameters.num_samples, self.hyperparameters.min_accepted
         )
@@ -166,15 +181,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         hp = self.hyperparameters
         if self.dependent:
             lds = cast(regression.TruncatedLinearDynamicalSystemConfig, hp)
-            return [
-                self.phi,
-                lds.c_gamma,
-                self.alpha,
-                X.size(0),
-                self.noise_var,
-                hp.num_samples,
-                hp.eps,
-            ]
+            gamma = (cast(float, self.alpha) / 2.0) ** lds.c_gamma
+            # Enough draws that each of the n tests errs with probability 1 / n^2.
+            draws = max(math.ceil(4.0 / gamma * math.log(X.size(0))), 1)
+            test = sampling.GaussianRejectionSampler(draws, min_accepted=0)
+            return [self.latent_phi, gamma, test]
         return [self.latent_phi, self.noise_var, self.sampler, hp.eps]
 
     def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
@@ -184,10 +195,28 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         and v share one scale. The estimates are reported on the scale of
         the y given. A learned variance runs in float64: with covariates on
         scales far apart, float32 rounds away the late steps of the scaled
-        intercept.
+        intercept. Dependent data fits the responses whitened by the noise
+        covariance instead.
+
+        Raises:
+            ValueError: If dependent data's warm-up half has no more pairs
+                than the design matrix has columns.
         """
         self.response_scale = 1.0
-        if self.noise_var is None and not self.dependent:
+        if self.dependent:
+            self._check_inputs(X, y)
+            self._warmup_size = X.size(0) // 2
+            if self._warmup_size <= X.size(1) + int(self.fit_intercept):
+                raise ValueError(
+                    f"the warm-up's {self._warmup_size} pairs cannot fit "
+                    f"{X.size(1)} covariates; pass more pairs."
+                )
+            self._noise_factor = self._cholesky_noise(y.size(1))
+            whitened = ch.linalg.solve_triangular(  # pylint: disable=not-callable
+                self._noise_factor, y.T, upper=False
+            ).T
+            return super().fit(X, whitened)
+        if self.noise_var is None:
             self._check_inputs(X, y)
             X, y = X.double(), y.double()  # pylint: disable=invalid-name
             design = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)
@@ -195,9 +224,63 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             self.response_scale = residual.pow(2).mean(0).sqrt()
         return super().fit(X, y / self.response_scale)
 
+    def _cholesky_noise(self, k: int) -> ch.Tensor:
+        """Return L, shaped (k, k), with ``L L^T`` the noise covariance."""
+        variance = ch.as_tensor(
+            linear_model.require_fitted(self.noise_var, "noise_var"),
+            dtype=ch.float32,
+        )
+        if variance.dim() < 2:
+            return ch.diag(variance.sqrt().expand(k))
+        return ch.linalg.cholesky(variance)  # pylint: disable=not-callable
+
     def latent_phi(self, z: ch.Tensor) -> ch.Tensor:
-        """Return phi at latents in the descent's units, ``z * response_scale``."""
+        """Return phi at latents in the descent's units.
+
+        ``z * response_scale``, or ``L z`` for dependent data.
+        """
+        if self._noise_factor is not None:
+            return self.phi(z @ self._noise_factor.T)
         return self.phi(z * self.response_scale)
+
+    def _calc_emp_model(self, X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
+        """Set emp_weight to least squares on dependent data's warm-up half."""
+        if self.dependent and self.emp_weight is None:
+            warmup = self._warmup_size
+            ols = ch.linalg.lstsq(X[:warmup], y[:warmup]).solution  # pylint: disable=not-callable
+            factor = linear_model.require_fitted(self._noise_factor, "noise")
+            self.emp_weight = ols @ factor.T / self.covariate_scale
+        super()._calc_emp_model(X, y)
+
+    def _loaders(self, X: ch.Tensor, y: ch.Tensor, config):  # pylint: disable=invalid-name
+        """Return the loaders; dependent data's descent skips the warm-up half."""
+        if self.dependent:
+            X, y = X[self._warmup_size :], y[self._warmup_size :]  # pylint: disable=invalid-name
+        return super()._loaders(X, y, config)
+
+    @property
+    def emp_start(self) -> ch.Tensor:
+        """emp_weight in the descent's coordinates, shaped (d + 1, k)."""
+        start = super().emp_start
+        if self._noise_factor is None:
+            return start
+        return ch.linalg.solve_triangular(  # pylint: disable=not-callable
+            self._noise_factor, start.T, upper=False
+        ).T
+
+    @property
+    def emp_coef_(self) -> Optional[ch.Tensor]:
+        """Coefficients of emp_weight, the descent's start."""
+        if not self.dependent:
+            return super().emp_coef_
+        return self.coefficients(self.emp_start.flatten())[0]
+
+    @property
+    def emp_intercept_(self) -> Optional[ch.Tensor]:
+        """Intercept of emp_weight, the descent's start."""
+        if not self.dependent:
+            return super().emp_intercept_
+        return self.coefficients(self.emp_start.flatten())[1]
 
     def register_weight(self, weight: ch.Tensor) -> None:
         if self.noise_var is None:
@@ -207,13 +290,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             return
         super().register_weight(weight)
         if self.dependent:
-            X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-            sigma_0 = X.T @ X / (self.survival_threshold * X.size(0))
-            self.register_buffer("Sigma", sigma_0)
+            self.register_buffer("Sigma", self._sigma_0())
             # A tensor hook runs after backward, inside optimizer.step's
             # closure; a step pre-hook runs before the closure's zero_grad
             # and backward, which discard what it writes.
             self.weight.register_hook(self.precondition)
+
+    def _sigma_0(self) -> ch.Tensor:
+        """Return dependent data's ``Sigma_0``, the warm-up's covariance over s."""
+        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        warmup = X[: self._warmup_size]
+        return warmup.T @ warmup / (self.survival_threshold * warmup.size(0))
 
     def _residual_var(self, weight: ch.Tensor) -> ch.Tensor:
         """Return each output's mean squared residual at weight, shaped (k,)."""
@@ -295,10 +382,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             self._refining = False
 
     def compute_loss(self, batch, criterion=None) -> ch.Tensor:
-        """Average the NLL, which is per sample, over the batch."""
+        """Reduce the per-sample NLL: its mean, or its sum for dependent data."""
         if self.noise_var is not None or criterion is not None:
             loss = super().compute_loss(batch, criterion)
-            return loss if self.dependent else loss.mean()
+            # Sigma grows by the batch's sum of x x^T, so the gradient sums too.
+            return loss.sum() if self.dependent else loss.mean()
         X, y = batch  # pylint: disable=invalid-name
         noise_var = 1.0 / self.weight[-1]
         return losses.TruncatedGaussianNLL.apply(
@@ -314,17 +402,48 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         """Return ``h_W(x)``; ``v^T x / lambda`` when lambda is learned."""
         if self.noise_var is None:
             return X @ self.weight[:-1] / self.weight[-1]
-        if self.dependent:
-            self.Sigma += X.T @ X / X.size(0)  # pylint: disable=invalid-name,no-member
         return X @ self.weight
+
+    def train_batch(self, batch) -> Optional[dict]:
+        """Grow dependent data's Sigma by the batch, then let the trainer step.
+
+        Here rather than in forward, which evaluation also calls.
+        """
+        if self.dependent:
+            X, _ = batch  # pylint: disable=invalid-name
+            with ch.no_grad():
+                self.Sigma += X.T @ X  # pylint: disable=no-member
+        return None
+
+    def evaluate(self) -> dict:
+        """Return the loss over the pairs the descent steps on.
+
+        Dependent data skips the warm-up's half, and takes the pairs in
+        chunks, since each draws as many latents as the test.
+        """
+        if not self.dependent:
+            return super().evaluate()
+        X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        draws = self.criterion_params[-1].num_samples
+        rows = max(sampling.MAX_DRAWS_PER_ROUND // (draws * y.size(1)), 1)
+        pairs = zip(
+            X[self._warmup_size :].split(rows),
+            y[self._warmup_size :].split(rows),
+            strict=True,
+        )
+        with ch.no_grad(), ch.random.fork_rng():
+            ch.manual_seed(self.rand_seed)
+            return {"loss": sum(self.compute_loss(pair) for pair in pairs)}
 
     def default_radius(self) -> float:
         """Return D_{r,B}'s ``4 log(2 / alpha) + 7`` for a known variance.
 
         A learned variance keeps the base's ``1 / alpha``, the radius of
-        ``UnknownVarianceSet``.
+        ``UnknownVarianceSet``; dependent data's ellipsoid has radius 1.
         """
-        if self.noise_var is None or self.dependent:
+        if self.dependent:
+            return 1.0
+        if self.noise_var is None:
             return super().default_radius()
         alpha = 1.0 if self.alpha is None else self.alpha
         return 4.0 * math.log(2.0 / alpha) + 7.0
@@ -337,15 +456,17 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     ) -> delphi.projection_sets.ProjectionSet:
         """Return the set the descent is kept in, anchored at emp_weight.
 
-        D_{r,B} with its r grown until it holds emp_weight, or for learned
-        variance D around emp_weight's residual variance.
+        D_{r,B} with its r grown until it holds emp_weight, for learned
+        variance D around emp_weight's residual variance, and for dependent
+        data the confidence ellipsoid around it.
 
         Raises:
             ValueError: If emp_weight lies outside the ball of radius
                 weight_bound.
         """
         if self.dependent:
-            return super().build_projection_set(X, y, radius)
+            metric = self.Sigma  # pylint: disable=no-member
+            return ConfidenceEllipsoid(self.emp_start, self._sigma_0(), metric, radius)
         hp = self.hyperparameters
         anchor = self.emp_start
         if hp.weight_bound is not None and float(anchor.norm()) > hp.weight_bound:
@@ -413,11 +534,19 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         )
 
     def coefficients(self, params):
-        """Split a flat iterate; for learned variance, ``(v, lambda)``."""
+        """Split a flat iterate; for learned variance, ``(v, lambda)``.
+
+        Dependent data's iterate fits ``L^-1 y``, so its estimates are
+        multiplied by L.
+        """
         if params is not None and self.noise_var is None:
             natural = params.reshape(-1, linear_model.require_fitted(self.k, "k"))
             params = (natural[:-1] / natural[-1]).flatten()
-        return super().coefficients(params)
+        coef, intercept = super().coefficients(params)
+        if coef is None or self._noise_factor is None:
+            return coef, intercept
+        factor = self._noise_factor
+        return factor @ coef, None if intercept is None else factor @ intercept
 
     def variance(self, params: Optional[ch.Tensor]) -> Optional[ch.Tensor]:
         """Return the noise variance at a flat iterate, shaped (k,).
@@ -684,6 +813,72 @@ class ResidualSpectralSet(delphi.projection_sets.ProjectionSet):
             joint, whitened = cast(tuple[ch.Tensor, ch.Tensor], self._direct)
             weighted = (whitened * (joint @ v)[:, None].pow(2)).T @ whitened
         return float(ch.linalg.eigvalsh(weighted)[-1]) <= cast(float, self.radius)  # pylint: disable=not-callable
+
+
+class ConfidenceEllipsoid(delphi.projection_sets.ProjectionSet):
+    """The ellipsoid ``{W : tr((W - W_0)^T Sigma_0 (W - W_0)) <= r^2}``.
+
+    A projection returns the nearest point in the norm
+    ``tr(D^T Sigma D)`` of a metric Sigma, not the Euclidean one: with
+    ``Sigma_0 = C C^T`` and ``C^-1 Sigma C^-T = Q diag(e) Q^T``, the
+    coordinates ``Q^T C^T D`` turn the set into a ball and the metric into
+    ``diag(e)``, and the nearest point shrinks coordinate j by
+    ``e_j / (e_j + mu)``, for the mu that lands it on the sphere.
+
+    Attributes:
+        sigma_0: The ellipsoid's shape, shaped (p, p).
+        metric: Sigma, shaped (p, p); its owner may grow it in place.
+        radius: The set's r.
+    """
+
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self,
+        anchor: ch.Tensor,
+        sigma_0: ch.Tensor,
+        metric: ch.Tensor,
+        radius: float = 1.0,
+        bisection_steps: int = 60,
+    ):
+        """Build the ellipsoid around anchor.
+
+        Args:
+            anchor: Its center W_0, shaped (p, k).
+            sigma_0: Its shape, positive definite, shaped (p, p).
+            metric: The projection's Sigma, positive definite, shaped (p, p).
+            radius: Its r.
+            bisection_steps: Halvings of the interval mu is searched in.
+        """
+        super().__init__(anchor, radius, bisection_steps)
+        self.sigma_0 = sigma_0
+        self.metric = metric
+
+    def contains(self, weight: ch.Tensor) -> bool:
+        offset = (weight.detach() - self.anchor).double()
+        spread = float((offset * (self.sigma_0.double() @ offset)).sum())
+        return spread <= cast(float, self.radius) ** 2
+
+    def project(self, weight: ch.Tensor) -> ch.Tensor:
+        """Return the nearest point of the set to weight in the metric's norm."""
+        if self.contains(weight):
+            return weight
+        chol = ch.linalg.cholesky(self.sigma_0.double())  # pylint: disable=not-callable
+        half = ch.linalg.solve_triangular(chol, self.metric.double(), upper=False)  # pylint: disable=not-callable
+        whitened = ch.linalg.solve_triangular(chol, half.T, upper=False)  # pylint: disable=not-callable
+        spectrum, basis = ch.linalg.eigh((whitened + whitened.T) / 2.0)  # pylint: disable=not-callable
+        target = basis.T @ chol.T @ (weight.detach() - self.anchor).double()
+        mass = (spectrum[:, None] * target).pow(2).sum(1)
+        radius = cast(float, self.radius)
+        # At mu = high every coordinate already lies within the sphere.
+        low, high = 0.0, float(mass.sum().sqrt()) / radius
+        for _ in range(self.bisection_steps):
+            middle = (low + high) / 2.0
+            if float((mass / (spectrum + middle).pow(2)).sum()) > radius**2:
+                low = middle
+            else:
+                high = middle
+        shrunk = (spectrum / (spectrum + high))[:, None] * target
+        offset = ch.linalg.solve_triangular(chol.T, basis @ shrunk, upper=True)  # pylint: disable=not-callable
+        return (self.anchor + offset).to(weight.dtype)
 
 
 class UnknownVarianceSet(delphi.projection_sets.ProjectionSet):

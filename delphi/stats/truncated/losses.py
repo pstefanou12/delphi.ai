@@ -1,7 +1,6 @@
 # Author: pstefanou12@
 """Autograd loss functions for truncated regression and classification models."""
 
-import math
 from typing import cast
 
 import torch as ch
@@ -148,102 +147,53 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
 
 
 class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Gradient of the negative population log likelihood for truncated regression.
+    """Switching gradient of the truncated NLL of unit-variance responses.
 
-    Uses known noise variance and switches between censor-aware and
-    censor-oblivious gradient depending on the acceptance rate.
+    Per sample, the sampler draws latents ``z ~ N(h, I)`` and keeps those phi
+    admits. When at least ``2 gamma`` of the draws are kept, the gradient in
+    h is the censor-aware ``mean(kept z) - y``, an unbiased estimate of the
+    truncated NLL's ``E[z | S] - y``; otherwise it is the censor-oblivious
+    ``h - y``. The loss is the matching NLL, ``||y - h||^2 / 2`` plus, when
+    censor-aware, the log of the kept fraction. Returns one loss per sample;
+    the caller reduces.
     """
 
     @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,arguments-differ
+    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
         ctx,
         pred,
         targ,
         phi,
-        c_gamma,
-        alpha,
-        T,  # pylint: disable=invalid-name
-        noise_var,
-        num_samples=10,
-        eps=1e-5,
+        gamma,
+        sampler: sampling.GaussianSampler,
     ):
-        """Compute switch loss.
+        """Compute each sample's loss and its switched gradient.
 
         Args:
-            pred: Size (batch_size, d) regression model predictions.
-            targ: Size (batch_size, d) regression target values.
-            phi: Dependent variable membership oracle.
-            c_gamma: Large constant >= 0.
-            alpha: Survival probability.
-            T: Number of samples within dataset.
-            noise_var: Noise distribution variance parameter.
-            num_samples: Number of samples per batch element in rejection
-                sampling.
-            eps: Denominator error constant to avoid divide by zero.
+            pred: Predictions h, shaped (n, k).
+            targ: Observed responses, shaped (n, k).
+            phi: Truncation oracle over latents shaped (n, m, k).
+            gamma: Half the kept fraction above which the gradient is
+                censor-aware.
+            sampler: Draws the latents; its kept fraction is the test's
+                estimate of the survival mass, so it must draw a fixed
+                number per sample.
+
+        Returns:
+            The losses, shaped (n,).
         """
-        stacked = pred[None, ...].repeat(num_samples, 1, 1)
-        M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
-            ch.zeros(pred[0].size(0)), noise_var
-        )
-        result = SwitchGrad.survival_test(pred, phi, c_gamma, alpha, T)
-
-        noised = stacked + M.sample(stacked.size()[:-1])
-
-        filtered = phi(noised)
-        z_ = (filtered * noised).sum(dim=0) / (filtered.sum(dim=0) + eps)
-
-        z = result.float() * z_ + (~result).float() * pred
-
-        ctx.save_for_backward(pred, targ, z)
-        loss = -0.5 * (targ - pred).norm(p=2, keepdim=True, dim=-1).pow(2) + 0.5 * (
-            z - pred
-        ).norm(p=2, keepdim=True, dim=-1).pow(2)
-        return loss.mean(0)
+        moments = sampler.moments(pred, ch.ones(pred.size(1)), phi)
+        aware = moments.mass >= 2.0 * gamma
+        latent = ch.where(aware, moments.mean.to(pred.dtype), pred)
+        ctx.save_for_backward(latent - targ)
+        log_mass = ch.where(aware, ch.log(moments.mass), 0.0).to(pred.dtype)
+        return 0.5 * (targ - pred).pow(2).sum(-1) + log_mass[:, 0]
 
     @staticmethod
-    def survival_test(mu, phi, c_gamma, alpha, T):  # pylint: disable=invalid-name
-        """Return whether each prediction keeps enough mass for the censor-aware gradient.
-
-        Args:
-            mu: Current conditional mean for LDS.
-            phi: Oracle.
-            c_gamma: Constant.
-            alpha: Survival probability.
-            T: Number of timesteps in dataset.
-        """
-        M = ch.distributions.MultivariateNormal(  # pylint: disable=invalid-name
-            ch.zeros(mu[0].size(0)), ch.eye(mu[0].size(0))
-        )
-
-        # Threshold constant.
-        gamma = (alpha / 2) ** c_gamma
-
-        # Number of samples.
-        k = int((4 / gamma) * math.log(T))
-        stacked = mu.repeat(k, 1, 1)
-        noise = M.sample(stacked.size()[:-1])
-        ci = stacked + noise
-        p = phi(ci).float().mean(0)
-        # Check whether the probability that a sample falls within the
-        # truncation set is greater than the survival probability.
-        return p >= (2 * gamma)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of switch loss."""
-        pred, targ, z = ctx.saved_tensors
-        return (
-            (z - targ) / pred.size(0),
-            targ / pred.size(0),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+        """Return the switched gradient in pred."""
+        (grad,) = ctx.saved_tensors
+        return grad_output[:, None] * grad, None, None, None, None
 
 
 def _label_nll(

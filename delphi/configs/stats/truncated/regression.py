@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Configuration models for the truncated regression estimators."""
 
-from typing import Literal, Optional
+from typing import Optional
 
 import pydantic
 
@@ -84,32 +84,32 @@ class TruncatedUnknownVarianceRegressionConfig(TruncatedRegressionConfig):
 
 
 class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):
-    """Configuration for truncated linear dynamical systems (Plevrakis 2021).
+    """Configuration for a truncated linear dynamical system.
 
-    The defaults are the ones this estimator had before the known-variance
-    rework: data consumed in order, a constant step derived from alpha, and
-    no projection or refinement.
+    One pass over the pairs in temporal order, one pair per step, at a
+    constant step: an iterate must not have seen a later pair, or its
+    gradient is biased.
 
     Attributes:
-        c_s: Scaling constant for the dependent-data survival threshold.
-        c_eta: Exponent used to derive the learning rate from alpha.
-        c_gamma: Scaling constant for the gamma bound.
+        c_s: Sets ``s = c_s (sqrt(log(1 / alpha)) + 1)``; the warm-up's
+            covariance divided by s bounds the confidence ellipsoid.
+        c_eta: The step is ``(2 / alpha) ** c_eta``.
+        c_gamma: A step is censor-aware when its sampled survival mass
+            reaches ``2 gamma``, for ``gamma = (alpha / 2) ** c_gamma``.
     """
 
     c_s: float = pydantic.Field(default=10.0, gt=0.0)
-    c_eta: float = pydantic.Field(default=0.5, gt=0.0)
+    c_eta: float = pydantic.Field(default=0.5, ge=0.0)
     c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
 
-    num_samples: int = pydantic.Field(default=50, ge=1)
-    batch_size: int = 50
-    epochs: Optional[int] = pydantic.Field(default=None, ge=1)
-    val: float = pydantic.Field(default=0.2, ge=0.0, le=1.0)
+    batch_size: int = 1
+    epochs: Optional[int] = pydantic.Field(default=1, ge=1)
+    val: float = pydantic.Field(default=0.0, ge=0.0, le=1.0)
     shuffle: bool = False
     constant: bool = True
     scheduler: Optional[str] = None
     avg_burn_in: float = pydantic.Field(default=0.5, ge=0.0, lt=1.0)
     refine_steps: int = pydantic.Field(default=0, ge=0)
-    projection_set: Literal["default", "none"] = "none"
 
 
 class TruncatedLassoRegressionConfig(TruncatedLinearModelConfig):
