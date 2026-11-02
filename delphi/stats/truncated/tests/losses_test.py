@@ -71,6 +71,26 @@ def test_truncated_gaussian_nll_hessian_weights_the_design_by_the_variance():
     assert ch.allclose(hessian, expected, atol=1e-2), (hessian, expected)
 
 
+# The test's draws: a fixed number per sample, so the kept fraction is the mass.
+_TEST = sampling.GaussianRejectionSampler(num_samples=200_000, min_accepted=0)
+
+
+def test_switch_grad_switches_at_twice_gamma():
+    """Masses Phi(-3) = 0.001 and Phi(1) = 0.84 fall either side of 0.8."""
+    ch.manual_seed(0)
+    pred = ch.tensor([[-3.0], [1.0]], requires_grad=True)
+    targ = ch.tensor([[0.5], [2.0]])
+    loss = losses.SwitchGrad.apply(pred, targ, _positive, 0.4, _TEST)
+    (grad,) = ch.autograd.grad(loss.sum(), pred)
+    oblivious = pred.detach() - targ
+    aware = pred.detach() + _mills(pred.detach()) - targ
+    assert ch.allclose(grad[0], oblivious[0]), grad
+    assert ch.allclose(grad[1], aware[1], atol=5e-3), (grad, aware)
+    residual = 0.5 * (targ - pred.detach()).pow(2).flatten()
+    expected = residual + ch.tensor([0.0, math.log(_STANDARD.cdf(ch.tensor(1.0)))])
+    assert ch.allclose(loss.detach(), expected, atol=5e-3), (loss, expected)
+
+
 class _PositiveHalfLine(sampling.GaussianSampler):
     """Exact mass and mean of unit-variance latents given ``z > 0``."""
 

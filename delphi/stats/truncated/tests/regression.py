@@ -3,16 +3,16 @@
 
 Any model fit to ``y = w^T x + b + e`` observed through a set on y, the
 known- and unknown-variance regressions and the lasso among them:
-``simulate`` draws such a sample with known parameters, and
-``assert_recovers`` fits a model to it and checks every estimate the model
-returns against the truth. Models observing something else, such as the
+``simulate`` draws such a sample with known parameters, ``simulate_dynamics`` the observed pairs of a linear
+dynamical system's trajectory, and ``assert_recovers`` fits a model to
+either and checks every estimate the model returns against the truth. Models observing something else, such as the
 classifiers' labels, get a harness module of their own.
 """
 
 from collections.abc import Callable, Sequence
 import dataclasses
 import math
-from typing import Optional
+from typing import Optional, Union
 
 import torch as ch
 
@@ -29,9 +29,9 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
     Attributes:
         X: Observed covariates, shaped (n, d).
         y: Observed responses, shaped (n, 1).
-        coef: True coefficients, shaped (1, d).
-        intercept: True intercept, shaped (1,).
-        noise_var: True noise variance.
+        coef: True coefficients, shaped (k, d).
+        intercept: True intercept, shaped (k,).
+        noise_var: True noise variance, or covariance shaped (k, k).
         phi: The truncation oracle the sample passed.
         alpha: Fraction of the draws that survived.
         ols_coef: OLS coefficients on the observed sample.
@@ -42,7 +42,7 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
     y: ch.Tensor
     coef: ch.Tensor
     intercept: ch.Tensor
-    noise_var: float
+    noise_var: Union[float, ch.Tensor]
     phi: Callable
     alpha: float
     ols_coef: ch.Tensor
@@ -115,6 +115,53 @@ def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     )
 
 
+def simulate_dynamics(
+    transition: ch.Tensor,
+    phi: Callable,
+    steps: int,
+    *,
+    noise_var: Optional[ch.Tensor] = None,
+    seed: int = 0,
+) -> Simulation:
+    """Run ``x_{t+1} = A x_t + w_t`` from 0 and keep the pairs phi observes.
+
+    Args:
+        transition: The A, shaped (d, d).
+        phi: Oracle over states shaped (n, m, d), returning a mask.
+        steps: Length of the trajectory.
+        noise_var: Covariance of w_t, shaped (d, d); identity if None.
+        seed: Seed for the draws.
+
+    Returns:
+        The pairs ``(x_t, x_{t+1})`` with both states observed, in temporal
+        order, as X and y. alpha is the fraction of observed states whose
+        successor is observed too, and the OLS fit has no intercept.
+    """
+    ch.manual_seed(seed)
+    dims = transition.size(0)
+    covariance = ch.eye(dims) if noise_var is None else noise_var
+    noise = ch.randn(steps, dims) @ ch.linalg.cholesky(covariance).T  # pylint: disable=not-callable
+    states = [ch.zeros(dims)]
+    for step in range(steps):
+        states.append(transition @ states[-1] + noise[step])
+    trajectory = ch.stack(states)
+    observed = phi(trajectory[:, None, :]).reshape(-1)
+    paired = observed[:-1] & observed[1:]
+    X, y = trajectory[:-1][paired], trajectory[1:][paired]  # pylint: disable=invalid-name
+    ols = ch.linalg.lstsq(X.double(), y.double()).solution.T.float()  # pylint: disable=not-callable
+    return Simulation(
+        X=X,
+        y=y,
+        coef=transition,
+        intercept=ch.zeros(dims),
+        noise_var=1.0 if noise_var is None else noise_var,
+        phi=phi,
+        alpha=int(paired.sum()) / int(observed[:-1].sum()),
+        ols_coef=ols,
+        ols_intercept=ch.zeros(dims),
+    )
+
+
 def assert_recovers(
     model,
     simulation: Simulation,
@@ -156,7 +203,8 @@ def assert_recovers(
             )
         if getattr(model, "noise_var", 1.0) is None:
             variance = float(getattr(model, f"{prefix}variance_"))
-            assert abs(variance - simulation.noise_var) <= variance_tolerance, (
+            truth = float(simulation.noise_var)
+            assert abs(variance - truth) <= variance_tolerance, (
                 f"{prefix}variance_: {variance:.4f} against "
                 f"{simulation.noise_var}, beyond {variance_tolerance}"
             )
