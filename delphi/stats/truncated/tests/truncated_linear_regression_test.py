@@ -367,22 +367,25 @@ def _fit_dynamics(
     simulation: regression.Simulation,
     tolerance: float,
     ols_margin: float,
+    *,
     alpha: Optional[float] = None,
+    fit_intercept: bool = True,
 ) -> None:
     """Fit dependent regression to a trajectory's pairs and check its estimates.
 
     Args:
-        simulation: The pairs and their truth.
-        tolerance: As ``regression.assert_recovers``.
+        simulation: The pairs and their truth, A as coef and b as intercept.
+        tolerance: As ``regression.assert_recovers``, over A and b together.
         ols_margin: As ``regression.assert_recovers``.
         alpha: The model's alpha; the observed pairs' fraction if None.
+        fit_intercept: Whether the model fits b.
     """
     model = truncated_linear_regression_module.TruncatedLinearRegression(
         simulation.phi,
         simulation.alpha if alpha is None else alpha,
         noise_var=simulation.noise_var,
         dependent=True,
-        fit_intercept=False,
+        fit_intercept=fit_intercept,
     )
     regression.assert_recovers(model, simulation, tolerance, ols_margin=ols_margin)
 
@@ -391,7 +394,14 @@ def test_1d_half_line():
     simulation = regression.simulate_dynamics(
         ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000
     )
-    _fit_dynamics(simulation, 0.03, 0.1)
+    _fit_dynamics(simulation, 0.15, 0.13)
+
+
+def test_1d_half_line_no_intercept():
+    simulation = regression.simulate_dynamics(
+        ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000, fit_intercept=False
+    )
+    _fit_dynamics(simulation, 0.012, 0.035, fit_intercept=False)
 
 
 # alpha is a lower bound on the survival mass, here well below it.
@@ -399,19 +409,30 @@ def test_1d_half_line_loose_alpha():
     simulation = regression.simulate_dynamics(
         ch.tensor([[0.5]]), _half_space([1.0], 0.5), 20000
     )
-    _fit_dynamics(simulation, 0.065, 0.2, alpha=0.2)
+    _fit_dynamics(simulation, 0.17, 0.15, alpha=0.2)
 
 
 def test_2d_half_plane():
     simulation = regression.simulate_dynamics(
         _TRANSITION_2D, _half_space([1.0, 1.0], 1.0), 20000
     )
-    _fit_dynamics(simulation, 0.09, 0.8)
+    _fit_dynamics(simulation, 0.18, 0.2)
+
+
+# The drift moves the stationary mean (I - A)^-1 b against the set.
+def test_2d_half_plane_drift():
+    simulation = regression.simulate_dynamics(
+        _TRANSITION_2D,
+        _half_space([1.0, 1.0], 1.0),
+        40000,
+        drift=ch.tensor([0.5, -0.3]),
+    )
+    _fit_dynamics(simulation, 0.15, 0.14)
 
 
 def test_2d_quadrant():
     simulation = regression.simulate_dynamics(_TRANSITION_2D, _quadrant, 40000)
-    _fit_dynamics(simulation, 0.04, 0.15)
+    _fit_dynamics(simulation, 0.12, 0.12)
 
 
 def test_2d_half_plane_correlated_noise():
@@ -421,14 +442,14 @@ def test_2d_half_plane_correlated_noise():
         20000,
         noise_var=ch.tensor([[2.0, 0.8], [0.8, 1.0]]),
     )
-    _fit_dynamics(simulation, 0.075, 0.55)
+    _fit_dynamics(simulation, 0.11, 0.08)
 
 
 # Without truncation least squares on every pair is the MLE, while the
-# descent steps on half of them at a step above 1.
+# descent steps on three quarters of them at a step above 1.
 def test_2d_no_truncation():
     simulation = regression.simulate_dynamics(_TRANSITION_2D, _everything, 5000)
-    _fit_dynamics(simulation, 0.07, 4.0)
+    _fit_dynamics(simulation, 0.065, 2.7)
 
 
 @pytest.mark.slow
@@ -436,7 +457,7 @@ def test_10d_half_space():
     simulation = regression.simulate_dynamics(
         _transition_10d(), _half_space([1.0] + [0.0] * 9, 0.0), 80000
     )
-    _fit_dynamics(simulation, 0.16, 0.65)
+    _fit_dynamics(simulation, 0.17, 0.21)
 
 
 def test_dependent_alpha_unknown_raises():

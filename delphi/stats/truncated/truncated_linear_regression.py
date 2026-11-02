@@ -17,15 +17,18 @@
   MLE, whose covariance is the inverse information.
 - ``dependent=True``: Plevrakis, "Learning from Censored and Dependent
   Data: The case of Linear Dynamics" (arXiv:2104.05087), a linear dynamical
-  system ``x_{t+1} = A x_t + w_t`` seen through the pairs of consecutive
-  states both observed, in temporal order. Algorithm 4: least squares on
-  the first half of the pairs gives the start ``A_0`` and the confidence
-  ellipsoid ``||A - A_0||_{Sigma_0} <= 1``, for ``Sigma_0`` their covariance
-  divided by s. SON-SG (Algorithm 1) then takes one step per pair of the
-  second half, ``A - eta g Sigma_i^-1`` with ``Sigma_i = Sigma_{i-1} + x
-  x^T``, projected onto the ellipsoid in the ``Sigma_i`` norm; g is
-  SwitchGrad's (Algorithms 2 and 3). The paper's noise is N(0, I); a known
-  covariance ``L L^T`` is reduced to it by fitting ``L^-1 x_{t+1}``.
+  system ``x_{t+1} = A x_t + w_t``, with a drift b as the intercept, seen
+  through the pairs of consecutive states both observed, in temporal
+  order. Algorithm 4: least squares on the leading pairs, a quarter by
+  default where the paper takes half (the ``warm_start_fraction``
+  hyperparameter), gives the start ``A_0`` and the confidence ellipsoid
+  ``||A - A_0||_{Sigma_0} <= 1``, for ``Sigma_0`` their covariance divided
+  by s. SON-SG (Algorithm 1) then takes one step per remaining pair,
+  ``A - eta g Sigma_i^-1`` with ``Sigma_i = Sigma_{i-1} + x x^T``,
+  projected onto the ellipsoid in the ``Sigma_i`` norm; g is SwitchGrad's
+  (Algorithms 2 and 3). With an intercept, x carries a trailing 1 and A
+  the column b. The paper's noise is N(0, I); a known covariance
+  ``L L^T`` is reduced to it by fitting ``L^-1 x_{t+1}``.
 """
 
 from collections.abc import Callable
@@ -199,13 +202,16 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         covariance instead.
 
         Raises:
-            ValueError: If dependent data's warm-up half has no more pairs
+            ValueError: If dependent data's warm-up has no more pairs
                 than the design matrix has columns.
         """
         self.response_scale = 1.0
         if self.dependent:
             self._check_inputs(X, y)
-            self._warmup_size = X.size(0) // 2
+            lds = cast(
+                regression.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
+            )
+            self._warmup_size = int(lds.warm_start_fraction * X.size(0))
             if self._warmup_size <= X.size(1) + int(self.fit_intercept):
                 raise ValueError(
                     f"the warm-up's {self._warmup_size} pairs cannot fit "
@@ -244,7 +250,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         return self.phi(z * self.response_scale)
 
     def _calc_emp_model(self, X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
-        """Set emp_weight to least squares on dependent data's warm-up half."""
+        """Set emp_weight to least squares on dependent data's warm-up pairs."""
         if self.dependent and self.emp_weight is None:
             warmup = self._warmup_size
             ols = ch.linalg.lstsq(X[:warmup], y[:warmup]).solution  # pylint: disable=not-callable
@@ -253,7 +259,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         super()._calc_emp_model(X, y)
 
     def _loaders(self, X: ch.Tensor, y: ch.Tensor, config):  # pylint: disable=invalid-name
-        """Return the loaders; dependent data's descent skips the warm-up half."""
+        """Return the loaders; dependent data's descent skips the warm-up."""
         if self.dependent:
             X, y = X[self._warmup_size :], y[self._warmup_size :]  # pylint: disable=invalid-name
         return super()._loaders(X, y, config)
@@ -418,7 +424,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def evaluate(self) -> dict:
         """Return the loss over the pairs the descent steps on.
 
-        Dependent data skips the warm-up's half, and takes the pairs in
+        Dependent data skips the warm-up, and takes the pairs in
         chunks, since each draws as many latents as the test.
         """
         if not self.dependent:

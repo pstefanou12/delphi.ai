@@ -120,45 +120,51 @@ def simulate_dynamics(
     phi: Callable,
     steps: int,
     *,
+    drift: Optional[ch.Tensor] = None,
     noise_var: Optional[ch.Tensor] = None,
+    fit_intercept: bool = True,
     seed: int = 0,
 ) -> Simulation:
-    """Run ``x_{t+1} = A x_t + w_t`` from 0 and keep the pairs phi observes.
+    """Run ``x_{t+1} = A x_t + b + w_t`` from 0 and keep the pairs phi observes.
 
     Args:
         transition: The A, shaped (d, d).
         phi: Oracle over states shaped (n, m, d), returning a mask.
         steps: Length of the trajectory.
+        drift: The b, shaped (d,); zero if None.
         noise_var: Covariance of w_t, shaped (d, d); identity if None.
+        fit_intercept: Whether the OLS fit has an intercept.
         seed: Seed for the draws.
 
     Returns:
         The pairs ``(x_t, x_{t+1})`` with both states observed, in temporal
         order, as X and y. alpha is the fraction of observed states whose
-        successor is observed too, and the OLS fit has no intercept.
+        successor is observed too.
     """
     ch.manual_seed(seed)
     dims = transition.size(0)
+    drift = ch.zeros(dims) if drift is None else drift
     covariance = ch.eye(dims) if noise_var is None else noise_var
     noise = ch.randn(steps, dims) @ ch.linalg.cholesky(covariance).T  # pylint: disable=not-callable
     states = [ch.zeros(dims)]
     for step in range(steps):
-        states.append(transition @ states[-1] + noise[step])
+        states.append(transition @ states[-1] + drift + noise[step])
     trajectory = ch.stack(states)
     observed = phi(trajectory[:, None, :]).reshape(-1)
     paired = observed[:-1] & observed[1:]
     X, y = trajectory[:-1][paired], trajectory[1:][paired]  # pylint: disable=invalid-name
-    ols = ch.linalg.lstsq(X.double(), y.double()).solution.T.float()  # pylint: disable=not-callable
+    design = ch.cat([X, ch.ones(X.size(0), 1)], dim=1) if fit_intercept else X
+    ols = ch.linalg.lstsq(design.double(), y.double()).solution.T.float()  # pylint: disable=not-callable
     return Simulation(
         X=X,
         y=y,
         coef=transition,
-        intercept=ch.zeros(dims),
+        intercept=drift,
         noise_var=1.0 if noise_var is None else noise_var,
         phi=phi,
         alpha=int(paired.sum()) / int(observed[:-1].sum()),
-        ols_coef=ols,
-        ols_intercept=ch.zeros(dims),
+        ols_coef=ols[:, :dims],
+        ols_intercept=ols[:, dims] if fit_intercept else ch.zeros(dims),
     )
 
 

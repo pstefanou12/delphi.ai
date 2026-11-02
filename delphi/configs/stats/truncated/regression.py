@@ -96,11 +96,13 @@ class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):
         c_eta: The step is ``(2 / alpha) ** c_eta``.
         c_gamma: A step is censor-aware when its sampled survival mass
             reaches ``2 gamma``, for ``gamma = (alpha / 2) ** c_gamma``.
+        warm_start_fraction: Share of the leading pairs fit by least squares.
     """
 
     c_s: float = pydantic.Field(default=10.0, gt=0.0)
     c_eta: float = pydantic.Field(default=0.5, ge=0.0)
     c_gamma: float = pydantic.Field(default=2.0, gt=0.0)
+    warm_start_fraction: float = pydantic.Field(default=0.25, gt=0.0, lt=1.0)
 
     batch_size: int = 1
     epochs: Optional[int] = pydantic.Field(default=1, ge=1)
