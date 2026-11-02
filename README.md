@@ -375,9 +375,9 @@ model.predict_proba(X[:5])
 
 - **`phi` sees the latent vector**, shaped `(n, m, K)`, and returns a mask
   or a survival probability shaped `(n, m)`.
-- **`alpha`** bounds every sample's mass on each label, at most 1/K. The
-  projection set keeps every sample's untruncated label probabilities above
-  `alpha^2`, unless the `radius` hyperparameter gives `log(1 / alpha')`.
+- **`alpha`** bounds every sample's mass on each label, at most 1/K. It
+  sets no projection set: the descent is unconstrained, since no analysis
+  yet shows that the multinomial needs one.
 - **`sampler`** draws each label's latents given that label wins.
 - **`batch_size`** is 100 by default. The first step's gradient noise grows
   with the (K - 1)(d + 1) parameters, so raise it with them: 1000 for 202.
@@ -467,7 +467,7 @@ the prediction `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_
 adds the oracle, the radius phases, the projection in `step_post_hook` and
 `summary()`. A model supplies its criterion from
 `delphi/stats/truncated/losses.py` (`TruncatedGaussianNLL` for known-variance
-regression), its Hessian and its projection set from
+regression), its Hessian as `_hessian` and its projection set from
 `delphi/projection_sets.py`.
 
 Truncation sets are plain callables. `delphi/oracle.py` holds the stateful

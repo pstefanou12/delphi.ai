@@ -35,9 +35,9 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
 ):
     """Projected SGD on the truncated NLL of a linear model.
 
-    Subclasses supply ``criterion_parameters`` and, to constrain the descent
-    or refine it, ``build_projection_set`` and ``hessian``; ``refine_steps``
-    adds ``StatisticalModel.refine`` after the descent.
+    Subclasses supply ``criterion_parameters``, ``_hessian`` and, to
+    constrain the descent, ``build_projection_set``; ``refine_steps`` adds
+    ``StatisticalModel.refine`` after the descent.
 
     The descent starts from ``emp_weight``: the caller's, else OLS. With
     alpha known the projection radius is fixed and one phase runs. Without
@@ -307,6 +307,17 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     def theta(self) -> ch.Tensor:
         """The trained weight, which FisherLR re-measures curvature at."""
         return self.weight
+
+    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
+        """Return the NLL's mean Hessian over the data, by default at the iterate."""
+        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        weight = self.weight.detach() if theta is None else theta
+        k = linear_model.require_fitted(self.k, "k")
+        return self._hessian(X, weight.reshape(-1, k))
+
+    @abc.abstractmethod
+    def _hessian(self, X: ch.Tensor, weight: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the NLL's mean Hessian over X's rows at weight, shaped (d, k)."""
 
     def summary(self) -> str:
         """Return a plain-text report on the fit.

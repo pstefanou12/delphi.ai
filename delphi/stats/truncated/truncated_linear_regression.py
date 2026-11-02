@@ -331,13 +331,14 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             )
         return projection
 
-    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the Hessian of the NLL, by default at the current weight."""
+    def _hessian(self, X: ch.Tensor, weight: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the NLL's Hessian: in w, or in ``(v, lambda)`` when learned.
+
+        Raises:
+            NotImplementedError: For dependent data.
+        """
         if self.dependent:
-            return super().hessian(theta)
-        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-        weight = self.weight.detach() if theta is None else theta
-        weight = weight.reshape(-1, linear_model.require_fitted(self.k, "k"))
+            raise NotImplementedError(f"{self} has no hessian().")
         if self.noise_var is None:
             return losses.TruncatedGaussianNLL.natural_hessian(
                 X @ weight[:-1] / weight[-1],

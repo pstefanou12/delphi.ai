@@ -219,11 +219,8 @@ class TruncatedClassification(
         rows = [("accuracy of coef_", f"{accuracy:.4f} on the observed sample")]
         return rows + super()._summary_estimates()
 
-    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the NLL's Fisher information, by default at the iterate."""
-        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-        weight = self.weight.detach() if theta is None else theta
-        k = linear_model.require_fitted(self.k, "k")
+    def _hessian(self, X: ch.Tensor, weight: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the NLL's Fisher information."""
         return self.loss.hessian(  # type: ignore[attr-defined]
-            self._latent_mean(X @ weight.reshape(-1, k)), X, self.phi, self.sampler
+            self._latent_mean(X @ weight), X, self.phi, self.sampler
         )
