@@ -17,8 +17,8 @@ import torch.optim.lr_scheduler
 import torch.utils.data
 from tqdm import tqdm
 
-from delphi import configs
-from delphi.delphi import delphi
+from delphi.configs import base
+import delphi.delphi
 from delphi.utils import constants, helpers
 
 
@@ -31,7 +31,7 @@ class RunResult:  # pylint: disable=too-many-instance-attributes
     """
 
     stage: str
-    config: configs.TrainerConfig
+    config: base.TrainerConfig
     param_history: ch.Tensor
     train_losses: ch.Tensor
     val_losses: ch.Tensor
@@ -132,7 +132,7 @@ class Stage:
     """
 
     name: str
-    config: configs.TrainerConfig
+    config: base.TrainerConfig
     criterion: Optional[Callable] = None
     hessian: Optional[Callable[..., ch.Tensor]] = None
     pre_hook: Optional[Callable[[], None]] = None
@@ -143,8 +143,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def __init__(
         self,
-        model: delphi,
-        hyperparameters: configs.TrainerConfig,
+        model: delphi.delphi.DelphiModel,
+        hyperparameters: base.TrainerConfig,
         store: Optional[Store] = None,
     ):
         """Initialize the Trainer.
@@ -154,8 +154,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             hyperparameters: Validated TrainerConfig instance.
             store: Optional cox store for experiment logging.
         """
-        self.model: delphi = model
-        self.hyperparameters: configs.TrainerConfig = hyperparameters
+        self.model: delphi.delphi.DelphiModel = model
+        self.hyperparameters: base.TrainerConfig = hyperparameters
         self.logger: logging.Logger = logging.getLogger(__name__)
         self.store: Optional[Store] = store
 

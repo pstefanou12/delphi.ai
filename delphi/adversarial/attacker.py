@@ -39,7 +39,7 @@ import dill
 import torch as ch
 
 from delphi.adversarial import attack_steps, layers
-from delphi.delphi import delphi
+from delphi.delphi import DelphiModel
 from delphi.utils import constants as consts
 from delphi.utils import helpers
 
@@ -174,7 +174,7 @@ class Attacker(ch.nn.Module):
         est_grad=None,
         mixed_precision=False,
     ):
-        """
+        r"""
         Implementation of forward (finds adversarial examples). Note that
         this does **not** perform inference and should not be called
         directly; refer to :meth:`delphi.adversarial.attacker.AttackerModel.forward`
@@ -356,7 +356,7 @@ class Attacker(ch.nn.Module):
         return adv_ret
 
 
-class AttackerModel(delphi):  # pylint: disable=too-many-instance-attributes,too-many-public-methods,abstract-method
+class AttackerModel(DelphiModel):  # pylint: disable=too-many-instance-attributes,too-many-public-methods,abstract-method
     """
     Wrapper class for adversarial attacks on models. Given any normal
     model (a ``ch.nn.Module`` instance), wrapping it in AttackerModel allows

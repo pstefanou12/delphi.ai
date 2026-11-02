@@ -3,7 +3,8 @@
 
 import torch as ch
 
-from delphi.adversarial import attack_steps, attacker, cifar_models, layers
+from delphi.adversarial import attack_steps, attacker, layers
+from delphi.adversarial.cifar_models import resnet
 
 
 def test_fake_relu_passes_gradient_through_clamp() -> None:
@@ -17,7 +18,7 @@ def test_fake_relu_passes_gradient_through_clamp() -> None:
 
 def test_cifar_resnet_forward_shapes() -> None:
     """A CIFAR ResNet maps 32x32 images to logits, and to latents on request."""
-    model = cifar_models.ResNet18(num_classes=10).eval()
+    model = resnet.ResNet18(num_classes=10).eval()
     images = ch.rand(2, 3, 32, 32)
     with ch.no_grad():
         logits, latent = model(images, with_latent=True)

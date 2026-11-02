@@ -7,7 +7,7 @@ import pytest
 import torch as ch
 import torch.utils.data
 
-from delphi import configs
+from delphi.configs import base
 import delphi.delphi
 import delphi.trainer
 from delphi.utils import constants
@@ -19,10 +19,10 @@ def _squared_error(pred, targ, offset=0.0):
     return ((pred - (targ + offset)) ** 2).mean()
 
 
-class Mean(delphi.delphi.delphi[configs.DelphiConfig]):
+class Mean(delphi.delphi.DelphiModel[base.DelphiConfig]):
     """Estimates a mean by squared error, keeping the base class's hooks."""
 
-    defaults = configs.DelphiConfig
+    defaults = base.DelphiConfig
 
     def __init__(self, hyperparameters: dict):
         super().__init__(hyperparameters)

@@ -1,14 +1,2 @@
 # Author: pstefanou12@
 """ImageNet model definitions for delphi."""
-
-from delphi.adversarial.imagenet_models.vgg import (  # noqa: F401
-    VGG,
-    vgg11,
-    vgg11_bn,
-    vgg13,
-    vgg13_bn,
-    vgg16,
-    vgg16_bn,
-    vgg19,
-    vgg19_bn,
-)

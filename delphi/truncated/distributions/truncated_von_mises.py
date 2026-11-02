@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import von_mises
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedVonMises(
     """Model for truncated von Mises distributions."""
 
     dist = von_mises.VonMises
-    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("loc_", "concentration_")
     # Each coordinate's two natural parameters are coupled.
     independent_coordinates = False

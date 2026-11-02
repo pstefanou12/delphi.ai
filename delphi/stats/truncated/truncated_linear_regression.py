@@ -27,7 +27,7 @@ from typing import Optional, Union, cast
 import torch as ch
 import torch.autograd.functional
 
-from delphi import configs
+from delphi.configs.stats.truncated import regression
 import delphi.projection_sets
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses
@@ -74,7 +74,7 @@ class ConfidenceIntervals:
 
 
 class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
-    TruncatedLinearModel[configs.TruncatedRegressionConfig]
+    TruncatedLinearModel[regression.TruncatedRegressionConfig]
 ):
     """Truncated linear regression ``y = w^T x + b + e``, ``e ~ N(0, sigma^2)``.
 
@@ -91,7 +91,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     # Created by register_buffer during fit.
     Sigma: ch.Tensor  # pylint: disable=invalid-name
 
-    defaults = configs.TruncatedRegressionConfig
+    defaults = regression.TruncatedRegressionConfig
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
@@ -129,9 +129,9 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         if dependent and (noise_var is None or alpha is None):
             raise ValueError("dependent data needs noise_var and alpha.")
         if dependent:
-            self.defaults = configs.TruncatedLinearDynamicalSystemConfig
+            self.defaults = regression.TruncatedLinearDynamicalSystemConfig
         elif noise_var is None:
-            self.defaults = configs.TruncatedUnknownVarianceRegressionConfig
+            self.defaults = regression.TruncatedUnknownVarianceRegressionConfig
         super().__init__(
             hyperparameters, phi, alpha, fit_intercept, emp_weight, rand_seed
         )
@@ -148,7 +148,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         self._information_sampler = sampling.GaussianRejectionSampler(draws, draws)
         if dependent:
             lds = cast(
-                configs.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
+                regression.TruncatedLinearDynamicalSystemConfig, self.hyperparameters
             )
             known = cast(float, alpha)
             self.hyperparameters.lr = (2 / known) ** lds.c_eta
@@ -160,7 +160,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
     def criterion_parameters(self, X: ch.Tensor, y: ch.Tensor) -> list:  # pylint: disable=invalid-name
         hp = self.hyperparameters
         if self.dependent:
-            lds = cast(configs.TruncatedLinearDynamicalSystemConfig, hp)
+            lds = cast(regression.TruncatedLinearDynamicalSystemConfig, hp)
             return [
                 self.phi,
                 lds.c_gamma,
@@ -232,7 +232,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         flat = self._preconditioner @ grad.reshape(-1).to(self._preconditioner.dtype)
         step = flat.reshape(grad.shape).to(grad.dtype)
         hp = cast(
-            configs.TruncatedUnknownVarianceRegressionConfig, self.hyperparameters
+            regression.TruncatedUnknownVarianceRegressionConfig, self.hyperparameters
         )
         scale = ch.ones_like(step)
         scale[-1] = hp.variance_lr_scale

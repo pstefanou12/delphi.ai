@@ -13,11 +13,9 @@ from cox.store import Store
 import numpy as np
 import torch as ch
 
-from delphi import configs
+from delphi.configs.stats.truncated import lqr, regression
 from delphi.stats import linear_model
-from delphi.stats.truncated.truncated_linear_regression import (
-    TruncatedLinearRegression,
-)
+from delphi.stats.truncated import truncated_linear_regression
 from delphi.utils import helpers
 
 logger = logging.getLogger(__name__)
@@ -53,7 +51,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             m (int): input dimension of matrix B; must satisfy m >= d
             rand_seed (int): random seed for reproducibility
         """
-        self.hyperparameters = configs.TruncatedLQRConfig(**hyperparameters)
+        self.hyperparameters = lqr.TruncatedLQRConfig(**hyperparameters)
         assert m >= d, f"m must be greater than or equal to d; d: {d} and m: {m}"
         assert (
             self.hyperparameters.target_thickness != float("inf")
@@ -106,7 +104,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
         # defaults from overriding the dynamical-system ones, which differ
         # deliberately: shuffle is False and constant is True there.
         settings = self.hyperparameters.model_dump(exclude_unset=True)
-        fields = set(configs.TruncatedLinearDynamicalSystemConfig.model_fields)
+        fields = set(regression.TruncatedLinearDynamicalSystemConfig.model_fields)
         return {key: value for key, value in settings.items() if key in fields}
 
     def fit(self):
@@ -152,13 +150,15 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if X.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", X.size(0))
 
-        self.trunc_lds_phase_one = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self._lds_hyperparameters(),
-            self.hyperparameters.phi,
-            self.hyperparameters.alpha,
-            noise_var=self.gen_data.noise_var,
-            dependent=True,
-            rand_seed=self.rand_seed,
+        self.trunc_lds_phase_one = (
+            truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+                self._lds_hyperparameters(),
+                self.hyperparameters.phi,
+                self.hyperparameters.alpha,
+                noise_var=self.gen_data.noise_var,
+                dependent=True,
+                rand_seed=self.rand_seed,
+            )
         )
         self.trunc_lds_phase_one.fit(X, Y)
         self.A_hat_ = linear_model.require_fitted(
@@ -197,13 +197,15 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             if U.size(0) % 100 == 0:
                 logger.info("total number of samples: %s", U.size(0))
 
-        self.trunc_lds_phase_two = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-            self._lds_hyperparameters(),
-            self.hyperparameters.phi,
-            self.hyperparameters.alpha,
-            noise_var=self.gen_data.noise_var,
-            dependent=True,
-            rand_seed=self.rand_seed,
+        self.trunc_lds_phase_two = (
+            truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+                self._lds_hyperparameters(),
+                self.hyperparameters.phi,
+                self.hyperparameters.alpha,
+                noise_var=self.gen_data.noise_var,
+                dependent=True,
+                rand_seed=self.rand_seed,
+            )
         )
         self.trunc_lds_phase_two.fit(U, Y)
         self.B_hat_ = linear_model.require_fitted(
@@ -403,14 +405,16 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
             feat_concat = ch.cat([XU_concat, XX_concat])
             y_concat = ch.cat([Yu, Yx])
 
-            self.trunc_lds_phase_three = TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
-                self._lds_hyperparameters(),
-                self.hyperparameters.phi,
-                self.hyperparameters.alpha,
-                noise_var=self.gen_data.noise_var,
-                emp_weight=coef_concat,
-                dependent=True,
-                rand_seed=self.rand_seed,
+            self.trunc_lds_phase_three = (
+                truncated_linear_regression.TruncatedLinearRegression(  # pylint: disable=attribute-defined-outside-init
+                    self._lds_hyperparameters(),
+                    self.hyperparameters.phi,
+                    self.hyperparameters.alpha,
+                    noise_var=self.gen_data.noise_var,
+                    emp_weight=coef_concat,
+                    dependent=True,
+                    rand_seed=self.rand_seed,
+                )
             )
             self.trunc_lds_phase_three.fit(feat_concat.detach(), y_concat.detach())
 

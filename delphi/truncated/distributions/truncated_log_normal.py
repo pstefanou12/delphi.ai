@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import log_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -21,7 +23,7 @@ class TruncatedLogNormal(
     # Each coordinate's loc and scale are coupled, so the Hessian is
     # block-diagonal and its spectrum needs eigenvalues.
     independent_coordinates = False
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("loc_", "scale_")
 
     def __init__(

@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    inverse_gaussian as inverse_gaussian_configs,
+)
 from delphi.exponential_family import inverse_gaussian
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedInverseGaussian(
     """Model for truncated inverse Gaussian distributions."""
 
     dist = inverse_gaussian.InverseGaussian
-    defaults = configs.TruncatedInverseGaussianConfig
+    defaults = inverse_gaussian_configs.TruncatedInverseGaussianConfig
     estimate_suffixes = ("loc_", "concentration_")
     # Each coordinate's x and 1 / x are correlated, so the Hessian is
     # block-diagonal and its spectrum needs eigenvalues.

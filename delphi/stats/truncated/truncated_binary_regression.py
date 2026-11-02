@@ -12,7 +12,7 @@ from typing import Optional
 
 import torch as ch
 
-from delphi import configs
+from delphi.configs.stats.truncated import classification
 import delphi.projection_sets
 from delphi.stats.truncated.truncated_classification import (
     TruncatedClassification,
@@ -25,7 +25,7 @@ _INTERIOR = 1e-6
 
 
 class TruncatedBinaryRegression(
-    TruncatedClassification[configs.TruncatedBinaryRegressionConfig]
+    TruncatedClassification[classification.TruncatedBinaryRegressionConfig]
 ):
     """Truncated binary regression with a known noise law.
 
@@ -33,7 +33,7 @@ class TruncatedBinaryRegression(
     ``phi`` sees latents shaped (n, m, 1); alpha is at most 1/2.
     """
 
-    defaults = configs.TruncatedBinaryRegressionConfig
+    defaults = classification.TruncatedBinaryRegressionConfig
     noise: sampling.LatentNoise
     sampler: sampling.LatentSampler
     default_sampler = sampling.StratifiedLatentSampler

@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import logarithmic
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -21,7 +23,7 @@ class TruncatedLogarithmic(
     """Model for truncated logarithmic distributions."""
 
     dist = logarithmic.Logarithmic
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(

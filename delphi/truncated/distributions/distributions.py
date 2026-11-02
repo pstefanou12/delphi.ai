@@ -3,11 +3,11 @@
 
 from typing import Generic
 
-from delphi import configs
-from delphi.delphi import delphi
+from delphi.configs import base
+from delphi.delphi import DelphiModel
 
 
-class distributions(delphi[configs._ConfigT], Generic[configs._ConfigT]):  # pylint: disable=invalid-name,abstract-method
+class distributions(DelphiModel[base.ConfigT], Generic[base.ConfigT]):  # pylint: disable=invalid-name,abstract-method
     """Parent class for distribution models."""
 
     def __init__(self, hyperparameters: dict):

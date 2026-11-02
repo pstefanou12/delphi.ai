@@ -7,7 +7,7 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import (
     inverse_gamma_unknown_concentration as unknown_shape,
 )
@@ -21,7 +21,7 @@ class TruncatedInverseGammaUnknownConcentration(
 
     dist = unknown_shape.InverseGammaUnknownConcentration
     # 1 / x is Gamma, so log x and 1 / x couple as the Gamma's log x and x do.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration_", "rate_")
     # Each coordinate's shape and rate are coupled.
     independent_coordinates = False

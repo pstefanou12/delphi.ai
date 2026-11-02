@@ -6,7 +6,9 @@ from typing import Optional
 
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import boolean_product
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -17,7 +19,7 @@ class TruncatedBooleanProduct(
     """Model for truncated boolean product distributions to be passed into trainer."""
 
     dist = boolean_product.BooleanProduct
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(

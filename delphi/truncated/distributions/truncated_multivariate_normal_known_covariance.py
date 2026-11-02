@@ -8,7 +8,7 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import multivariate_normal
 from delphi.exponential_family import multivariate_normal_known_covariance
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -22,7 +22,7 @@ class TruncatedMultivariateNormalKnownCovariance(
         covariance_matrix: Known covariance matrix supplied at construction.
     """
 
-    defaults = configs.TruncatedMultivariateNormalConfig
+    defaults = multivariate_normal.TruncatedMultivariateNormalConfig
     estimate_suffixes = ("loc_",)
 
     def __init__(

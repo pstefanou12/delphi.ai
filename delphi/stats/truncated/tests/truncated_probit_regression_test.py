@@ -13,7 +13,7 @@ from typing import Optional
 import pytest
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_probit_regression
 from delphi.stats.truncated.tests import classification
 from delphi.truncated import sampling
 
@@ -34,7 +34,7 @@ def _fit(
     alpha_known: bool = True,
     naive_margin: Optional[float] = 0.5,
     **hyperparameters,
-) -> stats.TruncatedProbitRegression:
+) -> truncated_probit_regression.TruncatedProbitRegression:
     """Fit truncated probit regression to a simulation and check its estimates.
 
     Args:
@@ -47,7 +47,7 @@ def _fit(
     Returns:
         The fitted model.
     """
-    model = stats.TruncatedProbitRegression(
+    model = truncated_probit_regression.TruncatedProbitRegression(
         hyperparameters, simulation.phi, simulation.alpha if alpha_known else None
     )
     classification.assert_recovers(
@@ -123,10 +123,10 @@ def test_10d_seeds(seed):
 
 def test_alpha_above_one_half_raises():
     with pytest.raises(ValueError, match="alpha"):
-        stats.TruncatedProbitRegression({}, _SIMPLE, 0.6)
+        truncated_probit_regression.TruncatedProbitRegression({}, _SIMPLE, 0.6)
 
 
 def test_one_label_raises():
-    model = stats.TruncatedProbitRegression({}, _SIMPLE)
+    model = truncated_probit_regression.TruncatedProbitRegression({}, _SIMPLE)
     with pytest.raises(ValueError, match="one label"):
         model.fit(ch.randn(10, 2), ch.ones(10, 1))

@@ -276,7 +276,7 @@ toward the set. All models live in `delphi.stats`.
 ```python
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_linear_regression
 
 X = ch.randn(20000, 10)
 y = X @ ch.ones(10, 1) + 0.5 + ch.randn(20000, 1)
@@ -287,7 +287,7 @@ def phi(z):
 
 
 kept = phi(y).flatten()
-model = stats.TruncatedLinearRegression(
+model = truncated_linear_regression.TruncatedLinearRegression(
     {}, phi, kept.float().mean().item(), noise_var=1.0
 )
 model.fit(X[kept], y[kept])
@@ -328,7 +328,7 @@ and keep it only where `phi` admits the latent `w^T x + b + e`.
 ```python
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_probit_regression
 
 X = ch.randn(20000, 10)
 z = X @ ch.ones(10, 1) / 3.0 + 0.5 + ch.randn(20000, 1)
@@ -340,7 +340,7 @@ def phi(z):
 
 kept = phi(z).flatten()
 y = (z >= 0).float()
-model = stats.TruncatedProbitRegression({}, phi)
+model = truncated_probit_regression.TruncatedProbitRegression({}, phi)
 model.fit(X[kept], y[kept])
 model.coef_, model.intercept_
 model.predict_proba(X[:5])
@@ -364,7 +364,7 @@ are zero, so `coef_` holds classes 1 to K - 1.
 import torch as ch
 import torch.nn.functional
 
-from delphi import stats
+from delphi.stats.truncated import truncated_multinomial_logistic_regression
 
 X = ch.randn(20000, 10)
 coef = ch.randn(2, 10) / 3.0
@@ -380,7 +380,7 @@ def phi(z):
 
 kept = phi(z)
 y = z.argmax(1, keepdim=True)
-model = stats.TruncatedMultinomialLogisticRegression({}, phi)
+model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression({}, phi)
 model.fit(X[kept], y[kept])
 model.coef_, model.intercept_
 model.predict_proba(X[:5])
@@ -416,7 +416,7 @@ fit*, which each model describes.
 
 ### The trainer
 
-`delphi/trainer.py` fits any model built on the `delphi` base class
+`delphi/trainer.py` fits any model built on the `DelphiModel` base class
 (`delphi/delphi.py`). Its one entry point, `Trainer.train_model`, runs a
 **procedure**:
 
@@ -446,7 +446,7 @@ tolerances, patience, or the model's own `should_stop`.
 
 ### Models
 
-A model subclasses `delphi` and supplies:
+A model subclasses `DelphiModel` and supplies:
 
 | piece | role |
 |---|---|

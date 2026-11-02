@@ -16,7 +16,7 @@ import torch as ch
 import torch.nn
 import torch.utils.data
 
-from delphi import configs
+from delphi.configs.stats.truncated import linear
 import delphi.projection_sets
 from delphi.stats import linear_model
 import delphi.trainer
@@ -24,7 +24,7 @@ from delphi.truncated.distributions import summary
 from delphi.utils import constants, datasets
 
 _TruncatedConfigT = TypeVar(
-    "_TruncatedConfigT", bound=configs.TruncatedLinearModelConfig
+    "_TruncatedConfigT", bound=linear.TruncatedLinearModelConfig
 )
 
 

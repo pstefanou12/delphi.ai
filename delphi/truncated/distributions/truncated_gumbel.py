@@ -8,7 +8,7 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gumbel as gumbel_configs
 from delphi.exponential_family import gumbel
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -22,7 +22,7 @@ class TruncatedGumbel(
         scale (ch.Tensor): Known scale, one per coordinate.
     """
 
-    defaults = configs.TruncatedGumbelConfig
+    defaults = gumbel_configs.TruncatedGumbelConfig
     estimate_suffixes = ("loc_",)
 
     def __init__(

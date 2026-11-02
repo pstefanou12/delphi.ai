@@ -7,7 +7,7 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import wishart
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import helpers
@@ -56,7 +56,7 @@ class TruncatedWishart(
     dist = wishart.Wishart
     # A one-by-one Wishart is the two-parameter Gamma, whose log x and x couple
     # as log det X and X do.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("df_", "covariance_matrix_")
     # Every statistic shares the log determinant, so the Hessian is dense.
     independent_coordinates = False

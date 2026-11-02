@@ -12,11 +12,11 @@ from typing import Generic, Optional, TypeVar, Union
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.stats import linear
 from delphi.statistical_model import StatisticalModel
 from delphi.utils import constants
 
-_LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
+_LinearConfigT = TypeVar("_LinearConfigT", bound=linear.LinearModelConfig)
 _T = TypeVar("_T")
 
 

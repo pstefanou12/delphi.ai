@@ -6,7 +6,9 @@ from typing import Optional
 
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import continuous_bernoulli
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -17,7 +19,7 @@ class TruncatedContinuousBernoulli(
     """Model for truncated continuous Bernoulli distributions."""
 
     dist = continuous_bernoulli.ContinuousBernoulli
-    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(

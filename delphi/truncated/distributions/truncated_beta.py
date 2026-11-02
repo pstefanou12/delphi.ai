@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import beta
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedBeta(
     """Model for truncated Beta distributions."""
 
     dist = beta.Beta
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's a and b are coupled, so the Hessian is block-diagonal
     # and its spectrum needs eigenvalues rather than the diagonal.

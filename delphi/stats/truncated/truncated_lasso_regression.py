@@ -11,15 +11,16 @@ from sklearn import linear_model as sklearn_linear_model
 import torch as ch
 import torch.nn
 
-from delphi import configs, trainer
+from delphi.configs.stats.truncated import regression
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses
+import delphi.trainer
 from delphi.truncated import sampling
 from delphi.utils import datasets
 
 
 class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
-    linear_model.LinearModel[configs.TruncatedLassoRegressionConfig]
+    linear_model.LinearModel[regression.TruncatedLassoRegressionConfig]
 ):
     """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
 
@@ -30,7 +31,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     # Created by register_parameter in pre_phase_hook, which mypy cannot see.
     weight: torch.nn.Parameter
 
-    defaults = configs.TruncatedLassoRegressionConfig
+    defaults = regression.TruncatedLassoRegressionConfig
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -124,7 +125,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             self.hyperparameters, X, y
         )
 
-        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )

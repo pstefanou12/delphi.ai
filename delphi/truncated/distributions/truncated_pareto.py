@@ -8,7 +8,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import pareto
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -23,7 +25,7 @@ class TruncatedPareto(
             coordinate.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("alpha_",)
 
     def __init__(

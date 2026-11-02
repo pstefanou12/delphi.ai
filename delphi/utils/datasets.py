@@ -8,7 +8,7 @@ import torch as ch
 import torch.linalg as LA
 import torch.utils.data
 
-from delphi import configs
+from delphi.configs import dataset as dataset_configs
 
 
 class Normalize:
@@ -51,7 +51,7 @@ class Normalize:
 
 
 def make_train_and_val(  # pylint: disable=invalid-name
-    args: configs.DatasetConfig, X, y
+    args: dataset_configs.DatasetConfig, X, y
 ):
     """Create training and validation DataLoaders from tensors X and y.
 
@@ -91,7 +91,7 @@ def make_train_and_val(  # pylint: disable=invalid-name
 
 
 def make_train_and_val_distr(  # pylint: disable=invalid-name
-    args: configs.DatasetConfig, S, ds, kwargs=None
+    args: dataset_configs.DatasetConfig, S, ds, kwargs=None
 ):
     """Create training and validation DataLoaders from a distribution dataset S."""
     if kwargs is None:

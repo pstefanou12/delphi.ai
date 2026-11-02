@@ -18,7 +18,7 @@ coordinates.
 import torch as ch
 import torch.nn.functional
 
-from delphi import configs
+from delphi.configs.stats.truncated import classification
 import delphi.projection_sets
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses
@@ -29,7 +29,7 @@ from delphi.truncated import sampling
 
 
 class TruncatedMultinomialLogisticRegression(
-    TruncatedClassification[configs.TruncatedMultinomialLogisticRegressionConfig]
+    TruncatedClassification[classification.TruncatedMultinomialLogisticRegressionConfig]
 ):
     """Truncated multinomial logistic regression over labels 0, ..., K - 1.
 
@@ -41,7 +41,7 @@ class TruncatedMultinomialLogisticRegression(
     multinomial needs R_alpha, so alpha sets no projection set.
     """
 
-    defaults = configs.TruncatedMultinomialLogisticRegressionConfig
+    defaults = classification.TruncatedMultinomialLogisticRegressionConfig
     loss = losses.TruncatedCE
     sampler: sampling.GumbelSampler
     default_sampler = sampling.StratifiedGumbelSampler

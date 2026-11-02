@@ -8,7 +8,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import negative_binomial
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -22,7 +24,7 @@ class TruncatedNegativeBinomial(
         total_count (ch.Tensor): Known number of failures, one per coordinate.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(

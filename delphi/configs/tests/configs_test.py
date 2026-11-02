@@ -19,7 +19,11 @@ import pytest
 import torch
 
 import delphi
-from delphi import configs
+from delphi.configs import base, dataset, optimizers, schedulers
+from delphi.configs.distributions.truncated import exponential_family
+from delphi.configs.stats import linear
+from delphi.configs.stats.truncated import lqr
+from delphi.configs.stats.truncated import regression as regression_configs
 from delphi.optim.lr_scheduler import fisher, inverse_time
 
 # Taken from the getattr fallbacks delphi.delphi used, not from the
@@ -84,7 +88,7 @@ def test_every_hyperparameter_delphi_reads_is_declared() -> None:
     read = set(re.findall(r"self\.hyperparameters\.([A-Za-z_0-9]+)", source))
     # model_dump and friends are pydantic's API, not hyperparameters.
     read = {name for name in read if not name.startswith("model_")}
-    undeclared = read - set(configs.DelphiConfig.model_fields)
+    undeclared = read - set(base.DelphiConfig.model_fields)
     assert not undeclared, f"undeclared fields read by delphi.py: {sorted(undeclared)}"
 
 
@@ -97,7 +101,7 @@ def test_no_defensive_hyperparameter_reads_remain() -> None:
 
 def test_operative_defaults_are_preserved() -> None:
     """Declaring the fields did not change any value that was in effect."""
-    config = configs.DelphiConfig()
+    config = base.DelphiConfig()
     mismatched = {
         name: (expected, getattr(config, name))
         for name, expected in OPERATIVE_DEFAULTS.items()
@@ -108,40 +112,40 @@ def test_operative_defaults_are_preserved() -> None:
 
 def test_dataset_fields_come_from_the_dataset_config() -> None:
     """Dataset concerns are declared once and inherited, not per model."""
-    dataset_fields = set(configs.DatasetConfig.model_fields)
+    dataset_fields = set(dataset.DatasetConfig.model_fields)
     assert dataset_fields == {"val", "workers", "shuffle", "batch_size", "normalize"}
     for model in (
-        configs.LinearModelConfig,
-        configs.TruncatedExponentialFamilyDistributionConfig,
+        linear.LinearModelConfig,
+        exponential_family.TruncatedExponentialFamilyDistributionConfig,
     ):
         assert dataset_fields <= set(model.model_fields)
 
 
 def test_unread_dataset_fields_are_not_declared() -> None:
     """pin_memory and drop_last were never read, so they are gone."""
-    declared = set(configs.DelphiConfig.model_fields)
+    declared = set(base.DelphiConfig.model_fields)
     for name in ("pin_memory", "drop_last"):
         assert name not in declared
 
 
 def test_batch_size_accepts_the_full_batch_sentinel() -> None:
     """-1 means "use the whole training set", per make_train_and_val."""
-    assert configs.TruncatedRegressionConfig(batch_size=-1).batch_size == -1
+    assert regression_configs.TruncatedRegressionConfig(batch_size=-1).batch_size == -1
 
 
 def test_adam_epsilon_is_distinct_from_the_criterion_epsilon() -> None:
     """Adam's eps no longer collides with the truncation criterion's eps."""
-    config = configs.TruncatedRegressionConfig()
+    config = regression_configs.TruncatedRegressionConfig()
     assert config.adam_eps == 1e-8
     assert config.eps == 1e-5
     # Setting one must not disturb the other.
-    config = configs.TruncatedRegressionConfig(eps=1e-3)
+    config = regression_configs.TruncatedRegressionConfig(eps=1e-3)
     assert config.adam_eps == 1e-8
 
 
 def test_scheduler_gamma_is_distinct_from_the_lqr_gamma() -> None:
     """The LQR thickness parameter no longer shadows a scheduler decay rate."""
-    config = configs.TruncatedLQRConfig(
+    config = lqr.TruncatedLQRConfig(
         phi=lambda x: x, R=3.0, U_A=1.0, U_B=1.0, delta=0.9, gamma=2.0
     )
     assert config.gamma == 2.0
@@ -152,27 +156,27 @@ def test_scheduler_gamma_is_distinct_from_the_lqr_gamma() -> None:
 def test_constraints_are_enforced() -> None:
     """Out-of-range values raise instead of being silently accepted."""
     with pytest.raises(pydantic.ValidationError):
-        configs.DelphiConfig(adam_betas=(2.0, 0.999))
+        base.DelphiConfig(adam_betas=(2.0, 0.999))
     with pytest.raises(pydantic.ValidationError):
-        configs.DelphiConfig(plateau_patience=0)
+        base.DelphiConfig(plateau_patience=0)
     with pytest.raises(pydantic.ValidationError):
         # mypy rejects this too, which is the point: it is a Literal.
-        configs.DelphiConfig(cyclic_mode="not_a_mode")  # type: ignore[arg-type]
+        base.DelphiConfig(cyclic_mode="not_a_mode")  # type: ignore[arg-type]
 
 
 def test_required_lqr_fields_must_be_supplied() -> None:
     """Fields the old specs marked REQ have no default."""
     with pytest.raises(pydantic.ValidationError):
         # mypy also rejects this, which is the point: the fields are required.
-        configs.TruncatedLQRConfig()  # type: ignore[call-arg]
+        lqr.TruncatedLQRConfig()  # type: ignore[call-arg]
 
 
 def test_unknown_keys_are_ignored_but_warn() -> None:
     """Callers pass one flat dict, so extra keys warn rather than raise."""
-    # Splatting a caller-supplied dict is exactly what delphi.__init__ does.
+    # Splatting a caller-supplied dict is exactly what DelphiModel.__init__ does.
     hyperparameters = {"not_a_field": 1, "lr": 0.5}
     with pytest.warns(UserWarning, match="ignores unknown hyperparameters"):
-        config = configs.TruncatedRegressionConfig(**hyperparameters)  # type: ignore[arg-type]
+        config = regression_configs.TruncatedRegressionConfig(**hyperparameters)  # type: ignore[arg-type]
     assert config.lr == 0.5
 
 
@@ -180,16 +184,16 @@ def test_known_keys_do_not_warn() -> None:
     """A config built from declared fields alone emits no warning."""
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        configs.TruncatedRegressionConfig(lr=0.5, epochs=3)
+        regression_configs.TruncatedRegressionConfig(lr=0.5, epochs=3)
 
 
 def test_dependent_variant_overrides_only_defaults() -> None:
     """The LDS config differs from the regression config by defaults alone."""
-    regression = configs.TruncatedRegressionConfig()
-    dynamical = configs.TruncatedLinearDynamicalSystemConfig()
+    regression = regression_configs.TruncatedRegressionConfig()
+    dynamical = regression_configs.TruncatedLinearDynamicalSystemConfig()
     assert (regression.shuffle, regression.constant) == (True, False)
     assert (dynamical.shuffle, dynamical.constant) == (False, True)
-    assert set(configs.TruncatedRegressionConfig.model_fields) <= set(
+    assert set(regression_configs.TruncatedRegressionConfig.model_fields) <= set(
         type(dynamical).model_fields
     )
 
@@ -197,21 +201,24 @@ def test_dependent_variant_overrides_only_defaults() -> None:
 # Sections that name a torch class's keyword arguments, with the prefix each
 # one's fields must carry.
 _SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
-    "sgd_": (torch.optim.SGD, configs.SGDConfig),
-    "adam_": (torch.optim.Adam, configs.AdamConfig),
-    "lbfgs_": (torch.optim.LBFGS, configs.LBFGSConfig),
-    "step_lr_": (torch.optim.lr_scheduler.StepLR, configs.StepLRConfig),
-    "multi_step_": (torch.optim.lr_scheduler.MultiStepLR, configs.MultiStepLRConfig),
+    "sgd_": (torch.optim.SGD, optimizers.SGDConfig),
+    "adam_": (torch.optim.Adam, optimizers.AdamConfig),
+    "lbfgs_": (torch.optim.LBFGS, optimizers.LBFGSConfig),
+    "step_lr_": (torch.optim.lr_scheduler.StepLR, schedulers.StepLRConfig),
+    "multi_step_": (torch.optim.lr_scheduler.MultiStepLR, schedulers.MultiStepLRConfig),
     "exponential_": (
         torch.optim.lr_scheduler.ExponentialLR,
-        configs.ExponentialLRConfig,
+        schedulers.ExponentialLRConfig,
     ),
-    "cosine_": (torch.optim.lr_scheduler.CosineAnnealingLR, configs.CosineLRConfig),
-    "linear_": (torch.optim.lr_scheduler.LinearLR, configs.LinearLRConfig),
-    "cyclic_": (torch.optim.lr_scheduler.CyclicLR, configs.CyclicLRConfig),
-    "plateau_": (torch.optim.lr_scheduler.ReduceLROnPlateau, configs.PlateauLRConfig),
-    "inverse_time_": (inverse_time.InverseTimeLR, configs.InverseTimeLRConfig),
-    "fisher_": (fisher.FisherLR, configs.FisherLRConfig),
+    "cosine_": (torch.optim.lr_scheduler.CosineAnnealingLR, schedulers.CosineLRConfig),
+    "linear_": (torch.optim.lr_scheduler.LinearLR, schedulers.LinearLRConfig),
+    "cyclic_": (torch.optim.lr_scheduler.CyclicLR, schedulers.CyclicLRConfig),
+    "plateau_": (
+        torch.optim.lr_scheduler.ReduceLROnPlateau,
+        schedulers.PlateauLRConfig,
+    ),
+    "inverse_time_": (inverse_time.InverseTimeLR, schedulers.InverseTimeLRConfig),
+    "fisher_": (fisher.FisherLR, schedulers.FisherLRConfig),
 }
 
 # Declared on OptimizerConfig itself: these apply to whichever optimizer
@@ -258,14 +265,14 @@ def test_only_optimizer_config_fields_are_unprefixed() -> None:
     section_owned: set[str] = set()
     for _, (_, section) in _SECTIONS.items():
         section_owned |= set(section.model_fields)
-    section_owned |= set(configs.WarmupConfig.model_fields)
-    bare = set(configs.OptimizerConfig.model_fields) - section_owned
+    section_owned |= set(schedulers.WarmupConfig.model_fields)
+    bare = set(optimizers.OptimizerConfig.model_fields) - section_owned
     assert bare == _SHARED_FIELDS
 
 
 def test_plateau_and_cosine_floors_are_independent() -> None:
     """Separate fields: one value no longer feeds both schedulers."""
-    config = configs.DelphiConfig(plateau_min_lr=0.5)
+    config = base.DelphiConfig(plateau_min_lr=0.5)
     assert config.plateau_min_lr == 0.5
     assert config.cosine_eta_min == 0.0
 

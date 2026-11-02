@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import chi2
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedChi2(
     """Model for truncated chi-squared distributions."""
 
     dist = chi2.Chi2
-    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("df_",)
 
     def __init__(

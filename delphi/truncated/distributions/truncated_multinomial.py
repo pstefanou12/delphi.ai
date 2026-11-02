@@ -7,7 +7,9 @@ from typing import Optional
 
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import multinomial
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -23,7 +25,7 @@ class TruncatedMultinomial(
 
     # The categories share one normalizer, so they are coupled.
     independent_coordinates = False
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(

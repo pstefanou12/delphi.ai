@@ -23,8 +23,10 @@ import torch as ch
 import torch.autograd.functional
 import torch.nn.functional
 
-from delphi import stats
 from delphi.stats.truncated import truncated_linear_regression
+from delphi.stats.truncated import (
+    truncated_linear_regression as truncated_linear_regression_module,
+)
 from delphi.stats.truncated.tests import regression
 from delphi.utils import helpers
 
@@ -72,7 +74,7 @@ def _fit(  # pylint: disable=too-many-arguments
         ols_margin: As ``regression.assert_recovers``.
         fit_intercept: Whether to fit an intercept.
     """
-    model = stats.TruncatedLinearRegression(
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         {},
         simulation.phi,
         simulation.alpha if alpha_known else None,
@@ -379,7 +381,7 @@ def test_truncated_dependent_regression():
         "tol": 1e-1,
         "c_gamma": 2.0,
     }
-    trunc_lds = stats.TruncatedLinearRegression(
+    trunc_lds = truncated_linear_regression_module.TruncatedLinearRegression(
         train_kwargs,
         phi,
         train_kwargs["alpha"],
@@ -414,7 +416,7 @@ def test_dependent_step_is_preconditioned_by_sigma():
     def phi(x):
         return x.norm(dim=-1, keepdim=True) <= 10.0
 
-    model = stats.TruncatedLinearRegression(
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         {"iterations": 1, "num_samples": 10},
         phi,
         0.9,
@@ -566,7 +568,7 @@ def _design_and_responses(
 
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = stats.TruncatedLinearRegression(
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         {}, simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
@@ -588,7 +590,7 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
 
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = stats.TruncatedLinearRegression(
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         {}, simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
@@ -643,7 +645,7 @@ def _coverage_hits(
     covered = []
     for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
-        model = stats.TruncatedLinearRegression(
+        model = truncated_linear_regression_module.TruncatedLinearRegression(
             hyperparameters,
             simulation.phi,
             simulation.alpha,

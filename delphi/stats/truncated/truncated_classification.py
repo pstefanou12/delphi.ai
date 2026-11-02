@@ -15,14 +15,14 @@ from typing import Generic, Optional, TypeVar
 import torch as ch
 import torch.optim
 
-from delphi import configs
+from delphi.configs.stats.truncated import classification
 import delphi.projection_sets
 from delphi.stats import linear_model
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.utils import constants
 
 _ClassificationConfigT = TypeVar(
-    "_ClassificationConfigT", bound=configs.TruncatedClassificationConfig
+    "_ClassificationConfigT", bound=classification.TruncatedClassificationConfig
 )
 
 # Above this radius e^-radius underflows float64, so a set that still

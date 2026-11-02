@@ -8,7 +8,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import gamma
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -23,7 +25,7 @@ class TruncatedGamma(
             torch's name for it.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("rate_",)
 
     def __init__(

@@ -7,7 +7,7 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import beta_prime
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -19,7 +19,7 @@ class TruncatedBetaPrime(
 
     dist = beta_prime.BetaPrime
     # log x and log(1 + x) are nearly collinear, which preconditioning undoes.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's log x and log(1 + x) are correlated.
     independent_coordinates = False

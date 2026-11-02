@@ -11,12 +11,40 @@ import torch as ch
 import torch.utils.data
 from torchvision import datasets
 
-from delphi.adversarial import cifar_models, folder, imagenet_models
 from delphi.adversarial import data_augmentation as da
+from delphi.adversarial import folder
+from delphi.adversarial.cifar_models import resnet
+from delphi.adversarial.cifar_models import vgg as cifar_vgg
+from delphi.adversarial.imagenet_models import vgg as imagenet_vgg
 
 # required and optional arguments for datasets
 CNN_REQUIRED_ARGS = ["num_classes", "mean", "std", "transform_train", "transform_test"]
 CNN_OPTIONAL_ARGS = ["custom_class", "label_mapping", "custom_class_args"]
+
+# The architectures each dataset's get_model builds, by the arch name it takes.
+CIFAR_ARCHITECTURES = {
+    "ResNet18": resnet.ResNet18,
+    "ResNet18Thin": resnet.ResNet18Thin,
+    "ResNet18Wide": resnet.ResNet18Wide,
+    "ResNet34": resnet.ResNet34,
+    "ResNet50": resnet.ResNet50,
+    "ResNet101": resnet.ResNet101,
+    "ResNet152": resnet.ResNet152,
+    "VGG11": cifar_vgg.VGG11,
+    "VGG13": cifar_vgg.VGG13,
+    "VGG16": cifar_vgg.VGG16,
+    "VGG19": cifar_vgg.VGG19,
+}
+IMAGENET_ARCHITECTURES = {
+    "vgg11": imagenet_vgg.vgg11,
+    "vgg11_bn": imagenet_vgg.vgg11_bn,
+    "vgg13": imagenet_vgg.vgg13,
+    "vgg13_bn": imagenet_vgg.vgg13_bn,
+    "vgg16": imagenet_vgg.vgg16,
+    "vgg16_bn": imagenet_vgg.vgg16_bn,
+    "vgg19": imagenet_vgg.vgg19,
+    "vgg19_bn": imagenet_vgg.vgg19_bn,
+}
 
 
 class DataSet:
@@ -282,7 +310,7 @@ class CIFAR(DataSet):
         if pretrained:
             raise ValueError("CIFAR does not support pytorch_pretrained=True")
         num_classes = self.__dict__.get("num_classes")
-        return cifar_models.__dict__[arch](num_classes=num_classes)
+        return CIFAR_ARCHITECTURES[arch](num_classes=num_classes)
 
 
 class ImageNet(DataSet):
@@ -316,7 +344,7 @@ class ImageNet(DataSet):
     def get_model(self, arch, pretrained):
         """Return an ImageNet model for the given architecture."""
         num_classes = self.__dict__.get("num_classes")
-        return imagenet_models.__dict__[arch](
+        return IMAGENET_ARCHITECTURES[arch](
             num_classes=num_classes, pretrained=pretrained
         )
 

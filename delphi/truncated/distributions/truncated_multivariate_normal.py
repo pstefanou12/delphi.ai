@@ -7,7 +7,9 @@ from typing import Optional
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    multivariate_normal as multivariate_normal_configs,
+)
 from delphi.exponential_family import multivariate_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import helpers
@@ -35,7 +37,7 @@ class TruncatedMultivariateNormal(
     # spectrum needs eigenvalues rather than the diagonal.
     independent_coordinates = False
 
-    defaults = configs.TruncatedMultivariateNormalConfig
+    defaults = multivariate_normal_configs.TruncatedMultivariateNormalConfig
     estimate_suffixes = ("loc_", "covariance_matrix_")
 
     def __init__(
