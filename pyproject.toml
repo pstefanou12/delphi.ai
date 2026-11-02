@@ -18,20 +18,12 @@ packages = [{ include = "delphi" }]
 python = ">=3.10,<3.15"
 cox = "*"
 dill = "*"
-GPUtil = "*"
-gitpython = "*"
-matplotlib = "*"
 numpy = "*"
+# cox.store imports pandas and tensorboardX, and pandas needs tables for the
+# store's HDF5 file, but cox declares none of the three.
 pandas = "*"
-py3nvml = "*"
 pydantic = ">=2.0"
-# TODO: pstefanou12@ - scikit-learn 1.8 removed the multi_class kwarg that
-# stats/truncated_logistic_regression.py passes. Unpin once that OvR path is
-# ported to OneVsRestClassifier.
-scikit-learn = "<1.8"
-scipy = "*"
-seaborn = "*"
-statsmodels = "*"
+scikit-learn = "*"
 tables = "*"
 tensorboardX = "*"
 # Floors, not cosmetics: with torch unpinned the resolver backtracks to
@@ -53,6 +45,16 @@ pytest-cov = "*"
 ruff = "*"
 pytest-testmon = "^2.2"
 pytest-xdist = "^3"
+
+# Only the notebooks import these: `poetry install --with notebooks`.
+[tool.poetry.group.notebooks]
+optional = true
+
+[tool.poetry.group.notebooks.dependencies]
+matplotlib = "*"
+scipy = "*"
+seaborn = "*"
+statsmodels = "*"
 
 [build-system]
 requires = ["poetry-core"]

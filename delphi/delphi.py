@@ -534,28 +534,6 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 "sets self.optimizer or populates self.optimizers."
             )
 
-    def optimizer_step(self, closure: Optional[Callable] = None) -> Optional[ch.Tensor]:
-        """Perform the optimizer step.
-
-        The default implementation calls ``self.optimizer.step()``.  Override
-        this method for models with more complex update rules (e.g. GANs or
-        actor-critic models that need to step multiple optimizers per update).
-        ``validate_before_training`` guarantees ``self.optimizer`` is set
-        before this method is called during training.
-
-        Args:
-            closure: Optional closure for line-search optimizers (e.g. L-BFGS).
-
-        Returns:
-            Loss evaluated by the closure, or None.
-        """
-        optimizer = cast(torch.optim.Optimizer, self.optimizer)
-        if closure is not None:
-            # torch stubs type step() as returning float, but line-search
-            # optimizers return whatever the closure returns (a Tensor here).
-            return optimizer.step(closure)  # type: ignore[return-value]
-        return optimizer.step()  # type: ignore[return-value]
-
     def pre_phase_hook(self) -> None:
         """Hook called before each phase, once its run is seeded."""
 
