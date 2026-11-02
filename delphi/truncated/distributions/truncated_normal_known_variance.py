@@ -7,12 +7,12 @@ from typing import Optional
 import torch as ch
 
 from delphi.truncated.distributions import (
-    truncated_multivariate_normal_known_covariance,
+    known_truncated_multivariate_normal_known_covariance,
 )
 
 
 class TruncatedNormalKnownVariance(
-    truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance
+    known_truncated_multivariate_normal_known_covariance.KnownTruncationMultivariateNormalKnownCovariance
 ):
     """Truncated normal distribution with known variance."""
 

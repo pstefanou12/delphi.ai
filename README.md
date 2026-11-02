@@ -59,8 +59,8 @@ truth.
 
 | Model | Module | Example |
 |---|---|---|
-| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | |
-| `TruncatedMultivariateNormalKnownCovariance` | [`truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/truncated_multivariate_normal_known_covariance.py) | |
+| `KnownTruncationMultivariateNormal` | [`known_truncated_multivariate_normal`](delphi/truncated/distributions/known_truncated_multivariate_normal.py) | |
+| `KnownTruncationMultivariateNormalKnownCovariance` | [`known_truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/known_truncated_multivariate_normal_known_covariance.py) | |
 | `TruncatedNormal` | [`truncated_normal`](delphi/truncated/distributions/truncated_normal.py) | |
 | `TruncatedNormalKnownVariance` | [`truncated_normal_known_variance`](delphi/truncated/distributions/truncated_normal_known_variance.py) | |
 | `TruncatedExponential` | [`truncated_exponential`](delphi/truncated/distributions/truncated_exponential.py) | |
@@ -111,7 +111,7 @@ A correlated Gaussian, observed only where `x0 + x1 > 1`:
 import torch as ch
 from torch import distributions
 
-from delphi.truncated.distributions import truncated_multivariate_normal
+from delphi.truncated.distributions import known_truncated_multivariate_normal
 
 ch.manual_seed(0)
 
@@ -132,7 +132,7 @@ alpha = phi(population).float().mean().item()
 # Fit on standardized data, moving phi through the same transform.
 mean, std = S.mean(0), S.std(0)
 # The default hyperparameters: 2500 steps, lr 1e-2, the Fisher schedule.
-model = truncated_multivariate_normal.TruncatedMultivariateNormal(
+model = known_truncated_multivariate_normal.KnownTruncationMultivariateNormal(
     lambda z: phi(z * std + mean),
     dims=2,
     alpha=alpha,

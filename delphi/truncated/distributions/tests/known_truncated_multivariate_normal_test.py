@@ -10,7 +10,7 @@ import torch.distributions
 import torch.distributions.kl
 
 import delphi.oracle
-from delphi.truncated.distributions import truncated_multivariate_normal
+from delphi.truncated.distributions import known_truncated_multivariate_normal
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
@@ -53,7 +53,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         return phi(x * emp_scale + emp_loc)
 
     args = (alpha,) if pass_alpha else ()
-    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
+    truncated = known_truncated_multivariate_normal.KnownTruncationMultivariateNormal(
         phi_standardised, dims, *args, hyperparameters=hyperparameters
     )
     truncated.fit((S - emp_loc) / emp_scale)

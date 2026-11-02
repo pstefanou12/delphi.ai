@@ -13,7 +13,7 @@ from delphi.exponential_family import multivariate_normal_known_covariance
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
 
-class TruncatedMultivariateNormalKnownCovariance(
+class KnownTruncationMultivariateNormalKnownCovariance(
     truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
 ):
     """Truncated multivariate normal distribution with known covariance.
@@ -34,7 +34,7 @@ class TruncatedMultivariateNormalKnownCovariance(
         *,
         hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        """Initialize TruncatedMultivariateNormalKnownCovariance.
+        """Initialize KnownTruncationMultivariateNormalKnownCovariance.
 
         Args:
             phi: Truncation set oracle.

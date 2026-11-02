@@ -11,7 +11,7 @@ import torch.distributions.kl
 
 import delphi.oracle
 from delphi.truncated.distributions import (
-    truncated_multivariate_normal_known_covariance,
+    known_truncated_multivariate_normal_known_covariance,
 )
 from delphi.truncated.distributions.tests import helpers, truncation_sets
 
@@ -46,7 +46,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         target, phi, dataset_size
     )
     args = (alpha,) if pass_alpha else ()
-    truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
+    truncated = known_truncated_multivariate_normal_known_covariance.KnownTruncationMultivariateNormalKnownCovariance(
         phi, dims, covariance_matrix, *args, hyperparameters=hyperparameters
     )
     truncated.fit(S)
@@ -135,7 +135,7 @@ def test_ten_dimensions():
         return x[:, 0] > (0 - emp_loc[0, 0]) / true_scale[0]
 
     hyperparameters = {"epochs": 2, "batch_size": 1}
-    truncated = truncated_multivariate_normal_known_covariance.TruncatedMultivariateNormalKnownCovariance(
+    truncated = known_truncated_multivariate_normal_known_covariance.KnownTruncationMultivariateNormalKnownCovariance(
         phi_standardised,
         dims,
         scaled_covariance,

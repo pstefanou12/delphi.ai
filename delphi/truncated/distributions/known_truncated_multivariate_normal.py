@@ -15,7 +15,7 @@ from delphi.truncated.distributions import truncated_exponential_family_distribu
 from delphi.utils import helpers
 
 
-class TruncatedMultivariateNormal(
+class KnownTruncationMultivariateNormal(
     truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
 ):
     """Truncated multivariate normal distribution with unknown covariance.
@@ -48,7 +48,7 @@ class TruncatedMultivariateNormal(
         *,
         hyperparameters: Optional[dict] = None,
     ):
-        """Initialize TruncatedMultivariateNormal.
+        """Initialize KnownTruncationMultivariateNormal.
 
         Args:
             phi: Truncation set oracle.
