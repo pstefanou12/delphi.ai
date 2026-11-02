@@ -4,14 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class NegativeBinomial(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.NegativeBinomial,
+    torch.distributions.NegativeBinomial,
 ):
     """Negative binomial with known failures, parameterized by ``log(probs)``.
 

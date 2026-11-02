@@ -6,7 +6,7 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import negative_binomial
@@ -57,7 +57,7 @@ class TruncatedNegativeBinomial(
         mean = self.train_loader_.dataset.S.mean(0)
         emp = (mean / (self.total_count + mean)).clamp(1e-6, 1 - 1e-6)
         self.emp_theta = negative_binomial.NegativeBinomial.to_natural(emp)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so probs lies in (0, 1)."""

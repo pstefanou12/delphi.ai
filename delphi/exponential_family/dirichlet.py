@@ -2,14 +2,14 @@
 """Dirichlet distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Dirichlet(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Dirichlet,
+    torch.distributions.Dirichlet,
 ):
     """Dirichlet distribution parameterized by ``concentration - 1``.
 

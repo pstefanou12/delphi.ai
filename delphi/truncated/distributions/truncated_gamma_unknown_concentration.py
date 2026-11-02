@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import gamma_unknown_concentration
@@ -49,7 +49,7 @@ class TruncatedGammaUnknownConcentration(
                 ch.cat([mean**2 / var, mean / var]).clamp(min=1e-3)
             )
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep the shape positive and the negated rate negative."""

@@ -25,7 +25,7 @@ import math
 from typing import NamedTuple
 
 import torch as ch
-from torch.distributions import Distribution
+import torch.distributions
 
 from delphi.truncated.distributions.tests import helpers
 
@@ -450,7 +450,9 @@ class CalibratedSet(NamedTuple):
     scale: float
 
 
-def _reference_draw(reference: Distribution, num_samples: int, seed: int) -> ch.Tensor:
+def _reference_draw(
+    reference: torch.distributions.Distribution, num_samples: int, seed: int
+) -> ch.Tensor:
     """Return a draw from reference that depends only on seed.
 
     ``Distribution.sample`` takes no generator, so the global RNG is seeded
@@ -471,7 +473,7 @@ def _reference_draw(reference: Distribution, num_samples: int, seed: int) -> ch.
 
 def calibrate(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     predicate_factory: Callable[[float], helpers.Oracle],
-    reference: Distribution,
+    reference: torch.distributions.Distribution,
     target_alpha: tuple[float, float] = (0.2, 0.4),
     bounds: tuple[float, float] = (1e-3, 1e2),
     num_samples: int = 20000,

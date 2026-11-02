@@ -6,7 +6,7 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_exponential
@@ -25,7 +25,7 @@ def _recovers(
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_exponential.TruncatedExponential,
-        target=distributions.Exponential(rate),
+        target=torch.distributions.Exponential(rate),
         phi=phi,
         dims=dims,
         parameter="rate_",
@@ -49,7 +49,7 @@ def test_two_dimensions():
     rate = ch.Tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         target_alpha=(0.15, 0.25),
     )
     _recovers(
@@ -63,7 +63,7 @@ def test_twenty_dimensions():
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         target_alpha=(0.15, 0.25),
     )
     _recovers(
@@ -78,7 +78,7 @@ def test_two_dimensions_random_half_space():
     rate = ch.Tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 1, 2),
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         bounds=(-25.0, 25.0),
     )
     _recovers(
@@ -92,7 +92,7 @@ def test_two_dimensions_random_ellipsoid():
     rate = ch.Tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_ellipsoid, 0, 2),
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         bounds=(1e-4, 1e4),
     )
     # A bounded set leaves the empirical rate far from the truth, so the lr
@@ -133,7 +133,7 @@ def test_ten_dimensions_sum_threshold():
     # coordinate instead of one.
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
@@ -151,7 +151,7 @@ def test_one_dimension_small_mass():
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
@@ -167,7 +167,7 @@ def test_ten_dimensions_norm_threshold():
     # Couples every coordinate like the sum does, and also excludes the mode.
     calibrated = truncation_sets.calibrate(
         truncation_sets.norm_threshold,
-        distributions.Exponential(rate),
+        torch.distributions.Exponential(rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
@@ -195,8 +195,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_exponential.TruncatedExponential,
         targets=(
-            distributions.Exponential(ch.Tensor([0.5])),
-            distributions.Exponential(ch.Tensor([1.5])),
+            torch.distributions.Exponential(ch.Tensor([0.5])),
+            torch.distributions.Exponential(ch.Tensor([1.5])),
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.5),
         dims=1,
@@ -208,7 +208,7 @@ def test_indistinguishable_pair():
 def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
-        distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
+        torch.distributions.Exponential(ch.Tensor([1.0])), lambda z: z[:, 0] > 0.5, 2000
     )
     model = truncated_exponential.TruncatedExponential(
         {"iterations": 10},

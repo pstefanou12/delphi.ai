@@ -2,13 +2,14 @@
 """Poisson distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Poisson(
-    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Poisson
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    torch.distributions.Poisson,
 ):
     """Poisson distribution parameterized by natural parameters."""
 

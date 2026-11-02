@@ -5,7 +5,7 @@ import functools
 
 import pytest
 import torch as ch
-from torch.utils import data
+import torch.utils.data
 
 from delphi import configs
 import delphi.delphi
@@ -59,10 +59,12 @@ class PhasedMean(Mean):
         self.trainings_finished += 1
 
 
-def _loader() -> data.DataLoader:
+def _loader() -> torch.utils.data.DataLoader:
     ch.manual_seed(0)
     samples = _TARGET + 0.1 * ch.randn(200)
-    return data.DataLoader(data.TensorDataset(ch.zeros(200, 1), samples), batch_size=20)
+    return torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(ch.zeros(200, 1), samples), batch_size=20
+    )
 
 
 def _fit(model: Mean) -> delphi.trainer.ProcedureResult:

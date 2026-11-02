@@ -9,7 +9,7 @@ import math
 from typing import ClassVar, Generic, Optional
 
 import torch as ch
-from torch import distributions as torch_distributions
+import torch.distributions
 import torch.utils.data
 
 from delphi import configs, trainer
@@ -17,7 +17,7 @@ from delphi.truncated.distributions import distributions, losses, summary
 from delphi.utils import datasets, helpers
 
 # Called as dist(theta, dims) in losses.py on every step.
-DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distribution]
+DistributionFactory = Callable[[ch.Tensor, int], torch.distributions.Distribution]
 
 SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 
@@ -63,7 +63,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     # A type, not a Callable: mypy reads a callable class attribute as a
     # method and drops the first argument.
-    dist: ClassVar[Optional[type[torch_distributions.Distribution]]] = None
+    dist: ClassVar[Optional[type[torch.distributions.Distribution]]] = None
 
     # Suffixes of the canonical estimates, so that f"avg_{suffix}" names
     # one. Read by summary().

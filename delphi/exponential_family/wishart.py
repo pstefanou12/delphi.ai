@@ -4,7 +4,7 @@
 import math
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 from delphi.utils import helpers
@@ -12,7 +12,7 @@ from delphi.utils import helpers
 
 class Wishart(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Wishart,
+    torch.distributions.Wishart,
 ):
     """Wishart distribution whose samples are the lower triangles of matrices.
 

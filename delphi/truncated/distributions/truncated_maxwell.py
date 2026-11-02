@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import maxwell
@@ -44,7 +44,7 @@ class TruncatedMaxwell(
         self.emp_theta = maxwell.Maxwell.to_natural(
             ch.sqrt((dataset_s**2).mean(0) / 3.0)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so the scale is real."""

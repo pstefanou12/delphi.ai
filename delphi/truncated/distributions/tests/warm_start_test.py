@@ -2,7 +2,7 @@
 """Tests for refining the initialization to the untruncated MLE."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import beta
 from delphi.truncated.distributions import truncated_beta, truncated_chi2
@@ -15,13 +15,13 @@ def _phi(z):
 
 def _sample():
     ch.manual_seed(0)
-    target = distributions.Beta(ch.Tensor([2.0]), ch.Tensor([5.0]))
+    target = torch.distributions.Beta(ch.Tensor([2.0]), ch.Tensor([5.0]))
     return helpers.generate_truncated_distribution_dataset(target, _phi, 10000)
 
 
 def _untruncated_log_likelihood(theta, sample):
     concentration1, concentration0 = beta.Beta.to_canonical(theta)
-    return distributions.Beta(concentration1, concentration0).log_prob(sample.S)
+    return torch.distributions.Beta(concentration1, concentration0).log_prob(sample.S)
 
 
 def test_raises_the_untruncated_likelihood():

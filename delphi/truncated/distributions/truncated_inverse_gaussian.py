@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import inverse_gaussian
@@ -49,7 +49,7 @@ class TruncatedInverseGaussian(
         self.emp_theta = inverse_gaussian.InverseGaussian.to_natural(
             ch.cat([loc, concentration])
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so both parameters are positive."""

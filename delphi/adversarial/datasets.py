@@ -8,7 +8,7 @@ Currently supported datasets:
 
 import numpy as np
 import torch as ch
-from torch.utils.data import DataLoader, Subset, TensorDataset
+import torch.utils.data
 from torchvision import datasets
 
 from delphi.adversarial import cifar_models, folder, imagenet_models
@@ -194,7 +194,7 @@ class DataSet:
                 else:
                     subset = np.arange(train_sample_count - subset, train_sample_count)
 
-                train_set = Subset(train_set, subset)
+                train_set = torch.utils.data.Subset(train_set, subset)
         else:
             custom_class_args = self.__dict__.get("custom_class_args")
             if custom_class_args is None:
@@ -218,7 +218,7 @@ class DataSet:
                         **custom_class_args,
                     )
         if train_set is not None:
-            train_loader = DataLoader(
+            train_loader = torch.utils.data.DataLoader(
                 train_set,
                 batch_size=batch_size,
                 shuffle=shuffle,
@@ -227,7 +227,7 @@ class DataSet:
             )
 
         if test_set is not None:
-            test_loader = DataLoader(
+            test_loader = torch.utils.data.DataLoader(
                 test_set,
                 batch_size=val_batch_size,
                 num_workers=workers,
@@ -324,5 +324,5 @@ class ImageNet(DataSet):
 DATASETS = {
     "imagenet": ImageNet,
     "cifar": CIFAR,
-    "tensor": TensorDataset,
+    "tensor": torch.utils.data.TensorDataset,
 }

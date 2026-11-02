@@ -11,7 +11,7 @@ basis orthonormal under its weight.
 import math
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.torchnomials import polynomial
 
@@ -87,10 +87,10 @@ class Hermite(polynomial.Polynomial):
             log_norms = log_norms + j * math.log(2.0)
         return log_norms.exp()
 
-    def weight(self) -> distributions.Distribution:
+    def weight(self) -> torch.distributions.Distribution:
         """Return ``N(0, I)`` (probabilist) or ``N(0, I / 2)`` (physicist)."""
         variance = 1.0 if self.prob else 0.5
-        return distributions.MultivariateNormal(
+        return torch.distributions.MultivariateNormal(
             ch.zeros(self.dims, dtype=ch.float64),
             variance * ch.eye(self.dims, dtype=ch.float64),
         )

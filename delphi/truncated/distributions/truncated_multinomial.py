@@ -5,7 +5,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import Optional
 
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import multinomial
@@ -58,7 +58,7 @@ class TruncatedMultinomial(
         # A category never observed would give an infinite log-ratio.
         probs = (dataset_s.mean(0) / self.total_count).clamp(min=1e-6)
         self.emp_theta = multinomial.Multinomial.to_natural(probs / probs.sum())
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_probs_(self):

@@ -2,14 +2,14 @@
 """Multivariate normal distribution with known covariance in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class MultivariateNormalKnownCovariance(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.MultivariateNormal,
+    torch.distributions.MultivariateNormal,
 ):
     """Multivariate normal parameterized by natural parameters with known covariance."""
 

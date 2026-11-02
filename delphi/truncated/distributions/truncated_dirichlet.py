@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import dirichlet
@@ -47,7 +47,7 @@ class TruncatedDirichlet(
         # Every category gives the total concentration; average them.
         total = (mean * (1 - mean) / var - 1).mean()
         self.emp_theta = dirichlet.Dirichlet.to_natural((mean * total).clamp(min=1e-3))
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta above -1, so every concentration is positive."""

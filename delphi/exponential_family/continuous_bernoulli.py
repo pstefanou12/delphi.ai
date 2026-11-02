@@ -2,14 +2,14 @@
 """Continuous Bernoulli distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class ContinuousBernoulli(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.ContinuousBernoulli,
+    torch.distributions.ContinuousBernoulli,
 ):
     """Continuous Bernoulli distribution parameterized by its logits."""
 

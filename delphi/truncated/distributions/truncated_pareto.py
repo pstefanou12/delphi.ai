@@ -6,7 +6,7 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import pareto
@@ -56,7 +56,7 @@ class TruncatedPareto(
         dataset_s = self.train_loader_.dataset.S
         emp_alpha = 1.0 / (ch.log(dataset_s) - ch.log(self.scale)).mean(0)
         self.emp_theta = pareto.Pareto.to_natural(emp_alpha)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta below -1, so the tail index is positive."""

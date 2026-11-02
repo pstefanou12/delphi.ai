@@ -4,14 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class InverseGamma(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.InverseGamma,
+    torch.distributions.InverseGamma,
 ):
     """Inverse gamma distribution with known shape, parameterized by ``-rate``.
 

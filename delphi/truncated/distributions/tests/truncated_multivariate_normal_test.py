@@ -6,8 +6,8 @@ import math
 from typing import Optional
 
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_multivariate_normal
@@ -36,7 +36,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         hyperparameters: Hyperparameter dict for the procedure.
     """
     ch.manual_seed(0)
-    target = distributions.MultivariateNormal(ch.zeros(dims), covariance_matrix)
+    target = torch.distributions.MultivariateNormal(ch.zeros(dims), covariance_matrix)
 
     S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
         target, phi, dataset_size
@@ -59,14 +59,16 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     truncated.fit((S - emp_loc) / emp_scale)
 
     helpers.assert_recovers(
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(truncated, f"{name}_loc_") * emp_scale + emp_loc,
             emp_sigma_diag
             @ getattr(truncated, f"{name}_covariance_matrix_")
             @ emp_sigma_diag,
         ),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=distributions.MultivariateNormal(emp_loc, ch.atleast_2d(ch.cov(S.T))),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
+        baseline=torch.distributions.MultivariateNormal(
+            emp_loc, ch.atleast_2d(ch.cov(S.T))
+        ),
         baseline_must_fail=baseline_must_fail,
         tolerances=tolerances,
     )
@@ -116,7 +118,7 @@ def test_two_dimensions_random_disc_union():
     covariance_matrix = 2 * ch.eye(2)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_disc_union, 0, 2, 6),
-        distributions.MultivariateNormal(ch.zeros(2), covariance_matrix),
+        torch.distributions.MultivariateNormal(ch.zeros(2), covariance_matrix),
         bounds=(1e-4, 1e3),
     )
     _recovers(

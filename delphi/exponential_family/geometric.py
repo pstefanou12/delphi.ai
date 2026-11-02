@@ -2,14 +2,14 @@
 """Geometric distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Geometric(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Geometric,
+    torch.distributions.Geometric,
 ):
     """Geometric distribution over failures before the first success.
 

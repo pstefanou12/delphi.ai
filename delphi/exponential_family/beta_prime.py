@@ -2,8 +2,8 @@
 """Beta prime distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
-from torch.distributions import constraints
+import torch.distributions
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution
 
@@ -21,10 +21,10 @@ class BetaPrime(exponential_family_distribution.ExponentialFamilyDistribution):
     """
 
     arg_constraints = {
-        "concentration1": constraints.positive,
-        "concentration0": constraints.positive,
+        "concentration1": torch.distributions.constraints.positive,
+        "concentration0": torch.distributions.constraints.positive,
     }
-    support = constraints.positive
+    support = torch.distributions.constraints.positive
 
     def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""
@@ -56,10 +56,10 @@ class BetaPrime(exponential_family_distribution.ExponentialFamilyDistribution):
     def sample(self, sample_shape=ch.Size()) -> ch.Tensor:
         """Draw samples shaped ``sample_shape + (dims,)``."""
         with ch.no_grad():
-            numerator = distributions.Gamma(self.concentration1, 1.0).sample(
+            numerator = torch.distributions.Gamma(self.concentration1, 1.0).sample(
                 sample_shape
             )
-            denominator = distributions.Gamma(self.concentration0, 1.0).sample(
+            denominator = torch.distributions.Gamma(self.concentration0, 1.0).sample(
                 sample_shape
             )
             return numerator / denominator

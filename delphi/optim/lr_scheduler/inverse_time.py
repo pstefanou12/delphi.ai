@@ -4,10 +4,10 @@
 from typing import Union
 
 import torch as ch
-from torch.optim import lr_scheduler
+import torch.optim.lr_scheduler
 
 
-class InverseTimeLR(lr_scheduler.LRScheduler):
+class InverseTimeLR(torch.optim.lr_scheduler.LRScheduler):
     """Decay the learning rate as ``lr / (1 + t / tau)``.
 
     Geometric schedules such as StepLR sum to a finite total step, so they can

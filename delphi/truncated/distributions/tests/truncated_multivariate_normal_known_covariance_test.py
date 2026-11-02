@@ -6,8 +6,8 @@ import math
 from typing import Optional
 
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 import delphi.oracle
 from delphi.truncated.distributions import (
@@ -41,7 +41,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         hyperparameters: Hyperparameter dict for the procedure.
     """
     ch.manual_seed(0)
-    target = distributions.MultivariateNormal(ch.zeros(dims), covariance_matrix)
+    target = torch.distributions.MultivariateNormal(ch.zeros(dims), covariance_matrix)
     S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
         target, phi, dataset_size
     )
@@ -52,11 +52,11 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     truncated.fit(S)
 
     helpers.assert_recovers(
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(truncated, f"{name}_loc_"), covariance_matrix
         ),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=distributions.MultivariateNormal(
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
+        baseline=torch.distributions.MultivariateNormal(
             S.mean(0, keepdim=True), covariance_matrix
         ),
         baseline_must_fail=baseline_must_fail,
@@ -98,7 +98,7 @@ def test_five_dimensions_random_half_space():
     covariance_matrix = 2 * ch.eye(5)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 5),
-        distributions.MultivariateNormal(ch.zeros(5), covariance_matrix),
+        torch.distributions.MultivariateNormal(ch.zeros(5), covariance_matrix),
         bounds=(-25.0, 25.0),
     )
     _recovers(
@@ -113,7 +113,7 @@ def test_five_dimensions_random_half_space():
 def test_ten_dimensions():
     ch.manual_seed(0)
     dims = 10
-    target = distributions.MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims))
+    target = torch.distributions.MultivariateNormal(ch.zeros(dims), 10 * ch.eye(dims))
 
     def phi(x):
         return x[:, 0] > 0
@@ -141,12 +141,14 @@ def test_ten_dimensions():
     truncated.fit((S - emp_loc) / true_scale)
 
     helpers.assert_recovers(
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(truncated, f"{name}_loc_") * true_scale + emp_loc,
             target.covariance_matrix,
         ),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=distributions.MultivariateNormal(emp_loc, target.covariance_matrix),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
+        baseline=torch.distributions.MultivariateNormal(
+            emp_loc, target.covariance_matrix
+        ),
     )
 
 
@@ -180,7 +182,7 @@ def test_one_dimension_small_mass():
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.MultivariateNormal(ch.zeros(1), covariance_matrix),
+        torch.distributions.MultivariateNormal(ch.zeros(1), covariance_matrix),
         target_alpha=(0.008, 0.02),
         bounds=(-10.0, 20.0),
     )
@@ -200,7 +202,7 @@ def test_ten_dimensions_sum_threshold():
     # the sum breaks the symmetry and biases every coordinate.
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.MultivariateNormal(ch.zeros(10), covariance_matrix),
+        torch.distributions.MultivariateNormal(ch.zeros(10), covariance_matrix),
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )

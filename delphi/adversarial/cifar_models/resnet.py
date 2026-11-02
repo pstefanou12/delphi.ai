@@ -8,13 +8,13 @@ Reference:
 """
 
 import torch
-from torch import nn
+import torch.nn
 import torch.nn.functional as F
 
 from delphi.adversarial import layers as adversarial_layers
 
 
-class BasicBlock(nn.Module):
+class BasicBlock(torch.nn.Module):
     """Basic residual block for ResNet."""
 
     expansion = 1
@@ -22,26 +22,26 @@ class BasicBlock(nn.Module):
     def __init__(self, in_planes, planes, stride=1):
         """Initialize BasicBlock with conv layers and optional shortcut."""
         super().__init__()
-        self.conv1 = nn.Conv2d(
+        self.conv1 = torch.nn.Conv2d(
             in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
         )
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(
+        self.bn1 = torch.nn.BatchNorm2d(planes)
+        self.conv2 = torch.nn.Conv2d(
             planes, planes, kernel_size=3, stride=1, padding=1, bias=False
         )
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = torch.nn.BatchNorm2d(planes)
 
-        self.shortcut = nn.Sequential()
+        self.shortcut = torch.nn.Sequential()
         if stride != 1 or in_planes != self.expansion * planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(
+            self.shortcut = torch.nn.Sequential(
+                torch.nn.Conv2d(
                     in_planes,
                     self.expansion * planes,
                     kernel_size=1,
                     stride=stride,
                     bias=False,
                 ),
-                nn.BatchNorm2d(self.expansion * planes),
+                torch.nn.BatchNorm2d(self.expansion * planes),
             )
 
     def forward(self, x, fake_relu=False):  # pylint: disable=arguments-differ
@@ -54,7 +54,7 @@ class BasicBlock(nn.Module):
         return F.relu(out)
 
 
-class Bottleneck(nn.Module):
+class Bottleneck(torch.nn.Module):
     """Bottleneck residual block for ResNet."""
 
     expansion = 4
@@ -62,28 +62,28 @@ class Bottleneck(nn.Module):
     def __init__(self, in_planes, planes, stride=1):
         """Initialize Bottleneck with three conv layers and optional shortcut."""
         super().__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(
+        self.conv1 = torch.nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = torch.nn.BatchNorm2d(planes)
+        self.conv2 = torch.nn.Conv2d(
             planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
         )
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(
+        self.bn2 = torch.nn.BatchNorm2d(planes)
+        self.conv3 = torch.nn.Conv2d(
             planes, self.expansion * planes, kernel_size=1, bias=False
         )
-        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+        self.bn3 = torch.nn.BatchNorm2d(self.expansion * planes)
 
-        self.shortcut = nn.Sequential()
+        self.shortcut = torch.nn.Sequential()
         if stride != 1 or in_planes != self.expansion * planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(
+            self.shortcut = torch.nn.Sequential(
+                torch.nn.Conv2d(
                     in_planes,
                     self.expansion * planes,
                     kernel_size=1,
                     stride=stride,
                     bias=False,
                 ),
-                nn.BatchNorm2d(self.expansion * planes),
+                torch.nn.BatchNorm2d(self.expansion * planes),
             )
 
     def forward(self, x, fake_relu=False):  # pylint: disable=arguments-differ
@@ -97,7 +97,7 @@ class Bottleneck(nn.Module):
         return F.relu(out)
 
 
-class ResNet_(nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes
+class ResNet_(torch.nn.Module):  # pylint: disable=invalid-name,too-many-instance-attributes
     """ResNet architecture for CIFAR-scale datasets."""
 
     # feat_scale lets us deal with CelebA, other non-32x32 datasets
@@ -111,15 +111,17 @@ class ResNet_(nn.Module):  # pylint: disable=invalid-name,too-many-instance-attr
         widths = [int(w * wm) for w in widths]
 
         self.in_planes = widths[0]
-        self.conv1 = nn.Conv2d(
+        self.conv1 = torch.nn.Conv2d(
             3, self.in_planes, kernel_size=3, stride=1, padding=1, bias=False
         )
-        self.bn1 = nn.BatchNorm2d(self.in_planes)
+        self.bn1 = torch.nn.BatchNorm2d(self.in_planes)
         self.layer1 = self._make_layer(block, widths[0], num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, widths[1], num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, widths[2], num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, widths[3], num_blocks[3], stride=2)
-        self.linear = nn.Linear(feat_scale * widths[3] * block.expansion, num_classes)
+        self.linear = torch.nn.Linear(
+            feat_scale * widths[3] * block.expansion, num_classes
+        )
 
     def _make_layer(self, block, planes, num_blocks, stride):
         """Build a residual layer from repeated blocks."""
@@ -190,20 +192,20 @@ def ResNet152(**kwargs):  # pylint: disable=invalid-name
 # super().__init__(args)
 # self.model = ResNet18()
 # self.params = self.model.parameters()
-# self.loss =  nn.CrossEntropyLoss()
+# self.loss =  torch.nn.CrossEntropyLoss()
 
 # widths = [64, 128, 256, 512]
 # widths = [int(w * wm) for w in widths]
 
 # self.in_planes = widths[0]
-# self.conv1 = nn.Conv2d(3, self.in_planes, kernel_size=3, stride=1,
+# self.conv1 = torch.nn.Conv2d(3, self.in_planes, kernel_size=3, stride=1,
 #    padding=1, bias=False)
-# self.bn1 = nn.BatchNorm2d(self.in_planes)
+# self.bn1 = torch.nn.BatchNorm2d(self.in_planes)
 # self.layer1 = self._make_layer(block, widths[0], num_blocks[0], stride=1)
 # self.layer2 = self._make_layer(block, widths[1], num_blocks[1], stride=2)
 # self.layer3 = self._make_layer(block, widths[2], num_blocks[2], stride=2)
 # self.layer4 = self._make_layer(block, widths[3], num_blocks[3], stride=2)
-# self.linear = nn.Linear(feat_scale*widths[3]*block.expansion, num_classes)
+# self.linear = torch.nn.Linear(feat_scale*widths[3]*block.expansion, num_classes)
 
 # def __call__(self, x, with_latent=False, fake_relu=False, no_relu=False):
 # assert (not no_relu),  \

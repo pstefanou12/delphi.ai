@@ -13,8 +13,8 @@ from typing import Any, Optional, Union, cast
 from cox.store import Store
 import numpy as np
 import torch as ch
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader
+import torch.optim.lr_scheduler
+import torch.utils.data
 from tqdm import tqdm
 
 from delphi import configs
@@ -210,8 +210,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def train_model(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        train_loader: Optional[DataLoader],
-        val_loader: Optional[DataLoader],
+        train_loader: Optional[torch.utils.data.DataLoader],
+        val_loader: Optional[torch.utils.data.DataLoader],
         rand_seed: int = 0,
         store: Optional[Store] = None,
         checkpoint: Optional[dict] = None,
@@ -314,8 +314,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def _train_phases(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        train_loader: Optional[DataLoader],
-        val_loader: Optional[DataLoader],
+        train_loader: Optional[torch.utils.data.DataLoader],
+        val_loader: Optional[torch.utils.data.DataLoader],
         rand_seed: int,
         store: Optional[Store],
         checkpoint: Optional[dict],
@@ -347,8 +347,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def _run_stage(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         stage: Stage,
-        train_loader: Optional[DataLoader],
-        val_loader: Optional[DataLoader],
+        train_loader: Optional[torch.utils.data.DataLoader],
+        val_loader: Optional[torch.utils.data.DataLoader],
         rand_seed: int,
         store: Optional[Store],
         checkpoint: Optional[dict] = None,
@@ -384,8 +384,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def _run_epochs(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        train_loader: Optional[DataLoader],
-        val_loader: Optional[DataLoader],
+        train_loader: Optional[torch.utils.data.DataLoader],
+        val_loader: Optional[torch.utils.data.DataLoader],
         rand_seed: int,
         store: Optional[Store],
         checkpoint: Optional[dict],
@@ -499,7 +499,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             ch.cuda.manual_seed_all(rand_seed)
 
     def run_epoch(
-        self, loader: Optional[DataLoader], val_loader: Optional[DataLoader] = None
+        self,
+        loader: Optional[torch.utils.data.DataLoader],
+        val_loader: Optional[torch.utils.data.DataLoader] = None,
     ) -> tuple[float, dict[str, float]]:
         """Run one full epoch and return ``(avg_loss, metrics_dict)``.
 
@@ -577,8 +579,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def _batch_epoch(
         self,
-        loader: DataLoader,
-        val_loader: Optional[DataLoader],
+        loader: torch.utils.data.DataLoader,
+        val_loader: Optional[torch.utils.data.DataLoader],
         mode: constants.ProcedureStage,
         loss_: helpers.AverageMeter,
         metric_meters: dict[str, helpers.AverageMeter],
@@ -726,7 +728,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         validation epoch.
         """
         if self.model.schedule is not None and not isinstance(
-            self.model.schedule, ReduceLROnPlateau
+            self.model.schedule, torch.optim.lr_scheduler.ReduceLROnPlateau
         ):
             self.model.schedule.step()
 
@@ -836,7 +838,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
         return False, None
 
-    def _validate(self, val_loader: Optional[DataLoader]) -> None:
+    def _validate(self, val_loader: Optional[torch.utils.data.DataLoader]) -> None:
         """Run mid-epoch validation if the configured interval has been reached.
 
         No-op when the model is not training, ``val_loader`` is ``None``,
@@ -933,7 +935,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         )
 
     def _val_epoch(
-        self, val_loader: Optional[DataLoader]
+        self, val_loader: Optional[torch.utils.data.DataLoader]
     ) -> tuple[Optional[float], dict]:
         """Run one validation epoch and return ``(val_loss, val_metrics)``.
 
@@ -973,7 +975,7 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.update_best(val_loss_t)
                 val_loss, val_metrics = val_loss_t.item(), {}
 
-        if isinstance(self.model.schedule, ReduceLROnPlateau):
+        if isinstance(self.model.schedule, torch.optim.lr_scheduler.ReduceLROnPlateau):
             self.model.schedule.step(val_loss)
 
         return val_loss, val_metrics
@@ -1157,7 +1159,9 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             self.model.load_state_dict(self._best_model_state)
         self.logger.info("Restored model weights from best checkpoint.")
 
-    def eval_model(self, loader: DataLoader, store: Optional[Store] = None):
+    def eval_model(
+        self, loader: torch.utils.data.DataLoader, store: Optional[Store] = None
+    ):
         """Evaluate the model on a held-out set and return metrics.
 
         Args:

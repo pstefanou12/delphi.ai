@@ -4,7 +4,7 @@
 from collections.abc import Callable
 from typing import Optional
 
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import boolean_product
@@ -44,7 +44,7 @@ class TruncatedBooleanProduct(
         # infinite log-odds.
         emp = dataset_s.mean(0).clamp(1e-6, 1 - 1e-6)
         self.emp_theta = boolean_product.BooleanProduct.to_natural(emp)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_probs_(self):

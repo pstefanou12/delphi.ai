@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import multivariate_normal
@@ -27,8 +27,8 @@ class TruncatedMultivariateNormal(
     # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     # Holds the lower triangle, so descent moves dims * (dims + 1) / 2 numbers
     # rather than repeating every off-diagonal.
-    T: nn.Parameter
-    v: nn.Parameter
+    T: torch.nn.Parameter
+    v: torch.nn.Parameter
 
     dist = multivariate_normal.MultivariateNormal
     # T(x) mixes coordinates through xx^T, so the Hessian is dense and its
@@ -61,7 +61,7 @@ class TruncatedMultivariateNormal(
         self.emp_v: Optional[ch.Tensor] = None
 
     def _calc_emp_model(self):
-        """Calculate empirical natural parameters and register T and v as nn.Parameters."""
+        """Calculate empirical natural parameters and register T and v as torch.nn.Parameters."""
         dataset_s = self.train_loader_.dataset.S
         loc = dataset_s.mean(0)
         second_moment = (dataset_s.T @ dataset_s) / dataset_s.size(0)
@@ -77,8 +77,8 @@ class TruncatedMultivariateNormal(
         # Clone so that SGD in-place updates to T and v do not corrupt
         # emp_theta, which is used as the fixed anchor in the sublevel-set
         # projection bisection.
-        self.register_parameter("T", nn.Parameter(self.emp_T.clone()))
-        self.register_parameter("v", nn.Parameter(self.emp_v.clone()))
+        self.register_parameter("T", torch.nn.Parameter(self.emp_T.clone()))
+        self.register_parameter("v", torch.nn.Parameter(self.emp_v.clone()))
         with ch.no_grad():
             self.nll_init = self._compute_nll(self.emp_theta)
 

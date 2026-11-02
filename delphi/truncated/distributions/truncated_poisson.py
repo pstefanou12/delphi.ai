@@ -4,7 +4,7 @@
 from collections.abc import Callable
 from typing import Optional
 
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import poisson
@@ -43,7 +43,7 @@ class TruncatedPoisson(
         # A coordinate observed only at zero would otherwise give log(0).
         emp = dataset_s.mean(0).clamp(min=1e-6)
         self.emp_theta = poisson.Poisson.to_natural(emp)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_rate_(self):

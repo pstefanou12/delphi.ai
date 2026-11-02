@@ -2,14 +2,14 @@
 """Multinomial distribution with known trials, in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Multinomial(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Multinomial,
+    torch.distributions.Multinomial,
 ):
     """Multinomial distribution with known trials over ``dims`` categories.
 

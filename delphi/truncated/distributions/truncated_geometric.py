@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import geometric
@@ -43,7 +43,7 @@ class TruncatedGeometric(
         mean = self.train_loader_.dataset.S.mean(0)
         emp = (1.0 / (1.0 + mean)).clamp(1e-6, 1 - 1e-6)
         self.emp_theta = geometric.Geometric.to_natural(emp)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so probs lies in (0, 1)."""

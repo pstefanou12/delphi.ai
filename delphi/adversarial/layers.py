@@ -2,7 +2,7 @@
 """Neural-network layers shared by the attacker and the model zoos."""
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 
 class InputNormalize(ch.nn.Module):
@@ -38,7 +38,7 @@ class FakeReLU(ch.autograd.Function):  # pylint: disable=abstract-method
         return grad_output
 
 
-class FakeReLUM(nn.Module):
+class FakeReLUM(torch.nn.Module):
     """Module wrapper around FakeReLU autograd function."""
 
     def forward(self, x):

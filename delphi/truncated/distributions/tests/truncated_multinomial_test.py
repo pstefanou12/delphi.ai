@@ -14,7 +14,7 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_multinomial
@@ -26,7 +26,7 @@ _TRIALS = 10
 
 
 def multinomial_kl_divergence(
-    fitted: distributions.Distribution, target: distributions.Distribution
+    fitted: torch.distributions.Distribution, target: torch.distributions.Distribution
 ) -> ch.Tensor:
     """Return KL between two multinomials with the same trials.
 
@@ -42,9 +42,9 @@ def multinomial_kl_divergence(
         The KL divergence.
     """
     count = fitted.total_count  # type: ignore[attr-defined]
-    return count * distributions.kl.kl_divergence(
-        distributions.Categorical(fitted.probs),  # type: ignore[attr-defined]
-        distributions.Categorical(target.probs),  # type: ignore[attr-defined]
+    return count * torch.distributions.kl.kl_divergence(
+        torch.distributions.Categorical(fitted.probs),  # type: ignore[attr-defined]
+        torch.distributions.Categorical(target.probs),  # type: ignore[attr-defined]
     )
 
 
@@ -57,7 +57,7 @@ def _recovers(
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_multinomial.TruncatedMultinomial,
-        target=distributions.Multinomial(_TRIALS, probs),
+        target=torch.distributions.Multinomial(_TRIALS, probs),
         phi=phi,
         dims=probs.size(0),
         parameter="probs_",
@@ -66,7 +66,7 @@ def _recovers(
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         model_args=(_TRIALS,),
-        rebuild=functools.partial(distributions.Multinomial, _TRIALS),
+        rebuild=functools.partial(torch.distributions.Multinomial, _TRIALS),
         divergence=multinomial_kl_divergence,
     )
 
@@ -79,7 +79,7 @@ def test_three_categories_random_half_space():
     probs = ch.Tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 3),
-        distributions.Multinomial(_TRIALS, probs),
+        torch.distributions.Multinomial(_TRIALS, probs),
         target_alpha=(0.10, 0.40),
         bounds=(-20.0, 20.0),
     )
@@ -110,7 +110,7 @@ def test_three_categories_small_mass():
     probs = ch.Tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Multinomial(_TRIALS, probs),
+        torch.distributions.Multinomial(_TRIALS, probs),
         target_alpha=(0.005, 0.03),
         bounds=(-1.0, 11.0),
     )
@@ -122,7 +122,7 @@ def test_ten_categories_random_half_space():
     probs = probs / probs.sum()
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 10),
-        distributions.Multinomial(_TRIALS, probs),
+        torch.distributions.Multinomial(_TRIALS, probs),
         target_alpha=(0.10, 0.40),
         bounds=(-20.0, 20.0),
     )
@@ -136,14 +136,14 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_multinomial.TruncatedMultinomial,
         targets=(
-            distributions.Multinomial(_TRIALS, ch.Tensor([0.2, 0.3, 0.5])),
-            distributions.Multinomial(_TRIALS, ch.Tensor([0.4, 0.225, 0.375])),
+            torch.distributions.Multinomial(_TRIALS, ch.Tensor([0.2, 0.3, 0.5])),
+            torch.distributions.Multinomial(_TRIALS, ch.Tensor([0.4, 0.225, 0.375])),
         ),
         phi=lambda z: (z[:, 0] > 2.5) & (z[:, 0] < 4.5),
         dims=3,
         parameter="probs_",
         empirical=lambda s: (s.mean(0) / _TRIALS).clamp(min=1e-6),
         model_args=(_TRIALS,),
-        rebuild=functools.partial(distributions.Multinomial, _TRIALS),
+        rebuild=functools.partial(torch.distributions.Multinomial, _TRIALS),
         divergence=multinomial_kl_divergence,
     )

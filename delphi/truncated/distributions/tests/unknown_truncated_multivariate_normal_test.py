@@ -10,8 +10,8 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 from delphi.torchnomials import polynomial
 from delphi.truncated.distributions import (
@@ -43,17 +43,19 @@ def _recovers(
     phi: helpers.Oracle,
     dataset_size: int = 20000,
 ) -> None:
-    target = distributions.MultivariateNormal(loc, covariance_matrix)
+    target = torch.distributions.MultivariateNormal(loc, covariance_matrix)
     model = _model(loc.numel())
     unknown_truncation.assert_recovers(
         model,
         target,
         phi,
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(model, f"{name}_loc_"),
             getattr(model, f"{name}_covariance_matrix_"),
         ),
-        baseline=lambda s: distributions.MultivariateNormal(s.mean(0), ch.cov(s.T)),
+        baseline=lambda s: torch.distributions.MultivariateNormal(
+            s.mean(0), ch.cov(s.T)
+        ),
         dataset_size=dataset_size,
     )
 
@@ -115,7 +117,7 @@ def test_four_dimensional_ball_off_the_mean():
 @pytest.mark.parametrize("known_covariance", [False, True])
 def test_terms_are_the_papers_objective(known_covariance: bool) -> None:
     """Each row's term is exp(h(u, B; z)) N(0, I; z) psi_k(z), equation (5)."""
-    target = distributions.MultivariateNormal(
+    target = torch.distributions.MultivariateNormal(
         ch.zeros(2), unknown_truncation.CORRELATED
     )
     ch.manual_seed(0)
@@ -156,7 +158,7 @@ def test_terms_are_the_papers_objective(known_covariance: bool) -> None:
         - (z - mean) @ u
         + ch.log(ch.tensor(2.0 * ch.pi))
     )
-    reference = distributions.MultivariateNormal(
+    reference = torch.distributions.MultivariateNormal(
         ch.zeros(2, dtype=z.dtype), ch.eye(2, dtype=z.dtype)
     )
     expected = h.exp() * reference.log_prob(z).exp() * psi
@@ -172,7 +174,7 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
     Separates the objective, the frame and the parameterization from the
     Hermite approximation, whose bias every recovery test also carries.
     """
-    target = distributions.MultivariateNormal(
+    target = torch.distributions.MultivariateNormal(
         ch.tensor([0.5, -0.5]), unknown_truncation.CORRELATED
     )
     ch.manual_seed(0)
@@ -185,14 +187,14 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
     model.fit(sample.S)
     z = model.standardization_.transform(sample.S.double())
     scale, center = model.standardization_.scale, model.standardization_.mean
-    truth_in_frame = distributions.MultivariateNormal(
+    truth_in_frame = torch.distributions.MultivariateNormal(
         ch.linalg.solve(scale, target.loc.double() - center),  # pylint: disable=not-callable
         ch.linalg.solve(  # pylint: disable=not-callable
             scale,
             ch.linalg.solve(scale, unknown_truncation.CORRELATED.double()).T,  # pylint: disable=not-callable
         ),
     )
-    reference = distributions.MultivariateNormal(
+    reference = torch.distributions.MultivariateNormal(
         ch.zeros(2, dtype=z.dtype), ch.eye(2, dtype=z.dtype)
     )
     # The 1 / alpha factor scales the objective and leaves its minimizer.
@@ -213,8 +215,8 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
 
     optimizer.step(closure)
     loc, covariance_matrix = model._canonical(theta.detach())  # pylint: disable=protected-access
-    divergence = kl.kl_divergence(
-        distributions.MultivariateNormal(loc.float(), covariance_matrix.float()),
+    divergence = torch.distributions.kl.kl_divergence(
+        torch.distributions.MultivariateNormal(loc.float(), covariance_matrix.float()),
         target,
     )
     print(f"exact-psi divergence: {float(divergence):.6f}")
@@ -224,7 +226,7 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
 
 def _descent_rows() -> tuple[ch.Tensor, ch.Tensor]:
     """Return a fitted model's descent rows and a point near its start."""
-    target = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+    target = torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 2000
@@ -269,7 +271,7 @@ def test_projection_bounds_the_precision_and_the_mean():
     model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
         {"min_precision": 0.5, "max_precision": 2.0, "loc_radius": 1.0}, 3
     )
-    target = distributions.MultivariateNormal(ch.zeros(3), ch.eye(3))
+    target = torch.distributions.MultivariateNormal(ch.zeros(3), ch.eye(3))
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
         target, lambda z: z[:, 0] > 0, 500
@@ -312,7 +314,7 @@ def test_estimates_need_a_fit():
 
 
 def test_default_degree_follows_the_sample():
-    target = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+    target = torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 4000
@@ -330,7 +332,7 @@ def test_default_degree_follows_the_sample():
 
 
 def test_an_explicit_degree_beyond_the_sample_warns():
-    target = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+    target = torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
     ch.manual_seed(0)
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 400

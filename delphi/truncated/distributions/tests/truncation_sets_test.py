@@ -6,13 +6,13 @@ import math
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.truncated.distributions.tests import truncation_sets
 
 ch.set_printoptions(precision=4, sci_mode=False)
 
-_REFERENCE = distributions.MultivariateNormal(ch.zeros(2), 2 * ch.eye(2))
+_REFERENCE = torch.distributions.MultivariateNormal(ch.zeros(2), 2 * ch.eye(2))
 
 
 def test_annulus_excludes_the_mode_and_the_tail():

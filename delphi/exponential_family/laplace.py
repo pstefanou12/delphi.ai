@@ -4,14 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Laplace(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Laplace,
+    torch.distributions.Laplace,
 ):
     """Laplace distribution with known location, parameterized by its scale."""
 

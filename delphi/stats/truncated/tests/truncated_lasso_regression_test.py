@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 from sklearn.linear_model import LassoCV
 import torch as ch
-from torch.nn import MSELoss
+import torch.nn
 
 from delphi import stats
 
 SEED = 69
-mse_loss = MSELoss()
+mse_loss = torch.nn.MSELoss()
 
 
 @pytest.mark.skip(reason="accuracy: mse 0.146 against a 0.1 tolerance")

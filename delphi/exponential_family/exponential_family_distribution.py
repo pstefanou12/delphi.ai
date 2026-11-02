@@ -5,10 +5,12 @@ import abc
 from typing import Any
 
 import torch as ch
-from torch.distributions import exp_family
+import torch.distributions.exp_family
 
 
-class ExponentialFamilyDistribution(exp_family.ExponentialFamily, abc.ABC):
+class ExponentialFamilyDistribution(
+    torch.distributions.exp_family.ExponentialFamily, abc.ABC
+):
     """Abstract base class for exponential family distributions in natural parameterization."""
 
     @staticmethod

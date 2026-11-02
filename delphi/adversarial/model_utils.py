@@ -7,12 +7,12 @@ import os
 
 import dill
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi.adversarial import attacker
 
 
-class DummyModel(nn.Module):
+class DummyModel(torch.nn.Module):
     """A thin wrapper that ignores extra forward arguments."""
 
     def __init__(self, model):
@@ -42,7 +42,7 @@ def make_and_restore_model(  # pylint: disable=too-many-arguments,too-many-posit
     Make a model and optionally restore it from a checkpoint.
 
     Args:
-        arch (str|nn.Module): Model architecture identifier or otherwise a
+        arch (str|torch.nn.Module): Model architecture identifier or otherwise a
             torch.nn.Module instance with the classifier
         dataset (Dataset class [see datasets.py])
         resume_path (str): optional path to checkpoint saved with the
@@ -50,7 +50,7 @@ def make_and_restore_model(  # pylint: disable=too-many-arguments,too-many-posit
         pytorch_pretrained (bool): if True, try to load a standard-trained
             checkpoint from the torchvision library (throw error if failed)
         add_custom_forward (bool): ignored unless arch is an instance of
-            nn.Module (and not a string). Normally, architectures should have a
+            torch.nn.Module (and not a string). Normally, architectures should have a
             forward() function which accepts arguments ``with_latent``,
             ``fake_relu``, and ``no_relu`` to allow for adversarial manipulation
             (see `here`<https://robustness.readthedocs.io/en/latest/example_usage/

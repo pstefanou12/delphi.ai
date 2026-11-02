@@ -4,7 +4,7 @@
 import math
 
 import torch as ch
-from torch.distributions import constraints
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution
 
@@ -19,8 +19,8 @@ class Maxwell(exponential_family_distribution.ExponentialFamilyDistribution):
         scale: Scale, one per coordinate.
     """
 
-    arg_constraints = {"scale": constraints.positive}
-    support = constraints.positive
+    arg_constraints = {"scale": torch.distributions.constraints.positive}
+    support = torch.distributions.constraints.positive
 
     def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""

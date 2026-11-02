@@ -6,7 +6,7 @@ from typing import cast
 
 import torch as ch
 import torch.linalg as LA
-from torch.utils.data import DataLoader, TensorDataset
+import torch.utils.data
 
 from delphi import configs
 
@@ -75,15 +75,15 @@ def make_train_and_val(  # pylint: disable=invalid-name
         val_norm = Normalize().fit_transform(x_val)
         x_val = val_norm.transform(x_val)
 
-    train_ds = TensorDataset(x_train, y_train)
-    val_ds = TensorDataset(x_val, y_val)
+    train_ds = torch.utils.data.TensorDataset(x_train, y_train)
+    val_ds = torch.utils.data.TensorDataset(x_val, y_val)
 
     batch_size = len(train_ds) if args.batch_size == -1 else args.batch_size
 
-    train_loader = DataLoader(
+    train_loader = torch.utils.data.DataLoader(
         train_ds, batch_size=batch_size, num_workers=args.workers, shuffle=args.shuffle
     )
-    val_loader = DataLoader(
+    val_loader = torch.utils.data.DataLoader(
         val_ds, batch_size=len(val_ds), num_workers=args.workers, shuffle=args.shuffle
     )
 
@@ -104,8 +104,8 @@ def make_train_and_val_distr(  # pylint: disable=invalid-name
     train_ds = ds(x_train, **kwargs)
     val_ds = ds(x_val, **kwargs)
     batch_size = len(train_ds) if args.batch_size == -1 else args.batch_size
-    train_loader = DataLoader(train_ds, batch_size=batch_size)
-    val_loader = DataLoader(val_ds, batch_size=len(val_ds))
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=len(val_ds))
 
     return train_loader, val_loader
 

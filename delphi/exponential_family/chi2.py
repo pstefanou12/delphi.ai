@@ -2,14 +2,14 @@
 """Chi-squared distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Chi2(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Chi2,
+    torch.distributions.Chi2,
 ):
     """Chi-squared distribution parameterized by ``df / 2 - 1``."""
 

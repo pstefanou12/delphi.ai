@@ -5,7 +5,7 @@ import functools
 from typing import Optional
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_geometric
@@ -24,7 +24,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_geometric.TruncatedGeometric,
-        target=distributions.Geometric(probs),
+        target=torch.distributions.Geometric(probs),
         phi=phi,
         dims=dims,
         parameter="probs_",
@@ -43,7 +43,7 @@ def test_two_dimensions():
     probs = ch.Tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Geometric(probs),
+        torch.distributions.Geometric(probs),
         target_alpha=(0.10, 0.40),
         bounds=(-1.0, 200.0),
     )
@@ -54,7 +54,7 @@ def test_two_dimensions_random_half_space():
     probs = ch.Tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.Geometric(probs),
+        torch.distributions.Geometric(probs),
         target_alpha=(0.10, 0.40),
         bounds=(-50.0, 50.0),
     )
@@ -86,7 +86,7 @@ def test_one_dimension_small_mass():
     probs = ch.Tensor([0.3])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Geometric(probs),
+        torch.distributions.Geometric(probs),
         target_alpha=(0.005, 0.03),
         bounds=(-1.0, 200.0),
     )
@@ -97,7 +97,7 @@ def test_ten_dimensions_sum_threshold():
     probs = ch.linspace(0.2, 0.6, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Geometric(probs),
+        torch.distributions.Geometric(probs),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 400.0),
     )
@@ -108,8 +108,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_geometric.TruncatedGeometric,
         targets=(
-            distributions.Geometric(ch.Tensor([0.2])),
-            distributions.Geometric(ch.Tensor([0.5])),
+            torch.distributions.Geometric(ch.Tensor([0.2])),
+            torch.distributions.Geometric(ch.Tensor([0.5])),
         ),
         phi=lambda z: (z[:, 0] > 2.5) & (z[:, 0] < 4.5),
         dims=1,

@@ -2,14 +2,14 @@
 """Normal distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Normal(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Normal,
+    torch.distributions.Normal,
 ):
     """Normal distribution parameterized by natural parameters.
 

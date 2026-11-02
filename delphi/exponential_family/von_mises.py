@@ -2,14 +2,14 @@
 """von Mises distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class VonMises(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.VonMises,
+    torch.distributions.VonMises,
 ):
     """von Mises distribution on the circle.
 

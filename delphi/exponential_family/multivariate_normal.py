@@ -2,7 +2,7 @@
 """Multivariate normal distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 from delphi.utils import helpers
@@ -10,7 +10,7 @@ from delphi.utils import helpers
 
 class MultivariateNormal(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.MultivariateNormal,
+    torch.distributions.MultivariateNormal,
 ):
     """Multivariate normal parameterized by natural parameters.
 

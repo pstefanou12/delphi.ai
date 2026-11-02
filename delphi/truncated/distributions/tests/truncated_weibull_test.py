@@ -5,7 +5,7 @@ import functools
 from typing import Optional
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_weibull
@@ -60,7 +60,7 @@ def _recovers(
         baseline_must_fail: Forwarded to ``assert_recovers``.
     """
     ch.manual_seed(0)
-    target = distributions.Weibull(scale, concentration)
+    target = torch.distributions.Weibull(scale, concentration)
     S, alpha, parent = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
         target, phi, 10000
     )
@@ -121,7 +121,7 @@ def test_two_dimensions_random_half_space():
     concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 2, 2),
-        distributions.Weibull(scale, concentration),
+        torch.distributions.Weibull(scale, concentration),
         bounds=(-25.0, 25.0),
     )
     _recovers(
@@ -136,7 +136,7 @@ def test_two_dimensions_random_disc_union():
     concentration, scale = ch.Tensor([2.0, 2.0]), ch.Tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_disc_union, 1, 2, 6),
-        distributions.Weibull(scale, concentration),
+        torch.distributions.Weibull(scale, concentration),
         bounds=(1e-4, 1e3),
     )
     _recovers(
@@ -177,7 +177,7 @@ def test_one_dimension_small_mass():
     # suite goes near it.
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Weibull(scale, concentration),
+        torch.distributions.Weibull(scale, concentration),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
@@ -202,7 +202,7 @@ def test_indistinguishable_pair():
     for scale in scales:
         ch.manual_seed(0)
         sample = helpers.generate_truncated_distribution_dataset(
-            distributions.Weibull(scale, concentration), phi, 10000
+            torch.distributions.Weibull(scale, concentration), phi, 10000
         )
         truncated = truncated_weibull.TruncatedWeibull(
             {},

@@ -7,8 +7,7 @@ import os
 import os.path
 import sys
 
-from torch.utils import data
-from torch.utils.data import Dataset
+import torch.utils.data
 from torchvision import get_image_backend, transforms
 
 try:
@@ -59,7 +58,7 @@ def make_dataset(directory, class_to_idx, extensions):
     return images
 
 
-class DatasetFolder(data.Dataset):  # pylint: disable=too-many-instance-attributes
+class DatasetFolder(torch.utils.data.Dataset):  # pylint: disable=too-many-instance-attributes
     """A generic data loader where the samples are arranged in this way: ::
         root/class_x/xxx.ext
         root/class_x/xxy.ext
@@ -243,7 +242,7 @@ class ImageFolder(DatasetFolder):  # pylint: disable=too-few-public-methods
         self.imgs = self.samples
 
 
-class TensorDataset(Dataset):
+class TensorDataset(torch.utils.data.Dataset):
     """Dataset wrapping tensors.
     Each sample will be retrieved by indexing tensors along the first dimension.
     Arguments:

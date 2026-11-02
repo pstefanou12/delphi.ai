@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import von_mises
@@ -64,7 +64,7 @@ class TruncatedVonMises(
         self.emp_theta = von_mises.VonMises.to_natural(
             ch.cat([ch.atan2(sin, cos), concentration])
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_loc_(self):

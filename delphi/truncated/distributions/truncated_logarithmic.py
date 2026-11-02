@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import logarithmic
@@ -55,7 +55,7 @@ class TruncatedLogarithmic(
             low = ch.where(mean < sample_mean, probs, low)
             high = ch.where(mean < sample_mean, high, probs)
         self.emp_theta = logarithmic.Logarithmic.to_natural((low + high) / 2.0)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so the probs stay below one."""

@@ -7,7 +7,7 @@ import dataclasses
 from typing import Optional
 
 import torch as ch
-from torch.distributions import Distribution
+import torch.distributions
 
 # Floors the block estimate so a run of rejections cannot ask for an
 # unbounded draw, and caps any single block.
@@ -31,7 +31,7 @@ class SamplingBudgetExceeded(ValueError):
 
 
 def rejection_sample(
-    dist: Distribution, phi: Callable, num_samples: int
+    dist: torch.distributions.Distribution, phi: Callable, num_samples: int
 ) -> tuple[ch.Tensor, ch.Tensor]:
     """Draw from dist and keep whatever falls inside the truncation set.
 

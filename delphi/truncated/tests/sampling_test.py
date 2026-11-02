@@ -3,7 +3,7 @@
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.truncated import sampling
 
@@ -11,7 +11,7 @@ from delphi.truncated import sampling
 def test_returns_at_least_the_samples_asked_for():
     ch.manual_seed(0)
     samples, mass = sampling.rejection_sample(
-        distributions.Normal(0.0, 1.0), lambda z: z > 1.0, 500
+        torch.distributions.Normal(0.0, 1.0), lambda z: z > 1.0, 500
     )
     assert samples.size(0) >= 500
     assert bool((samples > 1.0).all())
@@ -24,7 +24,7 @@ def test_gives_up_on_a_set_with_no_mass():
     # 5.5e7 draws per accepted sample instead of failing.
     with pytest.raises(sampling.SamplingBudgetExceeded, match="almost no mass"):
         sampling.rejection_sample(
-            distributions.Poisson(ch.tensor([28.0])),
+            torch.distributions.Poisson(ch.tensor([28.0])),
             lambda z: ((z >= 3) & (z <= 4)).flatten(),
             100,
         )

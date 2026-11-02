@@ -4,7 +4,7 @@
 from collections.abc import Callable
 from typing import Optional
 
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import continuous_bernoulli
@@ -44,7 +44,7 @@ class TruncatedContinuousBernoulli(
         """
         mean = self.train_loader_.dataset.S.mean(0).clamp(1e-3, 1 - 1e-3)
         self.emp_theta = continuous_bernoulli.ContinuousBernoulli.to_natural(mean)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_probs_(self):

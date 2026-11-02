@@ -12,7 +12,6 @@ from typing import Protocol
 from cox.store import Store
 import numpy as np
 import torch as ch
-from torch import linalg as LA
 
 from delphi import configs
 from delphi.stats import linear_model
@@ -241,7 +240,7 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def calculate_u_t_one(a, b, x):  # pylint: disable=invalid-name
         """Calculate control input for phase one stabilization."""
-        return (-b @ LA.inv(b.T @ b) @ a.T @ x.T).T  # pylint: disable=not-callable
+        return (-b @ ch.linalg.inv(b.T @ b) @ a.T @ x.T).T  # pylint: disable=not-callable
 
     def generate_samples_B(self):  # pylint: disable=invalid-name,too-many-locals
         """Generate samples focused on estimating matrix B."""
@@ -306,12 +305,12 @@ class TruncatedLQR:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def calculate_u_t_two(_a, b, gamma_e_i):  # pylint: disable=invalid-name
         """Calculate control input for phase two B estimation."""
-        return (b @ LA.inv(b.T @ b) @ gamma_e_i)[None, ...]  # pylint: disable=not-callable
+        return (b @ ch.linalg.inv(b.T @ b) @ gamma_e_i)[None, ...]  # pylint: disable=not-callable
 
     @staticmethod
     def calculate_u_t_three(a, b, x):  # pylint: disable=invalid-name
         """Calculate control input for phase three stabilization."""
-        return (-b @ LA.inv(b.T @ b) @ a.T @ x.T).T  # pylint: disable=not-callable
+        return (-b @ ch.linalg.inv(b.T @ b) @ a.T @ x.T).T  # pylint: disable=not-callable
 
     def generate_samples_A(self):  # pylint: disable=invalid-name,too-many-locals
         """Generate samples focused on estimating matrix A."""

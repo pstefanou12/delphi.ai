@@ -35,9 +35,9 @@ from typing import Optional, cast
 import warnings
 
 import torch as ch
-from torch import distributions as torch_distributions
-from torch import nn
-from torch.utils import data
+import torch.distributions
+import torch.nn
+import torch.utils.data
 
 from delphi import configs, trainer
 import delphi.oracle
@@ -100,13 +100,13 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         self.dims = dims
         self.alpha = alpha
         self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
-        self.theta = nn.Parameter(ch.zeros(self._num_params()))
+        self.theta = torch.nn.Parameter(ch.zeros(self._num_params()))
 
         self.standardization_: Optional[standardization.Standardization] = None
         self.recovered_set_: Optional[delphi.oracle.RecoveredSet] = None
         self.emp_theta: Optional[ch.Tensor] = None
-        self.train_loader_: Optional[data.DataLoader] = None
-        self.val_loader_: Optional[data.DataLoader] = None
+        self.train_loader_: Optional[torch.utils.data.DataLoader] = None
+        self.val_loader_: Optional[torch.utils.data.DataLoader] = None
         self.trainer: Optional[trainer.Trainer] = None
         self.procedure: Optional[trainer.ProcedureResult] = None
         self.best_params: Optional[ch.Tensor] = None
@@ -360,7 +360,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             self.avg_params if theta is None else theta
         )
         return recovered.given(
-            torch_distributions.MultivariateNormal(loc, covariance_matrix)
+            torch.distributions.MultivariateNormal(loc, covariance_matrix)
         )
 
     @property

@@ -9,7 +9,7 @@ import warnings
 
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs, trainer
 from delphi.stats import linear_model
@@ -28,7 +28,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     """
 
     # Created by register_parameter in pre_phase_hook, which mypy cannot see.
-    weight: nn.Parameter
+    weight: torch.nn.Parameter
 
     defaults = configs.TruncatedLassoRegressionConfig
 
@@ -135,7 +135,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.
         self.radius = self.hyperparameters.r * self.base_radius
-        self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
+        self.register_parameter("weight", torch.nn.Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self) -> None:
         """Calculate empirical lasso regression estimates using sklearn."""

@@ -4,14 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Binomial(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Binomial,
+    torch.distributions.Binomial,
 ):
     """Binomial distribution with known trials, parameterized by log-odds."""
 

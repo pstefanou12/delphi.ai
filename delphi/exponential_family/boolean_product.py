@@ -2,14 +2,14 @@
 """Boolean product distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class BooleanProduct(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Bernoulli,
+    torch.distributions.Bernoulli,
 ):
     """Boolean product distribution parameterized by natural parameters."""
 

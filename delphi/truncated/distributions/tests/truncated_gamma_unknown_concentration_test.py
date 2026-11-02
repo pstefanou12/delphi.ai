@@ -6,7 +6,7 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_gamma_unknown_concentration
@@ -28,7 +28,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 ) -> None:
     helpers.assert_family_recovers(
         model_class=_MODEL,
-        target=distributions.Gamma(concentration, rate),
+        target=torch.distributions.Gamma(concentration, rate),
         phi=phi,
         dims=dims,
         parameter=("concentration_", "rate_"),
@@ -52,7 +52,7 @@ def test_two_dimensions():
     concentration, rate = ch.Tensor([3.0, 2.0]), ch.Tensor([2.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Gamma(concentration, rate),
+        torch.distributions.Gamma(concentration, rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
@@ -63,7 +63,7 @@ def test_two_dimensions_random_half_space():
     concentration, rate = ch.Tensor([3.0, 2.0]), ch.Tensor([2.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.Gamma(concentration, rate),
+        torch.distributions.Gamma(concentration, rate),
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
@@ -96,7 +96,7 @@ def test_one_dimension_small_mass():
     concentration, rate = ch.Tensor([3.0]), ch.Tensor([2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Gamma(concentration, rate),
+        torch.distributions.Gamma(concentration, rate),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 100.0),
     )
@@ -107,7 +107,7 @@ def test_ten_dimensions_sum_threshold():
     concentration, rate = ch.linspace(1.5, 5.0, 10), ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Gamma(concentration, rate),
+        torch.distributions.Gamma(concentration, rate),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 500.0),
     )
@@ -118,8 +118,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=_MODEL,
         targets=(
-            distributions.Gamma(ch.Tensor([2.0]), ch.Tensor([1.0])),
-            distributions.Gamma(ch.Tensor([6.0]), ch.Tensor([3.0])),
+            torch.distributions.Gamma(ch.Tensor([2.0]), ch.Tensor([1.0])),
+            torch.distributions.Gamma(ch.Tensor([6.0]), ch.Tensor([3.0])),
         ),
         phi=lambda z: (z[:, 0] > 1.5) & (z[:, 0] < 2.5),
         dims=1,
@@ -133,7 +133,7 @@ def test_twenty_dimensions_small_mass():
     concentration, rate = ch.linspace(1.5, 5.0, 20), ch.linspace(0.5, 2.0, 20)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Gamma(concentration, rate),
+        torch.distributions.Gamma(concentration, rate),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 1000.0),
     )

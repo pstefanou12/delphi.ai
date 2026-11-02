@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
 from delphi import configs
 from delphi.exponential_family import wishart
@@ -84,7 +84,7 @@ class TruncatedWishart(
         self.emp_theta = wishart.Wishart.to_natural(
             rough_start(self.train_loader_.dataset.S, self.size)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep df above ``size - 1`` and the matrix part negative definite."""
