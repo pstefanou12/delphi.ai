@@ -322,6 +322,15 @@ print(model.summary())
   `summary()` lists the 95% intervals. Dependent data has none.
 - **`sampler`** estimates `P(z in S)` and the conditional moments for the
   loss; rejection sampling by default.
+- **`dependent=True`** learns a linear dynamical system
+  `x_{t+1} = A x_t + w_t` from one trajectory observed only where `phi`
+  admits the state. Pass the pairs `(x_t, x_{t+1})` with both states
+  observed, in temporal order, as the rows of `X` and `y`;
+  `fit_intercept=False` for the system as written; the noise covariance as
+  `noise_var`; and as `alpha` a lower bound on the chance that an observed
+  state's successor is observed. The first half of the pairs warms up the
+  fit, and the descent takes the second half once, in order. `coef_`
+  estimates A.
 
 ### Classification
 
