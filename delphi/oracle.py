@@ -6,20 +6,21 @@ callable. The sets here carry state: ``Identity`` admits everything, and
 ``RecoveredSet`` is not given but estimated from samples drawn inside it.
 """
 
-from abc import ABC
+import abc
 import copy
 from typing import Optional
 
 import torch as ch
-from torch import distributions as torch_distributions
+import torch.distributions
 
 from delphi.torchnomials import hermite
 import delphi.transformations.transformation
 
 
-class oracle(ABC):  # pylint: disable=invalid-name,too-few-public-methods
+class oracle(abc.ABC):  # pylint: disable=invalid-name,too-few-public-methods
     """Base class for stateful truncation sets."""
 
+    @abc.abstractmethod
     def __call__(self, x):
         """Return membership of each sample.
 
@@ -95,7 +96,7 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
         self.degree = degree
         self.transformation = transformation
         self.polynomial: Optional[hermite.Hermite] = None
-        self.distribution: Optional[torch_distributions.Distribution] = None
+        self.distribution: Optional[torch.distributions.Distribution] = None
         self.threshold: Optional[float] = None
         # The fitting samples, in the expansion's coordinates, which set the
         # threshold once a distribution is given.
@@ -116,7 +117,7 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
         self._samples = z
         return self
 
-    def given(self, distribution: torch_distributions.Distribution) -> "RecoveredSet":
+    def given(self, distribution: torch.distributions.Distribution) -> "RecoveredSet":
         """Return a copy that decides membership against a fitted distribution.
 
         Args:
@@ -172,7 +173,7 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
         """
         if self.distribution is None:
             raise RuntimeError("membership needs a fitted distribution; call given.")
-        reference = torch_distributions.MultivariateNormal(
+        reference = torch.distributions.MultivariateNormal(
             ch.zeros(z.size(1), dtype=z.dtype), ch.eye(z.size(1), dtype=z.dtype)
         )
         log_ratio = reference.log_prob(z) - self.distribution.log_prob(z)

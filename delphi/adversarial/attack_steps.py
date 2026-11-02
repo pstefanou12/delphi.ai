@@ -1,10 +1,11 @@
+# Author: pstefanou12@
 # pylint: disable=anomalous-backslash-in-string
 """
 For most use cases, this can just be considered an internal class and
 ignored.**
 This module contains the abstract class AttackerStep as well as a few subclasses.
 AttackerStep is a generic way to implement optimizers specifically for use with
-:class:`robustness.attacker.AttackerModel`. In general, except for when you want
+:class:`delphi.adversarial.attacker.AttackerModel`. In general, except for when you want
 to :ref:`create a custom optimization method <adding-custom-steps>`, you probably
 do not need to import or edit this module and can just think of it as internal.
 Cite: code for attack steps shamelessly taken from:
@@ -40,7 +41,7 @@ class AttackerStep:
         self.use_grad = use_grad
 
     def project(self, x):
-        """
+        r"""
         Given an input x, project it back into the feasible set
         Args:
             ch.tensor x : the input to project back into the feasible set.
@@ -52,7 +53,7 @@ class AttackerStep:
         raise NotImplementedError
 
     def step(self, x, g):
-        """
+        r"""
         Given a gradient, make the appropriate step according to the
         perturbation constraint (e.g. dual norm maximization for :math:`\ell_p`
         norms).
@@ -85,7 +86,7 @@ class AttackerStep:
 
 # L-infinity threat model
 class LinfStep(AttackerStep):
-    """
+    r"""
     Attack step for :math:`\ell_\infty` threat model. Given :math:`x_0`
     and :math:`\epsilon`, the constraint set is given by:
     .. math:: S = \{x | \|x - x_0\|_\infty \leq \epsilon\}
@@ -112,7 +113,7 @@ class LinfStep(AttackerStep):
 
 # L2 threat model
 class L2Step(AttackerStep):
-    """
+    r"""
     Attack step for :math:`\ell_\infty` threat model. Given :math:`x_0`
     and :math:`\epsilon`, the constraint set is given by:
     .. math:: S = \{x | \|x - x_0\|_2 \leq \epsilon\}

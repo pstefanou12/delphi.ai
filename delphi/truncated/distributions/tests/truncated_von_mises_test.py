@@ -7,7 +7,7 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_von_mises
@@ -17,7 +17,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def von_mises_kl_divergence(
-    fitted: distributions.Distribution, target: distributions.Distribution
+    fitted: torch.distributions.Distribution, target: torch.distributions.Distribution
 ) -> ch.Tensor:
     """Return KL between two von Mises distributions.
 
@@ -54,7 +54,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_von_mises.TruncatedVonMises,
-        target=distributions.VonMises(loc, concentration),
+        target=torch.distributions.VonMises(loc, concentration),
         phi=phi,
         dims=dims,
         parameter=("loc_", "concentration_"),
@@ -69,17 +69,17 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        concentration=ch.Tensor([2.0]),
+        loc=ch.tensor([0.0]),
+        concentration=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 0.3,
     )
 
 
 def test_two_dimensions():
-    loc, concentration = ch.Tensor([0.0, 1.0]), ch.Tensor([2.0, 1.0])
+    loc, concentration = ch.tensor([0.0, 1.0]), ch.tensor([2.0, 1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.VonMises(loc, concentration),
+        torch.distributions.VonMises(loc, concentration),
         target_alpha=(0.15, 0.25),
         bounds=(-math.pi, math.pi),
     )
@@ -87,10 +87,10 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    loc, concentration = ch.Tensor([0.0, 1.0]), ch.Tensor([2.0, 1.0])
+    loc, concentration = ch.tensor([0.0, 1.0]), ch.tensor([2.0, 1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.VonMises(loc, concentration),
+        torch.distributions.VonMises(loc, concentration),
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
@@ -100,8 +100,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        concentration=ch.Tensor([2.0]),
+        loc=ch.tensor([0.0]),
+        concentration=ch.tensor([2.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -122,10 +122,10 @@ def test_ten_dimensions_identity():
 
 @pytest.mark.slow
 def test_one_dimension_small_mass():
-    loc, concentration = ch.Tensor([0.0]), ch.Tensor([2.0])
+    loc, concentration = ch.tensor([0.0]), ch.tensor([2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.VonMises(loc, concentration),
+        torch.distributions.VonMises(loc, concentration),
         target_alpha=(0.008, 0.02),
         bounds=(-math.pi, math.pi),
     )
@@ -144,7 +144,7 @@ def test_ten_dimensions_sum_threshold():
     loc, concentration = ch.linspace(-1.0, 1.0, 10), ch.linspace(0.5, 3.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.VonMises(loc, concentration),
+        torch.distributions.VonMises(loc, concentration),
         target_alpha=(0.15, 0.25),
         bounds=(-10 * math.pi, 10 * math.pi),
     )
@@ -155,8 +155,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_von_mises.TruncatedVonMises,
         targets=(
-            distributions.VonMises(ch.Tensor([0.0]), ch.Tensor([2.0])),
-            distributions.VonMises(ch.Tensor([0.0]), ch.Tensor([0.5])),
+            torch.distributions.VonMises(ch.tensor([0.0]), ch.tensor([2.0])),
+            torch.distributions.VonMises(ch.tensor([0.0]), ch.tensor([0.5])),
         ),
         phi=lambda z: (z[:, 0] > -1.0) & (z[:, 0] < 1.0),
         dims=1,

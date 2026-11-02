@@ -2,13 +2,14 @@
 """Rayleigh distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Rayleigh(
-    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Weibull
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    torch.distributions.Weibull,
 ):
     """Rayleigh distribution parameterized by ``-1 / (2 scale^2)``.
 

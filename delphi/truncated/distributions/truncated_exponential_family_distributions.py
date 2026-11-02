@@ -9,15 +9,16 @@ import math
 from typing import ClassVar, Generic, Optional
 
 import torch as ch
-from torch import distributions as torch_distributions
+import torch.distributions
 import torch.utils.data
 
-from delphi import configs, trainer
+from delphi.configs import base
+import delphi.trainer
 from delphi.truncated.distributions import distributions, losses, summary
 from delphi.utils import datasets, helpers
 
 # Called as dist(theta, dims) in losses.py on every step.
-DistributionFactory = Callable[[ch.Tensor, int], torch_distributions.Distribution]
+DistributionFactory = Callable[[ch.Tensor, int], torch.distributions.Distribution]
 
 SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 
@@ -27,7 +28,7 @@ MASS_DRAWS = 20000
 
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
-    distributions.distributions[configs._ConfigT], Generic[configs._ConfigT], abc.ABC
+    distributions.distributions[base.ConfigT], Generic[base.ConfigT], abc.ABC
 ):
     """Base class for truncated exponential family distribution models.
 
@@ -63,7 +64,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     # A type, not a Callable: mypy reads a callable class attribute as a
     # method and drops the first argument.
-    dist: ClassVar[Optional[type[torch_distributions.Distribution]]] = None
+    dist: ClassVar[Optional[type[torch.distributions.Distribution]]] = None
 
     # Suffixes of the canonical estimates, so that f"avg_{suffix}" names
     # one. Read by summary().
@@ -71,24 +72,25 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability in (0, 1]; estimated from phi at the
                 empirical initialization when omitted.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha is given and lies outside (0, 1).
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
         if alpha is not None and not 0.0 < alpha < 1.0:
@@ -113,8 +115,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.train_loader_: Optional[torch.utils.data.DataLoader] = None
         self.val_loader_: Optional[torch.utils.data.DataLoader] = None
         self.radius: Optional[float] = None
-        self.trainer: Optional[trainer.Trainer] = None
-        self.procedure: Optional[trainer.ProcedureResult] = None
+        self.trainer: Optional[delphi.trainer.Trainer] = None
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         self.n_samples_: Optional[int] = None
         self.emp_theta: Optional[ch.Tensor] = None
         # The projection's anchor, set once the start point is final.
@@ -177,12 +179,12 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         # _calc_emp_model registers a fresh theta, which needs its own hook.
         self._gradient_hook = None
         self._calc_emp_model()
-        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         self._adopt_results(self.procedure)
         return self
 
-    def post_warm_start_hook(self, result: trainer.RunResult) -> None:
+    def post_warm_start_hook(self, result: delphi.trainer.RunResult) -> None:
         """Start the procedure from the warm start's averaged iterate."""
         # The config requires record_params_every >= 1, so there are iterates.
         self.emp_theta = self._constraints(result.avg_params.detach().clone())
@@ -208,7 +210,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             "projection_distance": self._projection_distance - self._run_start[1],
         }
 
-    def post_phase_hook(self, result: trainer.RunResult) -> tuple[bool, Optional[str]]:
+    def post_phase_hook(
+        self, result: delphi.trainer.RunResult
+    ) -> tuple[bool, Optional[str]]:
         """Widen the projection budget, or say why the procedure is done.
 
         With alpha known the budget is log(1 / alpha), whose sublevel set
@@ -237,7 +241,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         return False, None
 
     def _phase_loss_converged(
-        self, result: trainer.RunResult
+        self, result: delphi.trainer.RunResult
     ) -> tuple[bool, Optional[str]]:
         """Compare this phase's best loss with the previous phase's."""
         previous, self._previous_phase_loss = (
@@ -264,7 +268,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             return True, f"phase_loss_increasing ({-improvement:.3e})"
         return False, None
 
-    def _adopt_results(self, result: trainer.ProcedureResult) -> None:
+    def _adopt_results(self, result: delphi.trainer.ProcedureResult) -> None:
         """Take the estimates from the last phase."""
         final = result.final
         self.best_params, self.best_loss = final.best_params, final.best_loss

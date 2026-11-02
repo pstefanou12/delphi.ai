@@ -12,77 +12,79 @@ import torch as ch
 import torch.optim
 import torch.optim.lr_scheduler
 
-from delphi import configs
+from delphi.configs import base
+from delphi.configs import optimizers as optimizers_configs
+from delphi.configs import schedulers as schedulers_configs
 from delphi.optim.lr_scheduler import fisher, inverse_time
 from delphi.utils import constants, helpers
 
 if TYPE_CHECKING:
-    from delphi import trainer
+    import delphi.trainer
 
 # Each torch class paired with the config section whose aliases name its
 # keyword arguments.
 OPTIMIZER_SECTIONS: dict[str, tuple[type, type[pydantic.BaseModel]]] = {
-    constants.OptimizerType.SGD: (torch.optim.SGD, configs.SGDConfig),
-    constants.OptimizerType.ADAM: (torch.optim.Adam, configs.AdamConfig),
-    constants.OptimizerType.ADAMW: (torch.optim.AdamW, configs.AdamConfig),
-    constants.OptimizerType.LBFGS: (torch.optim.LBFGS, configs.LBFGSConfig),
+    constants.OptimizerType.SGD: (torch.optim.SGD, optimizers_configs.SGDConfig),
+    constants.OptimizerType.ADAM: (torch.optim.Adam, optimizers_configs.AdamConfig),
+    constants.OptimizerType.ADAMW: (torch.optim.AdamW, optimizers_configs.AdamConfig),
+    constants.OptimizerType.LBFGS: (torch.optim.LBFGS, optimizers_configs.LBFGSConfig),
 }
 SCHEDULER_SECTIONS: dict[
     constants.SchedulerType, tuple[type, type[pydantic.BaseModel]]
 ] = {
     constants.SchedulerType.STEP: (
         torch.optim.lr_scheduler.StepLR,
-        configs.StepLRConfig,
+        schedulers_configs.StepLRConfig,
     ),
     constants.SchedulerType.MULTI_STEP: (
         torch.optim.lr_scheduler.MultiStepLR,
-        configs.MultiStepLRConfig,
+        schedulers_configs.MultiStepLRConfig,
     ),
     constants.SchedulerType.EXPONENTIAL: (
         torch.optim.lr_scheduler.ExponentialLR,
-        configs.ExponentialLRConfig,
+        schedulers_configs.ExponentialLRConfig,
     ),
     constants.SchedulerType.COSINE: (
         torch.optim.lr_scheduler.CosineAnnealingLR,
-        configs.CosineLRConfig,
+        schedulers_configs.CosineLRConfig,
     ),
     constants.SchedulerType.LINEAR: (
         torch.optim.lr_scheduler.LinearLR,
-        configs.LinearLRConfig,
+        schedulers_configs.LinearLRConfig,
     ),
     constants.SchedulerType.CYCLIC: (
         torch.optim.lr_scheduler.CyclicLR,
-        configs.CyclicLRConfig,
+        schedulers_configs.CyclicLRConfig,
     ),
     constants.SchedulerType.REDUCE_ON_PLATEAU: (
         torch.optim.lr_scheduler.ReduceLROnPlateau,
-        configs.PlateauLRConfig,
+        schedulers_configs.PlateauLRConfig,
     ),
     constants.SchedulerType.INVERSE_TIME: (
         inverse_time.InverseTimeLR,
-        configs.InverseTimeLRConfig,
+        schedulers_configs.InverseTimeLRConfig,
     ),
     constants.SchedulerType.FISHER: (
         fisher.FisherLR,
-        configs.FisherLRConfig,
+        schedulers_configs.FisherLRConfig,
     ),
 }
 
 
-class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invalid-name,too-many-instance-attributes,abstract-method
+class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-many-instance-attributes,abstract-method
     """Parent/abstract class for models to be passed into the trainer.
 
     Concrete subclasses must define a ``defaults`` class attribute pointing to
     their Pydantic config class::
 
-        class MyModel(delphi[MyConfig]):
+        class MyModel(DelphiModel[MyConfig]):
             defaults = MyConfig
 
     Subclasses may also register custom optimizers via the class-level registry::
 
-        delphi.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.hyperparameters.lr))
+        DelphiModel.register_optimizer("adamw", lambda m, p: AdamW(p, lr=m.hyperparameters.lr))
 
-    A factory registered on ``delphi`` is available to every model; one
+    A factory registered on ``DelphiModel`` is available to every model; one
     registered on a subclass applies only to that subclass and its children.
     Algorithms needing several optimizers at once, such as a GAN, should
     instead override ``make_optimizer_and_schedule`` to populate
@@ -91,24 +93,27 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
 
     _OPTIMIZER_REGISTRY: ClassVar[dict[str, Callable]] = {}
 
-    defaults: type[configs._ConfigT]
+    defaults: type[base.ConfigT]
 
-    def __init__(self, hyperparameters: dict):
-        """Initialize the delphi model.
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
+        """Initialize DelphiModel.
 
         Args:
-            hyperparameters: Hyperparameter dict, validated and stored as
-                ``self.hyperparameters`` via the subclass ``defaults`` config.
+            hyperparameters: Overrides of the ``defaults`` config's fields,
+                validated and stored as ``self.hyperparameters``; None keeps
+                every default.
 
         Raises:
-            TypeError: If hyperparameters is not a dict.
+            TypeError: If hyperparameters is neither None nor a dict.
         """
         super().__init__()
+        if hyperparameters is None:
+            hyperparameters = {}
         if not isinstance(hyperparameters, dict):
             raise TypeError(
                 f"hyperparameters is type {type(hyperparameters).__name__}; expected a dict."
             )
-        self.hyperparameters: configs._ConfigT = self.defaults(**hyperparameters)
+        self.hyperparameters: base.ConfigT = self.defaults(**hyperparameters)
 
         self.optimizer: Optional[torch.optim.Optimizer] = None
         self.schedule: Optional[torch.optim.lr_scheduler.LRScheduler] = None
@@ -183,7 +188,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         Args:
             name: Lowercase optimizer name (e.g. ``"adamw"``).
             factory: Callable with signature ``(model, params) -> Optimizer``
-                where ``model`` is the ``delphi`` instance and ``params``
+                where ``model`` is the ``DelphiModel`` instance and ``params``
                 is the iterable of parameters to optimize.
         """
         # Write into this class's own registry, creating it on first use, so
@@ -196,7 +201,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """Return the factory registered for name, searching base classes.
 
         Resolving along the MRO rather than copying at class-definition time
-        means a factory registered on ``delphi`` reaches models defined before
+        means a factory registered on ``DelphiModel`` reaches models defined before
         the registration -- the usual case in a notebook -- while a factory
         registered on one model stays with it.
 
@@ -429,8 +434,8 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
             )
         if hessian is None:
             # nn.Module.__getattr__ types every attribute as a Tensor.
-            hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))
-        estimate = hessian(getattr(self, "theta").detach()) if current else hessian()
+            hessian = cast(Callable[..., ch.Tensor], getattr(self, "hessian"))  # noqa: B009
+        estimate = hessian(getattr(self, "theta").detach()) if current else hessian()  # noqa: B009
         return fisher.FisherLR.spectrum(
             estimate, getattr(self, "independent_coordinates", True)
         )
@@ -534,28 +539,6 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
                 "sets self.optimizer or populates self.optimizers."
             )
 
-    def optimizer_step(self, closure: Optional[Callable] = None) -> Optional[ch.Tensor]:
-        """Perform the optimizer step.
-
-        The default implementation calls ``self.optimizer.step()``.  Override
-        this method for models with more complex update rules (e.g. GANs or
-        actor-critic models that need to step multiple optimizers per update).
-        ``validate_before_training`` guarantees ``self.optimizer`` is set
-        before this method is called during training.
-
-        Args:
-            closure: Optional closure for line-search optimizers (e.g. L-BFGS).
-
-        Returns:
-            Loss evaluated by the closure, or None.
-        """
-        optimizer = cast(torch.optim.Optimizer, self.optimizer)
-        if closure is not None:
-            # torch stubs type step() as returning float, but line-search
-            # optimizers return whatever the closure returns (a Tensor here).
-            return optimizer.step(closure)  # type: ignore[return-value]
-        return optimizer.step()  # type: ignore[return-value]
-
     def pre_phase_hook(self) -> None:
         """Hook called before each phase, once its run is seeded."""
 
@@ -581,7 +564,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
     def post_training_hook(self) -> None:
         """Hook called once, after the full training procedure completes."""
 
-    def post_warm_start_hook(self, result: "trainer.RunResult") -> None:  # pylint: disable=unused-argument
+    def post_warm_start_hook(self, result: "delphi.trainer.RunResult") -> None:  # pylint: disable=unused-argument
         """Hook called with the warm start's record, to adopt its result.
 
         Args:
@@ -589,7 +572,7 @@ class delphi(ch.nn.Module, Generic[configs._ConfigT]):  # pylint: disable=invali
         """
 
     def post_phase_hook(
-        self, result: "trainer.RunResult"
+        self, result: "delphi.trainer.RunResult"
     ) -> tuple[bool, Optional[str]]:  # pylint: disable=unused-argument
         """Decide whether the procedure stops after a phase, and prepare the next.
 

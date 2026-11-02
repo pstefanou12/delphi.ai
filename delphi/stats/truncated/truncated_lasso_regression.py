@@ -9,17 +9,18 @@ import warnings
 
 from sklearn import linear_model as sklearn_linear_model
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs, trainer
+from delphi.configs.stats.truncated import regression
 from delphi.stats import linear_model
 from delphi.stats.truncated import losses
+import delphi.trainer
 from delphi.truncated import sampling
 from delphi.utils import datasets
 
 
 class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
-    linear_model.LinearModel[configs.TruncatedLassoRegressionConfig]
+    linear_model.LinearModel[regression.TruncatedLassoRegressionConfig]
 ):
     """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
 
@@ -28,13 +29,12 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
     """
 
     # Created by register_parameter in pre_phase_hook, which mypy cannot see.
-    weight: nn.Parameter
+    weight: torch.nn.Parameter
 
-    defaults = configs.TruncatedLassoRegressionConfig
+    defaults = regression.TruncatedLassoRegressionConfig
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: float,
         l1: float = 1.0,
@@ -42,11 +42,12 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         noise_var: float = 1.0,
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedLassoRegression.
 
         Args:
-            hyperparameters: hyperparameter dict
             phi (Callable): oracle object for the truncated regression model
             alpha (float): survival probability for the truncated regression model
             l1 (float): L1 regularization coefficient
@@ -54,8 +55,9 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             noise_var (float): known noise variance
             emp_weight (Tensor): optional empirical weight initialization
             rand_seed (int): random seed for reproducibility
+            hyperparameters: hyperparameter dict
         """
-        super().__init__(hyperparameters, emp_weight=emp_weight)
+        super().__init__(emp_weight=emp_weight, hyperparameters=hyperparameters)
         self.phi = phi
         self.alpha = alpha
         self.l1 = l1
@@ -103,10 +105,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         if self.fit_intercept:
             X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
 
-        if self.fit_intercept:
-            k = X.size(1) - 1
-        else:
-            k = X.size(1)
+        k = X.size(1) - 1 if self.fit_intercept else X.size(1)
 
         # Normalization factor: B * sqrt(k).
         # Compute B as the maximum L-inf norm across all samples.
@@ -124,7 +123,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
             self.hyperparameters, X, y
         )
 
-        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.trainer.train_model(
             self.train_loader, self.val_loader, rand_seed=self.rand_seed
         )
@@ -135,7 +134,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         self.calc_emp_model()
         # Use OLS as an empirical estimate to define the projection set.
         self.radius = self.hyperparameters.r * self.base_radius
-        self.register_parameter("weight", nn.Parameter(self.emp_weight.clone()))
+        self.register_parameter("weight", torch.nn.Parameter(self.emp_weight.clone()))
 
     def calc_emp_model(self) -> None:
         """Calculate empirical lasso regression estimates using sklearn."""
@@ -205,7 +204,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Best intercept from training."""
         if self.fit_intercept:
             return self.best_intercept
-        warnings.warn("intercept not fit, check inputs.")
+        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
         return None
 
     @property
@@ -218,7 +217,7 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Final intercept from training."""
         if self.fit_intercept:
             return self.final_intercept
-        warnings.warn("intercept not fit, check inputs.")
+        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
         return None
 
     @property
@@ -231,5 +230,5 @@ class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
         """Regression intercept."""
         if self.best_intercept:
             return self.best_intercept.clone()
-        warnings.warn("intercept not fit, check args input.")
+        warnings.warn("intercept not fit, check args input.", stacklevel=2)
         return None

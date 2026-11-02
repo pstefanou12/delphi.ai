@@ -4,13 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Weibull(
-    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Weibull
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    torch.distributions.Weibull,
 ):
     """Weibull distribution parameterized by natural parameters."""
 

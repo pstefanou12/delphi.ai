@@ -33,24 +33,25 @@ class UnknownTruncationMultivariateNormalKnownCovariance(
 
     def __init__(
         self,
-        hyperparameters: dict,
         dims: int,
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize the estimator.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             dims: Number of dimensions.
             covariance_matrix: Known covariance, shaped (dims, dims).
             alpha: Survival mass of the set in (0, 1), if known.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: As the base class, or if covariance_matrix is not
                 shaped (dims, dims).
         """
-        super().__init__(hyperparameters, dims, alpha)
+        super().__init__(dims, alpha, hyperparameters=hyperparameters)
         if covariance_matrix.shape != (dims, dims):
             raise ValueError(
                 f"covariance_matrix must be shaped ({dims}, {dims}); got "

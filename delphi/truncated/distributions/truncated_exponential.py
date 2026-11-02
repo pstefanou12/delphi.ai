@@ -5,9 +5,11 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import exponential
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,32 +20,33 @@ class TruncatedExponential(
     """Model for truncated exponential distributions to be passed into trainer."""
 
     dist = exponential.Exponential
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("rate_",)
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedExponential.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the natural parameter corresponding to the empirical rate."""
         dataset_s = self.train_loader_.dataset.S  # pylint: disable=invalid-name
         emp_rate = 1.0 / dataset_s.mean(0)
         self.emp_theta = exponential.Exponential.to_natural(emp_rate)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative."""

@@ -17,7 +17,7 @@ import math
 from typing import Optional
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 # Rows times terms evaluated at once, which bounds the working memory of an
 # evaluation to tens of megabytes whatever the sample size.
@@ -132,7 +132,7 @@ class Polynomial(abc.ABC):
         """Return ``||P_j||^2`` under the weight measure, for j up to degree."""
 
     @abc.abstractmethod
-    def weight(self) -> distributions.Distribution:
+    def weight(self) -> torch.distributions.Distribution:
         """Return the weight measure in ``dims`` dimensions."""
 
     @property

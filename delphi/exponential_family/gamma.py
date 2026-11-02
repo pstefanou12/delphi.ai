@@ -4,13 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Gamma(
-    exponential_family_distribution.ExponentialFamilyDistribution, distributions.Gamma
+    exponential_family_distribution.ExponentialFamilyDistribution,
+    torch.distributions.Gamma,
 ):
     """Gamma distribution with known shape, parameterized by its rate."""
 

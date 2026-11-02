@@ -30,7 +30,7 @@ def test_truncated_lqr():
     # NOISE_VAR = ch.eye(D)
     # assert M >= D, f'M is currently: {M}, but it needs to be larger than D: {D}'
 
-    # A = ch.Tensor([[1.01, .01, 0],
+    # A = ch.tensor([[1.01, .01, 0],
     #             [.01, 1.01, .01],
     #             [0, .01, 1.01]])
     # B = ch.eye(M)

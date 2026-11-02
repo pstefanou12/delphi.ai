@@ -37,9 +37,13 @@ fmt-check:
 lint:
     poetry run ruff check --fix delphi/
 
-# Lint without modifying files.
+# Lint without modifying files. ch.Tensor(...) is the legacy constructor:
+# it ignores the data's dtype, takes no dtype argument, and ch.Tensor(3) is
+# an uninitialized length-3 tensor. Build tensors with ch.tensor(...);
+# ch.Tensor stays for annotations and isinstance, which the grep skips.
 lint-check:
     poetry run ruff check delphi/
+    ! grep -rnE --include='*.py' '\b(ch|torch)\.Tensor\(' delphi/
 
 # Detect logical errors with pylint.
 pylint:

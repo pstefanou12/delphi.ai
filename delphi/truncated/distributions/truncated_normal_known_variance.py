@@ -20,20 +20,23 @@ class TruncatedNormalKnownVariance(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedNormalKnownVariance.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             alpha: Survival probability lower bound.
             covariance_matrix: Known variance as a 1×1 matrix.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, 1, covariance_matrix, alpha)
+        super().__init__(
+            phi, 1, covariance_matrix, alpha, hyperparameters=hyperparameters
+        )
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

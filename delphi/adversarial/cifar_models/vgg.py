@@ -1,7 +1,8 @@
+# Author: pstefanou12@
 """VGG11/13/16/19 in Pytorch."""
 # pylint: disable=duplicate-code
 
-from torch import nn
+import torch.nn
 
 cfg = {
     "VGG11": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
@@ -52,14 +53,14 @@ cfg = {
 }
 
 
-class VGG(nn.Module):
+class VGG(torch.nn.Module):
     """VGG network architecture for CIFAR-scale datasets."""
 
     def __init__(self, vgg_name, num_classes=10):
         """Initialize VGG with feature layers and a linear classifier."""
         super().__init__()
         self.features = self._make_layers(cfg[vgg_name])
-        self.classifier = nn.Linear(512, num_classes)
+        self.classifier = torch.nn.Linear(512, num_classes)
 
     def forward(self, x, with_latent=False, fake_relu=False, no_relu=False):  # pylint: disable=arguments-differ
         """Forward pass through VGG."""
@@ -79,16 +80,16 @@ class VGG(nn.Module):
         in_channels = 3
         for x in vgg_cfg:  # pylint: disable=invalid-name
             if x == "M":
-                layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+                layers += [torch.nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
                 layers += [
-                    nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
-                    nn.BatchNorm2d(x),
-                    nn.ReLU(inplace=True),
+                    torch.nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
+                    torch.nn.BatchNorm2d(x),
+                    torch.nn.ReLU(inplace=True),
                 ]
                 in_channels = x
-        layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
-        return nn.Sequential(*layers)
+        layers += [torch.nn.AvgPool2d(kernel_size=1, stride=1)]
+        return torch.nn.Sequential(*layers)
 
 
 def VGG11(**kwargs):  # pylint: disable=invalid-name

@@ -13,9 +13,7 @@ the estimators' own truncation constant, while the hyperparameter dict callers
 pass is flat.
 
 Defaults are transcribed from the ``getattr`` call sites that previously lived
-in ``delphi.delphi``, which are the operative values: the ``*_LR_DEFAULTS``
-mappings in ``delphi.utils.defaults`` are referenced only by tests and are
-never applied to a live config.
+in ``delphi.delphi``, which were the operative values.
 """
 
 from typing import Literal, Optional

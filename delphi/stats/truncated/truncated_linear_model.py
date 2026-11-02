@@ -16,7 +16,7 @@ import torch as ch
 import torch.nn
 import torch.utils.data
 
-from delphi import configs
+from delphi.configs.stats.truncated import linear
 import delphi.projection_sets
 from delphi.stats import linear_model
 import delphi.trainer
@@ -24,7 +24,7 @@ from delphi.truncated.distributions import summary
 from delphi.utils import constants, datasets
 
 _TruncatedConfigT = TypeVar(
-    "_TruncatedConfigT", bound=configs.TruncatedLinearModelConfig
+    "_TruncatedConfigT", bound=linear.TruncatedLinearModelConfig
 )
 
 
@@ -61,17 +61,17 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
-        hyperparameters: dict,
         phi: Callable,
         alpha: Optional[float] = None,
         fit_intercept: bool = True,
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize the truncated linear model.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation oracle over latents shaped (n, m, k).
             alpha: Survival probability in (0, 1], or None if unknown.
             fit_intercept: Whether to fit an intercept.
@@ -79,6 +79,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
                 (d + 1, k) with the intercept as its last row, in the data's
                 units.
             rand_seed: Seed applied at the start of every run.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha lies outside (0, 1].
@@ -86,7 +87,9 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         if alpha is not None and not 0.0 < alpha <= 1.0:
             raise ValueError(f"alpha must lie in (0, 1]; got {alpha}.")
         super().__init__(
-            hyperparameters, emp_weight=emp_weight, fit_intercept=fit_intercept
+            emp_weight=emp_weight,
+            fit_intercept=fit_intercept,
+            hyperparameters=hyperparameters,
         )
         self.phi = phi
         self.alpha = alpha

@@ -6,9 +6,11 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import inverse_gamma
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -22,27 +24,28 @@ class TruncatedInverseGamma(
         concentration (ch.Tensor): Known shape, one per coordinate.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("rate_",)
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         concentration: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedInverseGamma.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             concentration: Known shape, one per coordinate.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.concentration = concentration
 
     def _build_distribution(self):
@@ -58,7 +61,7 @@ class TruncatedInverseGamma(
         self.emp_theta = inverse_gamma.InverseGamma.to_natural(
             self.concentration / (1.0 / dataset_s).mean(0)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so the rate is positive."""

@@ -2,8 +2,8 @@
 """Tests for the truncated normal with known variance."""
 
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 from delphi.truncated.distributions import truncated_normal_known_variance
 from delphi.truncated.distributions.tests import helpers
@@ -14,8 +14,8 @@ ch.set_printoptions(precision=4, sci_mode=False)
 def test_one_dimension():
     ch.manual_seed(0)
     covariance_matrix = ch.eye(1)
-    target = distributions.MultivariateNormal(ch.zeros(1), covariance_matrix)
-    left = ch.Tensor([0.0])
+    target = torch.distributions.MultivariateNormal(ch.zeros(1), covariance_matrix)
+    left = ch.tensor([0.0])
 
     def phi(x):
         return (x > left).prod(dim=-1, keepdim=True)
@@ -38,14 +38,14 @@ def test_one_dimension():
         "tol": 5e-2,
     }
     truncated = truncated_normal_known_variance.TruncatedNormalKnownVariance(
-        hyperparameters or {}, phi_centred, covariance_matrix, alpha
+        phi_centred, covariance_matrix, alpha, hyperparameters=hyperparameters
     )
     truncated.fit(S - emp_loc)
 
     helpers.assert_recovers(
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(truncated, f"{name}_loc_") + emp_loc, covariance_matrix
         ),
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
-        baseline=distributions.MultivariateNormal(emp_loc, covariance_matrix),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
+        baseline=torch.distributions.MultivariateNormal(emp_loc, covariance_matrix),
     )

@@ -13,7 +13,7 @@ from typing import Optional
 import pytest
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_logistic_regression
 from delphi.stats.truncated.tests import classification
 from delphi.truncated import sampling
 
@@ -34,7 +34,7 @@ def _fit(
     alpha_known: bool = True,
     naive_margin: Optional[float] = 0.5,
     **hyperparameters,
-) -> stats.TruncatedLogisticRegression:
+) -> truncated_logistic_regression.TruncatedLogisticRegression:
     """Fit truncated logistic regression to a simulation and check its estimates.
 
     Args:
@@ -47,8 +47,10 @@ def _fit(
     Returns:
         The fitted model.
     """
-    model = stats.TruncatedLogisticRegression(
-        hyperparameters, simulation.phi, simulation.alpha if alpha_known else None
+    model = truncated_logistic_regression.TruncatedLogisticRegression(
+        simulation.phi,
+        simulation.alpha if alpha_known else None,
+        hyperparameters=hyperparameters,
     )
     classification.assert_recovers(
         model, simulation, tolerance, naive_margin=naive_margin
@@ -123,9 +125,9 @@ def test_10d_seeds(seed):
 
 def test_summary_reports_accuracy():
     simulation = _simulate([2.0], _NONE, 200)
-    model = stats.TruncatedLogisticRegression({"refine_steps": 0}, _NONE).fit(
-        simulation.X, simulation.y
-    )
+    model = truncated_logistic_regression.TruncatedLogisticRegression(
+        _NONE, hyperparameters={"refine_steps": 0}
+    ).fit(simulation.X, simulation.y)
     accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
     assert f"{accuracy:.4f} on the observed sample" in model.summary()
     assert 0.0 <= model.batch_metrics()["accuracy"] <= 1.0
@@ -133,10 +135,10 @@ def test_summary_reports_accuracy():
 
 def test_alpha_above_one_half_raises():
     with pytest.raises(ValueError, match="alpha"):
-        stats.TruncatedLogisticRegression({}, _SIMPLE, 0.6)
+        truncated_logistic_regression.TruncatedLogisticRegression(_SIMPLE, 0.6)
 
 
 def test_one_label_raises():
-    model = stats.TruncatedLogisticRegression({}, _SIMPLE)
+    model = truncated_logistic_regression.TruncatedLogisticRegression(_SIMPLE)
     with pytest.raises(ValueError, match="one label"):
         model.fit(ch.randn(10, 2), ch.ones(10, 1))

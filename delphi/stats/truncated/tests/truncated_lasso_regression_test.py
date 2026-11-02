@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 from sklearn.linear_model import LassoCV
 import torch as ch
-from torch.nn import MSELoss
+import torch.nn
 
-from delphi import stats
+from delphi.stats.truncated import truncated_lasso_regression
 
 SEED = 69
-mse_loss = MSELoss()
+mse_loss = torch.nn.MSELoss()
 
 
 @pytest.mark.skip(reason="accuracy: mse 0.146 against a 0.1 tolerance")
@@ -67,13 +67,13 @@ def test_truncated_lasso_regression_one_dimension_no_intercept():
         "iterations": 1000,
         "trials": 1,
     }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs,
+    trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
         phi_scale,
         alpha,
         l1=L1,
         fit_intercept=False,
         noise_var=ch.ones(1, 1),
+        hyperparameters=train_kwargs,
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat([(trunc_reg.best_coef_).flatten()]) * ch.sqrt(NOISE_VAR)
@@ -162,8 +162,8 @@ def test_truncated_lasso_regression_one_dimension():
         "iterations": 1000,
         "trials": 1,
     }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
+    trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
+        phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1), hyperparameters=train_kwargs
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(
@@ -253,8 +253,8 @@ def test_truncated_lasso_regression_ten_dimensions():
         "iterations": 1000,
         "trials": 1,
     }
-    trunc_reg = stats.TruncatedLassoRegression(
-        train_kwargs, phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1)
+    trunc_reg = truncated_lasso_regression.TruncatedLassoRegression(
+        phi_scale, alpha, l1=L1, noise_var=ch.ones(1, 1), hyperparameters=train_kwargs
     )
     trunc_reg.fit(x_trunc, y_trunc_scale)
     w_ = ch.cat(

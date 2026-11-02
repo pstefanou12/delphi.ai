@@ -18,14 +18,16 @@ class UnknownTruncationNormal(
 
     estimate_suffixes = ("loc_", "scale_")
 
-    def __init__(self, hyperparameters: dict, alpha: Optional[float] = None):
+    def __init__(
+        self, alpha: Optional[float] = None, *, hyperparameters: Optional[dict] = None
+    ):
         """Initialize UnknownTruncationNormal.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             alpha: Survival mass of the set in (0, 1), if known.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, 1, alpha)
+        super().__init__(1, alpha, hyperparameters=hyperparameters)
 
     @property
     def best_scale_(self) -> ch.Tensor:

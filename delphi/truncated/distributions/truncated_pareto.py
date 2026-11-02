@@ -6,9 +6,11 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import pareto
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -23,28 +25,29 @@ class TruncatedPareto(
             coordinate.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("alpha_",)
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         scale: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedPareto.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             scale: Known scale, one per coordinate.
             alpha: Survival probability lower bound. Unrelated to the tail
                 index, which the estimates call ``alpha_``.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.scale = scale
 
     def _build_distribution(self):
@@ -56,7 +59,7 @@ class TruncatedPareto(
         dataset_s = self.train_loader_.dataset.S
         emp_alpha = 1.0 / (ch.log(dataset_s) - ch.log(self.scale)).mean(0)
         self.emp_theta = pareto.Pareto.to_natural(emp_alpha)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta below -1, so the tail index is positive."""

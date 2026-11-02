@@ -5,9 +5,11 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import beta
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedBeta(
     """Model for truncated Beta distributions."""
 
     dist = beta.Beta
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's a and b are coupled, so the Hessian is block-diagonal
     # and its spectrum needs eigenvalues rather than the diagonal.
@@ -26,20 +28,21 @@ class TruncatedBeta(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedBeta.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta by the method of moments; the MLE has no closed form."""
@@ -49,7 +52,7 @@ class TruncatedBeta(
         self.emp_theta = beta.Beta.to_natural(
             ch.cat([mean * common, (1 - mean) * common]).clamp(min=1e-3)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta above -1, so both shape parameters are positive."""

@@ -2,14 +2,14 @@
 """Log-normal distribution in natural parameterization."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class LogNormal(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.LogNormal,
+    torch.distributions.LogNormal,
 ):
     """Log-normal distribution parameterized by natural parameters.
 

@@ -22,7 +22,7 @@ from typing import Optional
 import pytest
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_multinomial_logistic_regression
 from delphi.stats.truncated.tests import classification
 
 INF = math.inf
@@ -67,7 +67,7 @@ def _fit(
     alpha_known: bool = True,
     naive_margin: Optional[float] = 0.5,
     **hyperparameters,
-) -> stats.TruncatedMultinomialLogisticRegression:
+) -> truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression:
     """Fit the model to a simulation and check its estimates and predictions.
 
     Args:
@@ -80,8 +80,10 @@ def _fit(
     Returns:
         The fitted model.
     """
-    model = stats.TruncatedMultinomialLogisticRegression(
-        hyperparameters, simulation.phi, simulation.alpha if alpha_known else None
+    model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
+        simulation.phi,
+        simulation.alpha if alpha_known else None,
+        hyperparameters=hyperparameters,
     )
     classification.assert_recovers(
         model, simulation, tolerance, naive_margin=naive_margin
@@ -93,7 +95,7 @@ def _fit(
 
 
 def _assert_beats_naive(
-    model: stats.TruncatedMultinomialLogisticRegression,
+    model: truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression,
     simulation: classification.Simulation,
     margin: float,
 ) -> None:
@@ -263,8 +265,8 @@ def test_10d_seeds(seed):
 
 def test_summary_reports_the_classes_and_accuracy():
     simulation = _simulate_1d(_NONE, 200)
-    model = stats.TruncatedMultinomialLogisticRegression(
-        {"iterations": 20, "refine_steps": 0}, _NONE
+    model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
+        _NONE, hyperparameters={"iterations": 20, "refine_steps": 0}
     ).fit(simulation.X, simulation.y)
     accuracy = (model.predict(simulation.X) == simulation.y).float().mean()
     assert "classes" in model.summary()
@@ -275,12 +277,16 @@ def test_summary_reports_the_classes_and_accuracy():
 
 def test_alpha_above_one_over_k_raises():
     simulation = _simulate_1d(_NONE, 200)
-    model = stats.TruncatedMultinomialLogisticRegression({}, _NONE, 0.4)
+    model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
+        _NONE, 0.4
+    )
     with pytest.raises(ValueError, match="alpha"):
         model.fit(simulation.X, simulation.y)
 
 
 def test_missing_label_raises():
-    model = stats.TruncatedMultinomialLogisticRegression({}, _NONE)
+    model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(
+        _NONE
+    )
     with pytest.raises(ValueError, match="every label"):
         model.fit(ch.randn(10, 2), ch.tensor([0, 2] * 5)[:, None])

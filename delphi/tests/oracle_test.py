@@ -3,7 +3,7 @@
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.transformations import standardization
@@ -27,7 +27,7 @@ def _truth_in_its_coordinates(recovered: delphi.oracle.RecoveredSet):
     transform = recovered.transformation
     assert isinstance(transform, standardization.Standardization)
     assert transform.mean is not None
-    return distributions.MultivariateNormal(
+    return torch.distributions.MultivariateNormal(
         -transform.mean, ch.eye(2, dtype=ch.float64)
     )
 
@@ -44,7 +44,7 @@ def test_membership_needs_a_fitted_distribution():
 def test_given_needs_a_fit():
     with pytest.raises(RuntimeError, match="fit"):
         delphi.oracle.RecoveredSet(4).given(
-            distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+            torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
         )
 
 

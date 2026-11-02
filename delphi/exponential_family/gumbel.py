@@ -4,14 +4,14 @@
 from typing import Union
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import exponential_family_distribution
 
 
 class Gumbel(
     exponential_family_distribution.ExponentialFamilyDistribution,
-    distributions.Gumbel,
+    torch.distributions.Gumbel,
 ):
     """Gumbel distribution with known scale, parameterized by ``-exp(loc / s)``.
 

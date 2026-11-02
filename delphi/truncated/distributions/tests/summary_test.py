@@ -3,7 +3,7 @@
 
 import pytest
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.truncated.distributions import truncated_exponential
 from delphi.truncated.distributions.tests import helpers
@@ -12,17 +12,17 @@ from delphi.utils import constants
 
 def _fitted():
     ch.manual_seed(0)
-    target = distributions.Exponential(ch.Tensor([1.0, 2.0]))
+    target = torch.distributions.Exponential(ch.tensor([1.0, 2.0]))
 
     def phi(z):
         return z[:, 0] > 0.5
 
     sample = helpers.generate_truncated_distribution_dataset(target, phi, 2000)
     model = truncated_exponential.TruncatedExponential(
-        {"iterations": 200, "num_samples": 500},
         phi,
         2,
         sample.alpha,
+        hyperparameters={"iterations": 200, "num_samples": 500},
     )
     return model.fit(sample.S)
 
@@ -43,7 +43,7 @@ def test_reports_every_section():
 
 def test_raises_before_fit():
     model = truncated_exponential.TruncatedExponential(
-        {"iterations": 10}, lambda z: z[:, 0] > 0.5, 2
+        lambda z: z[:, 0] > 0.5, 2, hyperparameters={"iterations": 10}
     )
     with pytest.raises(RuntimeError, match="has not been fit"):
         model.summary()

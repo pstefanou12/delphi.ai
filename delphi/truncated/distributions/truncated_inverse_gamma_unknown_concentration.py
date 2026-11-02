@@ -5,9 +5,9 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import (
     inverse_gamma_unknown_concentration as unknown_shape,
 )
@@ -21,27 +21,28 @@ class TruncatedInverseGammaUnknownConcentration(
 
     dist = unknown_shape.InverseGammaUnknownConcentration
     # 1 / x is Gamma, so log x and 1 / x couple as the Gamma's log x and x do.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration_", "rate_")
     # Each coordinate's shape and rate are coupled.
     independent_coordinates = False
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedInverseGammaUnknownConcentration.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Start at the Gamma moment estimate of ``1 / x``, then warm start.
@@ -53,7 +54,7 @@ class TruncatedInverseGammaUnknownConcentration(
         self.emp_theta = unknown_shape.InverseGammaUnknownConcentration.to_natural(
             ch.cat([mean**2 / var, mean / var]).clamp(min=1e-3)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep the shape positive and the negated rate negative."""

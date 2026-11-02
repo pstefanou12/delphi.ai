@@ -5,7 +5,7 @@ import math
 from typing import Union
 
 import torch as ch
-from torch.distributions import constraints
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution
 
@@ -22,7 +22,7 @@ class Levy(exponential_family_distribution.ExponentialFamilyDistribution):
         scale: Scale, one per coordinate.
     """
 
-    arg_constraints = {"scale": constraints.positive}
+    arg_constraints = {"scale": torch.distributions.constraints.positive}
 
     def __init__(self, loc: Union[ch.Tensor, float], theta: ch.Tensor, dims: int):
         """Initialize with known loc, natural parameter theta and dimension."""
@@ -31,10 +31,10 @@ class Levy(exponential_family_distribution.ExponentialFamilyDistribution):
         self.loc = ch.as_tensor(loc, dtype=self.scale.dtype).expand_as(self.scale)
         super().__init__(self.scale.shape)
 
-    @constraints.dependent_property(is_discrete=False, event_dim=0)
+    @torch.distributions.constraints.dependent_property(is_discrete=False, event_dim=0)
     def support(self):
         """Return the open half-line above the location."""
-        return constraints.greater_than(self.loc)
+        return torch.distributions.constraints.greater_than(self.loc)
 
     @property
     def _natural_params(self) -> tuple[ch.Tensor]:

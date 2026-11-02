@@ -3,7 +3,7 @@
 Dataset augmentation info and default transforms for training and testing.
 """
 
-from torch import Tensor
+import torch as ch
 from torchvision import transforms
 
 
@@ -58,8 +58,8 @@ _CIFAR10_STATS = {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2023, 0.1994, 0.20
 _IMAGENET_STATS = {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
 
 _IMAGENET_PCA = {
-    "eigval": Tensor([0.2175, 0.0188, 0.0045]),
-    "eigvec": Tensor(
+    "eigval": ch.tensor([0.2175, 0.0188, 0.0045]),
+    "eigvec": ch.tensor(
         [
             [-0.5675, 0.7192, 0.4009],
             [-0.5808, -0.0045, -0.8140],

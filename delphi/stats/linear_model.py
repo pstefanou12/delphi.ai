@@ -12,11 +12,11 @@ from typing import Generic, Optional, TypeVar, Union
 import torch as ch
 import torch.nn
 
-from delphi import configs
+from delphi.configs.stats import linear
 from delphi.statistical_model import StatisticalModel
 from delphi.utils import constants
 
-_LinearConfigT = TypeVar("_LinearConfigT", bound=configs.LinearModelConfig)
+_LinearConfigT = TypeVar("_LinearConfigT", bound=linear.LinearModelConfig)
 _T = TypeVar("_T")
 
 
@@ -69,19 +69,20 @@ class LinearModel(  # pylint: disable=abstract-method,too-many-instance-attribut
 
     def __init__(
         self,
-        hyperparameters: dict,
         emp_weight=None,
         fit_intercept: bool = True,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize the linear model.
 
         Args:
-            hyperparameters: Hyperparameter dict, validated and stored as
-                ``self.hyperparameters`` via the subclass ``defaults`` config.
             emp_weight: Optional empirical weight initialization.
             fit_intercept: Whether to fit an intercept.
+            hyperparameters: Hyperparameter dict, validated and stored as
+                ``self.hyperparameters`` via the subclass ``defaults`` config.
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.logger = logging.getLogger(type(self).__module__)
         self.register_buffer("emp_weight", emp_weight)
         self.fit_intercept = fit_intercept

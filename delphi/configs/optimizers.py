@@ -13,9 +13,7 @@ the same thing to every optimizer and apply to whichever one ``optimizer``
 selects, so prefixing them would mean duplicating each per optimizer.
 
 Defaults are transcribed from the ``getattr`` call sites that previously lived
-in ``delphi.delphi``, which are the operative values: the optimizer
-``*_DEFAULTS`` mappings in ``delphi.utils.defaults`` are referenced only by
-tests and never applied to a live config.
+in ``delphi.delphi``, which were the operative values.
 """
 
 from typing import Annotated, Literal, Optional

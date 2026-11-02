@@ -7,40 +7,41 @@ import pydantic
 import pytest
 import torch
 
-from delphi import configs
-from delphi.delphi import OPTIMIZER_SECTIONS, SCHEDULER_SECTIONS, delphi
+from delphi.configs.stats.truncated import regression
+import delphi.delphi
+from delphi.delphi import DelphiModel
 from delphi.optim.lr_scheduler import fisher
 from delphi.utils import constants
 
 
-class Model(delphi[configs.TruncatedRegressionConfig]):
+class Model(DelphiModel[regression.TruncatedRegressionConfig]):
     """Minimal concrete model with a parameter to optimize."""
 
-    defaults = configs.TruncatedRegressionConfig
+    defaults = regression.TruncatedRegressionConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.linear = torch.nn.Linear(2, 1)
 
 
-class SiblingModel(delphi[configs.TruncatedRegressionConfig]):
-    """A sibling of Model, deriving from delphi independently.
+class SiblingModel(DelphiModel[regression.TruncatedRegressionConfig]):
+    """A sibling of Model, deriving from DelphiModel independently.
 
     Separate from Model rather than a child of it, because inheriting a
     parent's registrations is correct; what must not happen is one model
     seeing another's.
     """
 
-    defaults = configs.TruncatedRegressionConfig
+    defaults = regression.TruncatedRegressionConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.linear = torch.nn.Linear(2, 1)
 
 
 def test_builtin_optimizers_build_from_their_sections() -> None:
     """Each built-in is constructed without needing a registered factory."""
-    for name, (target, _) in OPTIMIZER_SECTIONS.items():
+    for name, (target, _) in delphi.delphi.OPTIMIZER_SECTIONS.items():
         optimizer, _ = Model(
             {"optimizer": name, "lr": 0.05, "constant": True}
         ).make_optimizer_and_schedule()
@@ -50,7 +51,7 @@ def test_builtin_optimizers_build_from_their_sections() -> None:
 
 def test_every_scheduler_builds() -> None:
     """Each scheduler is constructed from its section."""
-    for name, (target, _) in SCHEDULER_SECTIONS.items():
+    for name, (target, _) in delphi.delphi.SCHEDULER_SECTIONS.items():
         hyperparameters: dict = {
             "scheduler": name.value,
             "epochs": 5,
@@ -82,7 +83,7 @@ def test_fisher_scheduler_derives_its_constants_from_a_hessian() -> None:
 
         def hessian(self) -> torch.Tensor:
             """Return a diagonal Hessian with eigenvalues 2 and 50."""
-            return torch.diag(torch.Tensor([2.0, 50.0]))
+            return torch.diag(torch.tensor([2.0, 50.0]))
 
     _, schedule = CurvedModel(
         {"scheduler": "fisher", "epochs": 5, "constant": False}
@@ -95,8 +96,8 @@ def test_fisher_scheduler_derives_its_constants_from_a_hessian() -> None:
 
 def test_section_aliases_match_their_torch_signature() -> None:
     """Every name a section emits is a real parameter of its torch class."""
-    for target, section in list(OPTIMIZER_SECTIONS.values()) + list(
-        SCHEDULER_SECTIONS.values()
+    for target, section in list(delphi.delphi.OPTIMIZER_SECTIONS.values()) + list(
+        delphi.delphi.SCHEDULER_SECTIONS.values()
     ):
         accepted = set(inspect.signature(target).parameters)
         emitted = {
@@ -107,13 +108,13 @@ def test_section_aliases_match_their_torch_signature() -> None:
 
 
 def test_global_registration_reaches_models_defined_earlier() -> None:
-    """A factory registered on delphi works for pre-existing subclasses.
+    """A factory registered on DelphiModel works for pre-existing subclasses.
 
     This is the notebook case: the estimators are defined at import time and
     the user registers afterwards. Resolving along the MRO rather than copying
     at class-definition time is what makes it work.
     """
-    delphi.register_optimizer(
+    DelphiModel.register_optimizer(
         "late_probe", lambda model, params: torch.optim.RMSprop(params, lr=0.3)
     )
     optimizer, _ = Model(
@@ -155,7 +156,7 @@ def test_registration_does_not_leak_to_siblings_or_the_base() -> None:
     assert Model(probe)._registered_factory("isolated_probe") is factory  # pylint: disable=protected-access
     assert Child(probe)._registered_factory("isolated_probe") is factory  # pylint: disable=protected-access
     assert SiblingModel(probe)._registered_factory("isolated_probe") is None  # pylint: disable=protected-access
-    assert "isolated_probe" not in delphi.__dict__.get("_OPTIMIZER_REGISTRY", {})
+    assert "isolated_probe" not in DelphiModel.__dict__.get("_OPTIMIZER_REGISTRY", {})
 
 
 def test_registered_factory_overrides_a_builtin_for_that_model_only() -> None:
@@ -195,10 +196,10 @@ def test_unknown_scheduler_raises() -> None:
 
 def test_sections_are_module_level_not_model_state() -> None:
     """The lookup tables are constants, not attributes of the model."""
-    assert not hasattr(delphi, "_OPTIMIZER_SECTIONS")
-    assert not hasattr(delphi, "_SCHEDULER_SECTIONS")
-    assert isinstance(OPTIMIZER_SECTIONS, dict)
+    assert not hasattr(DelphiModel, "_OPTIMIZER_SECTIONS")
+    assert not hasattr(DelphiModel, "_SCHEDULER_SECTIONS")
+    assert isinstance(delphi.delphi.OPTIMIZER_SECTIONS, dict)
     assert all(
         issubclass(section, pydantic.BaseModel)
-        for _, section in OPTIMIZER_SECTIONS.values()
+        for _, section in delphi.delphi.OPTIMIZER_SECTIONS.values()
     )

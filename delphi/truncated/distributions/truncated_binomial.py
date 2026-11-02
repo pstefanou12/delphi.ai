@@ -6,9 +6,11 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import binomial
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -22,27 +24,28 @@ class TruncatedBinomial(
         total_count (ch.Tensor): Known number of trials, one per coordinate.
     """
 
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         total_count: ch.Tensor,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         """Initialize TruncatedBinomial.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             total_count: Known number of trials, one per coordinate.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
         self.total_count = total_count
 
     def _build_distribution(self):
@@ -58,7 +61,7 @@ class TruncatedBinomial(
         # A coordinate pinned to 0 or total_count would give an infinite logit.
         emp = (mean / self.total_count).clamp(1e-6, 1 - 1e-6)
         self.emp_theta = binomial.Binomial.to_natural(emp)
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_probs_(self):

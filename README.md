@@ -131,8 +131,8 @@ alpha = phi(population).float().mean().item()
 
 # Fit on standardized data, moving phi through the same transform.
 mean, std = S.mean(0), S.std(0)
+# The default hyperparameters: 2500 steps, lr 1e-2, the Fisher schedule.
 model = truncated_multivariate_normal.TruncatedMultivariateNormal(
-    {},  # the defaults: 2500 steps, lr 1e-2, the Fisher schedule
     lambda z: phi(z * std + mean),
     dims=2,
     alpha=alpha,
@@ -166,10 +166,13 @@ grows by a factor of `rate` per phase, while the projection still binds, up to
 `max_radius`. `alpha=1` is rejected: with nothing truncated there is nothing
 to correct, so fit the distribution directly.
 
+**Hyperparameters are a keyword argument.** Every model runs on its config's
+defaults; override any of them with `hyperparameters={"iterations": 5000}`.
+
 **The Fisher schedule is the default.** It sets the step size from the
 Hessian of the truncated likelihood, starting at `1 / L` and decaying as
 `1 / (L + mu t)`, and re-measures both as the fit moves, so neither needs
-tuning. Pass `"scheduler": None` for a constant rate.
+tuning. Pass `hyperparameters={"scheduler": None}` for a constant rate.
 
 **Standardize multivariate normals first.** Fit on `(S - mean) / std` with
 `phi` composed with the inverse transform, as above, and map the estimates
@@ -227,8 +230,9 @@ population = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2)).sample([50
 inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
 S = population[inside][:20000]
 
+# The default hyperparameters: here degree 132, sized from the sample.
 model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-    {}, dims=2  # the defaults: here degree 132, sized from the sample
+    dims=2
 )
 model.fit(S)
 
@@ -276,7 +280,7 @@ toward the set. All models live in `delphi.stats`.
 ```python
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_linear_regression
 
 X = ch.randn(20000, 10)
 y = X @ ch.ones(10, 1) + 0.5 + ch.randn(20000, 1)
@@ -287,8 +291,8 @@ def phi(z):
 
 
 kept = phi(y).flatten()
-model = stats.TruncatedLinearRegression(
-    {}, phi, kept.float().mean().item(), noise_var=1.0
+model = truncated_linear_regression.TruncatedLinearRegression(
+    phi, kept.float().mean().item(), noise_var=1.0
 )
 model.fit(X[kept], y[kept])
 model.coef_, model.intercept_
@@ -328,7 +332,7 @@ and keep it only where `phi` admits the latent `w^T x + b + e`.
 ```python
 import torch as ch
 
-from delphi import stats
+from delphi.stats.truncated import truncated_probit_regression
 
 X = ch.randn(20000, 10)
 z = X @ ch.ones(10, 1) / 3.0 + 0.5 + ch.randn(20000, 1)
@@ -340,7 +344,7 @@ def phi(z):
 
 kept = phi(z).flatten()
 y = (z >= 0).float()
-model = stats.TruncatedProbitRegression({}, phi)
+model = truncated_probit_regression.TruncatedProbitRegression(phi)
 model.fit(X[kept], y[kept])
 model.coef_, model.intercept_
 model.predict_proba(X[:5])
@@ -364,7 +368,7 @@ are zero, so `coef_` holds classes 1 to K - 1.
 import torch as ch
 import torch.nn.functional
 
-from delphi import stats
+from delphi.stats.truncated import truncated_multinomial_logistic_regression
 
 X = ch.randn(20000, 10)
 coef = ch.randn(2, 10) / 3.0
@@ -380,7 +384,7 @@ def phi(z):
 
 kept = phi(z)
 y = z.argmax(1, keepdim=True)
-model = stats.TruncatedMultinomialLogisticRegression({}, phi)
+model = truncated_multinomial_logistic_regression.TruncatedMultinomialLogisticRegression(phi)
 model.fit(X[kept], y[kept])
 model.coef_, model.intercept_
 model.predict_proba(X[:5])
@@ -416,7 +420,7 @@ fit*, which each model describes.
 
 ### The trainer
 
-`delphi/trainer.py` fits any model built on the `delphi` base class
+`delphi/trainer.py` fits any model built on the `DelphiModel` base class
 (`delphi/delphi.py`). Its one entry point, `Trainer.train_model`, runs a
 **procedure**:
 
@@ -446,7 +450,7 @@ tolerances, patience, or the model's own `should_stop`.
 
 ### Models
 
-A model subclasses `delphi` and supplies:
+A model subclasses `DelphiModel` and supplies:
 
 | piece | role |
 |---|---|

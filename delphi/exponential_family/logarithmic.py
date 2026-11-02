@@ -2,7 +2,7 @@
 """Logarithmic (log-series) distribution in natural parameterization."""
 
 import torch as ch
-from torch.distributions import constraints
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution
 
@@ -18,8 +18,10 @@ class Logarithmic(exponential_family_distribution.ExponentialFamilyDistribution)
         probs: Success probability, one per coordinate.
     """
 
-    arg_constraints = {"probs": constraints.half_open_interval(0.0, 1.0)}
-    support = constraints.positive_integer
+    arg_constraints = {
+        "probs": torch.distributions.constraints.half_open_interval(0.0, 1.0)
+    }
+    support = torch.distributions.constraints.positive_integer
 
     def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""

@@ -5,9 +5,9 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import wishart
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 from delphi.utils import helpers
@@ -56,27 +56,30 @@ class TruncatedWishart(
     dist = wishart.Wishart
     # A one-by-one Wishart is the two-parameter Gamma, whose log x and x couple
     # as log det X and X do.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("df_", "covariance_matrix_")
     # Every statistic shares the log determinant, so the Hessian is dense.
     independent_coordinates = False
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedWishart.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle, over vech rows.
             dims: Side of the sampled matrices.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, helpers.vech_size(dims), alpha)
+        super().__init__(
+            phi, helpers.vech_size(dims), alpha, hyperparameters=hyperparameters
+        )
         self.size = dims
 
     def _calc_emp_model(self):
@@ -84,7 +87,7 @@ class TruncatedWishart(
         self.emp_theta = wishart.Wishart.to_natural(
             rough_start(self.train_loader_.dataset.S, self.size)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep df above ``size - 1`` and the matrix part negative definite."""

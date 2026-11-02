@@ -8,8 +8,8 @@ from typing import Optional
 
 import pytest
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 from delphi.truncated.distributions import (
     unknown_truncated_multivariate_normal_known_covariance,
@@ -31,16 +31,16 @@ def _recovers(
     phi: helpers.Oracle,
     tolerances: Optional[dict[str, float]] = None,
 ) -> None:
-    target = distributions.MultivariateNormal(loc, covariance_matrix)
-    model = _ESTIMATOR({}, loc.numel(), covariance_matrix)
+    target = torch.distributions.MultivariateNormal(loc, covariance_matrix)
+    model = _ESTIMATOR(loc.numel(), covariance_matrix)
     unknown_truncation.assert_recovers(
         model,
         target,
         phi,
-        estimate=lambda name: distributions.MultivariateNormal(
+        estimate=lambda name: torch.distributions.MultivariateNormal(
             getattr(model, f"{name}_loc_"), covariance_matrix
         ),
-        baseline=lambda s: distributions.MultivariateNormal(
+        baseline=lambda s: torch.distributions.MultivariateNormal(
             s.mean(0), covariance_matrix
         ),
         tolerances=tolerances,
@@ -98,31 +98,33 @@ def test_sierpinski_pair_is_told_apart():
     """Figure 1's two Gaussians leave samples whose means nearly coincide."""
     phi = truncation_sets.sierpinski(3)
     targets = tuple(
-        distributions.MultivariateNormal(ch.tensor(loc), ch.eye(2))
+        torch.distributions.MultivariateNormal(ch.tensor(loc), ch.eye(2))
         for loc in _FIGURE_ONE_MEANS
     )
     fits, naive = [], []
     for target in targets:
         ch.manual_seed(0)
         sample = helpers.generate_truncated_distribution_dataset(target, phi, 20000)
-        model = _ESTIMATOR({}, 2, ch.eye(2), sample.alpha)
+        model = _ESTIMATOR(2, ch.eye(2), sample.alpha)
         model.fit(sample.S)
         fits.append(model)
-        naive.append(distributions.MultivariateNormal(sample.S.mean(0), ch.eye(2)))
+        naive.append(
+            torch.distributions.MultivariateNormal(sample.S.mean(0), ch.eye(2))
+        )
     for name in helpers.TOLERANCES:
         helpers.assert_distinguishes(
             targets=targets,
             recovered=tuple(
-                distributions.MultivariateNormal(
+                torch.distributions.MultivariateNormal(
                     getattr(fit, f"{name}_loc_"), ch.eye(2)
                 )
                 for fit in fits
             ),
             naive=(naive[0], naive[1]),
-            divergence=kl.kl_divergence,
+            divergence=torch.distributions.kl.kl_divergence,
         )
 
 
 def test_rejects_a_covariance_of_the_wrong_shape():
     with pytest.raises(ValueError, match="covariance_matrix"):
-        _ESTIMATOR({}, 2, ch.eye(3))
+        _ESTIMATOR(2, ch.eye(3))

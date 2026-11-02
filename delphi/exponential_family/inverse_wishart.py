@@ -4,8 +4,8 @@
 import math
 
 import torch as ch
-from torch import distributions
-from torch.distributions import constraints
+import torch.distributions
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution, wishart
 from delphi.utils import helpers
@@ -25,8 +25,8 @@ class InverseWishart(exponential_family_distribution.ExponentialFamilyDistributi
         scale: Scale matrix.
     """
 
-    arg_constraints = {"df": constraints.positive}
-    support = constraints.real_vector
+    arg_constraints = {"df": torch.distributions.constraints.positive}
+    support = torch.distributions.constraints.real_vector
 
     def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and the vech width dims."""
@@ -58,7 +58,7 @@ class InverseWishart(exponential_family_distribution.ExponentialFamilyDistributi
     def sample(self, sample_shape=ch.Size()) -> ch.Tensor:
         """Draw samples as vech rows, shaped ``sample_shape + (dims,)``."""
         with ch.no_grad():
-            precision = distributions.Wishart(
+            precision = torch.distributions.Wishart(
                 df=self.df, precision_matrix=self.scale, validate_args=False
             ).sample(sample_shape)
             return helpers.vech(ch.linalg.inv(precision))  # pylint: disable=not-callable

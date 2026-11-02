@@ -2,7 +2,7 @@
 """Tests for refining the initialization to the untruncated MLE."""
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.exponential_family import beta
 from delphi.truncated.distributions import truncated_beta, truncated_chi2
@@ -15,20 +15,25 @@ def _phi(z):
 
 def _sample():
     ch.manual_seed(0)
-    target = distributions.Beta(ch.Tensor([2.0]), ch.Tensor([5.0]))
+    target = torch.distributions.Beta(ch.tensor([2.0]), ch.tensor([5.0]))
     return helpers.generate_truncated_distribution_dataset(target, _phi, 10000)
 
 
 def _untruncated_log_likelihood(theta, sample):
     concentration1, concentration0 = beta.Beta.to_canonical(theta)
-    return distributions.Beta(concentration1, concentration0).log_prob(sample.S)
+    return torch.distributions.Beta(concentration1, concentration0).log_prob(sample.S)
 
 
 def test_raises_the_untruncated_likelihood():
     sample = _sample()
-    cold = truncated_beta.TruncatedBeta({"iterations": 1}, _phi, 1, sample.alpha)
+    cold = truncated_beta.TruncatedBeta(
+        _phi, 1, sample.alpha, hyperparameters={"iterations": 1}
+    )
     warm = truncated_beta.TruncatedBeta(
-        {"iterations": 1, "warm_start_iterations": 1000}, _phi, 1, sample.alpha
+        _phi,
+        1,
+        sample.alpha,
+        hyperparameters={"iterations": 1, "warm_start_iterations": 1000},
     )
     cold.fit(sample.S)
     warm.fit(sample.S)
@@ -41,7 +46,10 @@ def test_raises_the_untruncated_likelihood():
 def test_leaves_the_truncation_and_settings_alone():
     sample = _sample()
     model = truncated_beta.TruncatedBeta(
-        {"iterations": 1, "warm_start_iterations": 1000}, _phi, 1, sample.alpha
+        _phi,
+        1,
+        sample.alpha,
+        hyperparameters={"iterations": 1, "warm_start_iterations": 1000},
     )
     model.fit(sample.S)
     assert model.phi is _phi
@@ -51,10 +59,13 @@ def test_leaves_the_truncation_and_settings_alone():
 
 
 def test_families_without_a_closed_form_warm_start_by_default():
-    model = truncated_chi2.TruncatedChi2({}, _phi, 1)
+    model = truncated_chi2.TruncatedChi2(_phi, 1)
     assert model.hyperparameters.warm_start_iterations == 1000
     sample = _sample()
     off = truncated_chi2.TruncatedChi2(
-        {"iterations": 1, "warm_start_iterations": None}, _phi, 1, sample.alpha
+        _phi,
+        1,
+        sample.alpha,
+        hyperparameters={"iterations": 1, "warm_start_iterations": None},
     )
     assert off.fit(sample.S).procedure.warm_start is None

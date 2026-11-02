@@ -5,9 +5,11 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import log_normal
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -21,25 +23,26 @@ class TruncatedLogNormal(
     # Each coordinate's loc and scale are coupled, so the Hessian is
     # block-diagonal and its spectrum needs eigenvalues.
     independent_coordinates = False
-    defaults = configs.TruncatedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("loc_", "scale_")
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedLogNormal.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE: the mean and deviation of ``log x``."""
@@ -47,7 +50,7 @@ class TruncatedLogNormal(
         self.emp_theta = log_normal.LogNormal.to_natural(
             ch.cat([log_s.mean(0), log_s.std(0)])
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep the second natural parameter negative, so the scale is real."""

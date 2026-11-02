@@ -5,9 +5,9 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import gamma_unknown_concentration
 from delphi.exponential_family import beta_prime
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -19,27 +19,28 @@ class TruncatedBetaPrime(
 
     dist = beta_prime.BetaPrime
     # log x and log(1 + x) are nearly collinear, which preconditioning undoes.
-    defaults = configs.TruncatedGammaUnknownConcentrationConfig
+    defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's log x and log(1 + x) are correlated.
     independent_coordinates = False
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedBetaPrime.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Start at the Beta moments of ``x / (1 + x)``, then warm start.
@@ -53,7 +54,7 @@ class TruncatedBetaPrime(
         self.emp_theta = beta_prime.BetaPrime.to_natural(
             ch.cat([mean * common, (1.0 - mean) * common]).clamp(min=1e-3)
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Keep both shapes positive."""

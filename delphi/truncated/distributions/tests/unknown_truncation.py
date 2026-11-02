@@ -5,8 +5,8 @@ from collections.abc import Callable
 from typing import Any, Optional
 
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 from delphi.truncated.distributions.tests import helpers
 
@@ -32,10 +32,10 @@ def two_half_spaces(z: ch.Tensor) -> ch.Tensor:
 
 def assert_recovers(  # pylint: disable=too-many-arguments
     model: Any,
-    target: distributions.Distribution,
+    target: torch.distributions.Distribution,
     phi: helpers.Oracle,
-    estimate: Callable[[str], distributions.Distribution],
-    baseline: Callable[[ch.Tensor], distributions.Distribution],
+    estimate: Callable[[str], torch.distributions.Distribution],
+    baseline: Callable[[ch.Tensor], torch.distributions.Distribution],
     dataset_size: int = 20000,
     tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = SET_TOLERANCE,
@@ -58,7 +58,7 @@ def assert_recovers(  # pylint: disable=too-many-arguments
     model.fit(sample.S)
     helpers.assert_recovers(
         estimate=estimate,
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=baseline(sample.S),
         tolerances=tolerances,
     )

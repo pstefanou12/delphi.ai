@@ -13,6 +13,7 @@ every regression case with ``--coverage-sweep``.
 """
 
 from collections.abc import Callable, Sequence
+import contextlib
 import math
 import os
 import shutil
@@ -23,8 +24,10 @@ import torch as ch
 import torch.autograd.functional
 import torch.nn.functional
 
-from delphi import stats
 from delphi.stats.truncated import truncated_linear_regression
+from delphi.stats.truncated import (
+    truncated_linear_regression as truncated_linear_regression_module,
+)
 from delphi.stats.truncated.tests import regression
 from delphi.utils import helpers
 
@@ -72,8 +75,7 @@ def _fit(  # pylint: disable=too-many-arguments
         ols_margin: As ``regression.assert_recovers``.
         fit_intercept: Whether to fit an intercept.
     """
-    model = stats.TruncatedLinearRegression(
-        {},
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         simulation.phi,
         simulation.alpha if alpha_known else None,
         noise_var=simulation.noise_var if variance_known else None,
@@ -351,11 +353,11 @@ def test_truncated_dependent_regression():
     def phi(x):
         return x.norm(dim=-1, keepdim=True) <= phi_bound
 
-    X, Y = ch.Tensor([]), ch.Tensor([])
+    X, Y = ch.tensor([]), ch.tensor([])
     NOISE_VAR = ch.eye(D)
     M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR)
     x_t = ch.zeros((1, D))
-    for i in range(T):
+    for _ in range(T):
         noise = M.sample()
         y_t = x_t @ A + noise
         if phi(y_t):  # returns a boolean
@@ -379,13 +381,13 @@ def test_truncated_dependent_regression():
         "tol": 1e-1,
         "c_gamma": 2.0,
     }
-    trunc_lds = stats.TruncatedLinearRegression(
-        train_kwargs,
+    trunc_lds = truncated_linear_regression_module.TruncatedLinearRegression(
         phi,
         train_kwargs["alpha"],
         noise_var=NOISE_VAR,
         dependent=True,
         rand_seed=SEED,
+        hyperparameters=train_kwargs,
     )
     trunc_lds.fit(X, Y)
     # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
@@ -414,12 +416,12 @@ def test_dependent_step_is_preconditioned_by_sigma():
     def phi(x):
         return x.norm(dim=-1, keepdim=True) <= 10.0
 
-    model = stats.TruncatedLinearRegression(
-        {"iterations": 1, "num_samples": 10},
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
         phi,
         0.9,
         noise_var=ch.eye(dims),
         dependent=True,
+        hyperparameters={"iterations": 1, "num_samples": 10},
     ).fit(X, Y)
     model.trainer._reset_run_state()  # pylint: disable=protected-access
     design, targets = model._data  # pylint: disable=protected-access
@@ -566,8 +568,8 @@ def _design_and_responses(
 
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = stats.TruncatedLinearRegression(
-        {}, simulation.phi, simulation.alpha, noise_var=None
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
+        simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_])
@@ -588,8 +590,8 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
 
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = stats.TruncatedLinearRegression(
-        {}, simulation.phi, simulation.alpha, noise_var=simulation.noise_var
+    model = truncated_linear_regression_module.TruncatedLinearRegression(
+        simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
     design, y = _design_and_responses(simulation)
@@ -643,11 +645,11 @@ def _coverage_hits(
     covered = []
     for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
-        model = stats.TruncatedLinearRegression(
-            hyperparameters,
+        model = truncated_linear_regression_module.TruncatedLinearRegression(
             simulation.phi,
             simulation.alpha,
             noise_var=simulation.noise_var if variance_known else None,
+            hyperparameters=hyperparameters,
         ).fit(simulation.X, simulation.y)
         intervals = model.confidence_intervals()
         truths = [
@@ -694,10 +696,9 @@ def _pool(
         return None
     pooled = sum((ch.load(path) for path in done), ch.zeros_like(hits))
     shutil.rmtree(folder)
-    try:
+    # Another run's chunks may still be pooling there.
+    with contextlib.suppress(OSError):
         folder.parent.rmdir()
-    except OSError:
-        pass  # Another run's chunks are still pooling there.
     return pooled
 
 

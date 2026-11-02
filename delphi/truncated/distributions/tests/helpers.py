@@ -5,7 +5,8 @@ from collections.abc import Callable
 from typing import Any, NamedTuple, Optional, Protocol, TypeVar, Union, cast
 
 import torch as ch
-from torch.distributions import Distribution, kl
+import torch.distributions
+import torch.distributions.kl
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_exponential_family_distributions
@@ -31,7 +32,7 @@ class TruncatedSample(NamedTuple):
 
 
 def generate_truncated_distribution_dataset(
-    dist: Distribution, phi: Oracle, dataset_size: int
+    dist: torch.distributions.Distribution, phi: Oracle, dataset_size: int
 ) -> TruncatedSample:
     """Draw samples from dist that satisfy phi.
 
@@ -65,14 +66,16 @@ def generate_truncated_distribution_dataset(
     return TruncatedSample(S, alpha, ch.cat(drawn))
 
 
-def kl_divergence(p: Distribution, q: Distribution) -> ch.Tensor:
+def kl_divergence(
+    p: torch.distributions.Distribution, q: torch.distributions.Distribution
+) -> ch.Tensor:
     """Return torch's KL(p || q), detached.
 
     A family torch has no closed form for falls back on its Bregman
     divergence of ``_log_normalizer`` over ``_natural_params``, which keeps
     the autograd graph it differentiated.
     """
-    return kl.kl_divergence(p, q).detach()
+    return torch.distributions.kl.kl_divergence(p, q).detach()
 
 
 # Generic because Weibull has no registered KL, so it scores bare tensors.
@@ -160,13 +163,13 @@ class _Family(NamedTuple):
     """How a family's estimates and naive estimate become distributions."""
 
     suffixes: tuple[str, ...]
-    rebuild: Callable[..., Distribution]
+    rebuild: Callable[..., torch.distributions.Distribution]
 
-    def fitted(self, model: object, name: str) -> Distribution:
+    def fitted(self, model: object, name: str) -> torch.distributions.Distribution:
         """Return the distribution an estimator of a fitted model describes."""
         return self.rebuild(*(getattr(model, f"{name}_{s}") for s in self.suffixes))
 
-    def naive(self, estimate) -> Distribution:
+    def naive(self, estimate) -> torch.distributions.Distribution:
         """Return the distribution the naive estimate describes."""
         return (
             self.rebuild(*estimate)
@@ -176,13 +179,13 @@ class _Family(NamedTuple):
 
 
 def _family(
-    target: Distribution,
+    target: torch.distributions.Distribution,
     parameter: Union[str, tuple[str, ...]],
-    rebuild: Optional[Callable[..., Distribution]],
+    rebuild: Optional[Callable[..., torch.distributions.Distribution]],
 ) -> _Family:
     # By default the canonical parameter alone rebuilds the distribution,
     # which the Distribution base signature does not express.
-    default = cast(Callable[..., Distribution], type(target))
+    default = cast(Callable[..., torch.distributions.Distribution], type(target))
     suffixes = (parameter,) if isinstance(parameter, str) else parameter
     return _Family(suffixes, rebuild or default)
 
@@ -214,10 +217,10 @@ def untruncated_mle(
     def estimate(sample: ch.Tensor) -> Any:
         # The start is the estimate; one phase of one step completes the fit.
         untruncated = model_class(
-            {"iterations": 1, "max_phases": 1},
             delphi.oracle.Identity(),
             dims,
             *model_args,
+            hyperparameters={"iterations": 1, "max_phases": 1},
         )
         untruncated.fit(sample)
         untruncated.best_params = untruncated.emp_theta
@@ -232,7 +235,7 @@ def untruncated_mle(
 
 def assert_family_recovers(  # pylint: disable=too-many-arguments
     model_class: Callable[..., TruncatedModel],
-    target: Distribution,
+    target: torch.distributions.Distribution,
     phi: Oracle,
     dims: int,
     parameter: Union[str, tuple[str, ...]],
@@ -242,8 +245,10 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     model_args: tuple = (),
-    rebuild: Optional[Callable[..., Distribution]] = None,
-    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl_divergence,
+    rebuild: Optional[Callable[..., torch.distributions.Distribution]] = None,
+    divergence: Callable[
+        [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
+    ] = kl_divergence,
 ) -> None:
     """Fit a family on truncated data and assert it recovers the target.
 
@@ -254,7 +259,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
+            ``model_class(phi, dims, alpha, hyperparameters=hyperparameters)``.
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle.
         dims: Number of dimensions.
@@ -262,7 +267,6 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
             ``f"avg_{parameter}"`` names the averaged iterate, or several.
         empirical: Maps the truncated data to the naive estimate, a tuple
             when there are several.
-        hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
         pass_alpha: Supply the measured survival mass to the model. False
             leaves the model to fall back on ``min_radius``, which is what a
@@ -272,6 +276,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         rebuild: Maps the estimates to a distribution; ``type(target)`` by
             default.
         divergence: Scores a fitted distribution against the target.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Raises:
         AssertionError: If any estimator exceeds its bound.
@@ -279,7 +284,9 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
     args = (sample.alpha,) if pass_alpha else ()
-    truncated = model_class(hyperparameters or {}, phi, dims, *model_args, *args)
+    truncated = model_class(
+        phi, dims, *model_args, *args, hyperparameters=hyperparameters
+    )
     truncated.fit(sample.S)
 
     family = _family(target, parameter, rebuild)
@@ -352,7 +359,7 @@ def assert_distinguishes(  # pylint: disable=too-many-arguments
 
 def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     model_class: Callable[..., TruncatedModel],
-    targets: tuple[Distribution, Distribution],
+    targets: tuple[torch.distributions.Distribution, torch.distributions.Distribution],
     phi: Oracle,
     dims: int,
     parameter: Union[str, tuple[str, ...]],
@@ -360,8 +367,10 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     hyperparameters: Optional[dict] = None,
     dataset_size: int = 10000,
     model_args: tuple = (),
-    rebuild: Optional[Callable[..., Distribution]] = None,
-    divergence: Callable[[Distribution, Distribution], ch.Tensor] = kl_divergence,
+    rebuild: Optional[Callable[..., torch.distributions.Distribution]] = None,
+    divergence: Callable[
+        [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
+    ] = kl_divergence,
 ) -> None:
     """Fit two families truncated to one set and assert they come apart.
 
@@ -371,17 +380,17 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
 
     Args:
         model_class: Truncated model, called as
-            ``model_class(hyperparameters or {}, phi, dims, alpha)``.
+            ``model_class(phi, dims, alpha, hyperparameters=hyperparameters)``.
         targets: The two untruncated distributions.
         phi: The one truncation set both are cut to.
         dims: Number of dimensions.
         parameter: Attribute suffix holding the canonical estimate.
         empirical: Maps a truncated sample to the naive estimate.
-        hyperparameters: Hyperparameter dict for the procedure.
         dataset_size: Samples inside the truncation set to fit on.
         model_args: As ``assert_family_recovers``.
         rebuild: As ``assert_family_recovers``.
         divergence: As ``assert_family_recovers``.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Raises:
         AssertionError: As ``assert_distinguishes``.
@@ -392,7 +401,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
         ch.manual_seed(0)
         sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
         truncated = model_class(
-            hyperparameters or {}, phi, dims, *model_args, sample.alpha
+            phi, dims, *model_args, sample.alpha, hyperparameters=hyperparameters
         )
         truncated.fit(sample.S)
         fits.append(truncated)

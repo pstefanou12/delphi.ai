@@ -4,7 +4,7 @@
 import math
 
 import torch as ch
-from torch.distributions import constraints
+import torch.distributions.constraints
 
 from delphi.exponential_family import exponential_family_distribution
 
@@ -22,10 +22,10 @@ class InverseGaussian(exponential_family_distribution.ExponentialFamilyDistribut
     """
 
     arg_constraints = {
-        "loc": constraints.positive,
-        "concentration": constraints.positive,
+        "loc": torch.distributions.constraints.positive,
+        "concentration": torch.distributions.constraints.positive,
     }
-    support = constraints.positive
+    support = torch.distributions.constraints.positive
 
     def __init__(self, theta: ch.Tensor, dims: int):
         """Initialize with natural parameter theta and dimension."""

@@ -5,7 +5,7 @@ import functools
 from typing import Optional
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_pareto
@@ -15,7 +15,7 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def pareto_kl_divergence(
-    fitted: distributions.Distribution, target: distributions.Distribution
+    fitted: torch.distributions.Distribution, target: torch.distributions.Distribution
 ) -> ch.Tensor:
     """Return KL between two Pareto distributions sharing a scale.
 
@@ -44,7 +44,7 @@ def _recovers(
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_pareto.TruncatedPareto,
-        target=distributions.Pareto(scale, tail),
+        target=torch.distributions.Pareto(scale, tail),
         phi=phi,
         dims=dims,
         parameter="alpha_",
@@ -53,7 +53,7 @@ def _recovers(
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         model_args=(scale,),
-        rebuild=functools.partial(distributions.Pareto, scale),
+        rebuild=functools.partial(torch.distributions.Pareto, scale),
         divergence=pareto_kl_divergence,
     )
 
@@ -61,17 +61,17 @@ def _recovers(
 def test_one_dimension():
     _recovers(
         dims=1,
-        scale=ch.Tensor([1.0]),
-        tail=ch.Tensor([2.5]),
+        scale=ch.tensor([1.0]),
+        tail=ch.tensor([2.5]),
         phi=lambda z: z[:, 0] > 2.0,
     )
 
 
 def test_two_dimensions():
-    scale, tail = ch.Tensor([1.0, 2.0]), ch.Tensor([2.5, 1.5])
+    scale, tail = ch.tensor([1.0, 2.0]), ch.tensor([2.5, 1.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Pareto(scale, tail),
+        torch.distributions.Pareto(scale, tail),
         target_alpha=(0.15, 0.25),
         bounds=(1.0, 500.0),
     )
@@ -84,10 +84,10 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    scale, tail = ch.Tensor([1.0, 2.0]), ch.Tensor([2.5, 1.5])
+    scale, tail = ch.tensor([1.0, 2.0]), ch.tensor([2.5, 1.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.Pareto(scale, tail),
+        torch.distributions.Pareto(scale, tail),
         bounds=(-25.0, 25.0),
     )
     _recovers(
@@ -101,8 +101,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        scale=ch.Tensor([1.0]),
-        tail=ch.Tensor([2.5]),
+        scale=ch.tensor([1.0]),
+        tail=ch.tensor([2.5]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -123,10 +123,10 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    scale, tail = ch.Tensor([1.0]), ch.Tensor([2.5])
+    scale, tail = ch.tensor([1.0]), ch.tensor([2.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.Pareto(scale, tail),
+        torch.distributions.Pareto(scale, tail),
         target_alpha=(0.008, 0.02),
         bounds=(1.0, 500.0),
     )
@@ -142,7 +142,7 @@ def test_ten_dimensions_sum_threshold():
     scale, tail = ch.ones(10), ch.linspace(1.5, 4.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Pareto(scale, tail),
+        torch.distributions.Pareto(scale, tail),
         target_alpha=(0.15, 0.25),
         bounds=(10.0, 500.0),
     )
@@ -158,14 +158,14 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_pareto.TruncatedPareto,
         targets=(
-            distributions.Pareto(ch.Tensor([1.0]), ch.Tensor([1.5])),
-            distributions.Pareto(ch.Tensor([1.0]), ch.Tensor([4.0])),
+            torch.distributions.Pareto(ch.tensor([1.0]), ch.tensor([1.5])),
+            torch.distributions.Pareto(ch.tensor([1.0]), ch.tensor([4.0])),
         ),
         phi=lambda z: (z[:, 0] > 1.2) & (z[:, 0] < 1.4),
         dims=1,
         parameter="alpha_",
         empirical=lambda s: 1.0 / ch.log(s).mean(0),
-        model_args=(ch.Tensor([1.0]),),
-        rebuild=functools.partial(distributions.Pareto, ch.Tensor([1.0])),
+        model_args=(ch.tensor([1.0]),),
+        rebuild=functools.partial(torch.distributions.Pareto, ch.tensor([1.0])),
         divergence=pareto_kl_divergence,
     )

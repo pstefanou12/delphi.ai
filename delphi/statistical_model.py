@@ -11,15 +11,14 @@ from typing import Generic, Optional, TypeVar
 import torch as ch
 import torch.utils.data
 
-from delphi import configs, trainer
-from delphi.delphi import delphi
+from delphi.configs import base
+from delphi.delphi import DelphiModel
+import delphi.trainer
 
-_StatisticalConfigT = TypeVar(
-    "_StatisticalConfigT", bound=configs.StatisticalModelConfig
-)
+_StatisticalConfigT = TypeVar("_StatisticalConfigT", bound=base.StatisticalModelConfig)
 
 
-class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]):
+class StatisticalModel(DelphiModel[_StatisticalConfigT], Generic[_StatisticalConfigT]):
     """A delphi model fit by the trainer, then optionally refined.
 
     A model setting ``refine_steps`` trains one parameter tensor and supplies
@@ -30,16 +29,16 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
         refinement: The refinement's record, or None if it did not run.
     """
 
-    def __init__(self, hyperparameters: dict):
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
         """Initialize the model.
 
         Args:
             hyperparameters: Hyperparameter dict, validated by the subclass
                 ``defaults`` config.
         """
-        super().__init__(hyperparameters)
-        self.procedure: Optional[trainer.ProcedureResult] = None
-        self.refinement: Optional[trainer.ProcedureResult] = None
+        super().__init__(hyperparameters=hyperparameters)
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
+        self.refinement: Optional[delphi.trainer.ProcedureResult] = None
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the Hessian of the criterion at theta.
@@ -50,7 +49,7 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
         raise NotImplementedError(f"{type(self).__name__} has no hessian().")
 
     @property
-    def final_run(self) -> trainer.RunResult:
+    def final_run(self) -> delphi.trainer.RunResult:
         """The run the estimates come from: the refinement's, else the fit's.
 
         Raises:
@@ -63,7 +62,7 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
 
     def refine(
         self, train_loader: torch.utils.data.DataLoader, rand_seed: int = 0
-    ) -> Optional[trainer.ProcedureResult]:
+    ) -> Optional[delphi.trainer.ProcedureResult]:
         """Take ``refine_steps`` Newton steps on the full sample.
 
         Starts from the fit's averaged iterate. Each step moves by
@@ -109,7 +108,7 @@ class StatisticalModel(delphi[_StatisticalConfigT], Generic[_StatisticalConfigT]
         # A tensor hook runs after backward, inside optimizer.step's closure.
         hook = param.register_hook(self._newton_direction(param))
         try:
-            self.refinement = trainer.Trainer(
+            self.refinement = delphi.trainer.Trainer(
                 self, main.refinement_overlay()
             ).train_model(full_batch, None, rand_seed=rand_seed)
         finally:

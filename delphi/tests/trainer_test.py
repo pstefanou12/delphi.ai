@@ -5,9 +5,9 @@ import functools
 
 import pytest
 import torch as ch
-from torch.utils import data
+import torch.utils.data
 
-from delphi import configs
+from delphi.configs import base
 import delphi.delphi
 import delphi.trainer
 from delphi.utils import constants
@@ -19,13 +19,13 @@ def _squared_error(pred, targ, offset=0.0):
     return ((pred - (targ + offset)) ** 2).mean()
 
 
-class Mean(delphi.delphi.delphi[configs.DelphiConfig]):
+class Mean(delphi.delphi.DelphiModel[base.DelphiConfig]):
     """Estimates a mean by squared error, keeping the base class's hooks."""
 
-    defaults = configs.DelphiConfig
+    defaults = base.DelphiConfig
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.mu = ch.nn.Parameter(ch.zeros(1))
         self.criterion = _squared_error
 
@@ -37,7 +37,7 @@ class PhasedMean(Mean):
     """Mean that runs a set number of phases, recording what its hooks see."""
 
     def __init__(self, hyperparameters: dict, phases: int = 1):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.phases = phases
         self.warm_start_results: list = []
         self.phase_results: list = []
@@ -59,10 +59,12 @@ class PhasedMean(Mean):
         self.trainings_finished += 1
 
 
-def _loader() -> data.DataLoader:
+def _loader() -> torch.utils.data.DataLoader:
     ch.manual_seed(0)
     samples = _TARGET + 0.1 * ch.randn(200)
-    return data.DataLoader(data.TensorDataset(ch.zeros(200, 1), samples), batch_size=20)
+    return torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(ch.zeros(200, 1), samples), batch_size=20
+    )
 
 
 def _fit(model: Mean) -> delphi.trainer.ProcedureResult:
@@ -166,7 +168,7 @@ class CurvedMean(PhasedMean):
     """Mean whose criteria report curvature, recording who asked for it."""
 
     def __init__(self, hyperparameters: dict):
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         self.curvature_calls: list[str] = []
 
     def hessian(self, theta=None):  # pylint: disable=unused-argument

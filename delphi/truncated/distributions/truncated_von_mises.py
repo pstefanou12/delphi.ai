@@ -5,9 +5,11 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    exponential_family as exponential_family_configs,
+)
 from delphi.exponential_family import von_mises
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,27 +20,28 @@ class TruncatedVonMises(
     """Model for truncated von Mises distributions."""
 
     dist = von_mises.VonMises
-    defaults = configs.WarmStartedExponentialFamilyDistributionConfig
+    defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("loc_", "concentration_")
     # Each coordinate's two natural parameters are coupled.
     independent_coordinates = False
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedVonMises.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Start at the circular mean and an approximate concentration.
@@ -64,7 +67,7 @@ class TruncatedVonMises(
         self.emp_theta = von_mises.VonMises.to_natural(
             ch.cat([ch.atan2(sin, cos), concentration])
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     @property
     def best_loc_(self):

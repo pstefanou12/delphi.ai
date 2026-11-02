@@ -35,13 +35,16 @@ from typing import Optional, cast
 import warnings
 
 import torch as ch
-from torch import distributions as torch_distributions
-from torch import nn
-from torch.utils import data
+import torch.distributions
+import torch.nn
+import torch.utils.data
 
-from delphi import configs, trainer
+from delphi.configs.distributions.truncated import (
+    unknown_truncation_multivariate_normal,
+)
 import delphi.oracle
 from delphi.torchnomials import polynomial
+import delphi.trainer
 from delphi.transformations import standardization
 from delphi.truncated.distributions import distributions, losses
 from delphi.utils import datasets
@@ -52,7 +55,9 @@ DEFAULT_ALPHA = 0.01
 
 
 class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-instance-attributes
-    distributions.distributions[configs.UnknownTruncationMultivariateNormalConfig],
+    distributions.distributions[
+        unknown_truncation_multivariate_normal.UnknownTruncationMultivariateNormalConfig
+    ],
     abc.ABC,
 ):
     """Shared procedure of the unknown-truncation normal estimators.
@@ -76,23 +81,31 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         avg_params: Average of the iterates after the burn-in.
     """
 
-    defaults = configs.UnknownTruncationMultivariateNormalConfig
+    defaults = (
+        unknown_truncation_multivariate_normal.UnknownTruncationMultivariateNormalConfig
+    )
     estimate_suffixes: tuple[str, ...] = ("loc_", "covariance_matrix_")
     # Read by FisherLR.spectrum: the coordinates of (u, B) are correlated.
     independent_coordinates = False
 
-    def __init__(self, hyperparameters: dict, dims: int, alpha: Optional[float] = None):
+    def __init__(
+        self,
+        dims: int,
+        alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
+    ):
         """Initialize the estimator.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             dims: Number of dimensions.
             alpha: Survival mass of the set in (0, 1), if known.
+            hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: If alpha lies outside (0, 1).
         """
-        super().__init__(hyperparameters)
+        super().__init__(hyperparameters=hyperparameters)
         if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
                 f"alpha is the survival mass and must lie in (0, 1); got {alpha}."
@@ -100,15 +113,15 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         self.dims = dims
         self.alpha = alpha
         self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
-        self.theta = nn.Parameter(ch.zeros(self._num_params()))
+        self.theta = torch.nn.Parameter(ch.zeros(self._num_params()))
 
         self.standardization_: Optional[standardization.Standardization] = None
         self.recovered_set_: Optional[delphi.oracle.RecoveredSet] = None
         self.emp_theta: Optional[ch.Tensor] = None
-        self.train_loader_: Optional[data.DataLoader] = None
-        self.val_loader_: Optional[data.DataLoader] = None
-        self.trainer: Optional[trainer.Trainer] = None
-        self.procedure: Optional[trainer.ProcedureResult] = None
+        self.train_loader_: Optional[torch.utils.data.DataLoader] = None
+        self.val_loader_: Optional[torch.utils.data.DataLoader] = None
+        self.trainer: Optional[delphi.trainer.Trainer] = None
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         self.best_params: Optional[ch.Tensor] = None
         self.final_params: Optional[ch.Tensor] = None
         self.ema_params: Optional[ch.Tensor] = None
@@ -190,7 +203,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         emp_theta = self._initial_theta().to(S.dtype)
         self.emp_theta = emp_theta
         self.theta.data = emp_theta.clone()
-        self.trainer = trainer.Trainer(self, self.hyperparameters)
+        self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         final = self.procedure.final
         self.best_params, self.final_params = final.best_params, final.final_params
@@ -360,7 +373,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             self.avg_params if theta is None else theta
         )
         return recovered.given(
-            torch_distributions.MultivariateNormal(loc, covariance_matrix)
+            torch.distributions.MultivariateNormal(loc, covariance_matrix)
         )
 
     @property

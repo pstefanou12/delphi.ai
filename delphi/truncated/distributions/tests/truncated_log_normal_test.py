@@ -5,8 +5,8 @@ import functools
 from typing import Optional
 
 import torch as ch
-from torch import distributions
-from torch.distributions import kl
+import torch.distributions
+import torch.distributions.kl
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_log_normal
@@ -16,12 +16,12 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    target: distributions.LogNormal,
+    target: torch.distributions.LogNormal,
     phi: helpers.Oracle,
     dims: int,
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
-) -> tuple[distributions.LogNormal, dict[str, distributions.LogNormal]]:
+) -> tuple[torch.distributions.LogNormal, dict[str, torch.distributions.LogNormal]]:
     """Fit on data standardized in log space and map the estimates back.
 
     Unstandardized, the Hessian's condition number is about 270 and 2500
@@ -31,8 +31,8 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle, in the original coordinates.
         dims: Number of dimensions.
-        hyperparameters: Hyperparameter dict for the procedure.
         pass_alpha: Supply the measured survival mass to the model.
+        hyperparameters: Hyperparameter dict for the procedure.
 
     Returns:
         The naive estimate, and each estimator's fit, in the original
@@ -44,20 +44,20 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     mean, std = log_s.mean(0), log_s.std(0)
     args = (sample.alpha,) if pass_alpha else ()
     truncated = truncated_log_normal.TruncatedLogNormal(
-        hyperparameters or {},
         lambda z: phi(ch.exp(ch.log(z) * std + mean)),
         dims,
         *args,
+        hyperparameters=hyperparameters,
     )
     truncated.fit(ch.exp((log_s - mean) / std))
     fits = {
-        name: distributions.LogNormal(
+        name: torch.distributions.LogNormal(
             getattr(truncated, f"{name}_loc_") * std + mean,
             getattr(truncated, f"{name}_scale_") * std,
         )
         for name in helpers.TOLERANCES
     }
-    return distributions.LogNormal(mean, std), fits
+    return torch.distributions.LogNormal(mean, std), fits
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -69,11 +69,11 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
 ) -> None:
-    target = distributions.LogNormal(loc, scale)
+    target = torch.distributions.LogNormal(loc, scale)
     naive, fits = _fit(target, phi, dims, hyperparameters, pass_alpha)
     helpers.assert_recovers(
         estimate=lambda name: fits[name],
-        divergence=lambda fitted: kl.kl_divergence(fitted, target),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=naive,
         baseline_must_fail=baseline_must_fail,
     )
@@ -82,17 +82,17 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 def test_one_dimension():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
     )
 
 
 def test_two_dimensions():
-    loc, scale = ch.Tensor([0.0, 0.5]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.LogNormal(loc, scale),
+        torch.distributions.LogNormal(loc, scale),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
@@ -100,10 +100,10 @@ def test_two_dimensions():
 
 
 def test_two_dimensions_random_half_space():
-    loc, scale = ch.Tensor([0.0, 0.5]), ch.Tensor([1.0, 0.5])
+    loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
-        distributions.LogNormal(loc, scale),
+        torch.distributions.LogNormal(loc, scale),
         bounds=(-50.0, 50.0),
     )
     _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi)
@@ -112,8 +112,8 @@ def test_two_dimensions_random_half_space():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        loc=ch.Tensor([0.0]),
-        scale=ch.Tensor([1.0]),
+        loc=ch.tensor([0.0]),
+        scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
@@ -132,10 +132,10 @@ def test_ten_dimensions_identity():
 
 
 def test_one_dimension_small_mass():
-    loc, scale = ch.Tensor([0.0]), ch.Tensor([1.0])
+    loc, scale = ch.tensor([0.0]), ch.tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
-        distributions.LogNormal(loc, scale),
+        torch.distributions.LogNormal(loc, scale),
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 100.0),
     )
@@ -146,7 +146,7 @@ def test_ten_dimensions_sum_threshold():
     loc, scale = ch.linspace(-0.5, 0.5, 10), ch.linspace(0.5, 1.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.LogNormal(loc, scale),
+        torch.distributions.LogNormal(loc, scale),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 500.0),
     )
@@ -157,8 +157,8 @@ def test_indistinguishable_pair():
     # Two parameters need a window wide enough to carry curvature: on
     # (1.5, 1.8) the Cramer-Rao bound on the natural parameters is 4.05.
     targets = (
-        distributions.LogNormal(ch.Tensor([0.3]), ch.Tensor([0.4])),
-        distributions.LogNormal(ch.Tensor([0.0]), ch.Tensor([0.8])),
+        torch.distributions.LogNormal(ch.tensor([0.3]), ch.tensor([0.4])),
+        torch.distributions.LogNormal(ch.tensor([0.0]), ch.tensor([0.8])),
     )
 
     def phi(z):
@@ -170,5 +170,5 @@ def test_indistinguishable_pair():
             targets=targets,
             recovered=(results[0][1][name], results[1][1][name]),
             naive=(results[0][0], results[1][0]),
-            divergence=kl.kl_divergence,
+            divergence=torch.distributions.kl.kl_divergence,
         )

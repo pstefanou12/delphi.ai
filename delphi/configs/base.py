@@ -168,8 +168,8 @@ class TrainerConfig(WarmStartConfig):
 class DelphiConfig(TrainerConfig, OptimizerConfig, DatasetConfig):
     """Base for every config the delphi model and trainer consume.
 
-    Combining the three concerns here is what lets ``delphi`` read optimizer,
-    scheduler and dataset fields as typed attributes. While _ConfigT was bound
+    Combining the three concerns here is what lets ``DelphiModel`` read optimizer,
+    scheduler and dataset fields as typed attributes. While ConfigT was bound
     to TrainerConfig alone, those fields were untypeable from the base class
     and every read had to go through ``getattr(..., default)``.
     """
@@ -244,4 +244,4 @@ class StatisticalModelConfig(DelphiConfig, RefinementConfig):
         )
 
 
-_ConfigT = TypeVar("_ConfigT", bound=DelphiConfig)
+ConfigT = TypeVar("ConfigT", bound=DelphiConfig)

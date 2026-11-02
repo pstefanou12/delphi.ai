@@ -1,3 +1,4 @@
+# Author: pstefanou12@
 """VGG model implementations for ImageNet-scale datasets.
 
 Reference:
@@ -6,10 +7,10 @@ Reference:
 """
 # pylint: disable=duplicate-code
 
-from torch import nn
-from torch.hub import load_state_dict_from_url
+import torch.hub
+import torch.nn
 
-from delphi.utils.helpers import FakeReLUM
+from delphi.adversarial import layers
 
 __all__ = [
     "VGG",
@@ -36,25 +37,25 @@ model_urls = {
 }
 
 
-class VGG(nn.Module):
+class VGG(torch.nn.Module):
     """VGG network architecture for ImageNet-scale datasets."""
 
     def __init__(self, features, num_classes=1000, init_weights=True):
         """Initialize VGG with feature layers, avgpool, and classifier head."""
         super().__init__()
         self.features = features
-        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
-        self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
-            nn.ReLU(),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(),
-            nn.Dropout(),
-            nn.Linear(4096, num_classes),
+        self.avgpool = torch.nn.AdaptiveAvgPool2d((7, 7))
+        self.classifier = torch.nn.Sequential(
+            torch.nn.Linear(512 * 7 * 7, 4096),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(),
+            torch.nn.Linear(4096, 4096),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(),
+            torch.nn.Linear(4096, num_classes),
         )
-        self.last_relu = nn.ReLU()
-        self.last_relu_fake = FakeReLUM()
+        self.last_relu = torch.nn.ReLU()
+        self.last_relu_fake = layers.FakeReLUM()
         if init_weights:
             self._initialize_weights()
 
@@ -78,16 +79,18 @@ class VGG(nn.Module):
     def _initialize_weights(self):
         """Initialize model weights using Kaiming normal for conv layers."""
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            if isinstance(m, torch.nn.Conv2d):
+                torch.nn.init.kaiming_normal_(
+                    m.weight, mode="fan_out", nonlinearity="relu"
+                )
                 if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
+                    torch.nn.init.constant_(m.bias, 0)
+            elif isinstance(m, torch.nn.BatchNorm2d):
+                torch.nn.init.constant_(m.weight, 1)
+                torch.nn.init.constant_(m.bias, 0)
+            elif isinstance(m, torch.nn.Linear):
+                torch.nn.init.normal_(m.weight, 0, 0.01)
+                torch.nn.init.constant_(m.bias, 0)
 
 
 def make_layers(cfg, batch_norm=False):
@@ -96,15 +99,15 @@ def make_layers(cfg, batch_norm=False):
     in_channels = 3
     for v in cfg:
         if v == "M":
-            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+            layers += [torch.nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
-            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+            conv2d = torch.nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
             if batch_norm:
-                layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU()]
+                layers += [conv2d, torch.nn.BatchNorm2d(v), torch.nn.ReLU()]
             else:
-                layers += [conv2d, nn.ReLU()]
+                layers += [conv2d, torch.nn.ReLU()]
             in_channels = v
-    return nn.Sequential(*layers)
+    return torch.nn.Sequential(*layers)
 
 
 cfgs = {
@@ -162,7 +165,9 @@ def _vgg(arch, cfg, batch_norm, pretrained, progress, **kwargs):
         kwargs["init_weights"] = False
     model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)
     if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch], progress=progress)
+        state_dict = torch.hub.load_state_dict_from_url(
+            model_urls[arch], progress=progress
+        )
         model.load_state_dict(state_dict)
     return model
 

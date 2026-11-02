@@ -5,7 +5,7 @@ import functools
 from typing import Optional
 
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 import delphi.oracle
 from delphi.truncated.distributions import truncated_boolean_product
@@ -24,7 +24,7 @@ def _recovers(
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_boolean_product.TruncatedBooleanProduct,
-        target=distributions.Bernoulli(probability),
+        target=torch.distributions.Bernoulli(probability),
         phi=phi,
         dims=dims,
         parameter="probs_",
@@ -50,7 +50,7 @@ def _not_both_set(z):
 def test_two_dimensions():
     _recovers(
         dims=2,
-        probability=ch.Tensor([0.5, 0.75]),
+        probability=ch.tensor([0.5, 0.75]),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
     )
@@ -59,7 +59,7 @@ def test_two_dimensions():
 def test_twenty_dimensions():
     _recovers(
         dims=20,
-        probability=ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
+        probability=ch.tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1},
     )
@@ -68,10 +68,10 @@ def test_twenty_dimensions():
 def test_five_dimensions_random_polytope():
     # Two dimensions would leave four atoms, too few for a set carrying
     # survival mass near a third to keep every coordinate identifiable.
-    probability = ch.Tensor([0.5, 0.75, 0.3, 0.4, 0.8])
+    probability = ch.tensor([0.5, 0.75, 0.3, 0.4, 0.8])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_polytope, 0, 5, 4),
-        distributions.Bernoulli(probability),
+        torch.distributions.Bernoulli(probability),
         bounds=(-25.0, 25.0),
     )
     _recovers(
@@ -85,7 +85,7 @@ def test_five_dimensions_random_polytope():
 def test_one_dimension_identity():
     _recovers(
         dims=1,
-        probability=ch.Tensor([0.4]),
+        probability=ch.tensor([0.4]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
@@ -110,7 +110,7 @@ def test_ten_dimensions_sum_threshold():
     # coordinate instead of one.
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
-        distributions.Bernoulli(probability),
+        torch.distributions.Bernoulli(probability),
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
@@ -129,8 +129,8 @@ def test_indistinguishable_pair():
     helpers.assert_family_distinguishes(
         model_class=truncated_boolean_product.TruncatedBooleanProduct,
         targets=(
-            distributions.Bernoulli(ch.full((5,), 0.3)),
-            distributions.Bernoulli(ch.full((5,), 0.6)),
+            torch.distributions.Bernoulli(ch.full((5,), 0.3)),
+            torch.distributions.Bernoulli(ch.full((5,), 0.6)),
         ),
         phi=lambda z: (z.sum(-1) >= 2) & (z.sum(-1) <= 3),
         dims=5,

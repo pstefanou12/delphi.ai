@@ -5,9 +5,11 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
-from torch import nn
+import torch.nn
 
-from delphi import configs
+from delphi.configs.distributions.truncated import (
+    inverse_gaussian as inverse_gaussian_configs,
+)
 from delphi.exponential_family import inverse_gaussian
 from delphi.truncated.distributions import truncated_exponential_family_distributions
 
@@ -18,7 +20,7 @@ class TruncatedInverseGaussian(
     """Model for truncated inverse Gaussian distributions."""
 
     dist = inverse_gaussian.InverseGaussian
-    defaults = configs.TruncatedInverseGaussianConfig
+    defaults = inverse_gaussian_configs.TruncatedInverseGaussianConfig
     estimate_suffixes = ("loc_", "concentration_")
     # Each coordinate's x and 1 / x are correlated, so the Hessian is
     # block-diagonal and its spectrum needs eigenvalues.
@@ -26,20 +28,21 @@ class TruncatedInverseGaussian(
 
     def __init__(
         self,
-        hyperparameters: dict,
         phi: Callable,
         dims: int,
         alpha: Optional[float] = None,
+        *,
+        hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedInverseGaussian.
 
         Args:
-            hyperparameters: Hyperparameter dict.
             phi: Truncation set oracle.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
+            hyperparameters: Hyperparameter dict.
         """
-        super().__init__(hyperparameters, phi, dims, alpha)
+        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE, ``mean(x)`` and ``1 / mean(1/x - 1/loc)``."""
@@ -49,7 +52,7 @@ class TruncatedInverseGaussian(
         self.emp_theta = inverse_gaussian.InverseGaussian.to_natural(
             ch.cat([loc, concentration])
         )
-        self.register_parameter("theta", nn.Parameter(self.emp_theta.clone()))
+        self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
     def _constraints(self, theta):
         """Clamp theta to be strictly negative, so both parameters are positive."""
