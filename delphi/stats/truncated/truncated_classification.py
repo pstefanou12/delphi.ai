@@ -19,6 +19,7 @@ from delphi import configs
 import delphi.projection_sets
 from delphi.stats import linear_model
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
+from delphi.utils import constants
 
 _ClassificationConfigT = TypeVar(
     "_ClassificationConfigT", bound=configs.TruncatedClassificationConfig
@@ -213,7 +214,9 @@ class TruncatedClassification(
     def _summary_estimates(self) -> list[tuple[str, str]]:
         X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
         k = linear_model.require_fitted(self.k, "k")
-        weight = linear_model.require_fitted(self._estimate("avg"), "coef_")
+        weight = linear_model.require_fitted(
+            self._estimate(constants.Estimator.AVG), "coef_"
+        )
         weight = weight.reshape(-1, k)
         accuracy = self._accuracy(self._latent_mean(X @ weight), y)
         rows = [("accuracy of coef_", f"{accuracy:.4f} on the observed sample")]

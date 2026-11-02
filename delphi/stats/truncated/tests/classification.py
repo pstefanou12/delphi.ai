@@ -21,8 +21,8 @@ import torch.distributions
 import torch.nn.functional
 
 import delphi.oracle
-from delphi.stats import linear_model
 from delphi.truncated import sampling
+from delphi.utils import constants
 
 # Draws per block while collecting survivors.
 _BLOCK = 100_000
@@ -483,7 +483,7 @@ def assert_recovers(
     """
     model.fit(simulation.X, simulation.y)
     naive = simulation.error(model.emp_coef_, model.emp_intercept_)
-    for name in [*linear_model.ESTIMATORS, ""]:
+    for name in [*constants.Estimator, ""]:
         prefix = f"{name}_" if name else ""
         coef = getattr(model, f"{prefix}coef_")
         intercept = getattr(model, f"{prefix}intercept_")

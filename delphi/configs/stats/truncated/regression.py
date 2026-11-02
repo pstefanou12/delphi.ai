@@ -20,6 +20,9 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
             normalized coordinates the descent runs in; None drops the ball.
         refine_steps: Newton steps after the descent, as
             ``configs.RefinementConfig``; on by default here.
+        information_samples: Kept draws per sample for the conditional
+            moments behind ``covariance``'s information matrix; a sample's
+            moments from m draws shrink its variances by about 1 / m.
     """
 
     batch_size: int = 10
@@ -32,6 +35,7 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
     avg_burn_in: float = pydantic.Field(default=0.0, ge=0.0, lt=1.0)
     weight_bound: Optional[float] = pydantic.Field(default=None, gt=0.0)
     refine_steps: int = pydantic.Field(default=30, ge=0)
+    information_samples: int = pydantic.Field(default=1000, ge=2)
 
     @pydantic.model_validator(mode="after")
     def drop_default_schedule_off_sgd(self) -> "TruncatedRegressionConfig":

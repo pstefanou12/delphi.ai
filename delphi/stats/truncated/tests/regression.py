@@ -16,7 +16,7 @@ from typing import Optional
 
 import torch as ch
 
-from delphi.stats import linear_model
+from delphi.utils import constants
 
 # Draws per block while collecting survivors.
 _BLOCK = 100_000
@@ -140,7 +140,7 @@ def assert_recovers(
     if variance_tolerance is None:
         variance_tolerance = tolerance
     ols = simulation.error(simulation.ols_coef, simulation.ols_intercept)
-    names = [*linear_model.ESTIMATORS, ""]
+    names = [*constants.Estimator, ""]
     for name in names:
         prefix = f"{name}_" if name else ""
         coef = getattr(model, f"{prefix}coef_")
