@@ -7,8 +7,7 @@ an asymptotic distribution for the estimate.
 """
 
 from delphi.optim.lr_scheduler import fisher
-
-ESTIMATORS = ("avg", "ema", "final", "best")
+from delphi.utils import constants
 
 # Longer vectors are cut to their first few entries.
 MAX_ENTRIES = 6
@@ -117,7 +116,7 @@ def optimization(procedure) -> list[tuple[str, str]]:
 def _estimates(model) -> list[tuple[str, str]]:
     rows = []
     for suffix in model.estimate_suffixes:
-        for name in ESTIMATORS:
+        for name in constants.Estimator:
             rows.append(
                 (f"{name}_{suffix}", tensor(getattr(model, f"{name}_{suffix}")))
             )

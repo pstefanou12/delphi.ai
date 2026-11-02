@@ -5,8 +5,9 @@ import pytest
 import torch as ch
 from torch import distributions
 
-from delphi.truncated.distributions import summary, truncated_exponential
+from delphi.truncated.distributions import truncated_exponential
 from delphi.truncated.distributions.tests import helpers
+from delphi.utils import constants
 
 
 def _fitted():
@@ -35,7 +36,7 @@ def test_reports_every_section():
         "Truncation and curvature",
     ):
         assert heading in report
-    for estimator in summary.ESTIMATORS:
+    for estimator in constants.Estimator:
         assert f"{estimator}_rate_" in report
     assert "condition number" in report
 

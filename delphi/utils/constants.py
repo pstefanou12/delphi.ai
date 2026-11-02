@@ -45,6 +45,15 @@ class StopReason(StrEnum):
     MODEL_STOP = "model_stop"
 
 
+class Estimator(StrEnum):
+    """The iterates a fit reports estimates at, as ``{estimator}_coef_``."""
+
+    AVG = "avg"
+    EMA = "ema"
+    FINAL = "final"
+    BEST = "best"
+
+
 class OptimizerType(StrEnum):
     """Built-in optimizer type identifiers."""
 
