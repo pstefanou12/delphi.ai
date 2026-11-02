@@ -6,7 +6,6 @@ from typing import cast
 
 import torch as ch
 import torch.distributions
-import torch.nn
 
 from delphi.truncated import sampling
 
@@ -247,81 +246,44 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
         )
 
 
-class GumbelCE(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Gumbel cross-entropy gradient for multiclass classification."""
-
-    @staticmethod
-    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        num_samples=1000,
-        eps=1e-5,  # pylint: disable=invalid-name
-    ):
-        """Compute cross-entropy loss."""
-        ctx.save_for_backward(pred, targ)
-        ce_loss = ch.nn.CrossEntropyLoss()
-        ctx.num_samples = num_samples
-        ctx.eps = eps
-        return ce_loss(pred, targ)
-
-    @staticmethod
-    def backward(ctx, _grad_output):  # pylint: disable=arguments-differ,invalid-name
-        """Compute gradient of Gumbel CE w.r.t. pred."""
-        pred, targ = ctx.saved_tensors
-        gumbel_dist = torch.distributions.Gumbel(0, 1)  # pylint: disable=invalid-name
-        stacked = pred[None, ...].repeat(ctx.num_samples, 1, 1)
-        rand_noise = gumbel_dist.sample(stacked.size())
-        noised = stacked + rand_noise
-        noised_labs = noised.argmax(-1)
-        mask = noised_labs.eq(targ)[..., None]
-        inner_exp = 1 - ch.exp(-rand_noise)
-        avg = (inner_exp * mask).sum(0) / (mask.sum(0) + ctx.eps) / pred.size(0)
-        return -avg, None, None, None
-
-
 def _label_nll(
-    pred: ch.Tensor,
-    targ: ch.Tensor,
-    phi,
-    noise: sampling.LatentNoise,
-    sampler: sampling.LatentSampler,
-    eps: float,
+    moments: sampling.LabelMoments, pred: ch.Tensor, targ: ch.Tensor, eps: float
 ) -> tuple[ch.Tensor, ch.Tensor]:
     """Return each sample's truncated label NLL and its gradient in pred."""
-    moments = sampler.label_moments(pred, noise, phi)
     label = targ.long()
     label_prob = moments.mass / moments.mass.sum(1, keepdim=True).clamp_min(1e-300)
-    mean_score = (label_prob * moments.score).sum(1, keepdim=True)
+    mean_score = (label_prob[..., None] * moments.score).sum(1)
     loss = -ch.log(label_prob.gather(1, label).clamp_min(eps))
-    grad = mean_score - moments.score.gather(1, label)
+    label_score = moments.score.gather(
+        1, label[..., None].expand(-1, 1, moments.score.size(2))
+    )[:, 0]
+    grad = mean_score - label_score
     return loss.flatten().to(pred.dtype), grad.to(pred.dtype)
 
 
-def _label_fisher(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    pred: ch.Tensor,
-    X: ch.Tensor,  # pylint: disable=invalid-name
-    phi,
-    noise: sampling.LatentNoise,
-    sampler: sampling.LatentSampler,
-) -> ch.Tensor:
-    """Return the batch-mean Fisher information of the label NLL in the weight."""
-    with ch.no_grad():
-        moments = sampler.label_moments(pred, noise, phi)
-        label_prob = moments.mass / moments.mass.sum(1, keepdim=True).clamp_min(1e-300)
-        mean_score = (label_prob * moments.score).sum(1, keepdim=True)
-        info = (label_prob * (moments.score - mean_score).pow(2)).sum(1)
-        design = X.double()
-        return (design.T * info) @ design / pred.size(0)
+def _label_fisher(moments: sampling.LabelMoments, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+    """Return the batch-mean Fisher information of the label NLL in the weight.
+
+    For the weight of shape (d, q) flattened row-major, shaped (d q, d q).
+    """
+    label_prob = moments.mass / moments.mass.sum(1, keepdim=True).clamp_min(1e-300)
+    centered = moments.score - (label_prob[..., None] * moments.score).sum(
+        1, keepdim=True
+    )
+    info = ch.einsum("nc,nca,ncb->nab", label_prob, centered, centered)
+    design = X.double()
+    hess = ch.einsum("ni,nj,nab->iajb", design, design, info)
+    size = X.size(1) * info.size(1)
+    return hess.reshape(size, size) / X.size(0)
 
 
 class _TruncatedLabelNLL(ch.autograd.Function):  # pylint: disable=abstract-method
-    """Truncated NLL of a binary label ``1{h + e >= 0}`` seen through phi.
+    """Truncated NLL of a label of the latent ``z = h + e`` seen through phi.
 
-    Per sample, ``-log P(label y | z in S)`` for ``z = h + e``; its gradient
-    in h is ``E[s(e) | S] - E[s(e) | S, y]``, for the noise's score s. A
-    subclass fixes the noise. Returns one loss per sample; the caller
-    reduces.
+    Per sample, ``-log P(label y | z in S)``; its gradient in h is
+    ``E[s(e) | S] - E[s(e) | S, y]``, for the noise's score
+    ``s = -grad log f``. A subclass fixes the noise and the labeling.
+    Returns one loss per sample; the caller reduces.
     """
 
     @staticmethod
@@ -356,7 +318,8 @@ class TruncatedProbitNLL(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         Returns:
             The losses, shaped (n,).
         """
-        loss, grad = _label_nll(pred, targ, phi, sampling.GAUSSIAN_NOISE, sampler, eps)
+        moments = sampler.label_moments(pred, sampling.GAUSSIAN_NOISE, phi)
+        loss, grad = _label_nll(moments, pred, targ, eps)
         ctx.save_for_backward(grad)
         return loss
 
@@ -376,7 +339,9 @@ class TruncatedProbitNLL(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         Returns:
             The (d, d) information in float64.
         """
-        return _label_fisher(pred, X, phi, sampling.GAUSSIAN_NOISE, sampler)
+        with ch.no_grad():
+            moments = sampler.label_moments(pred, sampling.GAUSSIAN_NOISE, phi)
+            return _label_fisher(moments, X)
 
 
 class TruncatedBCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
@@ -392,11 +357,67 @@ class TruncatedBCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         eps=1e-5,
     ):
         """Compute each sample's truncated NLL; as ``TruncatedProbitNLL``."""
-        loss, grad = _label_nll(pred, targ, phi, sampling.LOGISTIC_NOISE, sampler, eps)
+        moments = sampler.label_moments(pred, sampling.LOGISTIC_NOISE, phi)
+        loss, grad = _label_nll(moments, pred, targ, eps)
         ctx.save_for_backward(grad)
         return loss
 
     @staticmethod
     def hessian(pred, X, phi, sampler: sampling.LatentSampler):  # pylint: disable=invalid-name
         """Return the Fisher information; as ``TruncatedProbitNLL.hessian``."""
-        return _label_fisher(pred, X, phi, sampling.LOGISTIC_NOISE, sampler)
+        with ch.no_grad():
+            moments = sampler.label_moments(pred, sampling.LOGISTIC_NOISE, phi)
+            return _label_fisher(moments, X)
+
+
+class TruncatedCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
+    """Truncated softmax cross-entropy: K logits, i.i.d. Gumbel noise.
+
+    The label is ``argmax_k (h_k + g_k)``; the score is
+    ``s(g) = 1 - exp(-g)``, per coordinate. Without truncation the loss is
+    ``torch.nn.functional.cross_entropy`` and its gradient ``softmax(h) -
+    onehot(y)``.
+    """
+
+    @staticmethod
+    def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
+        ctx,
+        pred,
+        targ,
+        phi,
+        sampler: sampling.GumbelSampler,
+        eps=1e-5,
+    ):
+        """Compute each sample's truncated NLL.
+
+        Args:
+            pred: Logits h, shaped (n, K).
+            targ: Labels in {0, ..., K - 1}, shaped (n, 1).
+            phi: Truncation oracle over latents shaped (n, m, K).
+            sampler: Estimates the per-label moments.
+            eps: Floor on ``P(label y | S)``, so a sample the iterate deems
+                impossible contributes a finite loss.
+
+        Returns:
+            The losses, shaped (n,).
+        """
+        loss, grad = _label_nll(sampler.label_moments(pred, phi), pred, targ, eps)
+        ctx.save_for_backward(grad)
+        return loss
+
+    @staticmethod
+    def hessian(pred, X, phi, sampler: sampling.GumbelSampler):  # pylint: disable=invalid-name
+        """Return the batch-mean Fisher information in the weight.
+
+        Args:
+            pred: Logits h, shaped (n, K).
+            X: Design matrix, shaped (n, d).
+            phi: As ``forward``.
+            sampler: As ``forward``.
+
+        Returns:
+            The information for the weight of shape (d, K) flattened
+            row-major, shaped (d K, d K), in float64.
+        """
+        with ch.no_grad():
+            return _label_fisher(sampler.label_moments(pred, phi), X)

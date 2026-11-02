@@ -374,25 +374,27 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             )
         return projection
 
-    def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
-        """Return the Hessian of the NLL, by default at the current weight."""
-        if self.dependent:
-            return super().hessian(theta)
-        X, _ = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-        weight = self.weight.detach() if theta is None else theta
-        weight = weight.reshape(-1, linear_model.require_fitted(self.k, "k"))
-        return self._hessian(X, weight, self.sampler)
-
     def _hessian(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         weight: ch.Tensor,
-        sampler: sampling.GaussianSampler,
+        sampler: Optional[sampling.GaussianSampler] = None,
     ) -> ch.Tensor:
         """Return the NLL's mean Hessian over X's rows at a weight.
 
         In w for a known variance; in ``(v, lambda)`` for a learned one.
+
+        Args:
+            X: Design matrix rows, shaped (n, d).
+            weight: The trained weight, shaped (d, k), or (d + 1, k) learned.
+            sampler: Estimates the conditional moments; ``sampler`` if None.
+
+        Raises:
+            NotImplementedError: For dependent data.
         """
+        if self.dependent:
+            raise NotImplementedError(f"{self} has no hessian().")
+        sampler = sampler or self.sampler
         if self.noise_var is None:
             return losses.TruncatedGaussianNLL.natural_hessian(
                 X @ weight[:-1] / weight[-1],
