@@ -66,6 +66,21 @@ def generate_truncated_distribution_dataset(
     return TruncatedSample(S, alpha, ch.cat(drawn))
 
 
+def correlated_normal(
+    dims: int, scale: float = 2.0
+) -> torch.distributions.MultivariateNormal:
+    """Return a normal with a nonzero mean and correlations of 0.5^|i - j|.
+
+    Args:
+        dims: Number of dimensions.
+        scale: The variance of every coordinate.
+    """
+    index = ch.arange(dims, dtype=ch.float32)
+    correlation = 0.5 ** (index[:, None] - index[None, :]).abs()
+    loc = ch.linspace(-1.0, 1.0, dims) if dims > 1 else ch.tensor([1.0])
+    return torch.distributions.MultivariateNormal(loc, scale * correlation)
+
+
 def kl_divergence(
     p: torch.distributions.Distribution, q: torch.distributions.Distribution
 ) -> ch.Tensor:

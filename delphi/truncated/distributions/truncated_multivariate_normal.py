@@ -1,197 +1,196 @@
 # Author: pstefanou12@
-"""Truncated multivariate normal distribution with oracle access (known truncation set)."""
+"""Truncated multivariate normal estimation, with or without the truncation set.
+
+``TruncatedMultivariateNormal`` picks the estimator from what the caller
+knows:
+
+- ``phi`` given: the set is a membership oracle, and
+  ``KnownTruncationMultivariateNormal`` fits by projected SGD on the
+  truncated NLL.
+- ``phi=None``: the set is unknown, and ``UnknownTruncationMultivariateNormal``
+  fits from the sample's Hermite expansion, which also recovers the set.
+- ``covariance_matrix`` given: either one with the covariance fixed, learning
+  only the mean.
+"""
 
 from collections.abc import Callable
-from typing import Optional
+from typing import Optional, Union, cast
 
 import torch as ch
-import torch.nn
 
-from delphi.configs.distributions.truncated import (
-    multivariate_normal as multivariate_normal_configs,
+from delphi.truncated.distributions import (
+    known_truncated_multivariate_normal as known_mvn,
 )
-from delphi.exponential_family import multivariate_normal
-from delphi.truncated.distributions import truncated_exponential_family_distributions
-from delphi.utils import helpers
+from delphi.truncated.distributions import (
+    known_truncated_multivariate_normal_known_covariance as known_mvn_known_cov,
+)
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal as unknown_mvn,
+)
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal_known_covariance as unknown_mvn_known_cov,
+)
+
+Estimator = Union[
+    known_mvn.KnownTruncationMultivariateNormal,
+    known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance,
+    unknown_mvn.UnknownTruncationMultivariateNormal,
+    unknown_mvn_known_cov.UnknownTruncationMultivariateNormalKnownCovariance,
+]
 
 
-class TruncatedMultivariateNormal(
-    truncated_exponential_family_distributions.TruncatedExponentialFamilyDistribution
-):
-    """Truncated multivariate normal distribution with unknown covariance.
+class TruncatedMultivariateNormal:
+    """Estimates a multivariate normal from samples truncated to a set.
+
+    Every mode reports the same estimates: ``loc_`` and
+    ``covariance_matrix_`` at the averaged iterate, and the ``avg_``,
+    ``ema_``, ``final_`` and ``best_`` variants of each. With a known
+    covariance, every ``covariance_matrix_`` is the one given.
 
     Attributes:
-        eigenvalue_lower_bound: Minimum eigenvalue for covariance projection.
-        emp_T: Empirical precision component, as a lower triangle.
-        emp_v: Empirical natural mean component.
+        dims: Number of dimensions.
+        phi: The truncation set's membership oracle, or None when unknown.
+        covariance_matrix: The known covariance, or None when learned.
+        estimator_: The estimator the arguments select, which fits the
+            sample and holds every diagnostic.
     """
 
-    # Created by register_parameter in _calc_emp_model, which mypy cannot see.
-    # Holds the lower triangle, so descent moves dims * (dims + 1) / 2 numbers
-    # rather than repeating every off-diagonal.
-    T: torch.nn.Parameter
-    v: torch.nn.Parameter
-
-    dist = multivariate_normal.MultivariateNormal
-    # T(x) mixes coordinates through xx^T, so the Hessian is dense and its
-    # spectrum needs eigenvalues rather than the diagonal.
-    independent_coordinates = False
-
-    defaults = multivariate_normal_configs.TruncatedMultivariateNormalConfig
-    estimate_suffixes = ("loc_", "covariance_matrix_")
-
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
-        phi: Callable,
         dims: int,
-        alpha: Optional[float] = None,
         *,
+        phi: Optional[Callable] = None,
+        alpha: Optional[float] = None,
+        covariance_matrix: Optional[ch.Tensor] = None,
         hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedMultivariateNormal.
 
         Args:
-            phi: Truncation set oracle.
-            alpha: Survival probability lower bound.
             dims: Number of dimensions.
-            hyperparameters: Hyperparameter dict.
+            phi: Membership oracle of the truncation set; None when the set
+                is unknown.
+            alpha: Survival mass of the set, if known.
+            covariance_matrix: The known covariance, shaped (dims, dims);
+                None learns it.
+            hyperparameters: Overrides of the selected estimator's config.
+
+        Raises:
+            ValueError: If covariance_matrix is not shaped (dims, dims).
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
-        self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
-
-        # Attributes set during _calc_emp_model.
-        self.emp_T: Optional[ch.Tensor] = None
-        self.emp_v: Optional[ch.Tensor] = None
-
-    def _calc_emp_model(self):
-        """Calculate empirical natural parameters and register T and v as torch.nn.Parameters."""
-        dataset_s = self.train_loader_.dataset.S
-        loc = dataset_s.mean(0)
-        second_moment = (dataset_s.T @ dataset_s) / dataset_s.size(0)
-        # Center the second moment to get the empirical covariance: Σ = E[xx^T] - μμ^T.
-        cov_matrix = second_moment - ch.outer(loc, loc)
-        emp_canon_params = ch.cat([cov_matrix.flatten(), loc])
-        self.emp_theta = multivariate_normal.MultivariateNormal.to_natural(
-            emp_canon_params, self.dims
-        )
-        size = helpers.vech_size(self.dims)
-        self.emp_T = self.emp_theta[:size]
-        self.emp_v = self.emp_theta[size:]
-        # Clone so that SGD in-place updates to T and v do not corrupt
-        # emp_theta, which is used as the fixed anchor in the sublevel-set
-        # projection bisection.
-        self.register_parameter("T", torch.nn.Parameter(self.emp_T.clone()))
-        self.register_parameter("v", torch.nn.Parameter(self.emp_v.clone()))
-        with ch.no_grad():
-            self.nll_init = self._compute_nll(self.emp_theta)
-
-    def _project_to_neg_definite(self, M, eps=1e-6):
-        """Projects a symmetric matrix M onto the negative semi-definite cone."""
-        L, Q = ch.linalg.eigh(M)  # pylint: disable=invalid-name,not-callable
-        L_clipped = ch.clamp(L, max=-eps)
-        return Q @ ch.diag_embed(L_clipped) @ Q.T
-
-    def step_post_hook(self, optimizer, args, kwargs) -> None:
-        """Project T onto the negative-definite cone, then delegate to the base class.
-
-        The neg-definite projection must precede the sublevel-set projection
-        because the NLL is undefined when the covariance is not positive
-        definite.  After correcting T, the base-class hook handles the
-        sublevel-set projection (when args.project is True) or returns
-        immediately (when args.project is False).
-        """
-        with ch.no_grad():
-            mat_t = helpers.unvech(self.T.detach(), self.dims)
-            mat_t = self._project_to_neg_definite(
-                mat_t, eps=self.eigenvalue_lower_bound
+        if covariance_matrix is not None and covariance_matrix.shape != (dims, dims):
+            raise ValueError(
+                f"covariance_matrix must be shaped ({dims}, {dims}); got "
+                f"{tuple(covariance_matrix.shape)}."
             )
-            self.T.copy_(helpers.vech(mat_t))
-        super().step_post_hook(optimizer, args, kwargs)
+        self.dims = dims
+        self.phi = phi
+        self.covariance_matrix = covariance_matrix
+        self.estimator_: Estimator = self._select(alpha, hyperparameters)
 
-    def _write_theta(self, value: ch.Tensor) -> None:
-        """Split the projected flat theta into T and v and copy to their Parameters."""
-        size = helpers.vech_size(self.dims)
-        self.T.copy_(value[:size])
-        self.v.copy_(value[size:])
-
-    def parameter_groups(self):
-        """Return parameter groups, optionally with separate LR for covariance."""
-        if self.hyperparameters.covariance_matrix_lr is not None:
-            return [
-                {"params": [self.T], "lr": self.hyperparameters.covariance_matrix_lr},
-                {"params": [self.v], "lr": self.hyperparameters.lr},
-            ]
-        return self.parameters()
-
-    @property
-    def theta(self):
-        """Return the current natural parameters as a flat tensor."""
-        return ch.cat([self.T, self.v])
-
-    @property
-    def best_loc_(self):
-        """Best mean vector estimate based on lowest training loss."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.best_params, self.dims
+    def _select(
+        self, alpha: Optional[float], hyperparameters: Optional[dict]
+    ) -> Estimator:
+        """Return the estimator for what the caller knows."""
+        phi, dims, covariance = self.phi, self.dims, self.covariance_matrix
+        if phi is not None and covariance is not None:
+            return known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance(
+                phi, dims, covariance, alpha, hyperparameters=hyperparameters
+            )
+        if phi is not None:
+            return known_mvn.KnownTruncationMultivariateNormal(
+                phi, dims, alpha, hyperparameters=hyperparameters
+            )
+        if covariance is not None:
+            return unknown_mvn_known_cov.UnknownTruncationMultivariateNormalKnownCovariance(
+                dims, covariance, alpha, hyperparameters=hyperparameters
+            )
+        return unknown_mvn.UnknownTruncationMultivariateNormal(
+            dims, alpha, hyperparameters=hyperparameters
         )
-        return canon[self.dims**2 :]
+
+    def fit(self, S: ch.Tensor) -> "TruncatedMultivariateNormal":  # pylint: disable=invalid-name
+        """Fit the selected estimator to the truncated sample.
+
+        Args:
+            S: Samples from the truncated distribution, shaped (n, dims).
+
+        Returns:
+            The fitted model.
+        """
+        self.estimator_.fit(S)
+        return self
+
+    def truncation_set(self) -> Callable:
+        """Return the truncation set: phi when given, else the recovered set.
+
+        Raises:
+            RuntimeError: If the set is unknown and the model is not fit.
+        """
+        if self.phi is not None:
+            return self.phi
+        # Without phi, _select built one of the unknown-truncation estimators.
+        unknown = cast(
+            unknown_mvn.UnknownTruncationMultivariateNormalBase, self.estimator_
+        )
+        return unknown.truncation_set()
+
+    def _covariance(self, name: str) -> ch.Tensor:
+        """Return an estimate's covariance, or the known one."""
+        if self.covariance_matrix is not None:
+            return self.covariance_matrix
+        return getattr(self.estimator_, f"{name}_covariance_matrix_")
 
     @property
-    def best_covariance_matrix_(self):
-        """Best covariance matrix estimate based on lowest training loss."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.best_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
+    def avg_loc_(self) -> ch.Tensor:
+        """Mean at the averaged iterate."""
+        return self.estimator_.avg_loc_
 
     @property
-    def final_loc_(self):
-        """Final mean vector estimate at the end of training."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.final_params, self.dims
-        )
-        return canon[self.dims**2 :]
+    def ema_loc_(self) -> ch.Tensor:
+        """Mean at the moving average of the iterates."""
+        return self.estimator_.ema_loc_
 
     @property
-    def final_covariance_matrix_(self):
-        """Final covariance matrix estimate at the end of training."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.final_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
+    def final_loc_(self) -> ch.Tensor:
+        """Mean at the last iterate."""
+        return self.estimator_.final_loc_
 
     @property
-    def ema_loc_(self):
-        """Exponential moving-average mean vector estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.ema_params, self.dims
-        )
-        return canon[self.dims**2 :]
+    def best_loc_(self) -> ch.Tensor:
+        """Mean at the iterate with the lowest validation loss."""
+        return self.estimator_.best_loc_
 
     @property
-    def ema_covariance_matrix_(self):
-        """Exponential moving-average covariance matrix estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.ema_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
+    def loc_(self) -> ch.Tensor:
+        """Mean at the averaged iterate."""
+        return self.avg_loc_
 
     @property
-    def avg_loc_(self):
-        """Running-average mean vector estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.avg_params, self.dims
-        )
-        return canon[self.dims**2 :]
+    def avg_covariance_matrix_(self) -> ch.Tensor:
+        """Covariance at the averaged iterate."""
+        return self._covariance("avg")
 
     @property
-    def avg_covariance_matrix_(self):
-        """Running-average covariance matrix estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.avg_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
+    def ema_covariance_matrix_(self) -> ch.Tensor:
+        """Covariance at the moving average of the iterates."""
+        return self._covariance("ema")
+
+    @property
+    def final_covariance_matrix_(self) -> ch.Tensor:
+        """Covariance at the last iterate."""
+        return self._covariance("final")
+
+    @property
+    def best_covariance_matrix_(self) -> ch.Tensor:
+        """Covariance at the iterate with the lowest validation loss."""
+        return self._covariance("best")
+
+    @property
+    def covariance_matrix_(self) -> ch.Tensor:
+        """Covariance at the averaged iterate."""
+        return self.avg_covariance_matrix_
 
     def __str__(self):
         """Return a human-readable name for this distribution."""
-        return "truncated multivariate normal distribution"
+        return str(self.estimator_)

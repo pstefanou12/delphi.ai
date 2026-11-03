@@ -1,154 +1,134 @@
 # Author: pstefanou12@
-"""Tests for the truncated multivariate normal."""
+"""Tests for the TruncatedMultivariateNormal entry point.
 
-import functools
-import math
+Recovery is the estimators' own tests' job; these check that the arguments
+select the right estimator, reach it, and that its estimates come back.
+"""
+
+from collections.abc import Callable
 from typing import Optional
 
+import pytest
 import torch as ch
 import torch.distributions
-import torch.distributions.kl
 
 import delphi.oracle
+from delphi.truncated.distributions import (
+    known_truncated_multivariate_normal as known_mvn,
+)
+from delphi.truncated.distributions import (
+    known_truncated_multivariate_normal_known_covariance as known_mvn_known_cov,
+)
 from delphi.truncated.distributions import truncated_multivariate_normal
-from delphi.truncated.distributions.tests import helpers, truncation_sets
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal as unknown_mvn,
+)
+from delphi.truncated.distributions import (
+    unknown_truncated_multivariate_normal_known_covariance as unknown_mvn_known_cov,
+)
 
-ch.set_printoptions(precision=4, sci_mode=False)
+_COVARIANCE = ch.tensor([[1.0, 0.3], [0.3, 1.0]])
+_ESTIMATES = ("avg", "ema", "final", "best")
+# Short fits: these tests check the plumbing, not the accuracy.
+_KNOWN_HYPERPARAMETERS = {"iterations": 20}
+_UNKNOWN_HYPERPARAMETERS = {"iterations": 3, "degree": 4}
 
 
-def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
-    covariance_matrix: ch.Tensor,
-    phi: helpers.Oracle,
-    dataset_size: int,
-    hyperparameters: Optional[dict] = None,
-    pass_alpha: bool = True,
-    baseline_must_fail: bool = True,
-    tolerances: Optional[dict[str, float]] = None,
-) -> None:
-    """Fit a truncated multivariate normal and assert it recovers the truth.
+def _half_plane(x: ch.Tensor) -> ch.Tensor:
+    return x[..., 0] > 0.0
 
-    Args:
-        dims: Number of dimensions.
-        covariance_matrix: True covariance.
-        phi: Truncation set oracle, stated on the unstandardized data.
-        dataset_size: Truncated samples to draw.
-        hyperparameters: Hyperparameter dict for the procedure.
-    """
+
+def _sample(phi: Callable, size: int = 2000) -> ch.Tensor:
     ch.manual_seed(0)
-    target = torch.distributions.MultivariateNormal(ch.zeros(dims), covariance_matrix)
+    population = torch.distributions.MultivariateNormal(
+        ch.zeros(2), _COVARIANCE
+    ).sample([4 * size])
+    return population[phi(population)][:size]
 
-    S, alpha, _ = helpers.generate_truncated_distribution_dataset(  # pylint: disable=invalid-name
-        target, phi, dataset_size
+
+def _model(
+    phi: Optional[Callable], covariance_matrix: Optional[ch.Tensor]
+) -> truncated_multivariate_normal.TruncatedMultivariateNormal:
+    hyperparameters = (
+        _UNKNOWN_HYPERPARAMETERS if phi is None else _KNOWN_HYPERPARAMETERS
     )
-
-    emp_loc = S.mean(0, keepdim=True)
-    emp_var = S.var(0)
-    emp_scale = ch.sqrt(emp_var)
-    emp_sigma_diag = ch.diag(emp_scale)
-
-    def phi_standardised(x):
-        # Undo the standardization before asking phi, or the fit sees a
-        # different set; composing this way holds for any geometry.
-        return phi(x * emp_scale + emp_loc)
-
-    args = (alpha,) if pass_alpha else ()
-    truncated = truncated_multivariate_normal.TruncatedMultivariateNormal(
-        phi_standardised, dims, *args, hyperparameters=hyperparameters
-    )
-    truncated.fit((S - emp_loc) / emp_scale)
-
-    helpers.assert_recovers(
-        estimate=lambda name: torch.distributions.MultivariateNormal(
-            getattr(truncated, f"{name}_loc_") * emp_scale + emp_loc,
-            emp_sigma_diag
-            @ getattr(truncated, f"{name}_covariance_matrix_")
-            @ emp_sigma_diag,
-        ),
-        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
-        baseline=torch.distributions.MultivariateNormal(
-            emp_loc, ch.atleast_2d(ch.cov(S.T))
-        ),
-        baseline_must_fail=baseline_must_fail,
-        tolerances=tolerances,
-    )
-
-
-def test_two_dimensions():
-    _recovers(
-        dims=2,
-        covariance_matrix=2 * ch.eye(2),
-        phi=lambda z: z[:, 0] > 0,
-        dataset_size=1000,
-        hyperparameters={"iterations": 5000, "lr": 1e-1, "covariance_matrix_lr": 1e-2},
-    )
-
-
-def test_ten_dimensions():
-    _recovers(
-        dims=10,
-        covariance_matrix=10 * ch.eye(10),
-        phi=lambda z: z[:, 0] > 0,
-        dataset_size=5000,
-        hyperparameters={"iterations": 5000, "lr": 1e-1, "covariance_matrix_lr": 1e-2},
-    )
-
-
-def test_two_dimensions_annulus():
-    _recovers(
-        dims=2,
-        covariance_matrix=2 * ch.eye(2),
-        phi=truncation_sets.annulus(2.5, 5.0),
-        dataset_size=1000,
-        hyperparameters={"lr": 1e-1, "covariance_matrix_lr": 1e-2},
-    )
-
-
-def test_two_dimensions_crescent():
-    _recovers(
-        dims=2,
-        covariance_matrix=2 * ch.eye(2),
-        phi=truncation_sets.crescent(2.0, 6.0, 0.0, math.pi),
-        dataset_size=1000,
-        hyperparameters={"lr": 1e-1, "covariance_matrix_lr": 1e-2},
-    )
-
-
-def test_two_dimensions_random_disc_union():
-    covariance_matrix = 2 * ch.eye(2)
-    calibrated = truncation_sets.calibrate(
-        functools.partial(truncation_sets.random_disc_union, 0, 2, 6),
-        torch.distributions.MultivariateNormal(ch.zeros(2), covariance_matrix),
-        bounds=(1e-4, 1e3),
-    )
-    _recovers(
-        dims=2,
+    return truncated_multivariate_normal.TruncatedMultivariateNormal(
+        2,
+        phi=phi,
         covariance_matrix=covariance_matrix,
-        phi=calibrated.phi,
-        dataset_size=1000,
-        hyperparameters={"lr": 1e-1, "covariance_matrix_lr": 1e-2},
+        hyperparameters=hyperparameters,
     )
 
 
-def test_one_dimension_identity():
-    _recovers(
-        dims=1,
-        covariance_matrix=2 * ch.eye(1),
-        phi=delphi.oracle.Identity(),
-        dataset_size=5000,
-        hyperparameters={"iterations": 1500, "num_samples": 10000},
-        pass_alpha=False,
-        baseline_must_fail=False,
-    )
+@pytest.mark.parametrize(
+    ("phi", "covariance_matrix", "estimator"),
+    [
+        (_half_plane, None, known_mvn.KnownTruncationMultivariateNormal),
+        (
+            _half_plane,
+            _COVARIANCE,
+            known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance,
+        ),
+        (None, None, unknown_mvn.UnknownTruncationMultivariateNormal),
+        (
+            None,
+            _COVARIANCE,
+            unknown_mvn_known_cov.UnknownTruncationMultivariateNormalKnownCovariance,
+        ),
+    ],
+    ids=["known", "known_covariance", "unknown", "unknown_covariance"],
+)
+def test_arguments_select_the_estimator(phi, covariance_matrix, estimator):
+    model = _model(phi, covariance_matrix)
+    assert type(model.estimator_) is estimator
+    expected = _UNKNOWN_HYPERPARAMETERS if phi is None else _KNOWN_HYPERPARAMETERS
+    assert model.estimator_.hyperparameters.iterations == expected["iterations"]
 
 
-def test_ten_dimensions_identity():
-    _recovers(
-        dims=10,
-        covariance_matrix=2 * ch.eye(10),
-        phi=delphi.oracle.Identity(),
-        dataset_size=5000,
-        hyperparameters={"iterations": 1500, "num_samples": 10000},
-        pass_alpha=False,
-        baseline_must_fail=False,
+@pytest.mark.parametrize(
+    ("phi", "covariance_matrix"),
+    [
+        (_half_plane, None),
+        (_half_plane, _COVARIANCE),
+        (None, None),
+        (None, _COVARIANCE),
+    ],
+    ids=["known", "known_covariance", "unknown", "unknown_covariance"],
+)
+def test_estimates_come_from_the_estimator(phi, covariance_matrix):
+    model = _model(phi, covariance_matrix)
+    assert model.fit(_sample(_half_plane)) is model
+    for name in _ESTIMATES:
+        loc = getattr(model, f"{name}_loc_")
+        covariance = getattr(model, f"{name}_covariance_matrix_")
+        assert ch.equal(loc, getattr(model.estimator_, f"{name}_loc_"))
+        if covariance_matrix is None:
+            expected = getattr(model.estimator_, f"{name}_covariance_matrix_")
+        else:
+            expected = covariance_matrix
+        assert ch.equal(covariance, expected)
+    assert ch.equal(model.loc_, model.avg_loc_)
+    assert ch.equal(model.covariance_matrix_, model.avg_covariance_matrix_)
+
+
+def test_known_truncation_set_is_phi():
+    assert _model(_half_plane, None).truncation_set() is _half_plane
+
+
+def test_unknown_truncation_set_is_recovered():
+    model = _model(None, None).fit(_sample(_half_plane))
+    assert isinstance(model.truncation_set(), delphi.oracle.RecoveredSet)
+
+
+def test_alpha_reaches_the_estimator():
+    model = truncated_multivariate_normal.TruncatedMultivariateNormal(
+        2, phi=_half_plane, alpha=0.5
     )
+    assert model.estimator_.alpha == 0.5
+
+
+def test_covariance_of_the_wrong_shape_raises():
+    with pytest.raises(ValueError, match="covariance_matrix"):
+        truncated_multivariate_normal.TruncatedMultivariateNormal(
+            3, covariance_matrix=_COVARIANCE
+        )

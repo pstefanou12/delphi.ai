@@ -4,10 +4,12 @@
 from collections.abc import Callable
 from typing import Optional
 
-from delphi.truncated.distributions import truncated_multivariate_normal
+from delphi.truncated.distributions import known_truncated_multivariate_normal
 
 
-class TruncatedNormal(truncated_multivariate_normal.TruncatedMultivariateNormal):
+class TruncatedNormal(
+    known_truncated_multivariate_normal.KnownTruncationMultivariateNormal
+):
     """Truncated normal distribution with unknown variance."""
 
     estimate_suffixes = ("loc_", "scale_")

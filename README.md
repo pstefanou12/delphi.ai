@@ -59,8 +59,7 @@ truth.
 
 | Model | Module | Example |
 |---|---|---|
-| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | |
-| `TruncatedMultivariateNormalKnownCovariance` | [`truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/truncated_multivariate_normal_known_covariance.py) | |
+| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | [Quickstart](#quickstart) |
 | `TruncatedNormal` | [`truncated_normal`](delphi/truncated/distributions/truncated_normal.py) | |
 | `TruncatedNormalKnownVariance` | [`truncated_normal_known_variance`](delphi/truncated/distributions/truncated_normal_known_variance.py) | |
 | `TruncatedExponential` | [`truncated_exponential`](delphi/truncated/distributions/truncated_exponential.py) | |
@@ -94,12 +93,14 @@ truth.
 | `TruncatedInverseGammaUnknownConcentration` | [`truncated_inverse_gamma_unknown_concentration`](delphi/truncated/distributions/truncated_inverse_gamma_unknown_concentration.py) | |
 | `TruncatedInverseWishart` | [`truncated_inverse_wishart`](delphi/truncated/distributions/truncated_inverse_wishart.py) | |
 
-Without a membership oracle, see [Unknown truncation](#unknown-truncation):
+`TruncatedMultivariateNormal` covers every case of the normal: pass `phi`
+when the set can be queried, leave it out when it cannot (see
+[Unknown truncation](#unknown-truncation)), and pass `covariance_matrix` to
+learn only the mean. Without a membership oracle, the one-dimensional normal
+has its own models:
 
 | Model | Module | Example |
 |---|---|---|
-| `UnknownTruncationMultivariateNormal` | [`unknown_truncated_multivariate_normal`](delphi/truncated/distributions/unknown_truncated_multivariate_normal.py) | |
-| `UnknownTruncationMultivariateNormalKnownCovariance` | [`unknown_truncated_multivariate_normal_known_covariance`](delphi/truncated/distributions/unknown_truncated_multivariate_normal_known_covariance.py) | |
 | `UnknownTruncationNormal` | [`unknown_truncated_normal`](delphi/truncated/distributions/unknown_truncated_normal.py) | |
 | `UnknownTruncationNormalKnownVariance` | [`unknown_truncated_normal_known_variance`](delphi/truncated/distributions/unknown_truncated_normal_known_variance.py) | |
 
@@ -109,7 +110,7 @@ A correlated Gaussian, observed only where `x0 + x1 > 1`:
 
 ```python
 import torch as ch
-from torch import distributions
+import torch.distributions
 
 from delphi.truncated.distributions import truncated_multivariate_normal
 
@@ -118,7 +119,9 @@ ch.manual_seed(0)
 # Ground truth: a correlated 2-D Gaussian.
 loc = ch.tensor([0.0, 0.0])
 covariance_matrix = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
-population = distributions.MultivariateNormal(loc, covariance_matrix).sample([100000])
+population = torch.distributions.MultivariateNormal(loc, covariance_matrix).sample(
+    [100000]
+)
 
 
 # The truncation set: only points with x0 + x1 > 1 are ever observed.
@@ -133,9 +136,7 @@ alpha = phi(population).float().mean().item()
 mean, std = S.mean(0), S.std(0)
 # The default hyperparameters: 2500 steps, lr 1e-2, the Fisher schedule.
 model = truncated_multivariate_normal.TruncatedMultivariateNormal(
-    lambda z: phi(z * std + mean),
-    dims=2,
-    alpha=alpha,
+    2, phi=lambda z: phi(z * std + mean), alpha=alpha
 )
 model.fit((S - mean) / std)
 
@@ -215,25 +216,25 @@ set is not too complex, by the algorithm of Kontonis, Tzamos and Zampetakis
 the sample, estimates the degree-`degree` Hermite expansion of a function that
 mixes the set with the Gaussian, and minimizes a convex objective built from it
 by projected L-BFGS over the whole sample (the paper uses SGD).
-These models take no `phi`:
+Leave out `phi`:
 
 ```python
 import torch as ch
-from torch import distributions
+import torch.distributions
 
-from delphi.truncated.distributions import unknown_truncated_multivariate_normal
+from delphi.truncated.distributions import truncated_multivariate_normal
 
 ch.manual_seed(0)
 
 # Observed only where x0 > -0.5 and x1 > -0.5; the fit is never told so.
-population = distributions.MultivariateNormal(ch.zeros(2), ch.eye(2)).sample([50000])
+population = torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2)).sample(
+    [50000]
+)
 inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
 S = population[inside][:20000]
 
 # The default hyperparameters: here degree 132, sized from the sample.
-model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-    dims=2
-)
+model = truncated_multivariate_normal.TruncatedMultivariateNormal(2)
 model.fit(S)
 
 # The set the fit implies, as a membership oracle.
@@ -258,8 +259,8 @@ estimating the coefficients (half the training sample), capped at 1200. With
 four and 6 in ten, so more data buys more degree. Any `degree` can be set
 explicitly, with a warning when its basis outgrows the sample.
 
-**Know the covariance if you can.** With it, the sample is whitened by the
-truth and only the mean is learned, which leaves less to estimate. Both
+**Know the covariance if you can.** Passed as `covariance_matrix`, it
+whitens the sample by the truth and only the mean is learned, which leaves less to estimate. Both
 estimators degrade as the survival mass falls, which `alpha` does not change:
 here it only sizes the region the descent is kept in.
 
