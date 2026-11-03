@@ -5,6 +5,11 @@ import pytest
 import torch as ch
 
 from delphi.learning import l1_regression
+from delphi.utils import constants
+
+
+def _fit(design, targets, weights=None) -> l1_regression.L1Regression:
+    return l1_regression.L1Regression().fit(design, targets, weights)
 
 
 def _objective(design, targets, coefficients, weights=None):
@@ -27,63 +32,63 @@ def _outlier_problem(seed: int = 0):
 
 def test_intercept_only_fit_is_the_median():
     targets = ch.randn(1001, dtype=ch.float64, generator=ch.Generator().manual_seed(1))
-    fit = l1_regression.l1_regression(ch.ones(1001, 1, dtype=ch.float64), targets)
-    assert fit.converged
-    assert abs(float(fit.coefficients[0] - targets.median())) < 1e-8
+    fit = _fit(ch.ones(1001, 1, dtype=ch.float64), targets)
+    assert fit.converged_
+    assert abs(float(fit.coef_[0] - targets.median())) < 1e-8
 
 
 def test_noiseless_targets_are_fit_exactly():
     generator = ch.Generator().manual_seed(2)
     design = ch.randn(500, 10, dtype=ch.float64, generator=generator)
     truth = ch.randn(10, dtype=ch.float64, generator=generator)
-    fit = l1_regression.l1_regression(design, design @ truth)
-    ch.testing.assert_close(fit.coefficients, truth)
-    assert fit.objective < 1e-8
+    fit = _fit(design, design @ truth)
+    ch.testing.assert_close(fit.coef_, truth)
+    assert fit.objective_ < 1e-8
 
 
 def test_gross_outliers_leave_the_fit_near_the_truth():
     design, targets, truth = _outlier_problem()
-    fit = l1_regression.l1_regression(design, targets)
+    fit = _fit(design, targets)
     least_squares = ch.linalg.lstsq(design, targets).solution  # pylint: disable=not-callable
-    assert float((fit.coefficients - truth).norm()) < 0.01
+    assert float((fit.coef_ - truth).norm()) < 0.01
     assert float((least_squares - truth).norm()) > 0.5
 
 
 def test_no_perturbation_lowers_the_objective():
     design, targets, _ = _outlier_problem(seed=3)
-    fit = l1_regression.l1_regression(design, targets)
-    best = _objective(design, targets, fit.coefficients)
-    assert abs(best - fit.objective) <= 1e-9 * best
+    fit = _fit(design, targets)
+    best = _objective(design, targets, fit.coef_)
+    assert abs(best - fit.objective_) <= 1e-9 * best
     generator = ch.Generator().manual_seed(4)
     for scale in (1e-4, 1e-2, 1.0):
         for _ in range(20):
             step = scale * ch.randn(20, dtype=ch.float64, generator=generator)
-            assert _objective(design, targets, fit.coefficients + step) >= best
+            assert _objective(design, targets, fit.coef_ + step) >= best
 
 
 def test_reports_a_small_duality_gap():
     design, targets, _ = _outlier_problem(seed=5)
-    fit = l1_regression.l1_regression(design, targets)
-    assert fit.converged
-    assert fit.gap < 1e-8
-    assert fit.iterations < 50
+    fit = _fit(design, targets)
+    assert fit.converged_
+    assert fit.gap_ < 1e-8
+    assert fit.procedure.iterations < 50
 
 
 def test_weights_scale_their_rows():
     design, targets, _ = _outlier_problem(seed=6)
     weights = ch.rand(5000, dtype=ch.float64, generator=ch.Generator().manual_seed(7))
-    weighted = l1_regression.l1_regression(design, targets, weights)
-    scaled = l1_regression.l1_regression(weights[:, None] * design, weights * targets)
-    ch.testing.assert_close(weighted.coefficients, scaled.coefficients)
+    weighted = _fit(design, targets, weights)
+    scaled = _fit(weights[:, None] * design, weights * targets)
+    ch.testing.assert_close(weighted.coef_, scaled.coef_)
 
 
 def test_zero_weight_rows_are_ignored():
     design, targets, _ = _outlier_problem(seed=8)
     weights = ch.ones(5000, dtype=ch.float64)
     weights[:2500] = 0.0
-    weighted = l1_regression.l1_regression(design, targets, weights)
-    kept = l1_regression.l1_regression(design[2500:], targets[2500:])
-    ch.testing.assert_close(weighted.coefficients, kept.coefficients)
+    weighted = _fit(design, targets, weights)
+    kept = _fit(design[2500:], targets[2500:])
+    ch.testing.assert_close(weighted.coef_, kept.coef_)
 
 
 def test_imbalanced_weights_converge():
@@ -92,15 +97,15 @@ def test_imbalanced_weights_converge():
     design = ch.randn(20000, 200, dtype=ch.float64, generator=generator)
     labels = (design[:, 0] > 0.3).double()
     weights = ch.where(labels > 0, 0.99, 0.01).double()
-    fit = l1_regression.l1_regression(design, labels, weights)
-    assert fit.converged
-    assert fit.iterations < 50
+    fit = _fit(design, labels, weights)
+    assert fit.converged_
+    assert fit.procedure.iterations < 50
 
 
 def test_returns_the_design_dtype():
     design = ch.randn(200, 3, generator=ch.Generator().manual_seed(10))
-    fit = l1_regression.l1_regression(design, design @ ch.ones(3))
-    assert fit.coefficients.dtype == ch.float32
+    fit = _fit(design, design @ ch.ones(3))
+    assert fit.coef_.dtype == ch.float32
 
 
 @pytest.mark.parametrize(
@@ -113,4 +118,21 @@ def test_returns_the_design_dtype():
 )
 def test_rejects_bad_shapes_and_weights(targets, weights, match):
     with pytest.raises(ValueError, match=match):
-        l1_regression.l1_regression(ch.ones(10, 2), targets, weights)
+        _fit(ch.ones(10, 2), targets, weights)
+
+
+def test_runs_through_the_trainer_without_an_optimizer():
+    design, targets, _ = _outlier_problem(seed=11)
+    fit = _fit(design, targets)
+    assert fit.optimizer is None
+    assert fit.procedure.final.stop_reason == constants.StopReason.MODEL_STOP
+    assert fit.procedure.series("gap")[-1] == fit.gap_
+
+
+def test_an_exhausted_budget_is_not_converged():
+    design, targets, _ = _outlier_problem(seed=12)
+    fit = l1_regression.L1Regression(hyperparameters={"iterations": 2}).fit(
+        design, targets
+    )
+    assert not fit.converged_
+    assert fit.procedure.iterations == 2

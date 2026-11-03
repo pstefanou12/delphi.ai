@@ -9,7 +9,7 @@ callable. The sets here carry state: ``Identity`` admits everything,
 
 import abc
 import copy
-from typing import Optional
+from typing import Optional, cast
 
 import torch as ch
 import torch.distributions
@@ -216,19 +216,26 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
     Attributes:
         polynomial: The basis, whose coefficients fit sets.
         threshold: tau, set by fit.
-        regression: The L1 regression's result, set by fit.
+        regression: The fitted L1 regression, set by fit.
     """
 
-    def __init__(self, polynomial: delphi.torchnomials.polynomial.Polynomial):
+    def __init__(
+        self,
+        polynomial: delphi.torchnomials.polynomial.Polynomial,
+        *,
+        hyperparameters: Optional[dict] = None,
+    ):
         """Initialize an unfit threshold over a polynomial basis.
 
         Args:
             polynomial: The basis to regress over; fit overwrites its
                 coefficients.
+            hyperparameters: Overrides of the L1 regression's config.
         """
         self.polynomial = polynomial
+        self.hyperparameters = hyperparameters
         self.threshold: Optional[float] = None
-        self.regression: Optional[l1_regression.L1Fit] = None
+        self.regression: Optional[l1_regression.L1Regression] = None
 
     def fit(
         self,
@@ -249,11 +256,12 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
         design = self.polynomial.basis(x).to(ch.float64)
         target = labels.to(design)
         weights = ch.ones_like(target) if weights is None else weights.to(design)
-        self.regression = l1_regression.l1_regression(design, target, weights)
-        self.polynomial.coefficients = self.regression.coefficients
-        self.threshold = _least_error_threshold(
-            design @ self.regression.coefficients, target, weights
-        )
+        self.regression = l1_regression.L1Regression(
+            hyperparameters=self.hyperparameters
+        ).fit(design, target, weights)
+        coefficients = cast(ch.Tensor, self.regression.coef_)
+        self.polynomial.coefficients = coefficients
+        self.threshold = _least_error_threshold(design @ coefficients, target, weights)
         return self
 
     def __call__(self, x: ch.Tensor) -> ch.Tensor:

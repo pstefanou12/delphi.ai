@@ -205,3 +205,36 @@ def test_the_warm_start_takes_its_step_sizes_from_its_own_hessian():
     assert model.curvature_calls[0] == "warm start"
     first_main = model.curvature_calls.index("main")
     assert set(model.curvature_calls[first_main:]) == {"main"}
+
+
+class NewtonSquareRoot(delphi.delphi.DelphiModel[base.DelphiConfig]):
+    """Newton's iteration for sqrt(2): a procedure that owns its updates."""
+
+    defaults = base.DelphiConfig
+    owns_updates = True
+
+    def __init__(self, hyperparameters: dict):
+        super().__init__(hyperparameters=hyperparameters)
+        self.root = 1.0
+
+    def train_batch(self, batch):
+        del batch
+        self.root = 0.5 * (self.root + 2.0 / self.root)
+        return {"loss": ch.tensor(abs(self.root**2 - 2.0))}
+
+    def should_stop(self):
+        return abs(self.root**2 - 2.0) < 1e-12, "converged"
+
+    def run_metrics(self):
+        return {"root": self.root}
+
+
+def test_a_model_owning_its_updates_trains_without_an_optimizer():
+    model = NewtonSquareRoot({"iterations": 50})
+    procedure = delphi.trainer.Trainer(model, model.hyperparameters).train_model(
+        None, None
+    )
+    assert model.optimizer is None and model.schedule is None
+    assert procedure.final.stop_reason == constants.StopReason.MODEL_STOP
+    assert procedure.iterations < 10
+    assert abs(procedure.series("root")[-1] - 2.0**0.5) < 1e-12

@@ -95,6 +95,10 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
 
     defaults: type[base.ConfigT]
 
+    # A model whose train_batch makes every update itself, as a solver
+    # taking Newton steps does, needs no optimizer; the trainer builds none.
+    owns_updates: ClassVar[bool] = False
+
     def __init__(self, *, hyperparameters: Optional[dict] = None):
         """Initialize DelphiModel.
 

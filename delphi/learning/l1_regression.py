@@ -9,36 +9,22 @@ the dual,
     max_a  y^T a   s.t.  X^T a = X^T 1 / 2,   0 <= a <= 1,
 
 whose equality multiplier is c. Every Newton step solves one p x p system
-``X^T D X``, so the cost is ``O(n p^2)`` per iteration over a few tens of
-iterations, and the duality gap certifies the solution.
+``X^T D X``, so the cost is ``O(n p^2)`` per step over a few tens of steps,
+and the duality gap certifies the solution. The trainer runs the steps:
+each is one of ``L1Regression``'s own updates, with no optimizer.
 """
 
-import dataclasses
 from typing import Optional
 
 import torch as ch
 
+from delphi.configs.learning import l1_regression as l1_regression_configs
+from delphi.delphi import DelphiModel
+import delphi.trainer
+from delphi.utils import constants
+
 # The fraction of the distance to the boundary a step may cover.
 STEP_FRACTION = 0.99995
-
-
-@dataclasses.dataclass(frozen=True)
-class L1Fit:
-    """The solution of an L1 regression.
-
-    Attributes:
-        coefficients: The minimizer c, shaped (p,).
-        objective: ``sum_i w_i |y_i - a_i^T c|`` at c.
-        gap: The duality gap at exit, relative to ``1 + objective``.
-        iterations: Newton iterations run.
-        converged: Whether the gap and the residuals met the tolerance.
-    """
-
-    coefficients: ch.Tensor
-    objective: float
-    gap: float
-    iterations: int
-    converged: bool
 
 
 def _step_length(value: ch.Tensor, direction: ch.Tensor) -> float:
@@ -50,98 +36,183 @@ def _step_length(value: ch.Tensor, direction: ch.Tensor) -> float:
     return min(1.0, STEP_FRACTION * limit)
 
 
-def l1_regression(  # pylint: disable=too-many-arguments,too-many-locals
-    design: ch.Tensor,
-    targets: ch.Tensor,
-    weights: Optional[ch.Tensor] = None,
-    *,
-    max_iterations: int = 100,
-    tolerance: float = 1e-8,
-) -> L1Fit:
-    """Return the weighted least-absolute-deviations fit of targets on design.
+class L1Regression(  # pylint: disable=too-many-instance-attributes
+    DelphiModel[l1_regression_configs.L1RegressionConfig]
+):
+    """Weighted least absolute deviations, by an interior point method.
 
-    Args:
-        design: The matrix X, shaped (n, p), of full column rank.
-        targets: y, shaped (n,).
-        weights: Nonnegative row weights w, shaped (n,); ones if None.
-        max_iterations: Newton iterations before giving up.
-        tolerance: Bound on the relative duality gap and on the relative
-            primal and dual residuals.
+    Usage::
 
-    Returns:
-        The coefficients, the objective and gap there, the iterations run,
-        and whether they converged.
+        regression = L1Regression().fit(design, targets, weights)
+        regression.coef_, regression.gap_
 
-    Raises:
-        ValueError: If the shapes disagree or a weight is negative.
+    Attributes:
+        coef_: The minimizer c, shaped (p,), set by fit.
+        objective_: ``sum_i w_i |y_i - a_i^T c|`` at the current iterate.
+        gap_: The duality gap, relative to ``1 + objective_``.
+        procedure: The trainer's record of the fit.
     """
-    n, p = design.shape
-    if targets.shape != (n,):
-        raise ValueError(f"targets must be shaped ({n},); got {tuple(targets.shape)}.")
-    x = design.to(ch.float64)
-    y = targets.to(device=x.device, dtype=ch.float64)
-    w = ch.ones_like(y) if weights is None else weights.to(y)
-    if w.shape != (n,) or bool((w < 0).any()):
-        raise ValueError(f"weights must be nonnegative and shaped ({n},).")
-    kept = w > 0
-    x, y = x[kept] * w[kept, None], y[kept] * w[kept]
 
-    b = 0.5 * x.sum(0)
-    a = ch.full_like(y, 0.5)
-    c = ch.linalg.lstsq(x, y).solution  # pylint: disable=not-callable
-    residual = y - x @ c
-    shift = float(residual.abs().mean()) + 1.0
-    z, v = (-residual).clamp_min(0.0) + shift, residual.clamp_min(0.0) + shift
+    defaults = l1_regression_configs.L1RegressionConfig
+    owns_updates = True
 
-    def newton(r_primal, r_dual, r_lower, r_upper, scaling):
+    def __init__(self, *, hyperparameters: Optional[dict] = None):
+        """Initialize an unfit solver.
+
+        Args:
+            hyperparameters: Overrides of ``L1RegressionConfig``.
+        """
+        super().__init__(hyperparameters=hyperparameters)
+        self.coef_: Optional[ch.Tensor] = None
+        self.objective_ = float("inf")
+        self.gap_ = float("inf")
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
+        # The rows with the weights folded in, the dual's right-hand side,
+        # and the iterate (a, c, z, v), all set by fit.
+        self._x = self._y = self._b = ch.zeros(0)
+        self._a = self._c = self._z = self._v = ch.zeros(0)
+
+    def fit(
+        self,
+        design: ch.Tensor,
+        targets: ch.Tensor,
+        weights: Optional[ch.Tensor] = None,
+    ) -> "L1Regression":
+        """Fit c to minimize the weighted absolute residuals.
+
+        Args:
+            design: The matrix X, shaped (n, p), of full column rank.
+            targets: y, shaped (n,).
+            weights: Nonnegative row weights, shaped (n,); ones if None.
+
+        Returns:
+            self.
+
+        Raises:
+            ValueError: If the shapes disagree or a weight is negative.
+        """
+        n = design.size(0)
+        if targets.shape != (n,):
+            raise ValueError(
+                f"targets must be shaped ({n},); got {tuple(targets.shape)}."
+            )
+        x = design.to(ch.float64)
+        y = targets.to(device=x.device, dtype=ch.float64)
+        w = ch.ones_like(y) if weights is None else weights.to(y)
+        if w.shape != (n,) or bool((w < 0).any()):
+            raise ValueError(f"weights must be nonnegative and shaped ({n},).")
+        kept = w > 0
+        self._x, self._y = x[kept] * w[kept, None], y[kept] * w[kept]
+        self._start()
+        trainer = delphi.trainer.Trainer(self, self.hyperparameters)
+        self.procedure = trainer.train_model(None, None)
+        self.coef_ = self._c.to(design.dtype)
+        return self
+
+    @property
+    def converged_(self) -> bool:
+        """Whether the fit stopped on its tolerance rather than its budget."""
+        return (
+            self.procedure is not None
+            and self.procedure.final.stop_reason == constants.StopReason.MODEL_STOP
+        )
+
+    def _start(self) -> None:
+        """Start from a = 1/2, feasible for the dual, and c from least squares."""
+        x, y = self._x, self._y
+        self._b = 0.5 * x.sum(0)
+        self._a = ch.full_like(y, 0.5)
+        self._c = ch.linalg.lstsq(x, y).solution  # pylint: disable=not-callable
+        residual = y - x @ self._c
+        shift = float(residual.abs().mean()) + 1.0
+        self._z = (-residual).clamp_min(0.0) + shift
+        self._v = residual.clamp_min(0.0) + shift
+        self._measure()
+
+    def _residuals(self) -> tuple[ch.Tensor, ch.Tensor]:
+        """Return the primal and dual residuals at the iterate."""
+        x, y = self._x, self._y
+        primal = self._b - x.T @ self._a
+        dual = y - x @ self._c + self._z - self._v
+        return primal, dual
+
+    def _measure(self) -> None:
+        """Set the objective and the relative duality gap at the iterate."""
+        self.objective_ = float((self._y - self._x @ self._c).abs().sum())
+        complementarity = float(self._a @ self._z + (1.0 - self._a) @ self._v)
+        self.gap_ = complementarity / (1.0 + self.objective_)
+
+    def _newton(self, residuals, r_lower, r_upper, scaling):
         """Solve the Newton system for (da, dc, dz, dv)."""
+        r_primal, r_dual = residuals
+        x, a = self._x, self._a
         s = 1.0 - a
         q = r_dual + r_lower / a - r_upper / s
         system = x.T @ (scaling[:, None] * x)
-        rhs = x.T @ (scaling * q) - r_primal
-        dc = ch.linalg.solve(system, rhs)  # pylint: disable=not-callable
+        dc = ch.linalg.solve(system, x.T @ (scaling * q) - r_primal)  # pylint: disable=not-callable
         da = scaling * (q - x @ dc)
-        dz = (r_lower - z * da) / a
-        dv = (r_upper + v * da) / s
-        return da, dc, dz, dv
+        return da, dc, (r_lower - self._z * da) / a, (r_upper + self._v * da) / s
 
-    converged, iterations, gap = False, 0, float("inf")
-    while iterations < max_iterations:
+    def _steps(self, da, dz, dv) -> tuple[float, float]:
+        """Return the primal and dual step lengths that keep the iterate interior."""
+        a, s = self._a, 1.0 - self._a
+        primal = min(_step_length(a, da), _step_length(s, -da))
+        dual = min(_step_length(self._z, dz), _step_length(self._v, dv))
+        return primal, dual
+
+    def train_batch(self, batch) -> dict:
+        """Take one predictor-corrector Newton step.
+
+        Args:
+            batch: Unused; the solver holds its own data.
+
+        Returns:
+            The objective after the step, as ``{"loss": ...}``.
+        """
+        del batch
+        a, z, v = self._a, self._z, self._v
         s = 1.0 - a
-        r_primal = b - x.T @ a
-        r_dual = y - x @ c + z - v
-        complementarity = float(a @ z + s @ v)
-        objective = float((y - x @ c).abs().sum())
-        gap = complementarity / (1.0 + objective)
-        if (
-            gap < tolerance
-            and float(r_primal.norm()) <= tolerance * (1.0 + float(b.norm()))
-            and float(r_dual.norm()) <= tolerance * (1.0 + float(y.norm()))
-        ):
-            converged = True
-            break
-        iterations += 1
-        mu = complementarity / (2 * a.numel())
+        residuals = self._residuals()
+        mu = float(a @ z + s @ v) / (2 * a.numel())
         scaling = 1.0 / (z / a + v / s)
 
         # Predictor: the affine-scaling step, aiming at zero complementarity.
-        da, dc, dz, dv = newton(r_primal, r_dual, -a * z, -s * v, scaling)
-        primal_step = min(_step_length(a, da), _step_length(s, -da))
-        dual_step = min(_step_length(z, dz), _step_length(v, dv))
+        da, dc, dz, dv = self._newton(residuals, -a * z, -s * v, scaling)
+        primal, dual = self._steps(da, dz, dv)
         mu_affine = float(
-            (a + primal_step * da) @ (z + dual_step * dz)
-            + (s - primal_step * da) @ (v + dual_step * dv)
+            (a + primal * da) @ (z + dual * dz) + (s - primal * da) @ (v + dual * dv)
         ) / (2 * a.numel())
         sigma = (mu_affine / mu) ** 3
 
         # Corrector: center, and cancel the predictor's second-order terms.
         r_lower = sigma * mu - a * z - da * dz
         r_upper = sigma * mu - s * v + da * dv
-        da, dc, dz, dv = newton(r_primal, r_dual, r_lower, r_upper, scaling)
-        primal_step = min(_step_length(a, da), _step_length(s, -da))
-        dual_step = min(_step_length(z, dz), _step_length(v, dv))
-        a = a + primal_step * da
-        c, z, v = c + dual_step * dc, z + dual_step * dz, v + dual_step * dv
+        da, dc, dz, dv = self._newton(residuals, r_lower, r_upper, scaling)
+        primal, dual = self._steps(da, dz, dv)
+        self._a = a + primal * da
+        self._c, self._z, self._v = (
+            self._c + dual * dc,
+            z + dual * dz,
+            v + dual * dv,
+        )
+        self._measure()
+        return {"loss": ch.tensor(self.objective_)}
 
-    objective = float((y - x @ c).abs().sum())
-    return L1Fit(c.to(design.dtype), objective, gap, iterations, converged)
+    def should_stop(self) -> tuple[bool, Optional[str]]:
+        """Stop once the duality gap and both residuals meet the tolerance."""
+        tolerance = self.hyperparameters.tolerance
+        primal, dual = self._residuals()
+        done = (
+            self.gap_ < tolerance
+            and float(primal.norm()) <= tolerance * (1.0 + float(self._b.norm()))
+            and float(dual.norm()) <= tolerance * (1.0 + float(self._y.norm()))
+        )
+        return done, "duality_gap" if done else None
+
+    def evaluate(self) -> dict:
+        """Return the objective at the iterate."""
+        return {"loss": ch.tensor(self.objective_)}
+
+    def run_metrics(self) -> dict:
+        """Return the objective and the duality gap the run ended at."""
+        return {"objective": self.objective_, "gap": self.gap_}
