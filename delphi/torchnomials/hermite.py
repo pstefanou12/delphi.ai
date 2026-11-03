@@ -16,7 +16,7 @@ import torch.distributions
 from delphi.torchnomials import polynomial
 
 
-class Hermite(polynomial.Polynomial):
+class Hermite(polynomial.ProductPolynomial):
     """Hermite polynomials over a total-degree basis.
 
     Usage::

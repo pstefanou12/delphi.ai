@@ -505,7 +505,8 @@ in `delphi/torchnomials/`.
 ### Polynomials
 
 `delphi/torchnomials/` holds polynomial families in torch, built on an
-abstract `Polynomial` over total-degree multi-indices. `Hermite` gives the
+abstract `Polynomial` over total-degree multi-indices, and `ProductPolynomial`
+for families built from univariate polynomials. `Hermite` gives the
 physicist (default) or probabilist (`prob=True`) Hermite polynomials,
 normalized under their weight measure with `norm=True`. Fitting to samples
 expands their density ratio to that weight:
@@ -516,6 +517,20 @@ from delphi.torchnomials import hermite
 poly = hermite.Hermite(degree=10, dims=2, prob=True, norm=True)
 poly.fit(samples)       # c_V = mean(P_V) / ||P_V||^2
 values = poly(points)   # sum_V c_V P_V(points)
+```
+
+`Laguerre` gives the generalized Laguerre polynomials `L_n^(a)`, orthogonal
+under `Gamma(alpha + 1, 1)`: `alpha=0` (the default) is `Exp(1)`. For any
+other distribution that can be sampled, `EmpiricalOrthonormal` makes a family
+orthonormal under draws from it, with the same `fit` and evaluation:
+
+```python
+import torch.distributions
+
+from delphi.torchnomials import empirical, laguerre
+
+reference = torch.distributions.Independent(torch.distributions.Gamma(conc, rate), 1)
+poly = empirical.EmpiricalOrthonormal(laguerre.Laguerre(degree=6, dims=2), reference)
 ```
 
 ### Adding a distribution

@@ -1,5 +1,5 @@
 # Author: pstefanou12@
-"""Tests for the Hermite polynomials and the polynomial family they extend."""
+"""Tests for the Hermite polynomials."""
 
 import math
 
@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch as ch
 
-from delphi.torchnomials import hermite, polynomial
+from delphi.torchnomials import hermite
 
 _VARIANTS = [(prob, norm) for prob in (False, True) for norm in (False, True)]
 
@@ -36,16 +36,6 @@ def _quadrature(prob: bool, nodes: int) -> tuple[np.ndarray, np.ndarray]:
         return points, weights / math.sqrt(2.0 * math.pi)
     points, weights = np.polynomial.hermite.hermgauss(nodes)
     return points, weights / math.sqrt(math.pi)
-
-
-@pytest.mark.parametrize("degree,dims", [(0, 1), (3, 1), (4, 2), (3, 3)])
-def test_multi_indices_enumerate_the_degree_simplex(degree, dims):
-    indices = polynomial.multi_indices(degree, dims)
-    assert indices.shape == (polynomial.num_terms(degree, dims), dims)
-    assert len({tuple(row) for row in indices.tolist()}) == indices.size(0)
-    totals = indices.sum(1)
-    assert int(totals.max()) == degree
-    assert bool((totals[1:] >= totals[:-1]).all()), "not ordered by degree"
 
 
 @pytest.mark.parametrize("prob,norm", _VARIANTS)
@@ -118,33 +108,3 @@ def test_weight_is_the_orthogonality_measure():
     probabilist = hermite.Hermite(3, 2, prob=True).weight()
     ch.testing.assert_close(physicist.covariance_matrix, 0.5 * ch.eye(2).double())
     ch.testing.assert_close(probabilist.covariance_matrix, ch.eye(2).double())
-
-
-def test_chunked_evaluation_matches_one_pass():
-    ch.manual_seed(2)
-    family = hermite.Hermite(8, 2, prob=True, norm=True)
-    family.fit(ch.randn(500, 2, dtype=ch.float64))
-    points = ch.randn(family.chunk_size() * 3 + 7, 2, dtype=ch.float64)
-    ch.testing.assert_close(family(points), family.basis(points) @ family.coefficients)
-
-
-def test_evaluating_before_fit_raises():
-    with pytest.raises(RuntimeError, match="fit"):
-        hermite.Hermite(3)(ch.zeros(4, 1))
-
-
-def test_rejects_a_batch_of_the_wrong_width():
-    with pytest.raises(ValueError, match="shape"):
-        hermite.Hermite(3, 2).basis(ch.zeros(4, 3))
-
-
-def test_largest_degree_fills_the_term_budget():
-    for dims in (1, 2, 3, 10):
-        degree = polynomial.largest_degree(dims, 8000, 200)
-        assert polynomial.num_terms(degree, dims) <= 8000
-        assert degree == 200 or polynomial.num_terms(degree + 1, dims) > 8000
-
-
-def test_largest_degree_respects_its_cap_and_floor():
-    assert polynomial.largest_degree(1, 8000, 20) == 20
-    assert polynomial.largest_degree(50, 10, 200) == 1
