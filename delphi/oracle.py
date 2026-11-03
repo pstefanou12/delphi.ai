@@ -207,11 +207,16 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
     the least weighted error on the same sample. The basis decides the
     hypothesis class and how well conditioned the regression is.
 
+    Learning a truncation set, the labels come from the positive-unlabeled
+    reduction (Lee et al., 2024, Definition 4): 1 for the observed samples,
+    all inside the set, and 0 for draws from a reference distribution,
+    inside or outside it.
+
     Usage::
 
         learned = PolynomialThreshold(hermite.Hermite(4, 2, prob=True, norm=True))
-        learned.fit(points, labels)
-        inside = learned(new_points)
+        learned.fit(X, y)
+        inside = learned(X_new)
 
     Attributes:
         polynomial: The basis, whose coefficients fit sets.
@@ -239,22 +244,22 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
 
     def fit(
         self,
-        x: ch.Tensor,
-        labels: ch.Tensor,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        y: ch.Tensor,
         weights: Optional[ch.Tensor] = None,
     ) -> "PolynomialThreshold":
         """Fit p by L1 regression on the labels, then choose tau.
 
         Args:
-            x: Samples of shape (n, dims).
-            labels: 0/1 labels, shaped (n,).
+            X: Samples of shape (n, dims).
+            y: 0/1 labels, shaped (n,).
             weights: Nonnegative sample weights, shaped (n,); ones if None.
 
         Returns:
             self.
         """
-        design = self.polynomial.basis(x).to(ch.float64)
-        target = labels.to(design)
+        design = self.polynomial.basis(X).to(ch.float64)
+        target = y.to(design)
         weights = ch.ones_like(target) if weights is None else weights.to(design)
         self.regression = l1_regression.L1Regression(
             hyperparameters=self.hyperparameters
@@ -264,11 +269,11 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
         self.threshold = _least_error_threshold(design @ coefficients, target, weights)
         return self
 
-    def __call__(self, x: ch.Tensor) -> ch.Tensor:
+    def __call__(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
         """Return membership, ``p(x) >= tau``.
 
         Args:
-            x: Samples of shape (n, dims).
+            X: Samples of shape (n, dims).
 
         Returns:
             Boolean mask over the batch.
@@ -278,7 +283,7 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
         """
         if self.threshold is None:
             raise RuntimeError("the threshold has not been fit.")
-        return self.polynomial(x) >= self.threshold
+        return self.polynomial(X) >= self.threshold
 
 
 def _least_error_threshold(

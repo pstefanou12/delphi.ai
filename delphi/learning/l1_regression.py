@@ -43,7 +43,7 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
 
     Usage::
 
-        regression = L1Regression().fit(design, targets, weights)
+        regression = L1Regression().fit(X, y, weights)
         regression.coef_, regression.gap_
 
     Attributes:
@@ -68,21 +68,22 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         self.gap_ = float("inf")
         self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         # The rows with the weights folded in, the dual's right-hand side,
-        # and the iterate (a, c, z, v), all set by fit.
-        self._x = self._y = self._b = ch.zeros(0)
+        # and the iterate (a, c, z, v): the rows set by fit, the rest by
+        # pre_phase_hook.
+        self._X = self._y = self._b = ch.zeros(0)  # pylint: disable=invalid-name
         self._a = self._c = self._z = self._v = ch.zeros(0)
 
     def fit(
         self,
-        design: ch.Tensor,
-        targets: ch.Tensor,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        y: ch.Tensor,
         weights: Optional[ch.Tensor] = None,
     ) -> "L1Regression":
         """Fit c to minimize the weighted absolute residuals.
 
         Args:
-            design: The matrix X, shaped (n, p), of full column rank.
-            targets: y, shaped (n,).
+            X: Features, shaped (n, p), of full column rank.
+            y: Targets, shaped (n,).
             weights: Nonnegative row weights, shaped (n,); ones if None.
 
         Returns:
@@ -91,22 +92,20 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         Raises:
             ValueError: If the shapes disagree or a weight is negative.
         """
-        n = design.size(0)
-        if targets.shape != (n,):
-            raise ValueError(
-                f"targets must be shaped ({n},); got {tuple(targets.shape)}."
-            )
-        x = design.to(ch.float64)
-        y = targets.to(device=x.device, dtype=ch.float64)
-        w = ch.ones_like(y) if weights is None else weights.to(y)
+        n = X.size(0)
+        if y.shape != (n,):
+            raise ValueError(f"y must be shaped ({n},); got {tuple(y.shape)}.")
+        features = X.to(ch.float64)
+        targets = y.to(device=features.device, dtype=ch.float64)
+        w = ch.ones_like(targets) if weights is None else weights.to(targets)
         if w.shape != (n,) or bool((w < 0).any()):
             raise ValueError(f"weights must be nonnegative and shaped ({n},).")
         kept = w > 0
-        self._x, self._y = x[kept] * w[kept, None], y[kept] * w[kept]
-        self._start()
+        self._X = features[kept] * w[kept, None]  # pylint: disable=invalid-name
+        self._y = targets[kept] * w[kept]
         trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.procedure = trainer.train_model(None, None)
-        self.coef_ = self._c.to(design.dtype)
+        self.coef_ = self._c.to(X.dtype)
         return self
 
     @property
@@ -117,13 +116,13 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
             and self.procedure.final.stop_reason == constants.StopReason.MODEL_STOP
         )
 
-    def _start(self) -> None:
-        """Start from a = 1/2, feasible for the dual, and c from least squares."""
-        x, y = self._x, self._y
-        self._b = 0.5 * x.sum(0)
+    def pre_phase_hook(self) -> None:
+        """Start the iterate: a = 1/2, feasible for the dual, c by least squares."""
+        X, y = self._X, self._y  # pylint: disable=invalid-name
+        self._b = 0.5 * X.sum(0)
         self._a = ch.full_like(y, 0.5)
-        self._c = ch.linalg.lstsq(x, y).solution  # pylint: disable=not-callable
-        residual = y - x @ self._c
+        self._c = ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
+        residual = y - X @ self._c
         shift = float(residual.abs().mean()) + 1.0
         self._z = (-residual).clamp_min(0.0) + shift
         self._v = residual.clamp_min(0.0) + shift
@@ -131,36 +130,44 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
 
     def _residuals(self) -> tuple[ch.Tensor, ch.Tensor]:
         """Return the primal and dual residuals at the iterate."""
-        x, y = self._x, self._y
-        primal = self._b - x.T @ self._a
-        dual = y - x @ self._c + self._z - self._v
+        X, y = self._X, self._y  # pylint: disable=invalid-name
+        primal = self._b - X.T @ self._a
+        dual = y - X @ self._c + self._z - self._v
         return primal, dual
 
     def _measure(self) -> None:
         """Set the objective and the relative duality gap at the iterate."""
-        self.objective_ = float((self._y - self._x @ self._c).abs().sum())
+        self.objective_ = float((self._y - self._X @ self._c).abs().sum())
         complementarity = float(self._a @ self._z + (1.0 - self._a) @ self._v)
         self.gap_ = complementarity / (1.0 + self.objective_)
 
-    def _newton(self, residuals, r_lower, r_upper, scaling):
+    def _newton(
+        self,
+        residuals: tuple[ch.Tensor, ch.Tensor],
+        r_lower: ch.Tensor,
+        r_upper: ch.Tensor,
+        scaling: ch.Tensor,
+    ) -> tuple[ch.Tensor, ch.Tensor, ch.Tensor, ch.Tensor]:
         """Solve the Newton system for (da, dc, dz, dv)."""
         r_primal, r_dual = residuals
-        x, a = self._x, self._a
+        X, a = self._X, self._a  # pylint: disable=invalid-name
         s = 1.0 - a
         q = r_dual + r_lower / a - r_upper / s
-        system = x.T @ (scaling[:, None] * x)
-        dc = ch.linalg.solve(system, x.T @ (scaling * q) - r_primal)  # pylint: disable=not-callable
-        da = scaling * (q - x @ dc)
+        system = X.T @ (scaling[:, None] * X)
+        dc = ch.linalg.solve(system, X.T @ (scaling * q) - r_primal)  # pylint: disable=not-callable
+        da = scaling * (q - X @ dc)
         return da, dc, (r_lower - self._z * da) / a, (r_upper + self._v * da) / s
 
-    def _steps(self, da, dz, dv) -> tuple[float, float]:
+    def _steps(
+        self, da: ch.Tensor, dz: ch.Tensor, dv: ch.Tensor
+    ) -> tuple[float, float]:
         """Return the primal and dual step lengths that keep the iterate interior."""
         a, s = self._a, 1.0 - self._a
         primal = min(_step_length(a, da), _step_length(s, -da))
         dual = min(_step_length(self._z, dz), _step_length(self._v, dv))
         return primal, dual
 
-    def train_batch(self, batch) -> dict:
+    def train_batch(self, batch: object) -> dict:
         """Take one predictor-corrector Newton step.
 
         Args:
