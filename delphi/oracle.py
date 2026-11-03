@@ -2,18 +2,21 @@
 """Stateful truncation sets.
 
 A known truncation set is a predicate the caller supplies as a plain
-callable. The sets here carry state: ``Identity`` admits everything, and
-``RecoveredSet`` is not given but estimated from samples drawn inside it.
+callable. The sets here carry state: ``Identity`` admits everything,
+``RecoveredSet`` is estimated from samples drawn inside it, and
+``PolynomialThreshold`` is learned from labeled samples.
 """
 
 import abc
 import copy
-from typing import Optional
+from typing import Optional, cast
 
 import torch as ch
 import torch.distributions
 
+from delphi.learning import l1_regression
 from delphi.torchnomials import hermite
+import delphi.torchnomials.polynomial
 import delphi.transformations.transformation
 
 
@@ -194,3 +197,124 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
         if self.threshold is None:
             raise RuntimeError("membership needs a fitted distribution; call given.")
         return self.ratio(self.transform(x)) > self.threshold
+
+
+class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
+    """The set ``{x : p(x) >= tau}`` of a polynomial fit to 0/1 labels.
+
+    Kalai, Klivans, Mansour and Servedio (2008): fit p over a polynomial
+    basis by L1 regression on the labels, then take the threshold tau with
+    the least weighted error on the same sample. The basis decides the
+    hypothesis class and how well conditioned the regression is.
+
+    Learning a truncation set, the labels come from the positive-unlabeled
+    reduction (Lee et al., 2024, Definition 4): 1 for the observed samples,
+    all inside the set, and 0 for draws from a reference distribution,
+    inside or outside it.
+
+    Usage::
+
+        learned = PolynomialThreshold(hermite.Hermite(4, 2, prob=True, norm=True))
+        learned.fit(X, y)
+        inside = learned(X_new)
+
+    Attributes:
+        polynomial: The basis, whose coefficients fit sets.
+        threshold: tau, set by fit.
+        regression: The fitted L1 regression, set by fit.
+    """
+
+    def __init__(
+        self,
+        polynomial: delphi.torchnomials.polynomial.Polynomial,
+        *,
+        hyperparameters: Optional[dict] = None,
+    ):
+        """Initialize an unfit threshold over a polynomial basis.
+
+        Args:
+            polynomial: The basis to regress over; fit overwrites its
+                coefficients.
+            hyperparameters: Overrides of the L1 regression's config.
+        """
+        self.polynomial = polynomial
+        self.hyperparameters = hyperparameters
+        self.threshold: Optional[float] = None
+        self.regression: Optional[l1_regression.L1Regression] = None
+
+    def fit(
+        self,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        y: ch.Tensor,
+        weights: Optional[ch.Tensor] = None,
+    ) -> "PolynomialThreshold":
+        """Fit p by L1 regression on the labels, then choose tau.
+
+        Args:
+            X: Samples of shape (n, dims).
+            y: 0/1 labels, shaped (n,).
+            weights: Nonnegative sample weights, shaped (n,); ones if None.
+
+        Returns:
+            self.
+        """
+        design = self.polynomial.basis(X).to(ch.float64)
+        target = y.to(design)
+        weights = ch.ones_like(target) if weights is None else weights.to(design)
+        self.regression = l1_regression.L1Regression(
+            hyperparameters=self.hyperparameters
+        ).fit(design, target, weights)
+        coefficients = cast(ch.Tensor, self.regression.coef_)
+        self.polynomial.coefficients = coefficients
+        self.threshold = _least_error_threshold(design @ coefficients, target, weights)
+        return self
+
+    def __call__(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return membership, ``p(x) >= tau``.
+
+        Args:
+            X: Samples of shape (n, dims).
+
+        Returns:
+            Boolean mask over the batch.
+
+        Raises:
+            RuntimeError: If called before fit.
+        """
+        if self.threshold is None:
+            raise RuntimeError("the threshold has not been fit.")
+        return self.polynomial(X) >= self.threshold
+
+
+def _least_error_threshold(
+    scores: ch.Tensor, labels: ch.Tensor, weights: ch.Tensor
+) -> float:
+    """Return the tau minimizing the weighted error of ``scores >= tau``.
+
+    Candidates are the midpoints between consecutive distinct scores, plus
+    one below and one above them all; sorting makes every candidate's error
+    a cumulative sum.
+    """
+    order = scores.argsort()
+    sorted_scores = scores[order]
+    positive = weights[order] * labels[order]
+    negative = weights[order] * (1.0 - labels[order])
+    # Cutting after k predicts the first k + 1 negative and the rest positive.
+    missed = ch.cat([positive.new_zeros(1), positive.cumsum(0)])
+    false_alarms = negative.sum() - ch.cat([negative.new_zeros(1), negative.cumsum(0)])
+    errors = missed + false_alarms
+    # Only cut between distinct scores, or tied samples would split.
+    distinct = ch.cat(
+        [
+            ch.ones(1, dtype=ch.bool, device=scores.device),
+            sorted_scores[1:] > sorted_scores[:-1],
+            ch.ones(1, dtype=ch.bool, device=scores.device),
+        ]
+    )
+    errors = ch.where(distinct, errors, ch.full_like(errors, float("inf")))
+    cut = int(errors.argmin())
+    if cut == 0:
+        return float(sorted_scores[0]) - 1.0
+    if cut == scores.numel():
+        return float(sorted_scores[-1]) + 1.0
+    return float(0.5 * (sorted_scores[cut - 1] + sorted_scores[cut]))

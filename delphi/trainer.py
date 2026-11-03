@@ -411,9 +411,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
             except TypeError:
                 self.dataset_size = None  # IterableDataset has no len().
 
-        self.model.make_optimizer_and_schedule(
-            checkpoint, self._stage.hessian if self._stage else None
-        )
+        if not self.model.owns_updates:
+            self.model.make_optimizer_and_schedule(
+                checkpoint, self._stage.hessian if self._stage else None
+            )
         self.logger.info(f"training: {self.model}\n{self.hyperparameters}")
 
         if (
