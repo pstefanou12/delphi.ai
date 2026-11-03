@@ -28,10 +28,8 @@ import torch as ch
 import torch.autograd.functional
 import torch.nn.functional
 
+import delphi.oracle
 from delphi.stats.truncated import truncated_linear_regression
-from delphi.stats.truncated import (
-    truncated_linear_regression as truncated_linear_regression_module,
-)
 from delphi.stats.truncated.tests import regression
 
 INF = math.inf
@@ -77,7 +75,7 @@ def _fit(  # pylint: disable=too-many-arguments
         ols_margin: As ``regression.assert_recovers``.
         fit_intercept: Whether to fit an intercept.
     """
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi,
         simulation.alpha if alpha_known else None,
         noise_var=simulation.noise_var if variance_known else None,
@@ -384,10 +382,6 @@ def _discs(radius: float) -> Callable[[ch.Tensor], ch.Tensor]:
     return phi
 
 
-def _everything(x: ch.Tensor) -> ch.Tensor:
-    return ch.ones_like(x[..., :1], dtype=ch.bool)
-
-
 def _dynamics_case(  # pylint: disable=too-many-arguments
     transition: ch.Tensor,
     family: Family,
@@ -528,7 +522,7 @@ def _fit_dynamics(
             skips the check.
         fit_intercept: Whether the model fits b.
     """
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi,
         simulation.alpha if alpha is None else alpha,
         noise_var=simulation.noise_var,
@@ -598,7 +592,9 @@ def test_lds_2d_ball_removed():
 # Without truncation least squares on every pair is the MLE, while the
 # descent steps on three quarters of them at a step above 1.
 def test_lds_2d_no_truncation():
-    simulation = regression.simulate_dynamics(_TRANSITION_2D, _everything, 5000)
+    simulation = regression.simulate_dynamics(
+        _TRANSITION_2D, delphi.oracle.Identity(), 5000
+    )
     _fit_dynamics(simulation, 0.065, 2.7)
 
 
@@ -618,8 +614,8 @@ def test_lds_10d_ball_removed():
 
 def test_dependent_alpha_unknown_raises():
     with pytest.raises(ValueError, match="alpha"):
-        truncated_linear_regression_module.TruncatedLinearRegression(
-            _everything, None, noise_var=1.0, dependent=True
+        truncated_linear_regression.TruncatedLinearRegression(
+            delphi.oracle.Identity(), None, noise_var=1.0, dependent=True
         )
 
 
@@ -629,9 +625,11 @@ def test_dependent_step_is_an_online_newton_step():
     c_gamma near 0 puts the test's threshold above 1, so the gradient is the
     censor-oblivious one, and a huge c_s keeps the step inside the ellipsoid.
     """
-    simulation = regression.simulate_dynamics(_TRANSITION_2D, _everything, 400)
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
-        _everything,
+    simulation = regression.simulate_dynamics(
+        _TRANSITION_2D, delphi.oracle.Identity(), 400
+    )
+    model = truncated_linear_regression.TruncatedLinearRegression(
+        delphi.oracle.Identity(),
         1.0,
         noise_var=1.0,
         dependent=True,
@@ -794,7 +792,7 @@ def _design_and_responses(
 
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
@@ -816,7 +814,7 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
 
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
@@ -871,7 +869,7 @@ def _coverage_hits(
     covered = []
     for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
-        model = truncated_linear_regression_module.TruncatedLinearRegression(
+        model = truncated_linear_regression.TruncatedLinearRegression(
             simulation.phi,
             simulation.alpha,
             noise_var=simulation.noise_var if variance_known else None,

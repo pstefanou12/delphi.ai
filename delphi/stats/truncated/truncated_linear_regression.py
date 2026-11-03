@@ -268,7 +268,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     @property
     def emp_start(self) -> ch.Tensor:
-        """emp_weight in the descent's coordinates, shaped (d + 1, k)."""
+        """emp_weight in the descent's coordinates, shaped (d + 1, k).
+
+        With a known noise covariance ``L L^T``, dependent data fits the
+        whitened ``L^-1 y``, so the start is ``emp_weight L^-T``.
+        """
         start = super().emp_start
         if self._noise_factor is None:
             return start
@@ -278,7 +282,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
 
     @property
     def emp_coef_(self) -> Optional[ch.Tensor]:
-        """Coefficients of emp_weight, the descent's start."""
+        """Coefficients of emp_weight; dependent data's undo the whitening."""
         if not self.dependent:
             return super().emp_coef_
         return self.coefficients(self.emp_start.flatten())[0]
@@ -423,7 +427,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         return loss.sum()
 
     def pre_phase_hook(self) -> None:
-        """Build or resize the projection set, and zero the branch counts."""
+        """Build or resize the projection set, and zero the branch counts.
+
+        The counts are per phase: the trainer copies ``run_metrics`` into each
+        phase's result when it ends, and ``summary`` sums them.
+        """
         super().pre_phase_hook()
         self._aware_pairs, self._oblivious_pairs = 0, 0
 
