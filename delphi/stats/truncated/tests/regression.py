@@ -4,15 +4,17 @@
 Any model fit to ``y = w^T x + b + e`` observed through a set on y, the
 known- and unknown-variance regressions and the lasso among them:
 ``simulate`` draws such a sample with known parameters, and
-``assert_recovers`` fits a model to it and checks every estimate the model
-returns against the truth. Models observing something else, such as the
-classifiers' labels, get a harness module of their own.
+``simulate_dynamics`` the observed pairs of a linear dynamical system's
+trajectory, whose set ``calibrate`` sizes to a pair fraction.
+``assert_recovers`` fits a model to either and checks every estimate the
+model returns against the truth. Models observing something else, such as
+the classifiers' labels, get a harness module of their own.
 """
 
 from collections.abc import Callable, Sequence
 import dataclasses
 import math
-from typing import Optional
+from typing import Optional, Union
 
 import torch as ch
 
@@ -29,9 +31,9 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
     Attributes:
         X: Observed covariates, shaped (n, d).
         y: Observed responses, shaped (n, 1).
-        coef: True coefficients, shaped (1, d).
-        intercept: True intercept, shaped (1,).
-        noise_var: True noise variance.
+        coef: True coefficients, shaped (k, d).
+        intercept: True intercept, shaped (k,).
+        noise_var: True noise variance, or covariance shaped (k, k).
         phi: The truncation oracle the sample passed.
         alpha: Fraction of the draws that survived.
         ols_coef: OLS coefficients on the observed sample.
@@ -42,7 +44,7 @@ class Simulation:  # pylint: disable=too-many-instance-attributes
     y: ch.Tensor
     coef: ch.Tensor
     intercept: ch.Tensor
-    noise_var: float
+    noise_var: Union[float, ch.Tensor]
     phi: Callable
     alpha: float
     ols_coef: ch.Tensor
@@ -115,6 +117,122 @@ def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     )
 
 
+def trajectory(
+    transition: ch.Tensor,
+    steps: int,
+    *,
+    drift: Optional[ch.Tensor] = None,
+    noise_var: Optional[ch.Tensor] = None,
+    seed: int = 0,
+) -> ch.Tensor:
+    """Return the states of ``x_{t+1} = A x_t + b + w_t`` from 0.
+
+    Args:
+        transition: The A, shaped (d, d).
+        steps: Length of the trajectory.
+        drift: The b, shaped (d,); zero if None.
+        noise_var: Covariance of w_t, shaped (d, d); identity if None.
+        seed: Seed for the draws.
+
+    Returns:
+        The states x_0 to x_steps, shaped (steps + 1, d).
+    """
+    ch.manual_seed(seed)
+    dims = transition.size(0)
+    drift = ch.zeros(dims) if drift is None else drift
+    covariance = ch.eye(dims) if noise_var is None else noise_var
+    noise = ch.randn(steps, dims) @ ch.linalg.cholesky(covariance).T  # pylint: disable=not-callable
+    states = [ch.zeros(dims)]
+    for step in range(steps):
+        states.append(transition @ states[-1] + drift + noise[step])
+    return ch.stack(states)
+
+
+def _observed(phi: Callable, states: ch.Tensor) -> ch.Tensor:
+    """Return phi's mask over states, shaped (n,)."""
+    return phi(states[:, None, :]).reshape(-1)
+
+
+def pair_fraction(phi: Callable, states: ch.Tensor) -> float:
+    """Return the fraction of steps whose state and successor phi observes."""
+    observed = _observed(phi, states)
+    return float((observed[:-1] & observed[1:]).float().mean())
+
+
+def calibrate(
+    family: Callable[[float], Callable],
+    states: ch.Tensor,
+    target: float,
+    bounds: tuple[float, float],
+    steps: int = 40,
+) -> float:
+    """Return the threshold whose set observes ``target`` of states' pairs.
+
+    Args:
+        family: Maps a threshold to an oracle; its pair fraction must be
+            monotone in the threshold over bounds.
+        states: A trajectory to measure the pair fraction on.
+        target: The pair fraction to reach.
+        bounds: Thresholds whose pair fractions straddle target.
+        steps: Halvings of bounds.
+    """
+    low, high = bounds
+    low_above = pair_fraction(family(low), states) > target
+    for _ in range(steps):
+        middle = (low + high) / 2.0
+        if (pair_fraction(family(middle), states) > target) == low_above:
+            low = middle
+        else:
+            high = middle
+    return (low + high) / 2.0
+
+
+def simulate_dynamics(  # pylint: disable=too-many-arguments
+    transition: ch.Tensor,
+    phi: Callable,
+    steps: int,
+    *,
+    drift: Optional[ch.Tensor] = None,
+    noise_var: Optional[ch.Tensor] = None,
+    fit_intercept: bool = True,
+    seed: int = 0,
+) -> Simulation:
+    """Run ``x_{t+1} = A x_t + b + w_t`` from 0 and keep the pairs phi observes.
+
+    Args:
+        transition: As ``trajectory``.
+        phi: Oracle over states shaped (n, m, d), returning a mask.
+        steps: As ``trajectory``.
+        drift: As ``trajectory``.
+        noise_var: As ``trajectory``.
+        fit_intercept: Whether the OLS fit has an intercept.
+        seed: As ``trajectory``.
+
+    Returns:
+        The pairs ``(x_t, x_{t+1})`` with both states observed, in temporal
+        order, as X and y. alpha is the fraction of observed states whose
+        successor is observed too.
+    """
+    states = trajectory(transition, steps, drift=drift, noise_var=noise_var, seed=seed)
+    dims = transition.size(0)
+    observed = _observed(phi, states)
+    paired = observed[:-1] & observed[1:]
+    X, y = states[:-1][paired], states[1:][paired]  # pylint: disable=invalid-name
+    design = ch.cat([X, ch.ones(X.size(0), 1)], dim=1) if fit_intercept else X
+    ols = ch.linalg.lstsq(design.double(), y.double()).solution.T.float()  # pylint: disable=not-callable
+    return Simulation(
+        X=X,
+        y=y,
+        coef=transition,
+        intercept=ch.zeros(dims) if drift is None else drift,
+        noise_var=1.0 if noise_var is None else noise_var,
+        phi=phi,
+        alpha=int(paired.sum()) / int(observed[:-1].sum()),
+        ols_coef=ols[:, :dims],
+        ols_intercept=ols[:, dims] if fit_intercept else ch.zeros(dims),
+    )
+
+
 def assert_recovers(
     model,
     simulation: Simulation,
@@ -156,7 +274,8 @@ def assert_recovers(
             )
         if getattr(model, "noise_var", 1.0) is None:
             variance = float(getattr(model, f"{prefix}variance_"))
-            assert abs(variance - simulation.noise_var) <= variance_tolerance, (
+            truth = float(simulation.noise_var)
+            assert abs(variance - truth) <= variance_tolerance, (
                 f"{prefix}variance_: {variance:.4f} against "
                 f"{simulation.noise_var}, beyond {variance_tolerance}"
             )

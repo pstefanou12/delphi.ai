@@ -6,10 +6,14 @@ variance given, and with it learned (``noise_var=None``). Each tolerance is
 about twice the error of the exact truncated MLE on the same sample,
 measured with the closed-form NLL, over the weight alone when the variance is
 known and over (weight, variance) when it is not; every estimate lands within
-a few hundredths of that MLE. The dependent-data cases follow, then both
-variants' confidence intervals: their covariance against the exact NLL's,
-and their coverage over repeated samples, on two cases by default and on
-every regression case with ``--coverage-sweep``.
+a few hundredths of that MLE. The dependent-data cases follow: the observed
+pairs of one trajectory of a stable linear dynamical system, through a set
+whose threshold is calibrated to a fraction of steps yielding a pair. Each
+tolerance is about twice the worst estimate's error at its seed, checked
+against least squares on the same pairs; the small-mass and mode-excluding
+sets must also exercise the censor-oblivious gradient. Then both variants' confidence intervals: their covariance
+against the exact NLL's, and their coverage over repeated samples, on two
+cases by default and on every regression case with ``--coverage-sweep``.
 """
 
 from collections.abc import Callable, Sequence
@@ -24,15 +28,11 @@ import torch as ch
 import torch.autograd.functional
 import torch.nn.functional
 
+import delphi.oracle
 from delphi.stats.truncated import truncated_linear_regression
-from delphi.stats.truncated import (
-    truncated_linear_regression as truncated_linear_regression_module,
-)
 from delphi.stats.truncated.tests import regression
-from delphi.utils import helpers
 
 INF = math.inf
-SEED = 69
 
 # The (low, high) intervals whose union is a truncation set.
 Bounds = Sequence[tuple[float, float]]
@@ -75,7 +75,7 @@ def _fit(  # pylint: disable=too-many-arguments
         ols_margin: As ``regression.assert_recovers``.
         fit_intercept: Whether to fit an intercept.
     """
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi,
         simulation.alpha if alpha_known else None,
         noise_var=simulation.noise_var if variance_known else None,
@@ -334,113 +334,337 @@ def test_10d_union_of_intervals_noise_var_10(variance_known):
     _fit(simulation, variance_known, 0.40, (0.39, 0.22))
 
 
+_TRANSITION_2D = ch.tensor([[0.7, 0.2], [-0.1, 0.8]])
+# Slow along x_1 and fast along x_2, so a state can sit outside a set
+# around the mode while its successor's mean lies deep inside it.
+_ANISOTROPIC_2D = ch.diag(ch.tensor([0.9, 0.3]))
+_CORRELATED_NOISE_2D = ch.tensor([[2.0, 0.8], [0.8, 1.0]])
+_DRIFT_2D = ch.tensor([0.5, -0.3])
+
+# Maps a threshold to an oracle over states shaped (n, m, d).
+Family = Callable[[float], Callable[[ch.Tensor], ch.Tensor]]
+
+
+def _symmetric_transition(dims: int) -> ch.Tensor:
+    """Return a symmetric A with eigenvalues spread over [0.3, 0.8]."""
+    draws = ch.randn(dims, dims, generator=ch.Generator().manual_seed(1))
+    rotation, _ = ch.linalg.qr(draws)  # pylint: disable=not-callable
+    return rotation @ ch.diag(ch.linspace(0.3, 0.8, dims)) @ rotation.T
+
+
+def _half_spaces(normal: ch.Tensor) -> Family:
+    """Return the sets ``{x : normal^T x >= c}``."""
+
+    def family(offset):
+        return lambda x: (x @ normal >= offset)[..., None]
+
+    return family
+
+
+def _norm_at_least(radius: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the states outside the ball of the given radius around 0."""
+    return lambda x: x.norm(dim=-1, keepdim=True) >= radius
+
+
+def _figure_1b(offset: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the states with ``x_1 >= c + 0.2`` and ``x_2 >= c``."""
+    return lambda x: (x[..., :1] >= offset + 0.2) & (x[..., 1:] >= offset)
+
+
+def _discs(radius: float) -> Callable[[ch.Tensor], ch.Tensor]:
+    """Admit the union of four discs centred 1.5 from the origin on the axes."""
+    centres = 1.5 * ch.cat([ch.eye(2), -ch.eye(2)])
+
+    def phi(x):
+        distances = (x[..., None, :] - centres).norm(dim=-1)
+        return (distances <= radius).any(-1, keepdim=True)
+
+    return phi
+
+
+def _dynamics_case(  # pylint: disable=too-many-arguments
+    transition: ch.Tensor,
+    family: Family,
+    target: float,
+    bounds: tuple[float, float],
+    steps: int,
+    **options,
+) -> Callable[[], regression.Simulation]:
+    """Return a map to the pairs of a trajectory through a calibrated set.
+
+    The set is family's member whose observed-pair fraction is target on
+    another trajectory, seed 1; the pairs come from seed 0, whose fraction
+    must land within a quarter of target.
+
+    Args:
+        transition: The A.
+        family: The sets, by threshold.
+        target: The fraction of steps that yield a pair.
+        bounds: Thresholds whose fractions straddle target.
+        steps: Length of each trajectory.
+        **options: ``drift`` and ``noise_var``, as ``regression.trajectory``,
+            and ``fit_intercept``, as ``regression.simulate_dynamics``.
+    """
+
+    def simulate() -> regression.Simulation:
+        motion = {key: options[key] for key in ("drift", "noise_var") if key in options}
+        calibration = regression.trajectory(transition, steps, seed=1, **motion)
+        threshold = regression.calibrate(family, calibration, target, bounds)
+        simulation = regression.simulate_dynamics(
+            transition, family(threshold), steps, **options
+        )
+        fraction = simulation.X.size(0) / steps
+        assert 0.75 * target <= fraction <= 1.25 * target, fraction
+        return simulation
+
+    return simulate
+
+
+_HALF_LINES_1D = _half_spaces(ch.tensor([1.0]))
+_HALF_PLANES_2D = _half_spaces(ch.tensor([1.0, 1.0]))
+_DYNAMICS: dict[str, Callable[[], regression.Simulation]] = {
+    "1d_half_line": _dynamics_case(
+        ch.tensor([[0.5]]), _HALF_LINES_1D, 0.2, (-3.0, 5.0), 25000
+    ),
+    "1d_half_line_no_intercept": _dynamics_case(
+        ch.tensor([[0.5]]),
+        _HALF_LINES_1D,
+        0.2,
+        (-3.0, 5.0),
+        25000,
+        fit_intercept=False,
+    ),
+    "1d_union_of_intervals": _dynamics_case(
+        ch.tensor([[0.5]]),
+        lambda c: _intervals((-INF, -c), (0.0, c / 2.0), (c, INF)),
+        0.3,
+        (0.01, 5.0),
+        17000,
+    ),
+    "1d_interval": _dynamics_case(
+        ch.tensor([[0.5]]), lambda c: _intervals((0.0, c)), 0.3, (0.01, 8.0), 17000
+    ),
+    # A thin window at the mode, whose successors rarely survive, and a far
+    # half-line, whose usually do: in all about 5% of the trajectory.
+    "1d_small_mass": _dynamics_case(
+        ch.tensor([[0.95]]),
+        lambda c: _intervals((-0.1, 0.1), (c, INF)),
+        0.02,
+        (0.5, 15.0),
+        200000,
+    ),
+    "2d_half_plane": _dynamics_case(
+        _TRANSITION_2D, _HALF_PLANES_2D, 0.25, (-5.0, 8.0), 20000
+    ),
+    "2d_half_plane_drift": _dynamics_case(
+        _TRANSITION_2D,
+        _HALF_PLANES_2D,
+        0.25,
+        (-5.0, 12.0),
+        20000,
+        drift=_DRIFT_2D,
+    ),
+    "2d_half_plane_correlated_noise": _dynamics_case(
+        _TRANSITION_2D,
+        _HALF_PLANES_2D,
+        0.25,
+        (-5.0, 8.0),
+        20000,
+        noise_var=_CORRELATED_NOISE_2D,
+    ),
+    "2d_figure_1b": _dynamics_case(
+        _TRANSITION_2D, _figure_1b, 0.15, (-5.0, 5.0), 33000
+    ),
+    "2d_union_of_discs": _dynamics_case(
+        _TRANSITION_2D, _discs, 0.25, (0.01, 1.5), 20000
+    ),
+    "2d_ball_removed": _dynamics_case(
+        _ANISOTROPIC_2D, _norm_at_least, 0.3, (0.0, 10.0), 17000
+    ),
+    "5d_random_half_space": _dynamics_case(
+        _symmetric_transition(5),
+        _half_spaces(
+            torch.nn.functional.normalize(
+                ch.randn(5, generator=ch.Generator().manual_seed(2)), dim=0
+            )
+        ),
+        0.25,
+        (-8.0, 8.0),
+        20000,
+    ),
+    "10d_sum": _dynamics_case(
+        _symmetric_transition(10), _half_spaces(ch.ones(10)), 0.3, (-20.0, 20.0), 40000
+    ),
+    "10d_ball_removed": _dynamics_case(
+        _symmetric_transition(10), _norm_at_least, 0.3, (0.0, 15.0), 40000
+    ),
+}
+
+
+def _fit_dynamics(
+    simulation: regression.Simulation,
+    tolerance: float,
+    ols_margin: float,
+    *,
+    alpha: Optional[float] = None,
+    oblivious: Optional[float] = None,
+    fit_intercept: bool = True,
+) -> None:
+    """Fit dependent regression to a trajectory's pairs and check its estimates.
+
+    Args:
+        simulation: The pairs and their truth, A as coef and b as intercept.
+        tolerance: As ``regression.assert_recovers``, over A and b together.
+        ols_margin: As ``regression.assert_recovers``.
+        alpha: The model's alpha; the observed pairs' fraction if None.
+        oblivious: Least share of the descent's pairs that must take the
+            censor-oblivious gradient, and of those that must not; None
+            skips the check.
+        fit_intercept: Whether the model fits b.
+    """
+    model = truncated_linear_regression.TruncatedLinearRegression(
+        simulation.phi,
+        simulation.alpha if alpha is None else alpha,
+        noise_var=simulation.noise_var,
+        dependent=True,
+        fit_intercept=fit_intercept,
+    )
+    regression.assert_recovers(model, simulation, tolerance, ols_margin=ols_margin)
+    if oblivious is not None:
+        metrics = model.final_run.metrics
+        pairs = metrics["censor_oblivious"] + metrics["censor_aware"]
+        share = metrics["censor_oblivious"] / pairs
+        assert oblivious <= share <= 1.0 - oblivious, share
+
+
+def test_lds_1d_half_line():
+    _fit_dynamics(_DYNAMICS["1d_half_line"](), 0.16, 0.15)
+
+
+def test_lds_1d_half_line_no_intercept():
+    _fit_dynamics(
+        _DYNAMICS["1d_half_line_no_intercept"](), 0.0065, 0.02, fit_intercept=False
+    )
+
+
+# alpha is a lower bound on the survival mass, here well below it.
+def test_lds_1d_half_line_loose_alpha():
+    _fit_dynamics(_DYNAMICS["1d_half_line"](), 0.15, 0.15, alpha=0.1)
+
+
+def test_lds_1d_union_of_intervals():
+    _fit_dynamics(_DYNAMICS["1d_union_of_intervals"](), 0.025, 0.12)
+
+
+def test_lds_1d_interval():
+    _fit_dynamics(_DYNAMICS["1d_interval"](), 0.33, 0.4)
+
+
+def test_lds_1d_small_mass():
+    _fit_dynamics(_DYNAMICS["1d_small_mass"](), 0.39, 0.9, oblivious=0.005)
+
+
+def test_lds_2d_half_plane():
+    _fit_dynamics(_DYNAMICS["2d_half_plane"](), 0.16, 0.17)
+
+
+# The drift moves the stationary mean (I - A)^-1 b against the set.
+def test_lds_2d_half_plane_drift():
+    _fit_dynamics(_DYNAMICS["2d_half_plane_drift"](), 0.09, 0.14)
+
+
+def test_lds_2d_half_plane_correlated_noise():
+    _fit_dynamics(_DYNAMICS["2d_half_plane_correlated_noise"](), 0.22, 0.15)
+
+
+def test_lds_2d_figure_1b():
+    _fit_dynamics(_DYNAMICS["2d_figure_1b"](), 0.3, 0.3)
+
+
+def test_lds_2d_union_of_discs():
+    _fit_dynamics(_DYNAMICS["2d_union_of_discs"](), 0.11, 0.46)
+
+
+def test_lds_2d_ball_removed():
+    _fit_dynamics(_DYNAMICS["2d_ball_removed"](), 0.09, 0.88, oblivious=0.005)
+
+
+# Without truncation least squares on every pair is the MLE, while the
+# descent steps on three quarters of them at a step above 1.
+def test_lds_2d_no_truncation():
+    simulation = regression.simulate_dynamics(
+        _TRANSITION_2D, delphi.oracle.Identity(), 5000
+    )
+    _fit_dynamics(simulation, 0.065, 2.7)
+
+
+def test_lds_5d_random_half_space():
+    _fit_dynamics(_DYNAMICS["5d_random_half_space"](), 0.31, 0.32)
+
+
 @pytest.mark.slow
-def test_truncated_dependent_regression():
-    ch.manual_seed(SEED)
-    D = 10  # number of dimensions for A_{*} matrix
-    T = 10000  # uncensored system trajectory length
+def test_lds_10d_sum():
+    _fit_dynamics(_DYNAMICS["10d_sum"](), 0.31, 0.37)
 
-    spectral_norm = float("inf")
-    while spectral_norm > 1.0:
-        A = 0.25 * ch.randn((D, D))
-        spectral_norm = helpers.calc_spectral_norm(A)
 
-    spectral_norm = helpers.calc_spectral_norm(A)
-    print(f"A spectral norm: {helpers.calc_spectral_norm(A)}")
+@pytest.mark.slow
+def test_lds_10d_ball_removed():
+    _fit_dynamics(_DYNAMICS["10d_ball_removed"](), 0.18, 0.7)
 
-    phi_bound = 4.0
 
-    def phi(x):
-        return x.norm(dim=-1, keepdim=True) <= phi_bound
+def test_dependent_alpha_unknown_raises():
+    with pytest.raises(ValueError, match="alpha"):
+        truncated_linear_regression.TruncatedLinearRegression(
+            delphi.oracle.Identity(), None, noise_var=1.0, dependent=True
+        )
 
-    X, Y = ch.tensor([]), ch.tensor([])
-    NOISE_VAR = ch.eye(D)
-    M = ch.distributions.MultivariateNormal(ch.zeros(D), NOISE_VAR)
-    x_t = ch.zeros((1, D))
-    for _ in range(T):
-        noise = M.sample()
-        y_t = x_t @ A + noise
-        if phi(y_t):  # returns a boolean
-            X = ch.cat([X, x_t])
-            Y = ch.cat([Y, y_t])
-        x_t = y_t
 
-    alpha = X.size(0) / T
+def test_dependent_step_is_an_online_newton_step():
+    """One step is ``W - eta Sigma_1^-1 x (x^T W - y)^T``, with ``Sigma_1 = Sigma_0 + x x^T``.
 
-    print(f"alpha: {alpha}")
-
-    train_kwargs = {
-        "c_eta": 0.5,
-        "epochs": 1,
-        "trials": 1,
-        "batch_size": 1,
-        "num_samples": 100,
-        "T": X.size(0),
-        "c_s": 10.0,
-        "alpha": alpha,
-        "tol": 1e-1,
-        "c_gamma": 2.0,
-    }
-    trunc_lds = truncated_linear_regression_module.TruncatedLinearRegression(
-        phi,
-        train_kwargs["alpha"],
-        noise_var=NOISE_VAR,
-        dependent=True,
-        rand_seed=SEED,
-        hyperparameters=train_kwargs,
+    c_gamma near 0 puts the test's threshold above 1, so the gradient is the
+    censor-oblivious one, and a huge c_s keeps the step inside the ellipsoid.
+    """
+    simulation = regression.simulate_dynamics(
+        _TRANSITION_2D, delphi.oracle.Identity(), 400
     )
-    trunc_lds.fit(X, Y)
-    # coef_ is (outputs, inputs), and y_t = x_t A, so it estimates A^T.
-    A_ = trunc_lds.coef_.T
-    A0_ = trunc_lds.emp_coef_.T
-    trunc_spec_norm = helpers.calc_spectral_norm(A - A_)
-    emp_spec_norm = helpers.calc_spectral_norm(A - A0_)
-
-    print(f"alpha: {alpha}")
-    print(f"A spectral norm: {spectral_norm}")
-    print(f"truncated spectral norm: {trunc_spec_norm}")
-    print(f"ols spectral norm: {emp_spec_norm}")
-
-    assert trunc_spec_norm <= emp_spec_norm, (
-        f"truncated spectral norm {trunc_spec_norm}, while OLS spectral norm is: {emp_spec_norm}"
-    )
-
-
-def test_dependent_step_is_preconditioned_by_sigma():
-    """SON-SG's step is -lr Sigma^-1 grad, with Sigma updated by the batch."""
-    ch.manual_seed(SEED)
-    dims, num_samples = 3, 200
-    X = ch.randn(num_samples, dims)
-    Y = X @ (0.5 * ch.eye(dims)) + ch.randn(num_samples, dims)
-
-    def phi(x):
-        return x.norm(dim=-1, keepdim=True) <= 10.0
-
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
-        phi,
-        0.9,
-        noise_var=ch.eye(dims),
+    model = truncated_linear_regression.TruncatedLinearRegression(
+        delphi.oracle.Identity(),
+        1.0,
+        noise_var=1.0,
         dependent=True,
-        hyperparameters={"iterations": 1, "num_samples": 10},
-    ).fit(X, Y)
-    model.trainer._reset_run_state()  # pylint: disable=protected-access
+        fit_intercept=False,
+        hyperparameters={"iterations": 1, "c_gamma": 1e-3, "c_s": 1e6},
+    ).fit(simulation.X, simulation.y)
     design, targets = model._data  # pylint: disable=protected-access
-    inp, targ = design[:50], targets[:50]
-    start, sigma = model.weight.detach().clone(), model.Sigma.clone()  # pylint: disable=no-member
+    warmup = model._warmup_size  # pylint: disable=protected-access
+    start = model.emp_start
+    x, y = design[warmup][:, None], targets[warmup][:, None]
+    sigma = model._sigma_0() + x @ x.T  # pylint: disable=protected-access
+    eta = model.hyperparameters.lr
+    expected = start - eta * ch.linalg.solve(sigma, x @ (x.T @ start - y.T))  # pylint: disable=not-callable
+    assert ch.allclose(model.Sigma, sigma)
+    assert ch.allclose(model.weight.detach(), expected, atol=1e-5)
 
-    ch.manual_seed(1)
-    model.trainer.train_step((inp, targ))
-    step = model.weight.detach() - start
 
-    sigma = sigma + ch.einsum("ni,nj->ij", inp, inp) / inp.size(0)
-    weight = start.clone().requires_grad_()
-    ch.manual_seed(1)
-    loss = model.required_criterion(inp @ weight, targ, *model.criterion_params)  # pylint: disable=not-callable
-    (plain,) = ch.autograd.grad(loss.sum(), weight)
-    lr = model.optimizer.param_groups[0]["lr"]
-    expected = -lr * ch.linalg.solve(sigma, plain)  # pylint: disable=not-callable
-    assert ch.allclose(step, expected, atol=1e-5), (step, expected)
-    assert not ch.allclose(step, -lr * plain, atol=1e-5)
+def test_confidence_ellipsoid_projects_in_the_metric_norm():
+    ch.manual_seed(0)
+    factors = ch.randn(2, 4, 4, dtype=ch.float64)
+    sigma_0, metric = factors @ factors.mT + 0.1 * ch.eye(4, dtype=ch.float64)
+    anchor = ch.randn(4, 2, dtype=ch.float64)
+    ellipsoid = truncated_linear_regression.ConfidenceEllipsoid(anchor, sigma_0, metric)
+    inside = anchor + 1e-3 * ch.randn(4, 2, dtype=ch.float64)
+    assert ellipsoid.project(inside) is inside
+    point = anchor + 10.0 * ch.randn(4, 2, dtype=ch.float64)
+    projected = ellipsoid.project(point)
+    offset = projected - anchor
+    assert math.isclose(float((offset * (sigma_0 @ offset)).sum()), 1.0, rel_tol=1e-6)
+    # Nearest in the metric's norm: its pull is a positive multiple of the
+    # ellipsoid's normal there.
+    pull, normal = metric @ (point - projected), sigma_0 @ offset
+    scale = float((pull * normal).sum() / (normal * normal).sum())
+    assert scale > 0.0
+    assert ch.allclose(pull, scale * normal, atol=1e-8 * float(pull.abs().max()))
 
 
 def _unknown_variance_set() -> truncated_linear_regression.UnknownVarianceSet:
@@ -568,7 +792,7 @@ def _design_and_responses(
 
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi, simulation.alpha, noise_var=None
     ).fit(simulation.X, simulation.y)
     variance = model.avg_variance_
@@ -590,7 +814,7 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
 
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
-    model = truncated_linear_regression_module.TruncatedLinearRegression(
+    model = truncated_linear_regression.TruncatedLinearRegression(
         simulation.phi, simulation.alpha, noise_var=simulation.noise_var
     ).fit(simulation.X, simulation.y)
     weight = ch.cat([model.avg_coef_.flatten(), model.avg_intercept_]).double()
@@ -645,7 +869,7 @@ def _coverage_hits(
     covered = []
     for seed in range(chunk * size, (chunk + 1) * size):
         simulation = simulate(seed)
-        model = truncated_linear_regression_module.TruncatedLinearRegression(
+        model = truncated_linear_regression.TruncatedLinearRegression(
             simulation.phi,
             simulation.alpha,
             noise_var=simulation.noise_var if variance_known else None,
