@@ -1,9 +1,14 @@
 # Author: pstefanou12@
 """A polynomial basis made orthonormal under samples from any distribution.
 
-Classical families are orthogonal under one weight each. For any other law
-``D`` that can be sampled, ``EmpiricalOrthonormal`` evaluates a base family
-on draws from ``D``, factors their Gram matrix ``G = L L^T``, and uses
+Hermite polynomials are orthonormal only under a Gaussian, and Laguerre
+polynomials only under a Gamma. A regression over polynomials is best
+conditioned in a basis orthonormal under the data's own distribution, which
+for most laws has no closed form. This module builds one from samples: same
+polynomials, new basis, with the interface of every other family here.
+
+For a law ``D`` that can be sampled, ``EmpiricalOrthonormal`` evaluates a base
+family on draws from ``D``, factors their Gram matrix ``G = L L^T``, and uses
 ``P(x) L^{-T}``: orthonormal under the draws, and so under ``D`` up to
 sampling error. The factor is triangular and the base orders its terms by
 degree, so each degree-prefix of the basis spans the base's polynomials of
