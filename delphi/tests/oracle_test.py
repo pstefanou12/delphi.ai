@@ -5,6 +5,7 @@ import pytest
 import torch as ch
 import torch.distributions
 
+from delphi.learning import l1_regression
 import delphi.oracle
 from delphi.torchnomials import hermite
 from delphi.transformations import standardization
@@ -119,3 +120,23 @@ def test_threshold_needs_a_fit():
     learned = delphi.oracle.PolynomialThreshold(hermite.Hermite(2, 2))
     with pytest.raises(RuntimeError, match="fit"):
         learned(ch.zeros(3, 2))
+
+
+def test_preconditioning_leaves_the_regression_optimum():
+    generator = ch.Generator().manual_seed(2)
+    points = ch.randn(2000, 2, dtype=ch.float64, generator=generator)
+    labels = (points.norm(dim=1) <= 1.2).double()
+    weights = ch.rand(2000, dtype=ch.float64, generator=generator)
+    basis = hermite.Hermite(3, 2, prob=True, norm=True)
+    learned = delphi.oracle.PolynomialThreshold(basis).fit(points, labels, weights)
+    direct = l1_regression.L1Regression().fit(basis.basis(points), labels, weights)
+    ch.testing.assert_close(learned.polynomial.coefficients, direct.coef_)
+
+
+def test_a_stalled_regression_warns():
+    points = ch.randn(500, 2, dtype=ch.float64, generator=ch.Generator().manual_seed(3))
+    learned = delphi.oracle.PolynomialThreshold(
+        hermite.Hermite(4, 2, prob=True, norm=True), hyperparameters={"iterations": 1}
+    )
+    with pytest.warns(UserWarning, match="without converging"):
+        learned.fit(points, (points[:, 0] > 0).double())

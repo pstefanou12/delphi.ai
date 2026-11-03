@@ -10,6 +10,7 @@ callable. The sets here carry state: ``Identity`` admits everything,
 import abc
 import copy
 from typing import Optional, cast
+import warnings
 
 import torch as ch
 import torch.distributions
@@ -261,10 +262,23 @@ class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
         design = self.polynomial.basis(X).to(ch.float64)
         target = y.to(design)
         weights = ch.ones_like(target) if weights is None else weights.to(design)
+        # The basis is orthonormal under its own weight, not under this
+        # sample: at degree 24 its columns reached condition number 5e9 and
+        # the solver stalled. L1 regression's optimum does not depend on the
+        # basis, so solve in one orthonormal under the weighted sample.
+        _, factor = ch.linalg.qr(design * weights.sqrt()[:, None])  # pylint: disable=not-callable
+        orthonormal = ch.linalg.solve_triangular(factor, design, upper=True, left=False)  # pylint: disable=not-callable
         self.regression = l1_regression.L1Regression(
             hyperparameters=self.hyperparameters
-        ).fit(design, target, weights)
-        coefficients = cast(ch.Tensor, self.regression.coef_)
+        ).fit(orthonormal, target, weights)
+        if not self.regression.converged_:
+            warnings.warn(
+                "the L1 regression stopped without converging (duality gap "
+                f"{self.regression.gap_:.2e}); the threshold may be poor.",
+                stacklevel=2,
+            )
+        solution = cast(ch.Tensor, self.regression.coef_)[:, None]
+        coefficients = ch.linalg.solve_triangular(factor, solution, upper=True)[:, 0]  # pylint: disable=not-callable
         self.polynomial.coefficients = coefficients
         self.threshold = _least_error_threshold(design @ coefficients, target, weights)
         return self

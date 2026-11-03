@@ -64,7 +64,7 @@ def _error(
 
 # Errors measured over seeds 0 to 4. With the reference equal to the truth:
 # half plane 0.0003 to 0.0024, disc 0.003 to 0.011, square 0.063 to 0.080
-# (the degree-8 approximation's own error). With the reference shifted by
+# at degree 8 (the approximation's own error) and 0.017 to 0.031 at 24. With the reference shifted by
 # 0.2 and widened by 1.15: half plane 0.019 to 0.047, disc 0.036 to 0.051.
 # Every case's trivial set, all of space, is wrong on 0.61 to 0.66.
 @pytest.mark.parametrize(
@@ -73,10 +73,18 @@ def _error(
         (_normal(), _half_plane, 1, 0.005),
         (_normal(), _disc, 2, 0.025),
         (_normal(), _box, 8, 0.16),
+        pytest.param(_normal(), _box, 24, 0.06, marks=pytest.mark.slow),
         (_normal(0.2, 1.15), _half_plane, 1, 0.1),
         (_normal(0.2, 1.15), _disc, 2, 0.1),
     ],
-    ids=["half_plane", "disc", "square", "half_plane_shifted", "disc_shifted"],
+    ids=[
+        "half_plane",
+        "disc",
+        "square",
+        "square_degree_24",
+        "half_plane_shifted",
+        "disc_shifted",
+    ],
 )
 def test_learns_a_gaussian_truncation_set(reference, member, degree, tolerance):
     basis = hermite.Hermite(degree, 2, prob=True, norm=True)
@@ -84,17 +92,18 @@ def test_learns_a_gaussian_truncation_set(reference, member, degree, tolerance):
 
 
 # Errors measured over seeds 0 to 4. With the reference equal to the truth:
-# half plane 0.0009 to 0.0055, box 0.073 to 0.141 (the degree-8
-# approximation's own error). With the reference's rate at 0.85: half plane
+# half plane 0.0009 to 0.0055, box 0.073 to 0.141 at degree 8 (the
+# approximation's own error) and 0.024 to 0.027 at 24. With the reference's rate at 0.85: half plane
 # 0.004 to 0.014. The trivial set is wrong on 0.44 and 0.64.
 @pytest.mark.parametrize(
     "reference,member,degree,tolerance",
     [
         (_exponential(), _positive_half_plane, 1, 0.012),
         (_exponential(), _positive_box, 8, 0.28),
+        pytest.param(_exponential(), _positive_box, 24, 0.06, marks=pytest.mark.slow),
         (_exponential(0.85), _positive_half_plane, 1, 0.03),
     ],
-    ids=["half_plane", "box", "half_plane_shifted"],
+    ids=["half_plane", "box", "box_degree_24", "half_plane_shifted"],
 )
 def test_learns_an_exponential_truncation_set(reference, member, degree, tolerance):
     basis = laguerre.Laguerre(degree, 2, norm=True)
