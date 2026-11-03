@@ -1,10 +1,11 @@
 # Author: pstefanou12@
-"""Abstract polynomial family over total-degree multi-indices.
+"""Abstract polynomial families over total-degree multi-indices.
 
-A family supplies its univariate polynomials ``P_0, ..., P_k``, their squared
-norms under its weight measure ``w``, and ``w`` itself. In d dimensions a
-multi-index ``V`` names the product ``P_V(x) = prod_i P_{V_i}(x_i)``, and the
-basis holds every ``V`` of total degree at most k: ``C(k + d, d)`` terms.
+A ``Polynomial`` supplies its basis, the squared norms of the basis under its
+weight measure ``w``, and ``w`` itself. Its basis holds one polynomial per
+multi-index ``V`` of total degree at most k: ``C(k + d, d)`` terms in d
+dimensions. A ``ProductPolynomial`` builds that basis from univariate
+polynomials ``P_0, ..., P_k``, as the products ``P_V(x) = prod_i P_{V_i}(x_i)``.
 
 Fitting to samples from a law ``D`` sets ``c_V = E_D[P_V] / ||P_V||^2``,
 the coefficients of the density ratio ``dD / dw`` when the family is
@@ -117,19 +118,19 @@ class Polynomial(abc.ABC):
         self.coefficients: Optional[ch.Tensor] = None
 
     @abc.abstractmethod
-    def univariate(self, x: ch.Tensor) -> ch.Tensor:
-        """Return ``P_0, ..., P_degree`` at every coordinate of every row.
+    def basis(self, x: ch.Tensor) -> ch.Tensor:
+        """Evaluate every polynomial in the basis, in ``multi_indices`` order.
 
         Args:
-            x: Batch of shape ``(n, dims)``.
+            x: Batch of shape ``(n, dims)``, or ``(n,)`` when dims is one.
 
         Returns:
-            Tensor of shape ``(n, dims, degree + 1)``.
+            Tensor of shape ``(n, num_terms)``.
         """
 
     @abc.abstractmethod
-    def univariate_squared_norms(self) -> ch.Tensor:
-        """Return ``||P_j||^2`` under the weight measure, for j up to degree."""
+    def squared_norms(self) -> ch.Tensor:
+        """Return each basis polynomial's squared norm, shaped ``(num_terms,)``."""
 
     @abc.abstractmethod
     def weight(self) -> torch.distributions.Distribution:
@@ -139,26 +140,6 @@ class Polynomial(abc.ABC):
     def num_terms(self) -> int:
         """Number of polynomials in the basis."""
         return self.multi_indices.size(0)
-
-    def squared_norms(self) -> ch.Tensor:
-        """Return ``||P_V||^2`` for every multi-index, shaped ``(num_terms,)``."""
-        univariate = self.univariate_squared_norms()
-        return univariate[self.multi_indices].prod(dim=1)
-
-    def basis(self, x: ch.Tensor) -> ch.Tensor:
-        """Evaluate every ``P_V`` in the basis.
-
-        Args:
-            x: Batch of shape ``(n, dims)``, or ``(n,)`` when dims is one.
-
-        Returns:
-            Tensor of shape ``(n, num_terms)``.
-        """
-        univariate = self.univariate(self._as_batch(x))
-        values = univariate[:, 0, self.multi_indices[:, 0]]
-        for i in range(1, self.dims):
-            values = values * univariate[:, i, self.multi_indices[:, i]]
-        return values
 
     def fit(self, x: ch.Tensor) -> "Polynomial":
         """Set the coefficients from samples, ``c_V = mean(P_V) / ||P_V||^2``.
@@ -223,3 +204,42 @@ class Polynomial(abc.ABC):
                 f"expected a batch of shape (n, {self.dims}); got {tuple(x.shape)}."
             )
         return x
+
+
+class ProductPolynomial(Polynomial):
+    """A family whose basis is products of univariate polynomials."""
+
+    @abc.abstractmethod
+    def univariate(self, x: ch.Tensor) -> ch.Tensor:
+        """Return ``P_0, ..., P_degree`` at every coordinate of every row.
+
+        Args:
+            x: Batch of shape ``(n, dims)``.
+
+        Returns:
+            Tensor of shape ``(n, dims, degree + 1)``.
+        """
+
+    @abc.abstractmethod
+    def univariate_squared_norms(self) -> ch.Tensor:
+        """Return ``||P_j||^2`` under the weight measure, for j up to degree."""
+
+    def squared_norms(self) -> ch.Tensor:
+        """Return ``||P_V||^2`` for every multi-index, shaped ``(num_terms,)``."""
+        univariate = self.univariate_squared_norms()
+        return univariate[self.multi_indices].prod(dim=1)
+
+    def basis(self, x: ch.Tensor) -> ch.Tensor:
+        """Evaluate every ``P_V`` in the basis.
+
+        Args:
+            x: Batch of shape ``(n, dims)``, or ``(n,)`` when dims is one.
+
+        Returns:
+            Tensor of shape ``(n, num_terms)``.
+        """
+        univariate = self.univariate(self._as_batch(x))
+        values = univariate[:, 0, self.multi_indices[:, 0]]
+        for i in range(1, self.dims):
+            values = values * univariate[:, i, self.multi_indices[:, i]]
+        return values
