@@ -6,6 +6,7 @@ import functools
 from typing import Optional
 
 import torch as ch
+import torch.distributions.transforms
 import torch.nn
 
 from delphi.configs.distributions.truncated import (
@@ -29,7 +30,7 @@ class TruncatedLevy(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         loc: ch.Tensor,
         alpha: Optional[float] = None,
@@ -39,7 +40,7 @@ class TruncatedLevy(
         """Initialize TruncatedLevy.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             loc: Known location, one per coordinate.
             alpha: Survival probability lower bound.
@@ -53,6 +54,15 @@ class TruncatedLevy(
         return (
             functools.partial(levy.Levy, self.loc),
             functools.partial(levy.Levy.calc_suff_stat, self.loc),
+        )
+
+    def _truncation_set_transform(self) -> torch.distributions.transforms.Transform:
+        """Learn the set in log(x - loc), where the heavy right tail is tame."""
+        return torch.distributions.transforms.ComposeTransform(
+            [
+                torch.distributions.transforms.AffineTransform(-self.loc, 1.0),
+                torch.distributions.transforms.ExpTransform().inv,
+            ]
         )
 
     def _calc_emp_model(self):

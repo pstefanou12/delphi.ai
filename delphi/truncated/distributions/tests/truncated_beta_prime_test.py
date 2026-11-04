@@ -176,3 +176,19 @@ def test_twenty_dimensions_small_mass():
         concentration0=concentration0,
         phi=calibrated.phi,
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.0021 and the
+    # learned set's error 0.0014 to 0.0020.
+    helpers.assert_family_learns_set(
+        model_class=truncated_beta_prime.TruncatedBetaPrime,
+        target=_beta_prime(ch.tensor([3.0]), ch.tensor([4.0])),
+        phi=lambda z: z[:, 0] > 0.9,
+        dims=1,
+        parameter=("concentration1_", "concentration0_"),
+        empirical=helpers.untruncated_mle(truncated_beta_prime.TruncatedBetaPrime, 1),
+        rebuild=_beta_prime,
+        tolerance=0.005,
+        set_tolerance=0.005,
+    )

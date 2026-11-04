@@ -16,7 +16,7 @@ class TruncatedNormal(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -24,7 +24,7 @@ class TruncatedNormal(
         """Initialize TruncatedNormal.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """

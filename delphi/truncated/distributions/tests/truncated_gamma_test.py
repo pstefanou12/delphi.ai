@@ -148,3 +148,20 @@ def test_indistinguishable_pair():
         model_args=(ch.tensor([2.0]),),
         rebuild=functools.partial(torch.distributions.Gamma, ch.tensor([2.0])),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0002 to 0.0033 and the
+    # learned set's error 0.042 to 0.053.
+    helpers.assert_family_learns_set(
+        model_class=truncated_gamma.TruncatedGamma,
+        target=torch.distributions.Gamma(ch.tensor([2.0]), ch.tensor([1.0])),
+        phi=lambda z: z[:, 0] > 2.0,
+        dims=1,
+        parameter="rate_",
+        empirical=lambda s: 2.0 / s.mean(0),
+        model_args=(ch.tensor([2.0]),),
+        rebuild=functools.partial(torch.distributions.Gamma, ch.tensor([2.0])),
+        tolerance=0.007,
+        set_tolerance=0.11,
+    )

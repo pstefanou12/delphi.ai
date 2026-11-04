@@ -196,3 +196,21 @@ def test_six_by_six_small_mass():
             target_alpha=(0.008, 0.02),
         ),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.043 to 0.10 and the
+    # learned set's error 0.087 to 0.14.
+    helpers.assert_family_learns_set(
+        model_class=truncated_inverse_wishart.TruncatedInverseWishart,
+        target=_inverse_wishart(ch.tensor([8.0]), _SCALE),
+        phi=lambda z: z[:, 0] < 1.6,
+        dims=2,
+        parameter=("df_", "scale_"),
+        empirical=helpers.untruncated_mle(
+            truncated_inverse_wishart.TruncatedInverseWishart, 2
+        ),
+        rebuild=_inverse_wishart,
+        tolerance=0.21,
+        set_tolerance=0.28,
+    )

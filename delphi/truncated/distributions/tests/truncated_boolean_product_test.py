@@ -4,6 +4,7 @@
 import functools
 from typing import Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -137,3 +138,12 @@ def test_indistinguishable_pair():
         parameter="probs_",
         empirical=lambda s: s.mean(0).clamp(1e-4, 1 - 1e-4),
     )
+
+
+def test_unknown_truncation_raises():
+    # On {0, 1} every power of a coordinate equals the coordinate.
+    ch.manual_seed(0)
+    sample = torch.distributions.Bernoulli(ch.tensor([0.3, 0.6])).sample([500])
+    model = truncated_boolean_product.TruncatedBooleanProduct(None, 2)
+    with pytest.raises(ValueError, match="truncation_set_degree"):
+        model.fit(sample[_not_both_set(sample)])

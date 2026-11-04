@@ -116,3 +116,18 @@ def test_indistinguishable_pair():
         parameter="df_",
         empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2, 1),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.011 and the
+    # learned set's error 0.045 to 0.048.
+    helpers.assert_family_learns_set(
+        model_class=truncated_chi2.TruncatedChi2,
+        target=torch.distributions.Chi2(ch.tensor([4.0])),
+        phi=lambda z: z[:, 0] > 5.0,
+        dims=1,
+        parameter="df_",
+        empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2, 1),
+        tolerance=0.02,
+        set_tolerance=0.1,
+    )

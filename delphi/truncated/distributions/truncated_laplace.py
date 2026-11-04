@@ -29,7 +29,7 @@ class TruncatedLaplace(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         loc: ch.Tensor,
         alpha: Optional[float] = None,
@@ -39,7 +39,7 @@ class TruncatedLaplace(
         """Initialize TruncatedLaplace.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             loc: Known location, one per coordinate.
             alpha: Survival probability lower bound.

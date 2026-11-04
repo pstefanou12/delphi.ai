@@ -49,3 +49,23 @@ def test_one_dimension():
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=torch.distributions.MultivariateNormal(emp_loc, covariance_matrix),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.004 to 0.013 and the
+    # learned set's error 0.070 to 0.085.
+    helpers.assert_family_learns_set(
+        model_class=lambda phi, dims, *args, **kwargs: (
+            truncated_normal_known_variance.TruncatedNormalKnownVariance(
+                phi, ch.eye(1), *args, **kwargs
+            )
+        ),
+        target=torch.distributions.MultivariateNormal(ch.zeros(1), ch.eye(1)),
+        phi=lambda z: z[:, 0] > 0.0,
+        dims=1,
+        parameter="loc_",
+        empirical=lambda s: s.mean(0),
+        rebuild=lambda loc: torch.distributions.MultivariateNormal(loc, ch.eye(1)),
+        tolerance=0.026,
+        set_tolerance=0.17,
+    )

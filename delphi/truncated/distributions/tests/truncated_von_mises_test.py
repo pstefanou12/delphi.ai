@@ -164,3 +164,20 @@ def test_indistinguishable_pair():
         empirical=helpers.untruncated_mle(truncated_von_mises.TruncatedVonMises, 1),
         divergence=von_mises_kl_divergence,
     )
+
+
+@pytest.mark.slow
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0014 and the
+    # learned set's error 0.0000 to 0.023.
+    helpers.assert_family_learns_set(
+        model_class=truncated_von_mises.TruncatedVonMises,
+        target=torch.distributions.VonMises(ch.tensor([0.0]), ch.tensor([2.0])),
+        phi=lambda z: z[:, 0] > 0.3,
+        dims=1,
+        parameter=("loc_", "concentration_"),
+        empirical=helpers.untruncated_mle(truncated_von_mises.TruncatedVonMises, 1),
+        divergence=von_mises_kl_divergence,
+        tolerance=0.005,
+        set_tolerance=0.045,
+    )

@@ -116,3 +116,18 @@ def test_indistinguishable_pair():
         parameter="scale_",
         empirical=lambda s: ch.sqrt((s**2).mean(0)),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0008 and the
+    # learned set's error 0.009 to 0.012.
+    helpers.assert_family_learns_set(
+        model_class=truncated_half_normal.TruncatedHalfNormal,
+        target=torch.distributions.HalfNormal(ch.tensor([1.5])),
+        phi=lambda z: z[:, 0] > 2.0,
+        dims=1,
+        parameter="scale_",
+        empirical=lambda s: ch.sqrt((s**2).mean(0)),
+        tolerance=0.005,
+        set_tolerance=0.025,
+    )

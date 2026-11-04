@@ -219,3 +219,18 @@ def test_phases_widen_a_budget_too_small_for_the_fit():
     assert len(fits["phases"].procedure.phases) > 1
     # It ends on its own, once a budget no longer binds.
     assert fits["phases"].procedure.stop_reason == "budget_not_binding"
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0020 and the
+    # learned set's error 0.083 to 0.085.
+    helpers.assert_family_learns_set(
+        model_class=truncated_poisson.TruncatedPoisson,
+        target=torch.distributions.Poisson(ch.tensor([3.0])),
+        phi=lambda z: z[:, 0] > 2,
+        dims=1,
+        parameter="rate_",
+        empirical=lambda s: s.mean(0),
+        tolerance=0.005,
+        set_tolerance=0.17,
+    )

@@ -220,3 +220,41 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     # Rate 100 puts exp(-50) of its mass above 0.5.
     with pytest.raises(ValueError, match="almost no mass on the truncation set"):
         model.hessian(ch.tensor([-100.0]))
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0011 and the
+    # learned set's error 0.025 to 0.028.
+    helpers.assert_family_learns_set(
+        model_class=truncated_exponential.TruncatedExponential,
+        target=torch.distributions.Exponential(ch.tensor([1.0])),
+        phi=lambda z: z[:, 0] > 1.0,
+        dims=1,
+        parameter="rate_",
+        empirical=lambda s: 1.0 / s.mean(0),
+        pass_alpha=False,
+        tolerance=0.005,
+        set_tolerance=0.06,
+    )
+
+
+def test_unknown_truncation_adopts_the_learned_set():
+    ch.manual_seed(0)
+    target = torch.distributions.Exponential(ch.tensor([1.0]))
+    sample = helpers.generate_truncated_distribution_dataset(
+        target, lambda z: z[:, 0] > 1.0, 2000
+    )
+    model = truncated_exponential.TruncatedExponential(
+        None,
+        1,
+        hyperparameters={
+            "iterations": 1,
+            "max_phases": 1,
+            "truncation_set_degree": 3,
+        },
+    ).fit(sample.S)
+    assert isinstance(model.truncation_set_, delphi.oracle.PolynomialThreshold)
+    assert model.phi is model.truncation_set_
+    assert model.truncation_set_.polynomial.degree == 3
+    fitted = model.train_loader_.dataset.S.size(0) + model.val_loader_.dataset.S.size(0)
+    assert fitted == int(model.truncation_set_(sample.S).sum())

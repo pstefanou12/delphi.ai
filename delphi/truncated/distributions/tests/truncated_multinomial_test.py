@@ -147,3 +147,14 @@ def test_indistinguishable_pair():
         rebuild=functools.partial(torch.distributions.Multinomial, _TRIALS),
         divergence=multinomial_kl_divergence,
     )
+
+
+def test_unknown_truncation_raises():
+    # Every sample sums to the trials, so no polynomial basis is independent
+    # on them.
+    ch.manual_seed(0)
+    target = torch.distributions.Multinomial(_TRIALS, ch.tensor([0.2, 0.3, 0.5]))
+    sample = target.sample([500])
+    model = truncated_multinomial.TruncatedMultinomial(None, 3, _TRIALS)
+    with pytest.raises(ValueError, match="truncation_set_degree"):
+        model.fit(sample[sample[:, 0] >= 4])

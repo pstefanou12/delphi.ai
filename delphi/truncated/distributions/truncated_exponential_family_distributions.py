@@ -1,5 +1,11 @@
 # Author: pstefanou12@
-"""Parent class for truncated exponential distribution model classes."""
+"""Parent class for truncated exponential distribution model classes.
+
+Constructed with ``phi=None``, a family first learns the truncation set from
+its sample, as Lee, Mehrotra and Zampetakis (2024) do, then fits as if the
+learned set were known. The reference distribution of their set learner is
+the family's untruncated fit to the sample.
+"""
 
 import abc
 from collections.abc import Callable
@@ -10,11 +16,16 @@ from typing import ClassVar, Generic, Optional
 
 import torch as ch
 import torch.distributions
+import torch.distributions.constraints
+import torch.distributions.transforms
 import torch.utils.data
 
 from delphi.configs import base
+import delphi.oracle
+from delphi.torchnomials import empirical, hermite, laguerre, polynomial, transformed
 import delphi.trainer
 from delphi.truncated.distributions import distributions, losses, summary
+import delphi.truncation_set
 from delphi.utils import datasets, helpers
 
 # Called as dist(theta, dims) in losses.py on every step.
@@ -37,7 +48,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     family takes an argument fixed at construction.
 
     Attributes:
-        phi (Callable): Truncation set oracle.
+        phi (Callable): Truncation set oracle; the learned one after ``fit``
+            when the model was constructed without one.
+        learns_truncation_set (bool): Whether ``fit`` learns the set, as it
+            does when the model is constructed without phi.
+        truncation_set_: The learned set, set by ``fit``.
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
         dist: Exponential family class or factory, resolved during ``fit``.
@@ -72,7 +87,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         alpha: Optional[float] = None,
         *,
@@ -81,7 +96,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             alpha: Survival probability in (0, 1]; estimated from phi at the
                 empirical initialization when omitted.
@@ -93,6 +108,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         super().__init__(hyperparameters=hyperparameters)
         self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
+        self.learns_truncation_set = phi is None
+        self.truncation_set_: Optional[delphi.oracle.PolynomialThreshold] = None
         if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
                 "alpha is the survival probability and must lie in (0, 1); got "
@@ -134,16 +151,20 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
         """Fit the model to the observed (truncated) samples S.
 
+        Without a truncation set, learns one first and fits only the samples
+        inside it.
+
         Args:
             S: Observed samples of shape (num_samples, dims).
+
+        Raises:
+            TypeError: If S is not a tensor.
+            ValueError: If S has no more samples than dimensions, or the
+                batch size exceeds ``num_samples``.
         """
         if not isinstance(S, ch.Tensor):
             raise TypeError(f"S is type: {type(S)}. expected type torch.Tensor.")
-        if S.size(0) <= S.size(1):
-            raise ValueError(
-                "input expected to be shape num samples by dimensions, "
-                f"current input is size {S.size()}."
-            )
+        self._check_shape(S)
         if self.hyperparameters.batch_size > self.hyperparameters.num_samples:
             raise ValueError(
                 f"batch size ({self.hyperparameters.batch_size}) must be smaller than "
@@ -151,6 +172,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             )
 
         self.dist, self.calc_suff_stat = self._build_distribution()
+        if self.learns_truncation_set:
+            S = self._learn_truncation_set(S)  # pylint: disable=invalid-name
+            self._check_shape(S)
         self.criterion_params = [
             self.phi,
             self.dims,
@@ -183,6 +207,103 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         self._adopt_results(self.procedure)
         return self
+
+    @staticmethod
+    def _check_shape(S: ch.Tensor) -> None:  # pylint: disable=invalid-name
+        """Raise ValueError unless S has more samples than dimensions."""
+        if S.size(0) <= S.size(1):
+            raise ValueError(
+                "input expected to be shape num samples by dimensions, "
+                f"current input is size {S.size()}."
+            )
+
+    def _learn_truncation_set(self, S: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Learn the truncation set, adopt it as phi, and drop samples outside.
+
+        The reference distribution is the untruncated fit to S, the start
+        point ``_calc_emp_model`` computes.
+
+        Args:
+            S: Observed samples of shape (num_samples, dims).
+
+        Returns:
+            The samples inside the learned set.
+
+        Raises:
+            ValueError: If the reference's support cannot separate every
+                polynomial of ``truncation_set_degree``, as on a small finite
+                support.
+        """
+        hp = self.hyperparameters
+        self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
+            hp,
+            S,
+            datasets.TruncatedExponentialDistributionDataset,
+            {"calc_suff_stat": self.calc_suff_stat},
+        )
+        self._calc_emp_model()
+        with ch.no_grad():
+            reference = self.dist(self.emp_theta.detach(), self.dims)
+            draws = hp.truncation_set_num_samples or S.size(0)
+            unlabeled = reference.sample([draws]).view(draws, -1)
+        try:
+            basis = self._truncation_set_basis(reference, S.size(1))
+        except ValueError as e:
+            raise ValueError(
+                f"{type(self).__name__} cannot learn its truncation set at "
+                f"truncation_set_degree={hp.truncation_set_degree}: {e} Lower "
+                "the degree, or pass phi."
+            ) from e
+        self.truncation_set_ = delphi.truncation_set.learn_truncation_set(
+            S, unlabeled, basis, rho=hp.truncation_set_rho
+        )
+        self.phi = self.truncation_set_
+        # The fit compares the sample's moments with those of E(theta, phi),
+        # so a sample the learned set excludes would bias it.
+        return S[self.truncation_set_(S).reshape(-1)]
+
+    def _truncation_set_basis(
+        self, reference: torch.distributions.Distribution, width: int
+    ) -> polynomial.Polynomial:
+        """Return the polynomial basis the truncation set is learned over.
+
+        Hermite polynomials in the coordinates ``_truncation_set_transform``
+        gives, if it gives any; else Laguerre polynomials for a support
+        bounded below by zero and Hermite otherwise. Either is then
+        orthonormalized under the reference.
+
+        Args:
+            reference: The untruncated fit to the sample.
+            width: Columns of a sample.
+
+        Returns:
+            A basis of total degree ``truncation_set_degree``.
+
+        Raises:
+            ValueError: If the Gram matrix under the reference is singular.
+        """
+        degree = self.hyperparameters.truncation_set_degree
+        transform = self._truncation_set_transform()  # pylint: disable=assignment-from-none
+        base: polynomial.Polynomial
+        if transform is not None:
+            base = transformed.Transformed(
+                hermite.Hermite(degree, width, prob=True, norm=True), transform
+            )
+        elif _nonnegative(reference.support):
+            base = laguerre.Laguerre(degree, width, norm=True)
+        else:
+            base = hermite.Hermite(degree, width, prob=True, norm=True)
+        return empirical.EmpiricalOrthonormal(base, reference)
+
+    def _truncation_set_transform(
+        self,
+    ) -> Optional[torch.distributions.transforms.Transform]:
+        """Return the coordinates to learn the truncation set in, if not x.
+
+        A heavy-tailed family returns a log, since on its draws the powers
+        of x are dominated by a few extreme values.
+        """
+        return None
 
     def post_warm_start_hook(self, result: delphi.trainer.RunResult) -> None:
         """Start the procedure from the warm start's averaged iterate."""
@@ -515,3 +636,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated exponential family distribution"
+
+
+def _nonnegative(support: torch.distributions.constraints.Constraint) -> bool:
+    """Return whether a support lies in the nonnegative orthant."""
+    while isinstance(support, torch.distributions.constraints.independent):
+        support = support.base_constraint
+    lower = getattr(support, "lower_bound", None)
+    return lower is not None and bool((ch.as_tensor(lower) >= 0.0).all())

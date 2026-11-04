@@ -121,3 +121,18 @@ def test_indistinguishable_pair():
         parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.010 to 0.050 and the
+    # learned set's error 0.0005 to 0.0009.
+    helpers.assert_family_learns_set(
+        model_class=truncated_beta.TruncatedBeta,
+        target=torch.distributions.Beta(ch.tensor([2.0]), ch.tensor([3.0])),
+        phi=lambda z: z[:, 0] > 0.5,
+        dims=1,
+        parameter=("concentration1_", "concentration0_"),
+        empirical=_moments,
+        tolerance=0.1,
+        set_tolerance=0.005,
+    )

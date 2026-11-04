@@ -104,6 +104,12 @@ class TruncatedModel(Protocol):
         """Fit the model to truncated data."""
 
 
+class LearnedSetModel(TruncatedModel, Protocol):
+    """A truncated model that learns its truncation set during fit."""
+
+    truncation_set_: Oracle
+
+
 TOLERANCES = {"ema": 1e-1, "avg": 0.15}
 
 # With nothing truncated the procedure starts at the MLE and should stay
@@ -430,3 +436,81 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
             naive=(naive[0], naive[1]),
             divergence=divergence,
         )
+
+
+def set_error(
+    learned: Oracle, phi: Oracle, target: torch.distributions.Distribution
+) -> float:
+    """Return the target's mass on which a learned set and phi disagree."""
+    population = target.sample([100000])
+    population = population.view(population.size(0), -1)
+    learned_mask = learned(population).reshape(-1).bool()
+    true_mask = phi(population).reshape(-1).bool()
+    return float((learned_mask != true_mask).double().mean())
+
+
+def assert_family_learns_set(  # pylint: disable=too-many-arguments
+    model_class: Callable[..., LearnedSetModel],
+    target: torch.distributions.Distribution,
+    phi: Oracle,
+    dims: int,
+    parameter: Union[str, tuple[str, ...]],
+    empirical: Callable[[ch.Tensor], Any],
+    tolerance: float,
+    set_tolerance: float,
+    hyperparameters: Optional[dict] = None,
+    dataset_size: int = 5000,
+    pass_alpha: bool = True,
+    model_args: tuple = (),
+    rebuild: Optional[Callable[..., torch.distributions.Distribution]] = None,
+    divergence: Callable[
+        [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
+    ] = kl_divergence,
+) -> None:
+    """Fit a family without its truncation set and assert both are recovered.
+
+    The model is built with ``phi=None`` and learns the set from the
+    sample; phi only draws the sample and scores the learned set.
+
+    Args:
+        model_class: As ``assert_family_recovers``.
+        target: As ``assert_family_recovers``.
+        phi: The true truncation set.
+        dims: As ``assert_family_recovers``.
+        parameter: As ``assert_family_recovers``.
+        empirical: As ``assert_family_recovers``.
+        tolerance: Bound on the averaged estimate's summed divergence, which
+            the naive estimate must breach.
+        set_tolerance: Bound on the target's mass where the learned set and
+            phi disagree.
+        hyperparameters: Hyperparameter dict for the procedure.
+        dataset_size: Samples inside the truncation set to fit on.
+        pass_alpha: As ``assert_family_recovers``.
+        model_args: As ``assert_family_recovers``.
+        rebuild: As ``assert_family_recovers``.
+        divergence: As ``assert_family_recovers``.
+
+    Raises:
+        AssertionError: If the estimate or the learned set misses its bound,
+            or the naive estimate meets the estimate's.
+    """
+    ch.manual_seed(0)
+    sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
+    args = (sample.alpha,) if pass_alpha else ()
+    truncated = model_class(
+        None, dims, *model_args, *args, hyperparameters=hyperparameters
+    )
+    truncated.fit(sample.S)
+
+    error = set_error(truncated.truncation_set_, phi, target)
+    print(f"set error: {error:.4f}")
+    assert error <= set_tolerance, f"set error {error:.4f} exceeds {set_tolerance}"
+
+    family = _family(target, parameter, rebuild)
+    assert_recovers(
+        estimate=lambda name: family.fitted(truncated, name),
+        divergence=lambda fitted: divergence(fitted, target),
+        baseline=family.naive(empirical(sample.S)),
+        tolerances={"avg": tolerance},
+        max_coordinate=tolerance,
+    )

@@ -29,7 +29,7 @@ class TruncatedWeibull(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         concentration: ch.Tensor,
         alpha: Optional[float] = None,
@@ -39,7 +39,7 @@ class TruncatedWeibull(
         """Initialize TruncatedWeibull.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
             dims: Number of dimensions.
             concentration: Known shape, one per coordinate.

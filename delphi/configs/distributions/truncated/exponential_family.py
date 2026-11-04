@@ -30,6 +30,13 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
         precondition: Multiply each phase's gradient by the inverse
             covariance of ``T(x)`` over the sample, for families whose
             sufficient statistics are strongly correlated.
+        truncation_set_degree: Total degree of the polynomial threshold the
+            truncation set is learned as, when the model has no phi. The
+            basis has ``C(degree + dims, dims)`` terms.
+        truncation_set_rho: Weight of the reference draws in the set
+            learner's positive-unlabeled mixture.
+        truncation_set_num_samples: Reference draws for the set learner;
+            as many as the sample has when None.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -56,6 +63,11 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     phase_relative_loss_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
     phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
     precondition: bool = False
+    # Lower degree or rho left the L1 fit at the constant 1 on a halved normal;
+    # higher rho let the reference outweigh the positives inside the set.
+    truncation_set_degree: int = pydantic.Field(default=4, ge=1)
+    truncation_set_rho: float = pydantic.Field(default=0.4, gt=0.0, lt=1.0)
+    truncation_set_num_samples: Optional[int] = pydantic.Field(default=None, ge=1)
 
     @pydantic.model_validator(mode="after")
     def check_radius(self) -> "TruncatedExponentialFamilyDistributionConfig":

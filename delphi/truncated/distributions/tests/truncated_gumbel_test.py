@@ -143,3 +143,22 @@ def test_twenty_dimensions_small_mass():
         bounds=(-400.0, 400.0),
     )
     _recovers(dims=20, loc=loc, scale=scale, phi=calibrated.phi)
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.11 and the
+    # learned set's error 0.11 to 0.13.
+    helpers.assert_family_learns_set(
+        model_class=truncated_gumbel.TruncatedGumbel,
+        target=torch.distributions.Gumbel(ch.tensor([1.0]), ch.tensor([2.0])),
+        phi=lambda z: z[:, 0] > 2.0,
+        dims=1,
+        parameter="loc_",
+        empirical=helpers.untruncated_mle(
+            truncated_gumbel.TruncatedGumbel, 1, ch.tensor([2.0])
+        ),
+        model_args=(ch.tensor([2.0]),),
+        rebuild=lambda fitted: torch.distributions.Gumbel(fitted, ch.tensor([2.0])),
+        tolerance=0.23,
+        set_tolerance=0.25,
+    )

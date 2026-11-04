@@ -6,6 +6,7 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
+import torch.distributions.transforms
 import torch.nn
 
 from delphi.configs.distributions.truncated import (
@@ -30,7 +31,7 @@ class TruncatedPareto(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         scale: ch.Tensor,
         alpha: Optional[float] = None,
@@ -40,7 +41,7 @@ class TruncatedPareto(
         """Initialize TruncatedPareto.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             scale: Known scale, one per coordinate.
             alpha: Survival probability lower bound. Unrelated to the tail
@@ -53,6 +54,10 @@ class TruncatedPareto(
     def _build_distribution(self):
         """Bind the known scale into the distribution."""
         return partial(pareto.Pareto, self.scale), pareto.Pareto.calc_suff_stat
+
+    def _truncation_set_transform(self) -> torch.distributions.transforms.Transform:
+        """Learn the set in log x, where the heavy right tail is tame."""
+        return torch.distributions.transforms.ExpTransform().inv
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE tail index ``1 / mean(log(x / scale))``."""

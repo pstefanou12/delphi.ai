@@ -138,3 +138,18 @@ def test_twenty_dimensions_small_mass():
         bounds=(0.0, 1000.0),
     )
     _recovers(dims=20, concentration=concentration, rate=rate, phi=calibrated.phi)
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.0020 and the
+    # learned set's error 0.0000 to 0.0002.
+    helpers.assert_family_learns_set(
+        model_class=_MODEL,
+        target=torch.distributions.Gamma(ch.tensor([3.0]), ch.tensor([2.0])),
+        phi=lambda z: z[:, 0] < 2.0,
+        dims=1,
+        parameter=("concentration_", "rate_"),
+        empirical=helpers.untruncated_mle(_MODEL, 1),
+        tolerance=0.005,
+        set_tolerance=0.005,
+    )

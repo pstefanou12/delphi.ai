@@ -129,3 +129,20 @@ def test_indistinguishable_pair():
         model_args=(total_count,),
         rebuild=functools.partial(torch.distributions.Binomial, total_count),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0009 and the
+    # learned set's error 0.047 to 0.048.
+    helpers.assert_family_learns_set(
+        model_class=truncated_binomial.TruncatedBinomial,
+        target=torch.distributions.Binomial(ch.tensor([10.0]), ch.tensor([0.3])),
+        phi=lambda z: z[:, 0] > 2,
+        dims=1,
+        parameter="probs_",
+        empirical=lambda s: s.mean(0) / 10.0,
+        model_args=(ch.tensor([10.0]),),
+        rebuild=functools.partial(torch.distributions.Binomial, ch.tensor([10.0])),
+        tolerance=0.005,
+        set_tolerance=0.1,
+    )

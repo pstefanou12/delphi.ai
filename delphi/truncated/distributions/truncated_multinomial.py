@@ -30,7 +30,7 @@ class TruncatedMultinomial(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         total_count: int,
         alpha: Optional[float] = None,
@@ -40,7 +40,7 @@ class TruncatedMultinomial(
         """Initialize TruncatedMultinomial.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of categories.
             total_count: Known number of trials.
             alpha: Survival probability lower bound.

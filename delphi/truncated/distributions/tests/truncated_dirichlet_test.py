@@ -125,3 +125,12 @@ def test_indistinguishable_pair():
         parameter="concentration_",
         empirical=helpers.untruncated_mle(truncated_dirichlet.TruncatedDirichlet, 3),
     )
+
+
+def test_unknown_truncation_raises():
+    # Every sample sums to one, so no polynomial basis is independent on them.
+    ch.manual_seed(0)
+    sample = torch.distributions.Dirichlet(ch.tensor([2.0, 3.0, 4.0])).sample([500])
+    model = truncated_dirichlet.TruncatedDirichlet(None, 3)
+    with pytest.raises(ValueError, match="truncation_set_degree"):
+        model.fit(sample[sample[:, 0] > 0.3])

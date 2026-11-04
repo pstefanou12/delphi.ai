@@ -116,3 +116,18 @@ def test_indistinguishable_pair():
         parameter="probs_",
         empirical=lambda s: 1.0 / (1.0 + s.mean(0)),
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0002 to 0.0009 and the
+    # learned set's error 0.019 to 0.020.
+    helpers.assert_family_learns_set(
+        model_class=truncated_geometric.TruncatedGeometric,
+        target=torch.distributions.Geometric(ch.tensor([0.3])),
+        phi=lambda z: z[:, 0] > 2,
+        dims=1,
+        parameter="probs_",
+        empirical=lambda s: 1.0 / (1.0 + s.mean(0)),
+        tolerance=0.005,
+        set_tolerance=0.04,
+    )

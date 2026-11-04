@@ -137,3 +137,21 @@ def test_twenty_dimensions_small_mass():
         bounds=(0.0, 4000.0),
     )
     _recovers(dims=20, probs=probs, phi=calibrated.phi)
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0003 and the
+    # learned set's error 0.002 to 0.004.
+    helpers.assert_family_learns_set(
+        model_class=truncated_logarithmic.TruncatedLogarithmic,
+        target=_logarithmic(ch.tensor([0.9])),
+        phi=lambda z: z[:, 0] > 5,
+        dims=1,
+        parameter="probs_",
+        empirical=helpers.untruncated_mle(
+            truncated_logarithmic.TruncatedLogarithmic, 1
+        ),
+        rebuild=_logarithmic,
+        tolerance=0.005,
+        set_tolerance=0.008,
+    )

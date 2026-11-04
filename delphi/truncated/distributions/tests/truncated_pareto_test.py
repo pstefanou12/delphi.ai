@@ -169,3 +169,21 @@ def test_indistinguishable_pair():
         rebuild=functools.partial(torch.distributions.Pareto, ch.tensor([1.0])),
         divergence=pareto_kl_divergence,
     )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0002 to 0.0011 and the
+    # learned set's error 0.011 to 0.023.
+    helpers.assert_family_learns_set(
+        model_class=truncated_pareto.TruncatedPareto,
+        target=torch.distributions.Pareto(ch.tensor([1.0]), ch.tensor([2.5])),
+        phi=lambda z: z[:, 0] > 2.0,
+        dims=1,
+        parameter="alpha_",
+        empirical=lambda s: 1.0 / ch.log(s).mean(0),
+        model_args=(ch.tensor([1.0]),),
+        rebuild=functools.partial(torch.distributions.Pareto, ch.tensor([1.0])),
+        divergence=pareto_kl_divergence,
+        tolerance=0.005,
+        set_tolerance=0.045,
+    )

@@ -149,3 +149,21 @@ def test_twenty_dimensions_small_mass():
         bounds=(0.0, 400.0),
     )
     _recovers(dims=20, loc=loc, concentration=concentration, phi=calibrated.phi)
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.032 and the
+    # learned set's error 0.0012 to 0.0020.
+    helpers.assert_family_learns_set(
+        model_class=truncated_inverse_gaussian.TruncatedInverseGaussian,
+        target=_wald(ch.tensor([1.0]), ch.tensor([2.0])),
+        phi=lambda z: z[:, 0] > 0.8,
+        dims=1,
+        parameter=("loc_", "concentration_"),
+        empirical=helpers.untruncated_mle(
+            truncated_inverse_gaussian.TruncatedInverseGaussian, 1
+        ),
+        rebuild=_wald,
+        tolerance=0.065,
+        set_tolerance=0.005,
+    )

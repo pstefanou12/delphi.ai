@@ -172,3 +172,35 @@ def test_indistinguishable_pair():
             naive=(results[0][0], results[1][0]),
             divergence=torch.distributions.kl.kl_divergence,
         )
+
+
+def test_unknown_truncation():
+    # Over seeds 0-4 the estimate's divergence measured 0.0014 to 0.019 and the
+    # learned set's error 0.0004 to 0.020.
+    target = torch.distributions.LogNormal(ch.tensor([0.0]), ch.tensor([1.0]))
+
+    def phi(z):
+        return z[:, 0] > 2.0
+
+    ch.manual_seed(0)
+    sample = helpers.generate_truncated_distribution_dataset(target, phi, 5000)
+    # Standardized in log space, as _fit does, for the fit's conditioning.
+    log_s = ch.log(sample.S)
+    mean, std = log_s.mean(0), log_s.std(0)
+    truncated = truncated_log_normal.TruncatedLogNormal(None, 1, sample.alpha)
+    truncated.fit(ch.exp((log_s - mean) / std))
+
+    def learned(z):
+        return truncated.truncation_set_(ch.exp((ch.log(z) - mean) / std))
+
+    error = helpers.set_error(learned, phi, target)
+    assert error <= 0.04, f"set error {error:.4f} exceeds {0.04}"
+    helpers.assert_recovers(
+        estimate=lambda name: torch.distributions.LogNormal(
+            getattr(truncated, f"{name}_loc_") * std + mean,
+            getattr(truncated, f"{name}_scale_") * std,
+        ),
+        divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
+        baseline=torch.distributions.LogNormal(mean, std),
+        tolerances={"avg": 0.04},
+    )
