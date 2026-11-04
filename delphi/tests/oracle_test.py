@@ -5,6 +5,7 @@ import pytest
 import torch as ch
 import torch.distributions
 
+from delphi.learning import l1_regression
 import delphi.oracle
 from delphi.torchnomials import hermite
 from delphi.transformations import standardization
@@ -66,23 +67,21 @@ def test_recovers_a_half_plane_from_its_samples():
     assert error <= 0.05
 
 
-def _threshold_error(member, degree: int, seed: int = 0) -> float:
+def _threshold_error(phi, degree: int, seed: int = 0) -> float:
     """Fit a threshold to labeled Gaussian points; return its fresh error."""
     generator = ch.Generator().manual_seed(seed)
     points = ch.randn(20000, 2, dtype=ch.float64, generator=generator)
     basis = hermite.Hermite(degree, 2, prob=True, norm=True)
-    learned = delphi.oracle.PolynomialThreshold(basis).fit(
-        points, member(points).double()
-    )
+    learned = delphi.oracle.PolynomialThreshold(basis).fit(points, phi(points).double())
     fresh = ch.randn(50000, 2, dtype=ch.float64, generator=generator)
-    return float((learned(fresh) != member(fresh)).double().mean())
+    return float((learned(fresh) != phi(fresh)).double().mean())
 
 
 # Errors measured over seeds 0 to 4: half plane at degree 1, 0.0005 to
 # 0.0043; disc at degree 2, 0.0044 to 0.0096; square at degree 6, 0.054 to
 # 0.057, the degree's own approximation error.
 @pytest.mark.parametrize(
-    "member,degree,tolerance",
+    "phi,degree,tolerance",
     [
         (lambda x: x[:, 0] + x[:, 1] >= 0.5, 1, 0.01),
         (lambda x: x.norm(dim=1) <= 1.2, 2, 0.02),
@@ -90,8 +89,8 @@ def _threshold_error(member, degree: int, seed: int = 0) -> float:
     ],
     ids=["half_plane", "disc", "square"],
 )
-def test_threshold_learns_a_set_from_labels(member, degree, tolerance):
-    assert _threshold_error(member, degree) <= tolerance
+def test_threshold_learns_a_set_from_labels(phi, degree, tolerance):
+    assert _threshold_error(phi, degree) <= tolerance
 
 
 def test_threshold_minimizes_the_weighted_error():
@@ -119,3 +118,23 @@ def test_threshold_needs_a_fit():
     learned = delphi.oracle.PolynomialThreshold(hermite.Hermite(2, 2))
     with pytest.raises(RuntimeError, match="fit"):
         learned(ch.zeros(3, 2))
+
+
+def test_preconditioning_leaves_the_regression_optimum():
+    generator = ch.Generator().manual_seed(2)
+    points = ch.randn(2000, 2, dtype=ch.float64, generator=generator)
+    labels = (points.norm(dim=1) <= 1.2).double()
+    weights = ch.rand(2000, dtype=ch.float64, generator=generator)
+    basis = hermite.Hermite(3, 2, prob=True, norm=True)
+    learned = delphi.oracle.PolynomialThreshold(basis).fit(points, labels, weights)
+    direct = l1_regression.L1Regression().fit(basis.basis(points), labels, weights)
+    ch.testing.assert_close(learned.polynomial.coefficients, direct.coef_)
+
+
+def test_a_stalled_regression_warns():
+    points = ch.randn(500, 2, dtype=ch.float64, generator=ch.Generator().manual_seed(3))
+    learned = delphi.oracle.PolynomialThreshold(
+        hermite.Hermite(4, 2, prob=True, norm=True), hyperparameters={"iterations": 1}
+    )
+    with pytest.warns(UserWarning, match="without converging"):
+        learned.fit(points, (points[:, 0] > 0).double())
