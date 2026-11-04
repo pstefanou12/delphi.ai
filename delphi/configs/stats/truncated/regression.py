@@ -115,13 +115,25 @@ class TruncatedLinearDynamicalSystemConfig(TruncatedRegressionConfig):
 
 
 class TruncatedLassoRegressionConfig(TruncatedLinearModelConfig):
-    """Configuration for truncated LASSO regression (TRUNC_LASSO_DEFAULTS).
+    """Configuration for truncated lasso regression.
+
+    One sample per step at a constant step size, as their Algorithm 1, on
+    the unscaled design matrix. The iterates after the first half are
+    averaged, since the descent starts at the smallest-L1 point of E_r,
+    which is often zero.
 
     Attributes:
-        r: Initial projection set radius.
+        l1_constant: The c of the default penalty ``c sqrt(log(d) / n)``.
+        step_constant: The c of the default step
+            ``c / (mean_i ||x_i||^2 sqrt(N / p))``, for N steps over p
+            columns, which is their ``1 / sqrt(p N)`` at c = 1 for standard
+            normal rows; at 1 the average still carries the start.
     """
 
-    iterations: Optional[int] = pydantic.Field(default=1500, ge=1)
-    val_interval: Optional[int] = pydantic.Field(default=50, ge=1)
-    num_samples: int = pydantic.Field(default=10000, ge=1)
-    r: float = pydantic.Field(default=1.0, gt=0.0)
+    batch_size: int = 1
+    iterations: Optional[int] = pydantic.Field(default=20000, ge=1)
+    val: float = pydantic.Field(default=0.0, ge=0.0, le=1.0)
+    constant: bool = True
+    scale_covariates: bool = False
+    l1_constant: float = pydantic.Field(default=1.0, gt=0.0)
+    step_constant: float = pydantic.Field(default=3.0, gt=0.0)

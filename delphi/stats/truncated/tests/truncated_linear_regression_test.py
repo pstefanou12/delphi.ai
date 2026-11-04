@@ -42,18 +42,6 @@ _VARIANTS = pytest.mark.parametrize(
 )
 
 
-def _intervals(*bounds):
-    """Return an oracle admitting the union of the open (a, b) intervals."""
-
-    def phi(z):
-        kept = ch.zeros_like(z, dtype=ch.bool)
-        for low, high in bounds:
-            kept |= (z > low) & (z < high)
-        return kept
-
-    return phi
-
-
 def _fit(  # pylint: disable=too-many-arguments
     simulation: regression.Simulation,
     variance_known: bool,
@@ -113,7 +101,12 @@ def _ill_conditioned_covariates(seed: int) -> regression.Simulation:
     spectrum = ch.logspace(0.0, -3.0, 10)
     covariance = rotation @ ch.diag(spectrum) @ rotation.T
     return regression.simulate(
-        _ONES_10D, 0.5, _intervals((1.0, INF)), 5000, covariance=covariance, seed=seed
+        _ONES_10D,
+        0.5,
+        regression.intervals((1.0, INF)),
+        5000,
+        covariance=covariance,
+        seed=seed,
     )
 
 
@@ -128,30 +121,38 @@ _CORRELATED_2D = ch.tensor([[1.0, 0.5], [0.5, 1.0]])
 # The truncation cases of the regression tests, which the opt-in coverage
 # sweep reuses.
 _CASES: dict[str, Callable[[int], regression.Simulation]] = {
-    "1d_no_truncation": _case([2.0], -1.0, _intervals((-INF, INF)), 2000),
-    "1d_left_truncation": _case([2.0], -1.0, _intervals((0.0, INF)), 2000),
-    "1d_left_truncation_no_intercept": _case([2.0], 0.0, _intervals((0.0, INF)), 2000),
-    "1d_right_truncation": _case([2.0], -1.0, _intervals((-INF, -1.0)), 2000),
-    "1d_interval": _case([2.0], -1.0, _intervals((-1.0, 1.0)), 2000),
-    "1d_union_of_intervals": _case(
-        [2.0], -1.0, _intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF)), 2000
+    "1d_no_truncation": _case([2.0], -1.0, regression.intervals((-INF, INF)), 2000),
+    "1d_left_truncation": _case([2.0], -1.0, regression.intervals((0.0, INF)), 2000),
+    "1d_left_truncation_no_intercept": _case(
+        [2.0], 0.0, regression.intervals((0.0, INF)), 2000
     ),
-    "1d_small_mass": _case([2.0], -1.0, _intervals((3.85, INF)), 2000),
+    "1d_right_truncation": _case([2.0], -1.0, regression.intervals((-INF, -1.0)), 2000),
+    "1d_interval": _case([2.0], -1.0, regression.intervals((-1.0, 1.0)), 2000),
+    "1d_union_of_intervals": _case(
+        [2.0], -1.0, regression.intervals((-INF, -3.0), (-1.5, -0.5), (1.0, INF)), 2000
+    ),
+    "1d_small_mass": _case([2.0], -1.0, regression.intervals((3.85, INF)), 2000),
     "2d_union_of_intervals": _case(
-        [1.0, -1.0], 0.5, _intervals(*_UNION_2D), 2000, covariance=_CORRELATED_2D
+        [1.0, -1.0],
+        0.5,
+        regression.intervals(*_UNION_2D),
+        2000,
+        covariance=_CORRELATED_2D,
     ),
     "2d_two_sided_tails": _case(
-        [1.0, -1.0], 0.5, _intervals((-INF, -1.5), (1.5, INF)), 2000
+        [1.0, -1.0], 0.5, regression.intervals((-INF, -1.5), (1.5, INF)), 2000
     ),
-    "10d_left_truncation": _case(_ONES_10D, 0.5, _intervals((4.0, INF)), 5000),
+    "10d_left_truncation": _case(
+        _ONES_10D, 0.5, regression.intervals((4.0, INF)), 5000
+    ),
     "10d_union_of_intervals": _case(
-        _ONES_10D, 0.5, _intervals((-2.0, 0.0), (3.0, INF)), 5000
+        _ONES_10D, 0.5, regression.intervals((-2.0, 0.0), (3.0, INF)), 5000
     ),
-    "10d_no_truncation": _case(_ONES_10D, 0.5, _intervals((-INF, INF)), 5000),
+    "10d_no_truncation": _case(_ONES_10D, 0.5, regression.intervals((-INF, INF)), 5000),
     "100d_union_of_intervals": _case(
         (ch.ones(100) / math.sqrt(10)).tolist(),
         0.5,
-        _intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF)),
+        regression.intervals((-INF, -8.0), (-3.0, 3.0), (8.0, INF)),
         20000,
     ),
     "10d_randomized_truncation": _case(_ONES_10D, 0.5, _coin_flip, 5000),
@@ -159,24 +160,28 @@ _CASES: dict[str, Callable[[int], regression.Simulation]] = {
     "10d_rescaled_covariates": _case(
         (1e-3 * ch.ones(10)).tolist(),
         0.5,
-        _intervals((4.0, INF)),
+        regression.intervals((4.0, INF)),
         5000,
         covariance=1e6 * ch.eye(10),
     ),
     "1d_left_truncation_noise_var_5": _case(
-        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=5.0
+        [2.0], -1.0, regression.intervals((0.0, INF)), 2000, noise_var=5.0
     ),
     "1d_left_truncation_noise_var_10": _case(
-        [2.0], -1.0, _intervals((0.0, INF)), 2000, noise_var=10.0
+        [2.0], -1.0, regression.intervals((0.0, INF)), 2000, noise_var=10.0
     ),
     "10d_left_truncation_noise_var_5": _case(
-        _ONES_10D, 0.5, _intervals((4.0, INF)), 5000, noise_var=5.0
+        _ONES_10D, 0.5, regression.intervals((4.0, INF)), 5000, noise_var=5.0
     ),
     "10d_left_truncation_noise_var_10": _case(
-        _ONES_10D, 0.5, _intervals((4.0, INF)), 5000, noise_var=10.0
+        _ONES_10D, 0.5, regression.intervals((4.0, INF)), 5000, noise_var=10.0
     ),
     "10d_union_of_intervals_noise_var_10": _case(
-        _ONES_10D, 0.5, _intervals((-2.0, 0.0), (3.0, INF)), 5000, noise_var=10.0
+        _ONES_10D,
+        0.5,
+        regression.intervals((-2.0, 0.0), (3.0, INF)),
+        5000,
+        noise_var=10.0,
     ),
 }
 
@@ -436,19 +441,23 @@ _DYNAMICS: dict[str, Callable[[], regression.Simulation]] = {
     ),
     "1d_union_of_intervals": _dynamics_case(
         ch.tensor([[0.5]]),
-        lambda c: _intervals((-INF, -c), (0.0, c / 2.0), (c, INF)),
+        lambda c: regression.intervals((-INF, -c), (0.0, c / 2.0), (c, INF)),
         0.3,
         (0.01, 5.0),
         17000,
     ),
     "1d_interval": _dynamics_case(
-        ch.tensor([[0.5]]), lambda c: _intervals((0.0, c)), 0.3, (0.01, 8.0), 17000
+        ch.tensor([[0.5]]),
+        lambda c: regression.intervals((0.0, c)),
+        0.3,
+        (0.01, 8.0),
+        17000,
     ),
     # A thin window at the mode, whose successors rarely survive, and a far
     # half-line, whose usually do: in all about 5% of the trajectory.
     "1d_small_mass": _dynamics_case(
         ch.tensor([[0.95]]),
-        lambda c: _intervals((-0.1, 0.1), (c, INF)),
+        lambda c: regression.intervals((-0.1, 0.1), (c, INF)),
         0.02,
         (0.5, 15.0),
         200000,
@@ -833,9 +842,13 @@ def test_known_variance_covariance_inverts_the_exact_information():
 
 
 _COVERAGE_CASES = {
-    "1d_left_truncation": _case([2.0], -1.0, _intervals((0.0, INF)), 1000),
+    "1d_left_truncation": _case([2.0], -1.0, regression.intervals((0.0, INF)), 1000),
     "2d_union_of_intervals": _case(
-        [1.0, -1.0], 0.5, _intervals(*_UNION_2D), 1000, covariance=_CORRELATED_2D
+        [1.0, -1.0],
+        0.5,
+        regression.intervals(*_UNION_2D),
+        1000,
+        covariance=_CORRELATED_2D,
     ),
 }
 _REPLICATIONS = 200

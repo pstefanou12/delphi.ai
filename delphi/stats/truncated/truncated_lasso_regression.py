@@ -1,234 +1,323 @@
 # Author: pstefanou12@
-"""
-Truncated Lasso Regression.
+"""Truncated lasso regression, for sparse coefficients in high dimensions.
+
+Daskalakis, Rohatgi and Zampetakis, "Truncated Linear Regression in High
+Dimensions" (NeurIPS 2020): with the noise variance known, minimize the
+truncated NLL plus ``l1 ||w||_1``, for ``l1 = c sqrt(log(d) / n)``, by
+projected SGD (their Algorithm 1). The iterates stay in
+``E_r = {w : ||X w - y||_2 <= r sqrt(n)}``, start at the smallest-L1 point
+of E_r, take the steps ``x_j (z - y_j) + l1 sign(w)`` for a sample j and
+``z ~ N(w^T x_j, 1)`` conditioned on the truncation set, of constant size
+``1 / sqrt(d N)`` for N steps, and are averaged. It needs only
+``n = O(k log d)`` samples for k nonzero coefficients, so n may be below d.
 """
 
 from collections.abc import Callable
-from typing import Optional
-import warnings
+import math
+from typing import Optional, Union, cast
 
-from sklearn import linear_model as sklearn_linear_model
 import torch as ch
-import torch.nn
 
 from delphi.configs.stats.truncated import regression
-from delphi.stats import linear_model
+from delphi.learning import lasso
+import delphi.projection_sets
 from delphi.stats.truncated import losses
-import delphi.trainer
+from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.truncated import sampling
-from delphi.utils import datasets
 
 
-class TruncatedLassoRegression(  # pylint: disable=too-many-instance-attributes
-    linear_model.LinearModel[regression.TruncatedLassoRegressionConfig]
+class TruncatedLassoRegression(
+    TruncatedLinearModel[regression.TruncatedLassoRegressionConfig]
 ):
-    """Truncated LASSO regression via projected SGD on the truncated log-likelihood.
+    """Truncated lasso regression ``y = w^T x + b + e``, ``e ~ N(0, sigma^2)``.
 
-    Supports known noise variance. Requires a truncation oracle and survival
-    probability alpha.
+    Observed only where ``phi(y)`` admits it, with sigma^2 known. The
+    intercept is not penalized.
+
+    Attributes:
+        noise_var: The known noise variance.
+        l1: The penalty, on the coefficients of ``y / sqrt(noise_var)``;
+            None until fit when left to the default.
+        intercept_column: The design matrix's intercept column, the rows'
+            root mean square norm rather than 1, so the one step size suits
+            the intercept as well as the coefficients.
     """
-
-    # Created by register_parameter in pre_phase_hook, which mypy cannot see.
-    weight: torch.nn.Parameter
 
     defaults = regression.TruncatedLassoRegressionConfig
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         phi: Callable,
-        alpha: float,
-        l1: float = 1.0,
+        alpha: Optional[float] = None,
+        *,
+        l1: Optional[float] = None,
+        noise_var: Union[float, ch.Tensor] = 1.0,
+        sampler: Optional[sampling.GaussianSampler] = None,
         fit_intercept: bool = True,
-        noise_var: float = 1.0,
         emp_weight: Optional[ch.Tensor] = None,
         rand_seed: int = 0,
-        *,
         hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedLassoRegression.
 
         Args:
-            phi (Callable): oracle object for the truncated regression model
-            alpha (float): survival probability for the truncated regression model
-            l1 (float): L1 regularization coefficient
-            fit_intercept (bool): whether to fit an intercept term
-            noise_var (float): known noise variance
-            emp_weight (Tensor): optional empirical weight initialization
-            rand_seed (int): random seed for reproducibility
-            hyperparameters: hyperparameter dict
+            phi: Truncation oracle over responses shaped (n, m, 1).
+            alpha: Survival probability in (0, 1], or None if unknown.
+            l1: The penalty on the coefficients of ``y / sqrt(noise_var)``;
+                ``l1_constant sqrt(log(d) / n)`` if None.
+            noise_var: The known noise variance.
+            sampler: Estimates the loss's conditional moments; rejection
+                sampling at ``num_samples`` and ``min_accepted`` by default.
+            fit_intercept: Whether to fit an unpenalized intercept.
+            emp_weight: Start in place of the smallest-L1 point of E_r; see
+                ``TruncatedLinearModel``.
+            rand_seed: Seed applied at the start of every run.
+            hyperparameters: Hyperparameter dict.
+
+        Raises:
+            ValueError: If l1 or noise_var is not positive.
         """
-        super().__init__(emp_weight=emp_weight, hyperparameters=hyperparameters)
-        self.phi = phi
-        self.alpha = alpha
+        if l1 is not None and l1 <= 0.0:
+            raise ValueError(f"l1 must be positive; got {l1}.")
+        if float(noise_var) <= 0.0:
+            raise ValueError(f"noise_var must be positive; got {noise_var}.")
+        super().__init__(
+            phi,
+            alpha,
+            fit_intercept,
+            emp_weight,
+            rand_seed,
+            hyperparameters=hyperparameters,
+        )
+        self.noise_var = float(noise_var)
         self.l1 = l1
-        self.fit_intercept = fit_intercept
-        self.noise_var = noise_var
-        self.rand_seed = rand_seed
-
-        del self.criterion
-
+        self._l1_given = l1 is not None
+        self.intercept_column = 1.0
+        self._lr_given = "lr" in self.hyperparameters.model_fields_set
+        self.sampler = sampler or sampling.GaussianRejectionSampler(
+            self.hyperparameters.num_samples, self.hyperparameters.min_accepted
+        )
         self.criterion = losses.TruncatedGaussianNLL.apply
-        self.criterion_params = [
-            self.phi,
-            self.noise_var,
-            sampling.GaussianRejectionSampler(self.hyperparameters.num_samples),
-            self.hyperparameters.eps,
-        ]
 
-    def fit(  # pylint: disable=attribute-defined-outside-init
-        self,
-        X: ch.Tensor,
-        y: ch.Tensor,  # pylint: disable=invalid-name
-    ):
-        """
-        Train truncated lasso regression model by running PSGD on the truncated negative
-        population log likelihood.
+    def criterion_parameters(self, X: ch.Tensor, y: ch.Tensor) -> list:  # pylint: disable=invalid-name
+        return [self.latent_phi, 1.0, self.sampler, self.hyperparameters.eps]
+
+    def fit(self, X: ch.Tensor, y: ch.Tensor):  # pylint: disable=invalid-name
+        """Fit the model to y divided by the noise's standard deviation.
 
         Args:
-            X (torch.Tensor): input feature covariates num_samples by dims
-            y (torch.Tensor): dependent variable predictions num_samples by 1
+            X: Covariates, shaped (n, d); n may be below d.
+            y: Responses, shaped (n, 1).
+
+        Returns:
+            The fitted model.
         """
-        assert isinstance(X, ch.Tensor), (
-            f"X is type: {type(X)}. expected type torch.Tensor."
-        )
-        assert isinstance(y, ch.Tensor), (
-            f"y is type: {type(y)}. expected type torch.Tensor."
-        )
-        assert X.size(0) > X.size(1), (
-            "number of dimensions, larger than number of samples. "
-            "procedure expects matrix with size num samples by num feature dimensions."
-        )
-        assert y.dim() == 2 and y.size(1) == 1, (
-            f"y is size: {y.size()}. expecting y tensor with size num_samples by 1."
-        )
-        # Add one feature column to X when fitting an intercept.
+        self._check_inputs(X, y)
+        n, d = X.shape
+        if not self._l1_given:
+            self.l1 = self.hyperparameters.l1_constant * math.sqrt(math.log(d) / n)
+        self.response_scale = math.sqrt(self.noise_var)
+        self.intercept_column = float(X.pow(2).sum(1).mean().sqrt())
+        return super().fit(X, y / self.response_scale)
+
+    def _default_step(self, design: ch.Tensor) -> float:
+        """Return ``step_constant / (mean_i ||x_i||^2 sqrt(N / p))``.
+
+        Args:
+            design: The design matrix in the descent's coordinates.
+        """
+        hp = self.hyperparameters
+        steps = hp.iterations
+        if steps is None:
+            n = design.size(0)
+            batch = n if hp.batch_size == -1 else hp.batch_size
+            steps = cast(int, hp.epochs) * math.ceil(n / batch)
+        energy = float(design.pow(2).sum(1).mean())
+        return hp.step_constant / (energy * math.sqrt(steps / design.size(1)))
+
+    @staticmethod
+    def _check_inputs(X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
+        """Raise unless X and y are tensors of paired samples, one response each."""
+        if not isinstance(X, ch.Tensor) or not isinstance(y, ch.Tensor):
+            raise TypeError(f"X and y must be tensors; got {type(X)} and {type(y)}.")
+        if X.dim() != 2 or y.dim() != 2 or X.size(0) != y.size(0) or y.size(1) != 1:
+            raise ValueError(
+                "expected X shaped (n, d) and y shaped (n, 1); got "
+                f"{tuple(X.size())} and {tuple(y.size())}."
+            )
+
+    def latent_phi(self, z: ch.Tensor) -> ch.Tensor:
+        """Return phi at latents in the descent's units, ``z * response_scale``."""
+        return self.phi(z * self.response_scale)
+
+    def _calc_emp_model(self, X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
+        """Set emp_weight to the smallest-L1 point of E_r, and lr, unless given.
+
+        Args:
+            X: Design matrix in the descent's coordinates.
+            y: Targets, shaped (n, 1).
+        """
+        if not self._lr_given:
+            self.hyperparameters.lr = self._default_step(X)
+        if self.emp_weight is None:
+            hp = self.hyperparameters
+            radius = self.default_radius() if hp.radius is None else hp.radius
+            covariates = X[:, :-1] if self.fit_intercept else X
+            start = lasso.Lasso(fit_intercept=self.fit_intercept).fit_constrained(
+                covariates, y[:, 0], radius * math.sqrt(X.size(0))
+            )
+            weight = cast(ch.Tensor, start.coef_)[:, None] / self.covariate_scale
+            if start.intercept_ is not None:
+                weight = ch.cat([weight, start.intercept_.reshape(1, 1)])
+            self.emp_weight = weight * self.response_scale
+        self.register_weight(self.emp_start)
+
+    def design_matrix(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the scaled covariates and, if fit, the intercept column."""
         if self.fit_intercept:
-            X = ch.cat([X, ch.ones(X.size(0), 1)], dim=1)  # pylint: disable=invalid-name
+            column = ch.full((X.size(0), 1), self.intercept_column, dtype=X.dtype)
+            X = ch.cat([X, column], dim=1)  # pylint: disable=invalid-name
+        return X / self.covariate_scale
 
-        k = X.size(1) - 1 if self.fit_intercept else X.size(1)
+    def coefficients(self, params):
+        coef, intercept = super().coefficients(params)
+        if intercept is None:
+            return coef, intercept
+        return coef, intercept * self.intercept_column
 
-        # Normalization factor: B * sqrt(k).
-        # Compute B as the maximum L-inf norm across all samples.
-        B = X.norm(dim=1, p=float("inf")).max()  # pylint: disable=invalid-name
-        self.beta = B * (k**0.5)
+    @property
+    def emp_start(self) -> ch.Tensor:
+        """emp_weight in the descent's coordinates, shaped (d + 1, 1)."""
+        start = super().emp_start
+        if not self.fit_intercept:
+            return start
+        return ch.cat([start[:-1], start[-1:] / self.intercept_column])
 
-        # Normalize all features except the intercept column.
-        if self.fit_intercept:
-            X_normalized = X[:, :-1] / self.beta  # pylint: disable=invalid-name
-            X = ch.cat([X_normalized, X[:, -1:]], dim=1)  # pylint: disable=invalid-name
-        else:
-            X = X / self.beta  # pylint: disable=invalid-name
+    @property
+    def emp_intercept_(self) -> Optional[ch.Tensor]:
+        """Intercept of emp_weight, the descent's start."""
+        return self.coefficients(self.emp_start.flatten())[1]
 
-        self.train_loader, self.val_loader = datasets.make_train_and_val(
-            self.hyperparameters, X, y
-        )
+    def default_radius(self) -> float:
+        """Return ``1 + 2 / sqrt(alpha)``, taking alpha = 1 when it is unknown.
 
-        self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
-        self.trainer.train_model(
-            self.train_loader, self.val_loader, rand_seed=self.rand_seed
-        )
-        return self
+        The truth's residual norm is below ``2 sqrt(n / alpha)`` (their Lemma
+        B.2), and the optimum lies within O(1) of it.
+        """
+        alpha = 1.0 if self.alpha is None else self.alpha
+        return 1.0 + 2.0 / math.sqrt(alpha)
 
-    def pre_phase_hook(self):
-        """Set up empirical model and projection set before training."""
-        self.calc_emp_model()
-        # Use OLS as an empirical estimate to define the projection set.
-        self.radius = self.hyperparameters.r * self.base_radius
-        self.register_parameter("weight", torch.nn.Parameter(self.emp_weight.clone()))
-
-    def calc_emp_model(self) -> None:
-        """Calculate empirical lasso regression estimates using sklearn."""
-        X, y = self.train_loader.dataset.tensors  # pylint: disable=invalid-name
-        # fit_intercept=False unconditionally: fit() appends the ones column
-        # to X, so coef_ already spans the intercept.
-        emp_lasso = sklearn_linear_model.LassoCV(fit_intercept=False, alphas=[self.l1])
-        emp_lasso.fit(X, y)
-        self.emp_weight = ch.from_numpy(emp_lasso.coef_).float()[..., None]
-
-    def forward(self, X: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
-        """Forward pass through the model."""
-        return X @ self.weight
+    def build_projection_set(
+        self,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        y: ch.Tensor,
+        radius: float,
+    ) -> delphi.projection_sets.ProjectionSet:
+        """Return E_r around the training data."""
+        return ResidualBall(X, y, radius, self.emp_start)
 
     def compute_loss(self, batch, criterion=None) -> ch.Tensor:
-        """Average the truncated NLL, which is per sample, over the batch."""
-        return super().compute_loss(batch, criterion).mean()
+        """Return the batch's mean NLL plus the penalty on the coefficients."""
+        nll = super().compute_loss(batch, criterion).mean()
+        coef = self.weight[:-1] if self.fit_intercept else self.weight
+        return nll + cast(float, self.l1) * coef.abs().sum() / self.covariate_scale
 
-    def pre_step_hook(self, inp: ch.Tensor) -> None:
-        """Pre-step hook to apply L1 regularization gradient.
+    def _hessian(self, X: ch.Tensor, weight: ch.Tensor) -> ch.Tensor:  # pylint: disable=invalid-name
+        """Return the NLL's mean Hessian over X's rows; the penalty has none."""
+        return losses.TruncatedGaussianNLL.hessian(
+            X @ weight, X, self.latent_phi, 1.0, self.sampler
+        )
+
+    def _summary_procedure(self) -> list[tuple[str, str]]:
+        return [("l1 penalty", f"{cast(float, self.l1):.4f}")] + (
+            super()._summary_procedure()
+        )
+
+    def __str__(self):
+        """Return a human-readable name for this model."""
+        return "truncated lasso regression, known variance"
+
+
+class ResidualBall(delphi.projection_sets.ProjectionSet):
+    """The set ``E_r = {w : ||X w - y||_2 <= r sqrt(n)}``.
+
+    A projection returns the Euclidean nearest point, ``(I + mu X^T X)^-1
+    (w + mu X^T y)`` for the mu that lands it on the boundary: with
+    ``X = U diag(s) V^T``, the residual there is
+    ``||(s V^T w - U^T y) / (1 + mu s^2)||^2`` plus the part of y outside
+    U's span, which is decreasing in mu, so mu is bisected.
+
+    Attributes:
+        radius: The set's r.
+    """
+
+    # Slack on the boundary, so float32 rounding of a projected point does
+    # not leave it outside.
+    _SLACK = 1e-5
+
+    def __init__(
+        self,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        y: ch.Tensor,
+        radius: float,
+        anchor: ch.Tensor,
+        bisection_steps: int = 100,
+    ):
+        """Build E_r from the training data.
 
         Args:
-            inp: The batch's input covariates.
+            X: Design matrix, shaped (n, p).
+            y: Responses, shaped (n, 1).
+            radius: The set's r.
+            anchor: A weight in the set, shaped (p, 1).
+            bisection_steps: Halvings of the interval mu is searched in.
         """
-        grad = self.weight.grad
-        if grad is None:
-            return
-        # Only regularize the weight coefficients and not the intercept.
-        if self.fit_intercept:
-            grad[:-1] += (self.l1 * ch.sign(inp[:, :-1])).mean(0)[..., None]
-        else:
-            grad += (self.l1 * ch.sign(inp)).mean(0)[..., None]
+        super().__init__(anchor, radius, bisection_steps)
+        self._X, self._y = X.double(), y.double()  # pylint: disable=invalid-name
+        u, self._spectrum, self._basis = ch.linalg.svd(self._X, full_matrices=False)  # pylint: disable=not-callable
+        kept = self._spectrum > self._spectrum.max() * 1e-12
+        u, self._spectrum = u[:, kept], self._spectrum[kept]
+        self._basis = self._basis[kept]
+        self._projected_y = u.T @ self._y
+        self._outside = float((self._y.pow(2).sum() - self._projected_y.pow(2).sum()))
 
-    def post_training_hook(self):  # pylint: disable=attribute-defined-outside-init
-        """Process and store results after training completes."""
-        # The trainer records a flat vector, and the intercept is the last
-        # row: forward multiplies X @ weight, so weight is (d + 1, 1).
-        best_params = self.trainer.best_params.reshape(self.weight.size())
-        final_params = self.trainer.final_params.reshape(self.weight.size())
-        if self.hyperparameters.r is not None:
-            self.hyperparameters.r *= self.hyperparameters.rate
-        if self.fit_intercept:
-            self.best_coef = best_params[:-1] / self.beta
-            self.best_intercept = best_params[-1]
-            self.final_coef = final_params[:-1] / self.beta
-            self.final_intercept = final_params[-1]
-            self.emp_weight /= self.beta
-        else:
-            self.best_coef = best_params[:] / self.beta
-            self.final_coef = final_params[:] / self.beta
-            self.emp_weight /= self.beta
+    def _bound(self) -> float:
+        return cast(float, self.radius) * math.sqrt(self._X.size(0))
 
-    def predict(self, X: ch.Tensor):  # pylint: disable=invalid-name
-        """Make predictions with regression estimates."""
-        assert self.coef is not None, "must fit model before using predict method"
-        if self.fit_intercept:
-            return X @ self.best_coef + self.best_intercept
-        return X @ self.best_coef
+    def contains(self, weight: ch.Tensor) -> bool:
+        residual = float((self._X @ weight.detach().double() - self._y).norm())
+        return residual <= self._bound() * (1.0 + self._SLACK)
 
-    @property
-    def best_coef_(self):
-        """Best coefficient from training."""
-        return self.best_coef
+    def project(self, weight: ch.Tensor) -> ch.Tensor:
+        """Return the Euclidean nearest point of the set to weight.
 
-    @property
-    def best_intercept_(self):
-        """Best intercept from training."""
-        if self.fit_intercept:
-            return self.best_intercept
-        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
-        return None
+        Raises:
+            ValueError: If the set is empty, as when y lies further than
+                the bound from X's column span.
+        """
+        if self.contains(weight):
+            return weight
+        bound = self._bound()
+        if self._outside > bound**2:
+            raise ValueError(
+                f"E_r is empty: no weight has a residual norm within {bound:.4f}."
+            )
+        point = weight.detach().double()
+        offset = self._spectrum[:, None] * (self._basis @ point) - self._projected_y
 
-    @property
-    def final_coef_(self):
-        """Final coefficient from training."""
-        return self.final_coef
+        def residual(mu: float) -> float:
+            shrunk = offset / (1.0 + mu * self._spectrum[:, None].pow(2))
+            return float(shrunk.pow(2).sum()) + max(self._outside, 0.0)
 
-    @property
-    def final_intercept_(self):
-        """Final intercept from training."""
-        if self.fit_intercept:
-            return self.final_intercept
-        warnings.warn("intercept not fit, check inputs.", stacklevel=2)
-        return None
-
-    @property
-    def coef_(self):
-        """Regression coefficient weights."""
-        return self.best_coef.clone()
-
-    @property
-    def intercept_(self):
-        """Regression intercept."""
-        if self.best_intercept:
-            return self.best_intercept.clone()
-        warnings.warn("intercept not fit, check args input.", stacklevel=2)
-        return None
+        low, high = 0.0, 1.0
+        while residual(high) > bound**2:
+            high *= 2.0
+        for _ in range(self.bisection_steps):
+            middle = (low + high) / 2.0
+            if residual(middle) > bound**2:
+                low = middle
+            else:
+                high = middle
+        spectrum = self._spectrum[:, None]
+        step = -high * spectrum * offset / (1.0 + high * spectrum.pow(2))
+        return (point + self._basis.T @ step).to(weight.dtype)
