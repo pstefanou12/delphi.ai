@@ -64,7 +64,7 @@ def positive_unlabeled_sample(
     return X, y, weights
 
 
-def learn_survival_set(
+def learn_truncation_set(
     positive: ch.Tensor,
     unlabeled: ch.Tensor,
     polynomial: delphi.torchnomials.polynomial.Polynomial,

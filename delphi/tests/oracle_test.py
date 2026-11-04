@@ -67,23 +67,21 @@ def test_recovers_a_half_plane_from_its_samples():
     assert error <= 0.05
 
 
-def _threshold_error(member, degree: int, seed: int = 0) -> float:
+def _threshold_error(phi, degree: int, seed: int = 0) -> float:
     """Fit a threshold to labeled Gaussian points; return its fresh error."""
     generator = ch.Generator().manual_seed(seed)
     points = ch.randn(20000, 2, dtype=ch.float64, generator=generator)
     basis = hermite.Hermite(degree, 2, prob=True, norm=True)
-    learned = delphi.oracle.PolynomialThreshold(basis).fit(
-        points, member(points).double()
-    )
+    learned = delphi.oracle.PolynomialThreshold(basis).fit(points, phi(points).double())
     fresh = ch.randn(50000, 2, dtype=ch.float64, generator=generator)
-    return float((learned(fresh) != member(fresh)).double().mean())
+    return float((learned(fresh) != phi(fresh)).double().mean())
 
 
 # Errors measured over seeds 0 to 4: half plane at degree 1, 0.0005 to
 # 0.0043; disc at degree 2, 0.0044 to 0.0096; square at degree 6, 0.054 to
 # 0.057, the degree's own approximation error.
 @pytest.mark.parametrize(
-    "member,degree,tolerance",
+    "phi,degree,tolerance",
     [
         (lambda x: x[:, 0] + x[:, 1] >= 0.5, 1, 0.01),
         (lambda x: x.norm(dim=1) <= 1.2, 2, 0.02),
@@ -91,8 +89,8 @@ def _threshold_error(member, degree: int, seed: int = 0) -> float:
     ],
     ids=["half_plane", "disc", "square"],
 )
-def test_threshold_learns_a_set_from_labels(member, degree, tolerance):
-    assert _threshold_error(member, degree) <= tolerance
+def test_threshold_learns_a_set_from_labels(phi, degree, tolerance):
+    assert _threshold_error(phi, degree) <= tolerance
 
 
 def test_threshold_minimizes_the_weighted_error():
