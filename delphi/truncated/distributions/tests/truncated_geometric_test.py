@@ -2,8 +2,9 @@
 """Tests for the truncated geometric distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -21,6 +22,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_geometric.TruncatedGeometric,
@@ -32,14 +35,18 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
-    _recovers(dims=1, probs=ch.tensor([0.3]), phi=lambda z: z[:, 0] > 2)
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
+    _recovers(dims=1, probs=ch.tensor([0.3]), phi=lambda z: z[:, 0] > 2, known=known)
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     probs = ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -47,10 +54,11 @@ def test_two_dimensions():
         target_alpha=(0.10, 0.40),
         bounds=(-1.0, 200.0),
     )
-    _recovers(dims=2, probs=probs, phi=calibrated.phi)
+    _recovers(dims=2, probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     probs = ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -58,20 +66,23 @@ def test_two_dimensions_random_half_space():
         target_alpha=(0.10, 0.40),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, probs=probs, phi=calibrated.phi)
+    _recovers(dims=2, probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         probs=ch.tensor([0.3]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     probs = ch.linspace(0.2, 0.6, 10)
     _recovers(
         dims=10,
@@ -79,10 +90,12 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     probs = ch.tensor([0.3])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -90,10 +103,11 @@ def test_one_dimension_small_mass():
         target_alpha=(0.005, 0.03),
         bounds=(-1.0, 200.0),
     )
-    _recovers(dims=1, probs=probs, phi=calibrated.phi)
+    _recovers(dims=1, probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     probs = ch.linspace(0.2, 0.6, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -101,10 +115,16 @@ def test_ten_dimensions_sum_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 400.0),
     )
-    _recovers(dims=10, probs=probs, phi=calibrated.phi)
+    _recovers(dims=10, probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_geometric.TruncatedGeometric,
         targets=(
@@ -115,19 +135,5 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="probs_",
         empirical=lambda s: 1.0 / (1.0 + s.mean(0)),
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0002 to 0.0009 and the
-    # learned set's error 0.019 to 0.020.
-    helpers.assert_family_learns_set(
-        model_class=truncated_geometric.TruncatedGeometric,
-        target=torch.distributions.Geometric(ch.tensor([0.3])),
-        phi=lambda z: z[:, 0] > 2,
-        dims=1,
-        parameter="probs_",
-        empirical=lambda s: 1.0 / (1.0 + s.mean(0)),
-        tolerance=0.005,
-        set_tolerance=0.04,
+        known=known,
     )

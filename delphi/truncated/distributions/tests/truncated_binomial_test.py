@@ -2,8 +2,9 @@
 """Tests for the truncated binomial (known trials) distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -22,6 +23,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_binomial.TruncatedBinomial,
@@ -35,19 +38,32 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         baseline_must_fail=baseline_must_fail,
         model_args=(total_count,),
         rebuild=functools.partial(torch.distributions.Binomial, total_count),
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+# Unknown truncation needs degree 2 and rho 0.5 here; over seeds 0,1,2 it
+# meets the shared bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         total_count=ch.tensor([10.0]),
         probs=ch.tensor([0.3]),
         phi=lambda z: z[:, 0] > 4,
+        known=known,
+        hyperparameters={"truncation_set_degree": 2, "truncation_set_rho": 0.5},
     )
 
 
-def test_two_dimensions():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL reaches 0.95 against the naive fit's 1.24",
+    )
+)
+def test_two_dimensions(known):
     total_count, probs = ch.tensor([10.0, 20.0]), ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -55,10 +71,15 @@ def test_two_dimensions():
         target_alpha=(0.10, 0.40),
         bounds=(-1.0, 60.0),
     )
-    _recovers(dims=2, total_count=total_count, probs=probs, phi=calibrated.phi)
+    _recovers(
+        dims=2, total_count=total_count, probs=probs, phi=calibrated.phi, known=known
+    )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     total_count, probs = ch.tensor([10.0, 20.0]), ch.tensor([0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -66,10 +87,18 @@ def test_two_dimensions_random_half_space():
         target_alpha=(0.10, 0.40),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, total_count=total_count, probs=probs, phi=calibrated.phi)
+    _recovers(
+        dims=2,
+        total_count=total_count,
+        probs=probs,
+        phi=calibrated.phi,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
+    )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         total_count=ch.tensor([10.0]),
@@ -77,10 +106,12 @@ def test_one_dimension_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     total_count, probs = 10.0 * ch.ones(10), ch.linspace(0.2, 0.6, 10)
     _recovers(
         dims=10,
@@ -89,10 +120,14 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_one_dimension_small_mass(known):
     total_count, probs = ch.tensor([10.0]), ch.tensor([0.3])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -100,10 +135,18 @@ def test_one_dimension_small_mass():
         target_alpha=(0.005, 0.03),
         bounds=(-1.0, 60.0),
     )
-    _recovers(dims=1, total_count=total_count, probs=probs, phi=calibrated.phi)
+    _recovers(
+        dims=1,
+        total_count=total_count,
+        probs=probs,
+        phi=calibrated.phi,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
+    )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     total_count, probs = 10.0 * ch.ones(10), ch.linspace(0.2, 0.6, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -111,10 +154,15 @@ def test_ten_dimensions_sum_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
-    _recovers(dims=10, total_count=total_count, probs=probs, phi=calibrated.phi)
+    _recovers(
+        dims=10, total_count=total_count, probs=probs, phi=calibrated.phi, known=known
+    )
 
 
-def test_indistinguishable_pair():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     total_count = ch.tensor([20.0])
     helpers.assert_family_distinguishes(
         model_class=truncated_binomial.TruncatedBinomial,
@@ -128,21 +176,6 @@ def test_indistinguishable_pair():
         empirical=lambda s: s.mean(0) / total_count,
         model_args=(total_count,),
         rebuild=functools.partial(torch.distributions.Binomial, total_count),
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0009 and the
-    # learned set's error 0.047 to 0.048.
-    helpers.assert_family_learns_set(
-        model_class=truncated_binomial.TruncatedBinomial,
-        target=torch.distributions.Binomial(ch.tensor([10.0]), ch.tensor([0.3])),
-        phi=lambda z: z[:, 0] > 2,
-        dims=1,
-        parameter="probs_",
-        empirical=lambda s: s.mean(0) / 10.0,
-        model_args=(ch.tensor([10.0]),),
-        rebuild=functools.partial(torch.distributions.Binomial, ch.tensor([10.0])),
-        tolerance=0.005,
-        set_tolerance=0.1,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )

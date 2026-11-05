@@ -4,6 +4,7 @@
 import functools
 from typing import Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -43,6 +44,9 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    unknown_tolerances: Optional[dict[str, float]] = None,
+    set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
     """Fit a truncated Weibull and assert it recovers the untruncated MLE.
 
@@ -58,6 +62,10 @@ def _recovers(
         pass_alpha: Supply the measured survival mass to the model.
         baseline_must_fail: Forwarded to ``assert_recovers``.
         hyperparameters: Hyperparameter dict for the procedure.
+        known: Give the model phi; else it learns the set, scored against phi.
+        unknown_tolerances: Bounds for the unknown variant, where it misses
+            the shared ones.
+        set_tolerance: Bound on the learned set's error.
     """
     ch.manual_seed(0)
     target = torch.distributions.Weibull(scale, concentration)
@@ -65,10 +73,18 @@ def _recovers(
         target, phi, 10000
     )
     args = (alpha,) if pass_alpha else ()
-    truncated = truncated_weibull.TruncatedWeibull(
-        phi, dims, concentration, *args, hyperparameters=hyperparameters
+    truncated = helpers.build(
+        truncated_weibull.TruncatedWeibull,
+        phi,
+        known,
+        dims,
+        concentration,
+        *args,
+        hyperparameters=hyperparameters,
     )
     truncated.fit(S)
+    if not known:
+        helpers.assert_learned_set(truncated, phi, target, set_tolerance)
 
     mle = parent.pow(concentration).mean(0).pow(1.0 / concentration)
     helpers.assert_recovers(
@@ -76,48 +92,60 @@ def _recovers(
         divergence=lambda fitted: weibull_kl_divergence(fitted, mle, concentration),
         baseline=S.pow(concentration).mean(0).pow(1.0 / concentration).flatten(),
         baseline_must_fail=baseline_must_fail,
+        **helpers.unknown_bounds(known, unknown_tolerances),
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([2.0]),
         scale=ch.tensor([1.0]),
         phi=lambda z: z > 1.5,
         hyperparameters={"iterations": 1500, "batch_size": 1},
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     _recovers(
         dims=2,
         concentration=ch.tensor([1.0, 1.0]),
         scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
+        known=known,
     )
 
 
-def test_two_dimensions_differing_shapes():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_differing_shapes(known):
     _recovers(
         dims=2,
         concentration=ch.tensor([2.0, 3.0]),
         scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
         hyperparameters={"batch_size": 100},
+        known=known,
     )
 
 
-def test_twenty_dimensions_differing_shapes():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_twenty_dimensions_differing_shapes(known):
     _recovers(
         dims=20,
         concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4),
         scale=ch.tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4),
         phi=lambda z: z[:, 0] > 1.0,
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
+# 0.264 to 0.289 (ema), 0.265 to 0.290 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 2, 2),
@@ -129,10 +157,16 @@ def test_two_dimensions_random_half_space():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.58, "avg": 0.58},
+        hyperparameters={"truncation_set_rho": 0.3},
     )
 
 
-def test_two_dimensions_random_disc_union():
+# Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
+# 0.097 to 0.157 (ema), 0.100 to 0.156 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_disc_union(known):
     concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_disc_union, 1, 2, 6),
@@ -144,10 +178,14 @@ def test_two_dimensions_random_disc_union():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.32, "avg": 0.32},
+        hyperparameters={"truncation_set_rho": 0.3},
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([2.0]),
@@ -156,10 +194,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
@@ -168,10 +208,12 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_one_dimension_small_mass(known):
     scale, concentration = ch.tensor([1.0]), ch.tensor([2.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
@@ -186,10 +228,17 @@ def test_one_dimension_small_mass():
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     # Truncated to a narrow window the two samples agree to within sampling
     # error, so only an estimator that knows the window can tell them apart.
     concentration = ch.tensor([2.0])
@@ -204,13 +253,18 @@ def test_indistinguishable_pair():
         sample = helpers.generate_truncated_distribution_dataset(
             torch.distributions.Weibull(scale, concentration), phi, 10000
         )
-        truncated = truncated_weibull.TruncatedWeibull(
+        target = torch.distributions.Weibull(scale, concentration)
+        truncated = helpers.build(
+            truncated_weibull.TruncatedWeibull,
             phi,
+            known,
             1,
             concentration,
             sample.alpha,
         )
         truncated.fit(sample.S)
+        if not known:
+            helpers.assert_learned_set(truncated, phi, target)
         fits.append(truncated)
         naive.append(sample.S.pow(concentration).mean(0).pow(1.0 / concentration))
 
@@ -224,24 +278,3 @@ def test_indistinguishable_pair():
             naive=(naive[0], naive[1]),
             divergence=lambda a, b: weibull_kl_divergence(a, b, concentration),
         )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0019 and the
-    # learned set's error 0.024 to 0.028.
-    concentration = ch.tensor([2.0])
-    helpers.assert_family_learns_set(
-        model_class=truncated_weibull.TruncatedWeibull,
-        target=torch.distributions.Weibull(ch.tensor([1.0]), concentration),
-        phi=lambda z: z[:, 0] > 1.0,
-        dims=1,
-        parameter="scale_",
-        empirical=lambda s: s.pow(concentration).mean(0).pow(1.0 / concentration),
-        model_args=(concentration,),
-        rebuild=lambda scale: scale.flatten(),
-        divergence=lambda scale, target: weibull_kl_divergence(
-            scale, target.scale, concentration
-        ),
-        tolerance=0.005,
-        set_tolerance=0.056,
-    )

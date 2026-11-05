@@ -37,6 +37,16 @@ SufficientStatistic = Callable[[ch.Tensor], ch.Tensor]
 # Draws backing mass_on_set.
 MASS_DRAWS = 20000
 
+# The set learner's degree when unset: the largest up to the cap whose basis
+# has at most the budget of terms, since each L1 step solves a system that
+# size. Below degree 4 the L1 fit left a halved normal at the constant 1.
+DEFAULT_TRUNCATION_SET_DEGREE = 4
+TRUNCATION_SET_MAX_TERMS = 250
+
+# Lower left the L1 fit at the constant 1 on a halved normal; higher let the
+# reference outweigh the positives inside the set.
+DEFAULT_TRUNCATION_SET_RHO = 0.4
+
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
     distributions.distributions[base.ConfigT], Generic[base.ConfigT], abc.ABC
@@ -235,6 +245,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 support.
         """
         hp = self.hyperparameters
+        degree = self._truncation_set_degree(S.size(1))
+        rho = hp.truncation_set_rho or DEFAULT_TRUNCATION_SET_RHO
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             hp,
             S,
@@ -247,23 +259,31 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             draws = hp.truncation_set_num_samples or S.size(0)
             unlabeled = reference.sample([draws]).view(draws, -1)
         try:
-            basis = self._truncation_set_basis(reference, S.size(1))
+            basis = self._truncation_set_basis(reference, S.size(1), degree)
         except ValueError as e:
             raise ValueError(
                 f"{type(self).__name__} cannot learn its truncation set at "
-                f"truncation_set_degree={hp.truncation_set_degree}: {e} Lower "
+                f"truncation_set_degree={degree}: {e} Lower "
                 "the degree, or pass phi."
             ) from e
         self.truncation_set_ = delphi.truncation_set.learn_truncation_set(
-            S, unlabeled, basis, rho=hp.truncation_set_rho
+            S, unlabeled, basis, rho=rho
         )
         self.phi = self.truncation_set_
         # The fit compares the sample's moments with those of E(theta, phi),
         # so a sample the learned set excludes would bias it.
         return S[self.truncation_set_(S).reshape(-1)]
 
+    def _truncation_set_degree(self, width: int) -> int:
+        """Return the configured degree, or the default for this width."""
+        if self.hyperparameters.truncation_set_degree is not None:
+            return self.hyperparameters.truncation_set_degree
+        return polynomial.largest_degree(
+            width, TRUNCATION_SET_MAX_TERMS, DEFAULT_TRUNCATION_SET_DEGREE
+        )
+
     def _truncation_set_basis(
-        self, reference: torch.distributions.Distribution, width: int
+        self, reference: torch.distributions.Distribution, width: int, degree: int
     ) -> polynomial.Polynomial:
         """Return the polynomial basis the truncation set is learned over.
 
@@ -275,14 +295,14 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         Args:
             reference: The untruncated fit to the sample.
             width: Columns of a sample.
+            degree: Total degree of the basis.
 
         Returns:
-            A basis of total degree ``truncation_set_degree``.
+            A basis of total degree ``degree``.
 
         Raises:
             ValueError: If the Gram matrix under the reference is singular.
         """
-        degree = self.hyperparameters.truncation_set_degree
         transform = self._truncation_set_transform()  # pylint: disable=assignment-from-none
         base: polynomial.Polynomial
         if transform is not None:

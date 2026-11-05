@@ -2,8 +2,9 @@
 """Tests for the truncated Poisson distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -22,6 +23,8 @@ def _recovers(
     dataset_size: int = 10000,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_poisson.TruncatedPoisson,
@@ -34,19 +37,24 @@ def _recovers(
         dataset_size=dataset_size,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         rate=ch.tensor([1.0]),
         phi=lambda z: z > 1,
         hyperparameters={"batch_size": 1},
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     rate = ch.tensor([1.0, 2.0])
     # A discrete family reaches only the masses its integer thresholds give,
     # so the band is wider than the continuous families use.
@@ -61,10 +69,12 @@ def test_two_dimensions():
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={"batch_size": 1},
+        known=known,
     )
 
 
-def test_twenty_dimensions():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_twenty_dimensions(known):
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -76,19 +86,23 @@ def test_twenty_dimensions():
         dims=20,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_two_dimensions_triangle():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_triangle(known):
     _recovers(
         dims=2,
         rate=ch.tensor([1.0, 2.0]),
         phi=truncation_sets.triangle([[-0.5, -0.5], [3.0, 0.5], [0.5, 3.0]]),
         hyperparameters={"batch_size": 1},
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -100,10 +114,17 @@ def test_two_dimensions_random_half_space():
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={"batch_size": 1},
+        known=known,
     )
 
 
-def test_five_dimensions_random_polytope():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 0.60 is over half the naive fit's 0.91",
+    )
+)
+def test_five_dimensions_random_polytope(known):
     rate = 2 * ch.ones(5)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_polytope, 0, 5, 4),
@@ -115,10 +136,12 @@ def test_five_dimensions_random_polytope():
         rate=rate,
         phi=calibrated.phi,
         dataset_size=5000,
+        known=known,
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         rate=ch.tensor([1.0]),
@@ -126,10 +149,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 3.0, 10),
@@ -137,10 +162,12 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     rate = ch.linspace(1.0, 3.0, 10)
     # One scalar condition, so sampling stays cheap, but it biases every
     # coordinate instead of one.
@@ -155,10 +182,12 @@ def test_ten_dimensions_sum_threshold():
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={"lr": 1e-1},
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     rate = ch.tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
@@ -172,10 +201,14 @@ def test_one_dimension_small_mass():
         dims=1,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_indistinguishable_pair():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     # Truncated to a narrow window the two samples agree to within sampling
     # error, so only an estimator that knows the window can tell them apart.
     helpers.assert_family_distinguishes(
@@ -188,6 +221,8 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="rate_",
         empirical=lambda s: s.mean(0),
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
@@ -219,18 +254,3 @@ def test_phases_widen_a_budget_too_small_for_the_fit():
     assert len(fits["phases"].procedure.phases) > 1
     # It ends on its own, once a budget no longer binds.
     assert fits["phases"].procedure.stop_reason == "budget_not_binding"
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0000 to 0.0020 and the
-    # learned set's error 0.083 to 0.085.
-    helpers.assert_family_learns_set(
-        model_class=truncated_poisson.TruncatedPoisson,
-        target=torch.distributions.Poisson(ch.tensor([3.0])),
-        phi=lambda z: z[:, 0] > 2,
-        dims=1,
-        parameter="rate_",
-        empirical=lambda s: s.mean(0),
-        tolerance=0.005,
-        set_tolerance=0.17,
-    )

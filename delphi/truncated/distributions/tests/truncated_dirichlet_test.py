@@ -6,7 +6,7 @@ bound cuts nothing; the ten-category coupling test bounds the norm instead.
 """
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -25,6 +25,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     categories = concentration.size(0)
     helpers.assert_family_recovers(
@@ -39,14 +41,23 @@ def _recovers(
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        unlearnable=True,
+        **unknown,
     )
 
 
-def test_three_categories():
-    _recovers(concentration=ch.tensor([2.0, 3.0, 4.0]), phi=lambda z: z[:, 0] > 0.3)
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories(known):
+    _recovers(
+        concentration=ch.tensor([2.0, 3.0, 4.0]),
+        phi=lambda z: z[:, 0] > 0.3,
+        known=known,
+    )
 
 
-def test_three_categories_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_random_half_space(known):
     concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 3),
@@ -54,36 +65,43 @@ def test_three_categories_random_half_space():
         target_alpha=(0.15, 0.25),
         bounds=(-2.0, 2.0),
     )
-    _recovers(concentration=concentration, phi=calibrated.phi)
+    _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
-def test_three_categories_triangle():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_triangle(known):
     _recovers(
         concentration=ch.tensor([2.0, 3.0, 4.0]),
         phi=truncation_sets.triangle([(0.3, 0.0), (0.7, 0.0), (0.3, 0.4)]),
+        known=known,
     )
 
 
-def test_three_categories_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_identity(known):
     _recovers(
         concentration=ch.tensor([2.0, 3.0, 4.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_categories_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_categories_identity(known):
     _recovers(
         concentration=ch.linspace(1.0, 5.0, 10),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_three_categories_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_small_mass(known):
     concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -96,10 +114,12 @@ def test_three_categories_small_mass():
         concentration=concentration,
         phi=calibrated.phi,
         hyperparameters={"iterations": 5000},
+        known=known,
     )
 
 
-def test_ten_categories_norm_threshold():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_categories_norm_threshold(known):
     concentration = ch.linspace(1.0, 5.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.norm_threshold,
@@ -107,10 +127,11 @@ def test_ten_categories_norm_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 1.0),
     )
-    _recovers(concentration=concentration, phi=calibrated.phi)
+    _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
-def test_indistinguishable_pair():
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     # Given x0, the other categories' shares are Dirichlet in the rest of the
     # concentration, so a pair differing only in the first is told apart by
     # x0 alone, which a slab flattens.
@@ -124,6 +145,8 @@ def test_indistinguishable_pair():
         dims=3,
         parameter="concentration_",
         empirical=helpers.untruncated_mle(truncated_dirichlet.TruncatedDirichlet, 3),
+        known=known,
+        unlearnable=True,
     )
 
 

@@ -274,8 +274,9 @@ untruncated fit to it, labeled 0 at weight `truncation_set_rho`, and a
 polynomial threshold of degree `truncation_set_degree` is fit to the labels
 by L1 regression. The family then fits the samples inside the learned set by
 the same procedure as with a known `phi`. Heavy-tailed families learn the set
-in `log x`. The basis has `C(degree + d, d)` terms, so keep the degree low
-in many dimensions. A family whose samples satisfy a polynomial identity,
+in `log x`. The basis has `C(degree + d, d)` terms, so unless set the
+degree is the largest up to 4 whose basis has at most 250 terms: 4 up to 6
+dimensions, 3 up to 9, 2 up to 20, and 1 beyond. A family whose samples satisfy a polynomial identity,
 such as the Dirichlet's coordinates summing to one or a Bernoulli's `x² = x`,
 raises a `ValueError` naming the degree. For the normal,
 `TruncatedMultivariateNormal(dims, method="l1")` selects this route instead of
@@ -293,9 +294,7 @@ ch.manual_seed(0)
 population = torch.distributions.Exponential(ch.tensor([1.0])).sample([20000])
 S = population[population[:, 0] > 1.0][:5000]
 
-model = truncated_exponential.TruncatedExponential(
-    None, 1, hyperparameters={"truncation_set_degree": 4}
-)
+model = truncated_exponential.TruncatedExponential(None, 1)
 model.fit(S)
 
 rate = model.avg_rate_

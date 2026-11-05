@@ -2,8 +2,9 @@
 """Tests for the truncated gamma (known concentration) distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -22,6 +23,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_gamma.TruncatedGamma,
@@ -35,19 +38,24 @@ def _recovers(
         baseline_must_fail=baseline_must_fail,
         model_args=(concentration,),
         rebuild=functools.partial(torch.distributions.Gamma, concentration),
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([2.0]),
         rate=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     concentration, rate = ch.tensor([2.0, 3.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -60,10 +68,12 @@ def test_two_dimensions():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     concentration, rate = ch.tensor([2.0, 3.0]), ch.tensor([1.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -75,10 +85,12 @@ def test_two_dimensions_random_half_space():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([2.0]),
@@ -87,10 +99,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         concentration=ch.linspace(1.5, 3.0, 10),
@@ -99,10 +113,14 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_one_dimension_small_mass(known):
     concentration, rate = ch.tensor([2.0]), ch.tensor([1.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -115,10 +133,13 @@ def test_one_dimension_small_mass():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     concentration, rate = ch.linspace(1.5, 3.0, 10), ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -131,10 +152,17 @@ def test_ten_dimensions_sum_threshold():
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_gamma.TruncatedGamma,
         targets=(
@@ -147,21 +175,5 @@ def test_indistinguishable_pair():
         empirical=lambda s: 2.0 / s.mean(0),
         model_args=(ch.tensor([2.0]),),
         rebuild=functools.partial(torch.distributions.Gamma, ch.tensor([2.0])),
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0002 to 0.0033 and the
-    # learned set's error 0.042 to 0.053.
-    helpers.assert_family_learns_set(
-        model_class=truncated_gamma.TruncatedGamma,
-        target=torch.distributions.Gamma(ch.tensor([2.0]), ch.tensor([1.0])),
-        phi=lambda z: z[:, 0] > 2.0,
-        dims=1,
-        parameter="rate_",
-        empirical=lambda s: 2.0 / s.mean(0),
-        model_args=(ch.tensor([2.0]),),
-        rebuild=functools.partial(torch.distributions.Gamma, ch.tensor([2.0])),
-        tolerance=0.007,
-        set_tolerance=0.11,
+        known=known,
     )

@@ -10,7 +10,7 @@ unidentified, so the tests use ten.
 """
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -54,6 +54,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_multinomial.TruncatedMultinomial,
@@ -68,14 +70,19 @@ def _recovers(
         model_args=(_TRIALS,),
         rebuild=functools.partial(torch.distributions.Multinomial, _TRIALS),
         divergence=multinomial_kl_divergence,
+        known=known,
+        unlearnable=True,
+        **unknown,
     )
 
 
-def test_three_categories():
-    _recovers(probs=ch.tensor([0.2, 0.3, 0.5]), phi=lambda z: z[:, 0] >= 4)
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories(known):
+    _recovers(probs=ch.tensor([0.2, 0.3, 0.5]), phi=lambda z: z[:, 0] >= 4, known=known)
 
 
-def test_three_categories_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_random_half_space(known):
     probs = ch.tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 3),
@@ -83,30 +90,35 @@ def test_three_categories_random_half_space():
         target_alpha=(0.10, 0.40),
         bounds=(-20.0, 20.0),
     )
-    _recovers(probs=probs, phi=calibrated.phi)
+    _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_three_categories_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_identity(known):
     _recovers(
         probs=ch.tensor([0.2, 0.3, 0.5]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_categories_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_categories_identity(known):
     probs = ch.linspace(1.0, 2.0, 10)
     _recovers(
         probs=probs / probs.sum(),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_three_categories_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_categories_small_mass(known):
     probs = ch.tensor([0.2, 0.3, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -114,10 +126,11 @@ def test_three_categories_small_mass():
         target_alpha=(0.005, 0.03),
         bounds=(-1.0, 11.0),
     )
-    _recovers(probs=probs, phi=calibrated.phi)
+    _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_ten_categories_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_categories_random_half_space(known):
     probs = ch.linspace(1.0, 2.0, 10)
     probs = probs / probs.sum()
     calibrated = truncation_sets.calibrate(
@@ -126,10 +139,11 @@ def test_ten_categories_random_half_space():
         target_alpha=(0.10, 0.40),
         bounds=(-20.0, 20.0),
     )
-    _recovers(probs=probs, phi=calibrated.phi)
+    _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
-def test_indistinguishable_pair():
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     # Given x0, the other counts split in proportion to the other probs, so a
     # pair sharing that ratio is told apart by x0 alone. One value of x0
     # would carry no information on probs_0 at all, so the window holds two.
@@ -146,6 +160,8 @@ def test_indistinguishable_pair():
         model_args=(_TRIALS,),
         rebuild=functools.partial(torch.distributions.Multinomial, _TRIALS),
         divergence=multinomial_kl_divergence,
+        known=known,
+        unlearnable=True,
     )
 
 

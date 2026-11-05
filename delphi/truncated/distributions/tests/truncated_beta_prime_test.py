@@ -2,7 +2,7 @@
 """Tests for the truncated beta prime distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -32,6 +32,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_beta_prime.TruncatedBetaPrime,
@@ -46,19 +48,29 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_beta_prime,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         concentration1=ch.tensor([3.0]),
         concentration0=ch.tensor([4.0]),
         phi=lambda z: z[:, 0] > 1.5,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_two_dimensions():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     concentration1, concentration0 = ch.tensor([3.0, 2.0]), ch.tensor([4.0, 6.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -71,10 +83,15 @@ def test_two_dimensions():
         concentration1=concentration1,
         concentration0=concentration0,
         phi=calibrated.phi,
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
+# 0.101 to 0.234 (ema), 0.100 to 0.238 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     concentration1, concentration0 = ch.tensor([3.0, 2.0]), ch.tensor([4.0, 6.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -87,10 +104,14 @@ def test_two_dimensions_random_half_space():
         concentration1=concentration1,
         concentration0=concentration0,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.47, "avg": 0.48},
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         concentration1=ch.tensor([3.0]),
@@ -98,10 +119,12 @@ def test_one_dimension_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         concentration1=ch.linspace(1.5, 5.0, 10),
@@ -109,10 +132,14 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+# Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
+# 0.011 to 0.237 (ema), 0.010 to 0.237 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     concentration1, concentration0 = ch.tensor([3.0]), ch.tensor([4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -125,10 +152,19 @@ def test_one_dimension_small_mass():
         concentration1=concentration1,
         concentration0=concentration0,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.48, "avg": 0.48},
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL reaches 0.43 against the naive fit's 0.88",
+    )
+)
+def test_ten_dimensions_sum_threshold(known):
     concentration1 = ch.linspace(1.5, 5.0, 10)
     concentration0 = ch.linspace(3.0, 8.0, 10)
     calibrated = truncation_sets.calibrate(
@@ -142,10 +178,14 @@ def test_ten_dimensions_sum_threshold():
         concentration1=concentration1,
         concentration0=concentration0,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_indistinguishable_pair():
+# Unknown truncation needs rho 0.3 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_beta_prime.TruncatedBetaPrime,
         targets=(
@@ -157,11 +197,19 @@ def test_indistinguishable_pair():
         parameter=("concentration1_", "concentration0_"),
         empirical=helpers.untruncated_mle(truncated_beta_prime.TruncatedBetaPrime, 1),
         rebuild=_beta_prime,
+        known=known,
+        hyperparameters={"truncation_set_rho": 0.3},
     )
 
 
 @pytest.mark.slow
-def test_twenty_dimensions_small_mass():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 3.3 to 3.5 exceeds the naive fit's 2.8 (seeds 0-1)",
+    )
+)
+def test_twenty_dimensions_small_mass(known):
     concentration1 = ch.linspace(1.5, 5.0, 20)
     concentration0 = ch.linspace(3.0, 8.0, 20)
     calibrated = truncation_sets.calibrate(
@@ -175,20 +223,5 @@ def test_twenty_dimensions_small_mass():
         concentration1=concentration1,
         concentration0=concentration0,
         phi=calibrated.phi,
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.0021 and the
-    # learned set's error 0.0014 to 0.0020.
-    helpers.assert_family_learns_set(
-        model_class=truncated_beta_prime.TruncatedBetaPrime,
-        target=_beta_prime(ch.tensor([3.0]), ch.tensor([4.0])),
-        phi=lambda z: z[:, 0] > 0.9,
-        dims=1,
-        parameter=("concentration1_", "concentration0_"),
-        empirical=helpers.untruncated_mle(truncated_beta_prime.TruncatedBetaPrime, 1),
-        rebuild=_beta_prime,
-        tolerance=0.005,
-        set_tolerance=0.005,
+        known=known,
     )

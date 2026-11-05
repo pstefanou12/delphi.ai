@@ -2,7 +2,7 @@
 """Tests for the truncated Gamma distribution with unknown shape."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -25,6 +25,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=_MODEL,
@@ -36,19 +38,24 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([3.0]),
         rate=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 2.0,
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     concentration, rate = ch.tensor([3.0, 2.0]), ch.tensor([2.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -56,10 +63,15 @@ def test_two_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=2, concentration=concentration, rate=rate, phi=calibrated.phi)
+    _recovers(
+        dims=2, concentration=concentration, rate=rate, phi=calibrated.phi, known=known
+    )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.320 to
+# 0.454 (ema), 0.319 to 0.453 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     concentration, rate = ch.tensor([3.0, 2.0]), ch.tensor([2.0, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -67,10 +79,18 @@ def test_two_dimensions_random_half_space():
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, concentration=concentration, rate=rate, phi=calibrated.phi)
+    _recovers(
+        dims=2,
+        concentration=concentration,
+        rate=rate,
+        phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.91, "avg": 0.91},
+    )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         concentration=ch.tensor([3.0]),
@@ -78,10 +98,12 @@ def test_one_dimension_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         concentration=ch.linspace(1.5, 5.0, 10),
@@ -89,10 +111,12 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     concentration, rate = ch.tensor([3.0]), ch.tensor([2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -100,10 +124,13 @@ def test_one_dimension_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=1, concentration=concentration, rate=rate, phi=calibrated.phi)
+    _recovers(
+        dims=1, concentration=concentration, rate=rate, phi=calibrated.phi, known=known
+    )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_sum_threshold(known):
     concentration, rate = ch.linspace(1.5, 5.0, 10), ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -111,10 +138,13 @@ def test_ten_dimensions_sum_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 500.0),
     )
-    _recovers(dims=10, concentration=concentration, rate=rate, phi=calibrated.phi)
+    _recovers(
+        dims=10, concentration=concentration, rate=rate, phi=calibrated.phi, known=known
+    )
 
 
-def test_indistinguishable_pair():
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=_MODEL,
         targets=(
@@ -125,11 +155,15 @@ def test_indistinguishable_pair():
         dims=1,
         parameter=("concentration_", "rate_"),
         empirical=helpers.untruncated_mle(_MODEL, 1),
+        known=known,
     )
 
 
+# Unknown truncation: over seeds 0,1 the estimate's KL measured 0.143 to 0.334
+# (ema), 0.143 to 0.333 (avg).
 @pytest.mark.slow
-def test_twenty_dimensions_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_twenty_dimensions_small_mass(known):
     concentration, rate = ch.linspace(1.5, 5.0, 20), ch.linspace(0.5, 2.0, 20)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -137,19 +171,11 @@ def test_twenty_dimensions_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 1000.0),
     )
-    _recovers(dims=20, concentration=concentration, rate=rate, phi=calibrated.phi)
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.0020 and the
-    # learned set's error 0.0000 to 0.0002.
-    helpers.assert_family_learns_set(
-        model_class=_MODEL,
-        target=torch.distributions.Gamma(ch.tensor([3.0]), ch.tensor([2.0])),
-        phi=lambda z: z[:, 0] < 2.0,
-        dims=1,
-        parameter=("concentration_", "rate_"),
-        empirical=helpers.untruncated_mle(_MODEL, 1),
-        tolerance=0.005,
-        set_tolerance=0.005,
+    _recovers(
+        dims=20,
+        concentration=concentration,
+        rate=rate,
+        phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.67, "avg": 0.67},
     )

@@ -23,6 +23,8 @@ def _fit(
     dataset_size: int,
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
+    known: bool = True,
+    set_tolerance: float = helpers.SET_TOLERANCE,
 ):
     """Fit on a standardized truncated sample and map the estimates back.
 
@@ -41,10 +43,19 @@ def _fit(
         return phi(x * scale + loc)
 
     args = (alpha,) if pass_alpha else ()
-    model = known_truncated_multivariate_normal.KnownTruncationMultivariateNormal(
-        phi_standardised, target.loc.numel(), *args, hyperparameters=hyperparameters
+    model = helpers.build(
+        known_truncated_multivariate_normal.KnownTruncationMultivariateNormal,
+        phi_standardised,
+        known,
+        target.loc.numel(),
+        *args,
+        hyperparameters=hyperparameters,
     )
     model.fit((S - loc) / scale)
+    if not known:
+        helpers.assert_learned_set(
+            model, phi, target, set_tolerance, to_model=lambda x: (x - loc) / scale
+        )
 
     def estimate(name: str) -> torch.distributions.MultivariateNormal:
         covariance = getattr(model, f"{name}_covariance_matrix_")
@@ -67,14 +78,19 @@ def _recovers(  # pylint: disable=too-many-arguments
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     tolerances: Optional[dict[str, float]] = None,
+    known: bool = True,
+    unknown_tolerances: Optional[dict[str, float]] = None,
+    set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
-    estimate, naive = _fit(target, phi, dataset_size, hyperparameters, pass_alpha)
+    estimate, naive = _fit(
+        target, phi, dataset_size, hyperparameters, pass_alpha, known, set_tolerance
+    )
     helpers.assert_recovers(
         estimate=estimate,
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=naive,
         baseline_must_fail=baseline_must_fail,
-        tolerances=tolerances,
+        tolerances=tolerances if known else unknown_tolerances or tolerances,
     )
 
 
@@ -84,7 +100,8 @@ def _calibrated(
     return truncation_sets.calibrate(factory, target, **kwargs).phi
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     target = helpers.correlated_normal(1)
     phi = _calibrated(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -92,10 +109,11 @@ def test_one_dimension():
         target_alpha=(0.15, 0.25),
         bounds=(-10.0, 10.0),
     )
-    _recovers(target, phi)
+    _recovers(target, phi, known=known)
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     target = helpers.correlated_normal(2)
     phi = _calibrated(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -103,40 +121,72 @@ def test_two_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(-10.0, 10.0),
     )
-    _recovers(target, phi)
+    _recovers(target, phi, known=known)
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     target = helpers.correlated_normal(2)
     phi = _calibrated(
         functools.partial(truncation_sets.random_half_space, 1, 2),
         target,
         bounds=(-25.0, 25.0),
     )
-    _recovers(target, phi)
+    _recovers(target, phi, known=known)
 
 
-def test_two_dimensions_annulus():
-    _recovers(helpers.correlated_normal(2), truncation_sets.annulus(2.5, 5.0))
-
-
-def test_two_dimensions_crescent():
+# Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_annulus(known):
     _recovers(
-        helpers.correlated_normal(2), truncation_sets.crescent(2.0, 6.0, 0.0, math.pi)
+        helpers.correlated_normal(2),
+        truncation_sets.annulus(2.5, 5.0),
+        known=known,
+        hyperparameters={"truncation_set_degree": 6},
     )
 
 
-def test_two_dimensions_random_disc_union():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 0.95 is over half the naive fit's 1.66",
+    )
+)
+def test_two_dimensions_crescent(known):
+    _recovers(
+        helpers.correlated_normal(2),
+        truncation_sets.crescent(2.0, 6.0, 0.0, math.pi),
+        known=known,
+    )
+
+
+# Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.136 to
+# 0.200 (ema), 0.135 to 0.199 (avg); the set error 0.117 to 0.147.
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_disc_union(known):
     target = helpers.correlated_normal(2)
     phi = _calibrated(
         functools.partial(truncation_sets.random_disc_union, 0, 2, 6),
         target,
         bounds=(1e-4, 1e3),
     )
-    _recovers(target, phi)
+    _recovers(
+        target,
+        phi,
+        known=known,
+        unknown_tolerances={"ema": 0.4, "avg": 0.4},
+        set_tolerance=0.3,
+    )
 
 
-def test_ten_dimensions():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 0.60 is over half the naive fit's 1.19",
+    )
+)
+def test_ten_dimensions(known):
     target = helpers.correlated_normal(10)
     phi = _calibrated(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -144,10 +194,13 @@ def test_ten_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(-10.0, 10.0),
     )
-    _recovers(target, phi)
+    _recovers(target, phi, known=known)
 
 
-def test_ten_dimensions_sum_threshold():
+# Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
+# 0.284 to 0.451 (ema), 0.256 to 0.453 (avg).
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     target = helpers.correlated_normal(10)
     # One scalar condition that biases every coordinate, not just one.
     phi = _calibrated(
@@ -158,10 +211,23 @@ def test_ten_dimensions_sum_threshold():
     )
     # The cut leaves the variance along the sum poorly identified: at 5000
     # samples the fit plateaus near 0.1 however long it runs.
-    _recovers(target, phi, dataset_size=20000)
+    _recovers(
+        target,
+        phi,
+        dataset_size=20000,
+        known=known,
+        unknown_tolerances={"ema": 0.91, "avg": 0.91},
+        hyperparameters={"truncation_set_degree": 3},
+    )
 
 
-def test_ten_dimensions_norm_threshold():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL reaches 0.37 against the naive fit's 0.83",
+    )
+)
+def test_ten_dimensions_norm_threshold(known):
     target = helpers.correlated_normal(10)
     # Couples every coordinate like the sum does, and also excludes the mode.
     phi = _calibrated(
@@ -170,11 +236,17 @@ def test_ten_dimensions_norm_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
-    _recovers(target, phi)
+    _recovers(target, phi, known=known)
 
 
 @pytest.mark.slow
-def test_twenty_dimensions():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: at degree 2, the default in 20 dims, the set comes back as all of space (error 0.81 on seeds 0-1)",
+    )
+)
+def test_twenty_dimensions(known):
     target = helpers.correlated_normal(20)
     phi = _calibrated(
         truncation_sets.sum_threshold,
@@ -182,30 +254,35 @@ def test_twenty_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(-100.0, 100.0),
     )
-    _recovers(target, phi, dataset_size=10000)
+    _recovers(target, phi, dataset_size=10000, known=known)
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         helpers.correlated_normal(1),
         delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_identity(known):
     _recovers(
         helpers.correlated_normal(10),
         delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500, "num_samples": 10000},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     target = helpers.correlated_normal(1)
     # The regime the paper states its guarantee in; nothing else goes near it.
     phi = _calibrated(
@@ -214,7 +291,7 @@ def test_one_dimension_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(-10.0, 20.0),
     )
-    _recovers(target, phi, dataset_size=10000)
+    _recovers(target, phi, dataset_size=10000, known=known)
 
 
 def test_unit_alpha_is_rejected():
@@ -224,7 +301,13 @@ def test_unit_alpha_is_rejected():
         )
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     # Daskalakis et al.'s example: cut to the same box, N((0, 1), I) and
     # N((0, 0), 4I) leave samples whose moments agree.
     targets = (
@@ -235,26 +318,10 @@ def test_indistinguishable_pair():
     def box(x: ch.Tensor) -> ch.Tensor:
         return ((x > -0.5) & (x < 0.5)).all(dim=-1)
 
-    fits = [_fit(target, box, 10000) for target in targets]
+    fits = [_fit(target, box, 10000, known=known) for target in targets]
     helpers.assert_distinguishes(
         targets=targets,
         recovered=(fits[0][0]("avg"), fits[1][0]("avg")),
         naive=(fits[0][1], fits[1][1]),
         divergence=torch.distributions.kl.kl_divergence,
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.020 to 0.068 and the
-    # learned set's error 0.005 to 0.013.
-    helpers.assert_family_learns_set(
-        model_class=known_truncated_multivariate_normal.KnownTruncationMultivariateNormal,
-        target=torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2)),
-        phi=lambda z: z[:, 0] + z[:, 1] > 0.0,
-        dims=2,
-        parameter=("loc_", "covariance_matrix_"),
-        empirical=lambda s: (s.mean(0), ch.cov(s.T)),
-        rebuild=torch.distributions.MultivariateNormal,
-        tolerance=0.14,
-        set_tolerance=0.03,
     )

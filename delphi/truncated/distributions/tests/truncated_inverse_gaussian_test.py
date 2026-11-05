@@ -2,7 +2,7 @@
 """Tests for the truncated inverse Gaussian distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -30,6 +30,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_inverse_gaussian.TruncatedInverseGaussian,
@@ -44,19 +46,26 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_wald,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         loc=ch.tensor([1.0]),
         concentration=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 1.5,
+        known=known,
     )
 
 
-def test_two_dimensions():
+# Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
+# 0.061 to 0.378 (ema), 0.064 to 0.369 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     loc, concentration = ch.tensor([1.0, 2.0]), ch.tensor([2.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -64,10 +73,24 @@ def test_two_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 50.0),
     )
-    _recovers(dims=2, loc=loc, concentration=concentration, phi=calibrated.phi)
+    _recovers(
+        dims=2,
+        loc=loc,
+        concentration=concentration,
+        phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.76, "avg": 0.74},
+        hyperparameters={"truncation_set_rho": 0.3},
+    )
 
 
-def test_two_dimensions_random_half_space():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL reaches 0.61 against the naive fit's 1.49",
+    )
+)
+def test_two_dimensions_random_half_space(known):
     loc, concentration = ch.tensor([1.0, 2.0]), ch.tensor([2.0, 4.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -75,10 +98,13 @@ def test_two_dimensions_random_half_space():
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, loc=loc, concentration=concentration, phi=calibrated.phi)
+    _recovers(
+        dims=2, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
+    )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         loc=ch.tensor([1.0]),
@@ -86,10 +112,12 @@ def test_one_dimension_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         loc=ch.linspace(0.5, 2.0, 10),
@@ -97,10 +125,12 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     loc, concentration = ch.tensor([1.0]), ch.tensor([2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -108,10 +138,15 @@ def test_one_dimension_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
-    _recovers(dims=1, loc=loc, concentration=concentration, phi=calibrated.phi)
+    _recovers(
+        dims=1, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
+    )
 
 
-def test_ten_dimensions_sum_threshold():
+# Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
+# 0.167 to 0.192 (ema), 0.167 to 0.191 (avg).
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     loc, concentration = ch.linspace(0.5, 2.0, 10), ch.linspace(1.0, 5.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -119,10 +154,19 @@ def test_ten_dimensions_sum_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
-    _recovers(dims=10, loc=loc, concentration=concentration, phi=calibrated.phi)
+    _recovers(
+        dims=10,
+        loc=loc,
+        concentration=concentration,
+        phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.39, "avg": 0.39},
+        hyperparameters={"truncation_set_degree": 3},
+    )
 
 
-def test_indistinguishable_pair():
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_inverse_gaussian.TruncatedInverseGaussian,
         targets=(
@@ -136,11 +180,18 @@ def test_indistinguishable_pair():
             truncated_inverse_gaussian.TruncatedInverseGaussian, 1
         ),
         rebuild=_wald,
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_twenty_dimensions_small_mass():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 2.35 to 2.50 against the naive fit's 2.97 (seeds 0-1)",
+    )
+)
+def test_twenty_dimensions_small_mass(known):
     loc, concentration = ch.linspace(0.5, 2.0, 20), ch.linspace(1.0, 5.0, 20)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -148,22 +199,6 @@ def test_twenty_dimensions_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 400.0),
     )
-    _recovers(dims=20, loc=loc, concentration=concentration, phi=calibrated.phi)
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.0001 to 0.032 and the
-    # learned set's error 0.0012 to 0.0020.
-    helpers.assert_family_learns_set(
-        model_class=truncated_inverse_gaussian.TruncatedInverseGaussian,
-        target=_wald(ch.tensor([1.0]), ch.tensor([2.0])),
-        phi=lambda z: z[:, 0] > 0.8,
-        dims=1,
-        parameter=("loc_", "concentration_"),
-        empirical=helpers.untruncated_mle(
-            truncated_inverse_gaussian.TruncatedInverseGaussian, 1
-        ),
-        rebuild=_wald,
-        tolerance=0.065,
-        set_tolerance=0.005,
+    _recovers(
+        dims=20, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
     )

@@ -2,8 +2,9 @@
 """Tests for the truncated Beta distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -28,6 +29,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_beta.TruncatedBeta,
@@ -39,19 +42,26 @@ def _recovers(
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension(known):
     _recovers(
         dims=1,
         first=ch.tensor([2.0]),
         second=ch.tensor([3.0]),
         phi=lambda z: z[:, 0] > 0.5,
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.206 to
+# 0.257 (ema), 0.235 to 0.279 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     first, second = ch.tensor([2.0, 4.0]), ch.tensor([3.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -63,10 +73,13 @@ def test_two_dimensions_random_half_space():
         first=first,
         second=second,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.52, "avg": 0.56},
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         first=ch.tensor([2.0]),
@@ -75,10 +88,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         first=ch.linspace(1.5, 3.0, 10),
@@ -87,10 +102,12 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.known_and_unknown(pytest.mark.slow)
+def test_ten_dimensions_sum_threshold(known):
     first, second = ch.linspace(1.5, 3.0, 10), ch.linspace(2.0, 4.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -103,10 +120,12 @@ def test_ten_dimensions_sum_threshold():
         first=first,
         second=second,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_indistinguishable_pair():
+@helpers.KNOWN_AND_UNKNOWN
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_beta.TruncatedBeta,
         # Symmetric about the window, so neither slopes across it, and wide
@@ -120,19 +139,5 @@ def test_indistinguishable_pair():
         dims=1,
         parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
-    )
-
-
-def test_unknown_truncation():
-    # Over seeds 0-4 the estimate's divergence measured 0.010 to 0.050 and the
-    # learned set's error 0.0005 to 0.0009.
-    helpers.assert_family_learns_set(
-        model_class=truncated_beta.TruncatedBeta,
-        target=torch.distributions.Beta(ch.tensor([2.0]), ch.tensor([3.0])),
-        phi=lambda z: z[:, 0] > 0.5,
-        dims=1,
-        parameter=("concentration1_", "concentration0_"),
-        empirical=_moments,
-        tolerance=0.1,
-        set_tolerance=0.005,
+        known=known,
     )
