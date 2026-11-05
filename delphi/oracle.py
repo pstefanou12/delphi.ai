@@ -116,8 +116,9 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
             self.
         """
         z = self.transform(samples)
-        self.polynomial = hermite.Hermite(self.degree, z.size(1), prob=True, norm=True)
-        self.polynomial.fit(z)
+        self.polynomial = hermite.Hermite(
+            self.degree, z.size(1), prob=True, norm=True
+        ).fit(z)
         self._samples = z
         return self
 
