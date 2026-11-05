@@ -72,10 +72,20 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
         return weights * pred_grad, None, None, var_grad, None, None
 
     @staticmethod
-    def hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
-        """Return the batch-mean Hessian of the NLL in the weight.
+    def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+        pred,
+        X,  # pylint: disable=invalid-name
+        phi,
+        noise_var,
+        sampler: sampling.GaussianSampler,
+        natural: bool = False,
+    ):
+        """Return the batch-mean Hessian of the NLL, per output.
 
-        ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``, per output.
+        In the weight w it is ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``.
+        With ``natural``, it is in ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``,
+        in which the NLL is convex: ``mean_i Cov[(z x_i, -z^2 / 2) | S]``,
+        whose v block is w's times sigma^4.
 
         Args:
             pred: Predictions h, shaped (n, k).
@@ -83,66 +93,42 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
             phi: As ``forward``.
             noise_var: As ``forward``.
             sampler: As ``forward``.
+            natural: Differentiate in ``(v, lambda)`` rather than in w.
 
         Returns:
-            The Hessian for the weight of shape (d, k) flattened row-major,
-            shaped (d * k, d * k), in float64: scaled covariates leave its
+            The Hessian for the weight of shape (d, k), or for ``natural``
+            the parameter of shape (d + 1, k), v's rows then lambda's,
+            flattened row-major. It is in float64: scaled covariates leave its
             smallest eigenvalue below float32's resolution of its largest.
         """
         with ch.no_grad():
             noise_var = ch.as_tensor(noise_var, dtype=pred.dtype)
-            moments = sampler.moments(pred, noise_var, phi, second_moment=True)
-            second = cast(ch.Tensor, moments.second_moment)
-            var = (second - moments.mean.pow(2)) / noise_var.double().pow(2)
-            design = X.double()
-            hess = ch.einsum(
-                "ni,nj,na,ab->iajb",
-                design,
-                design,
-                var,
-                ch.eye(pred.size(1), dtype=ch.float64),
+            moments = sampler.moments(
+                pred, noise_var, phi, second_moment=True, fourth_moment=natural
             )
-            size = X.size(1) * pred.size(1)
-            return hess.reshape(size, size) / pred.size(0)
-
-    @staticmethod
-    def natural_hessian(pred, X, phi, noise_var, sampler: sampling.GaussianSampler):  # pylint: disable=invalid-name
-        """Return the batch-mean Hessian of the NLL in ``(v, lambda)``.
-
-        For ``(v, lambda) = (w / sigma^2, 1 / sigma^2)``, in which the NLL is
-        convex, it is ``mean_i Cov[(z x_i, -z^2 / 2) | S]`` per output.
-
-        Args:
-            pred: As ``hessian``.
-            X: As ``hessian``.
-            phi: As ``forward``.
-            noise_var: The noise variance, shaped (k,).
-            sampler: As ``forward``.
-
-        Returns:
-            The Hessian for the parameter of shape (d + 1, k), v's rows then
-            lambda's, flattened row-major, shaped ((d + 1) k, (d + 1) k), in
-            float64 as ``hessian``.
-        """
-        with ch.no_grad():
-            moments = sampler.moments(pred, noise_var, phi, fourth_moment=True)
             mean = moments.mean
             second = cast(ch.Tensor, moments.second_moment)
-            third = cast(ch.Tensor, moments.third_moment)
-            fourth = cast(ch.Tensor, moments.fourth_moment)
             n, k = pred.shape
+            features = X.size(1)
+            width = features + 1 if natural else features
             design = X.double()
-            block = ch.zeros(k, X.size(1) + 1, X.size(1) + 1, dtype=ch.float64)
-            block[:, :-1, :-1] = ch.einsum(
-                "ni,nj,na->aij", design, design, second - mean.pow(2)
+            var = second - mean.pow(2)
+            if not natural:
+                var = var / noise_var.double().pow(2)
+            block = ch.zeros(k, width, width, dtype=ch.float64)
+            block[:, :features, :features] = ch.einsum(
+                "ni,nj,na->aij", design, design, var
             )
-            block[:, :-1, -1] = -ch.einsum(
-                "ni,na->ai", design, 0.5 * (third - mean * second)
-            )
-            block[:, -1, :-1] = block[:, :-1, -1]
-            block[:, -1, -1] = (0.25 * (fourth - second.pow(2))).sum(0)
+            if natural:
+                third = cast(ch.Tensor, moments.third_moment)
+                fourth = cast(ch.Tensor, moments.fourth_moment)
+                block[:, :features, features] = -ch.einsum(
+                    "ni,na->ai", design, 0.5 * (third - mean * second)
+                )
+                block[:, features, :features] = block[:, :features, features]
+                block[:, features, features] = (0.25 * (fourth - second.pow(2))).sum(0)
             hess = ch.einsum("aij,ab->iajb", block, ch.eye(k, dtype=ch.float64))
-            size = (X.size(1) + 1) * k
+            size = width * k
             return hess.reshape(size, size) / n
 
 

@@ -171,14 +171,32 @@ def test_truncated_gaussian_nll_natural_hessian_matches_autograd():
         return _natural_nll(design @ flat[:-1, None], flat[-1:], targ).mean()
 
     expected = torch.autograd.functional.hessian(mean_nll, natural.flatten())
-    hessian = losses.TruncatedGaussianNLL.natural_hessian(
+    hessian = losses.TruncatedGaussianNLL.hessian(
         design @ natural[:-1] / natural[-1],
         design,
         _positive,
         1.0 / natural[-1],
         _SAMPLER,
+        natural=True,
     )
     assert ch.allclose(hessian, expected.double(), atol=2e-2), (hessian, expected)
+
+
+def test_truncated_gaussian_nll_natural_hessian_scales_the_weight_block():
+    """Each output's v block is w's Hessian times sigma^4, as v = w / sigma^2."""
+    ch.manual_seed(0)
+    pred, design = ch.randn(8, 2), ch.randn(8, 3)
+    noise_var = ch.tensor([0.5, 2.0])
+    sampler = sampling.UntruncatedGaussianMoments()
+    weight = losses.TruncatedGaussianNLL.hessian(
+        pred, design, _positive, noise_var, sampler
+    )
+    natural = losses.TruncatedGaussianNLL.hessian(
+        pred, design, _positive, noise_var, sampler, natural=True
+    )
+    per_coordinate = noise_var.double().repeat(3)
+    expected = weight * ch.outer(per_coordinate, per_coordinate)
+    assert ch.allclose(natural[:6, :6], expected), (natural, expected)
 
 
 # The classifiers' latent is kept where z > -1; label 1 is z >= 0.
