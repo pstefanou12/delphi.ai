@@ -21,7 +21,6 @@ import torch as ch
 from delphi.configs.learning import l1_regression as l1_regression_configs
 from delphi.delphi import DelphiModel
 import delphi.trainer
-from delphi.utils import constants
 
 # The fraction of the distance to the boundary a step may cover.
 STEP_FRACTION = 0.99995
@@ -66,7 +65,6 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         self.coef_: Optional[ch.Tensor] = None
         self.objective_ = float("inf")
         self.gap_ = float("inf")
-        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         # The rows with the weights folded in, the dual's right-hand side,
         # and the iterate (a, c, z, v): the rows set by fit, the rest by
         # pre_phase_hook.
@@ -95,8 +93,8 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         n = X.size(0)
         if y.shape != (n,):
             raise ValueError(f"y must be shaped ({n},); got {tuple(y.shape)}.")
-        features = X.to(ch.float64)
-        targets = y.to(device=features.device, dtype=ch.float64)
+        features = X.to(self.dtype)
+        targets = y.to(device=features.device, dtype=self.dtype)
         w = ch.ones_like(targets) if weights is None else weights.to(targets)
         if w.shape != (n,) or bool((w < 0).any()):
             raise ValueError(f"weights must be nonnegative and shaped ({n},).")
@@ -107,14 +105,6 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         self.procedure = trainer.train_model(None, None)
         self.coef_ = self._c.to(X.dtype)
         return self
-
-    @property
-    def converged_(self) -> bool:
-        """Whether the fit stopped on its tolerance rather than its budget."""
-        return (
-            self.procedure is not None
-            and self.procedure.final.stop_reason == constants.StopReason.MODEL_STOP
-        )
 
     def pre_phase_hook(self) -> None:
         """Start the iterate: a = 1/2, feasible for the dual, c by least squares."""

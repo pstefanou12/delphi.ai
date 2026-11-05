@@ -20,8 +20,22 @@ import torch as ch
 
 from delphi.utils import constants
 
-# Draws per block while collecting survivors.
+# Draws per block while collecting survivors, fewer in high dimensions to
+# bound a block's entries.
 _BLOCK = 100_000
+_BLOCK_ENTRIES = 10_000_000
+
+
+def intervals(*bounds: tuple[float, float]) -> Callable:
+    """Return an oracle admitting the union of the open (a, b) intervals."""
+
+    def phi(z):
+        kept = ch.zeros_like(z, dtype=ch.bool)
+        for low, high in bounds:
+            kept |= (z > low) & (z < high)
+        return kept
+
+    return phi
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,15 +106,16 @@ def simulate(  # pylint: disable=too-many-arguments,too-many-locals
     kept_X: list[ch.Tensor] = []  # pylint: disable=invalid-name
     kept_y: list[ch.Tensor] = []
     survived, drawn = 0, 0
+    block = min(_BLOCK, _BLOCK_ENTRIES // weight.size(0))
     while survived < n:
-        X = sampler.sample([_BLOCK])  # pylint: disable=invalid-name
-        y = X @ weight + intercept + math.sqrt(noise_var) * ch.randn(_BLOCK, 1)
+        X = sampler.sample([block])  # pylint: disable=invalid-name
+        y = X @ weight + intercept + math.sqrt(noise_var) * ch.randn(block, 1)
         kept = phi(y[:, None, :]).reshape(-1)
         kept = ch.bernoulli(kept).bool() if kept.is_floating_point() else kept
         kept_X.append(X[kept])
         kept_y.append(y[kept])
         survived += int(kept.sum())
-        drawn += _BLOCK
+        drawn += block
     X, y = ch.cat(kept_X)[:n], ch.cat(kept_y)[:n]  # pylint: disable=invalid-name
     design = ch.cat([X, ch.ones(n, 1)], dim=1).double()
     ols = ch.linalg.lstsq(design, y.double()).solution.flatten().float()  # pylint: disable=not-callable

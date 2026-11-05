@@ -25,7 +25,6 @@ class StatisticalModel(DelphiModel[_StatisticalConfigT], Generic[_StatisticalCon
     ``hessian``. Its estimates come from ``final_run``.
 
     Attributes:
-        procedure: The trainer's record of the fit, or None before it.
         refinement: The refinement's record, or None if it did not run.
     """
 
@@ -37,7 +36,6 @@ class StatisticalModel(DelphiModel[_StatisticalConfigT], Generic[_StatisticalCon
                 ``defaults`` config.
         """
         super().__init__(hyperparameters=hyperparameters)
-        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         self.refinement: Optional[delphi.trainer.ProcedureResult] = None
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:

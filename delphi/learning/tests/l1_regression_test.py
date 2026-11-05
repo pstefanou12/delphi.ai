@@ -132,3 +132,8 @@ def test_an_exhausted_budget_is_not_converged():
     fit = l1_regression.L1Regression(hyperparameters={"iterations": 2}).fit(X, y)
     assert not fit.converged_
     assert fit.procedure.iterations == 2
+
+
+def test_float32_is_rejected():
+    with pytest.raises(ValueError, match="float64"):
+        l1_regression.L1Regression(hyperparameters={"dtype": "float32"})

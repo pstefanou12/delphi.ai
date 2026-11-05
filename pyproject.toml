@@ -23,7 +23,6 @@ numpy = "*"
 # store's HDF5 file, but cox declares none of the three.
 pandas = "*"
 pydantic = ">=2.0"
-scikit-learn = "*"
 tables = "*"
 tensorboardX = "*"
 # Floors, not cosmetics: with torch unpinned the resolver backtracks to
@@ -52,6 +51,7 @@ optional = true
 
 [tool.poetry.group.notebooks.dependencies]
 matplotlib = "*"
+scikit-learn = "*"
 scipy = "*"
 seaborn = "*"
 statsmodels = "*"

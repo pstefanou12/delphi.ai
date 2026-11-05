@@ -13,6 +13,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
 - [Truncated Regression](#truncated-regression)
+  - [Sparse regression](#sparse-regression)
   - [Classification](#classification)
 - [Architecture](#architecture)
   - [The trainer](#the-trainer)
@@ -274,6 +275,7 @@ toward the set. All models live in `delphi.stats`.
 |---|---|---|
 | `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLassoRegression` | [`truncated_lasso_regression`](delphi/stats/truncated/truncated_lasso_regression.py) | [Sparse regression](#sparse-regression) |
 | `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
 | `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
 | `TruncatedMultinomialLogisticRegression` | [`truncated_multinomial_logistic_regression`](delphi/stats/truncated/truncated_multinomial_logistic_regression.py) | |
@@ -332,6 +334,47 @@ print(model.summary())
   fits a system without the drift b. The leading `warm_start_fraction` of the
   pairs, a quarter by default, warms up the fit, and the descent takes the
   rest once, in order. `coef_` estimates A and `intercept_` b.
+
+### Sparse regression
+
+`TruncatedLassoRegression` fits a k-sparse `w` from fewer samples than
+dimensions, Daskalakis, Rohatgi and Zampetakis (2020): it minimizes the
+truncated NLL plus `l1 ||w||_1` by projected SGD, one sample per step, kept
+in `E_r = {w : ||X w + b - y||_2 <= r sqrt(n)}`, from the smallest-L1 point
+of `E_r`, averaging the iterates. The noise variance must be known.
+
+```python
+import torch as ch
+
+from delphi.stats.truncated import truncated_lasso_regression
+
+w = ch.zeros(1000, 1)
+w[:5] = 1.0
+X = ch.randn(2000, 1000)
+y = X @ w + ch.randn(2000, 1)
+
+
+def phi(z):
+    return z.abs() < 4.0
+
+
+kept = phi(y).flatten()
+model = truncated_lasso_regression.TruncatedLassoRegression(
+    phi, kept.float().mean().item(), noise_var=1.0, fit_intercept=False
+)
+model.fit(X[kept][:400], y[kept][:400])
+model.coef_.abs().topk(5).indices
+```
+
+- **`l1`** penalizes the coefficients of `y / sqrt(noise_var)`;
+  `sqrt(log(d) / n)` by default.
+- **`alpha`** sets the radius `r = 1 + 2 / sqrt(alpha)` of `E_r`, unless the
+  `radius` hyperparameter is given; `None` grows it by `rate` each phase
+  until the projection stops binding.
+- **The step** is `3 / (mean_i ||x_i||^2 sqrt(N / p))` for `N` `iterations`
+  over `p` columns, unless `lr` is given.
+- **`delphi.stats.linear.lasso.Lasso`** is the untruncated lasso the start
+  comes from, and `fit_constrained` its constrained form.
 
 ### Classification
 

@@ -6,7 +6,7 @@ concerns, and is what every config the delphi model and trainer consume
 derives from.
 """
 
-from typing import Optional, TypeVar
+from typing import Literal, Optional, TypeVar
 import warnings
 
 import pydantic
@@ -112,6 +112,8 @@ class TrainerConfig(WarmStartConfig):
         max_grad_norm: Maximum gradient norm for clipping; None disables it.
         tqdm: Enable tqdm progress bars.
         device: Compute device string (e.g. 'cpu', 'cuda').
+        dtype: Floating dtype of a model that sets its own precision, such
+            as the solvers whose duality gap needs float64.
         use_amp: Enable automatic mixed precision training.
         accumulate_grad_batches: Number of gradient accumulation steps.
         record_params_every: Step frequency for parameter vector snapshots;
@@ -141,6 +143,7 @@ class TrainerConfig(WarmStartConfig):
     max_grad_norm: Optional[float] = None
     tqdm: bool = False
     device: str = "cpu"
+    dtype: Literal["float32", "float64"] = "float32"
     use_amp: bool = False
     accumulate_grad_batches: int = pydantic.Field(default=1, ge=1)
     record_params_every: int = pydantic.Field(default=0, ge=0)
