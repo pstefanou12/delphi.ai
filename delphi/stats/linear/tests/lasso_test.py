@@ -124,7 +124,8 @@ def test_returns_the_design_dtype():
 
 def test_the_config_sets_the_working_dtype():
     X, y = _sparse_problem(100, 30, seed=8)
-    fit = lasso.Lasso(0.1, hyperparameters={"dtype": "float32", "tolerance": 1e-5})
+    with pytest.warns(UserWarning, match="float32"):
+        fit = lasso.Lasso(0.1, hyperparameters={"dtype": "float32", "tolerance": 1e-5})
     fit.fit(X, y)
     assert fit.dtype == ch.float32
     assert fit._X.dtype == ch.float32  # pylint: disable=protected-access
