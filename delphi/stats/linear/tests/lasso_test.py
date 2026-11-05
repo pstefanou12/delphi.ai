@@ -4,7 +4,7 @@
 import pytest
 import torch as ch
 
-from delphi.learning import lasso
+from delphi.stats.linear import lasso
 from delphi.utils import constants
 
 
@@ -120,6 +120,16 @@ def test_returns_the_design_dtype():
     fit = lasso.Lasso(0.1).fit(X.float(), y.float())
     assert fit.coef_.dtype == ch.float32
     assert fit.intercept_.dtype == ch.float32
+
+
+def test_the_config_sets_the_working_dtype():
+    X, y = _sparse_problem(100, 30, seed=8)
+    fit = lasso.Lasso(0.1, hyperparameters={"dtype": "float32", "tolerance": 1e-5})
+    fit.fit(X, y)
+    assert fit.dtype == ch.float32
+    assert fit._X.dtype == ch.float32  # pylint: disable=protected-access
+    assert fit.converged_
+    assert lasso.Lasso().dtype == ch.float64
 
 
 @pytest.mark.parametrize(

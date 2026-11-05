@@ -20,10 +20,9 @@ from typing import Optional
 
 import torch as ch
 
-from delphi.configs.learning import lasso as lasso_configs
+from delphi.configs.stats import linear
 from delphi.delphi import DelphiModel
 import delphi.trainer
-from delphi.utils import constants
 
 # The constrained form's search starts this far below the smallest penalty
 # that zeroes every coefficient.
@@ -31,7 +30,7 @@ _PENALTY_RANGE = 1e-4
 
 
 class Lasso(  # pylint: disable=too-many-instance-attributes
-    DelphiModel[lasso_configs.LassoConfig]
+    DelphiModel[linear.LassoConfig]
 ):
     """The lasso, by accelerated proximal gradient steps.
 
@@ -50,7 +49,7 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         procedure: The trainer's record of the last fit.
     """
 
-    defaults = lasso_configs.LassoConfig
+    defaults = linear.LassoConfig
     owns_updates = True
 
     def __init__(
@@ -79,16 +78,15 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         self.intercept_: Optional[ch.Tensor] = None
         self.objective_ = float("inf")
         self.gap_ = float("inf")
-        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
         # The centered data and the means it was centered by, set by fit;
         # the step size 1 / L; the iterate c, the extrapolated point and
-        # FISTA's momentum, set by pre_phase_hook.
+        # FISTA's t_k, set by pre_phase_hook.
         self._X = self._y = self._x_mean = ch.zeros(0)  # pylint: disable=invalid-name
         self._y_mean = 0.0
         self._lipschitz = 1.0
         self._start: Optional[ch.Tensor] = None
         self._c = self._z = ch.zeros(0)
-        self._momentum = 1.0
+        self._fista_t = 1.0
 
     def fit(
         self,
@@ -110,9 +108,9 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
             ValueError: If the shapes disagree.
         """
         self._set_data(X, y)
-        return self._solve(start, X.dtype)
+        return self._optimize(start, X.dtype)
 
-    def _solve(self, start: Optional[ch.Tensor], dtype: ch.dtype) -> "Lasso":
+    def _optimize(self, start: Optional[ch.Tensor], dtype: ch.dtype) -> "Lasso":
         """Run the steps on the data _set_data holds, from start."""
         self._start = None if start is None else start.to(self._X)
         trainer = delphi.trainer.Trainer(self, self.hyperparameters)
@@ -152,20 +150,20 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         largest = float((self._X.T @ self._y).abs().max()) / X.size(0)
         if largest == 0.0 or float(self._y.norm()) <= bound:
             self.l1 = max(largest, 1e-12)
-            return self._solve(None, X.dtype)
+            return self._optimize(None, X.dtype)
         low, high = math.log(_PENALTY_RANGE * largest), math.log(largest)
         feasible: Optional[tuple[float, ch.Tensor]] = None
         start: Optional[ch.Tensor] = None
         for _ in range(self.hyperparameters.bisection_steps):
             self.l1 = math.exp((low + high) / 2.0)
-            start = self._solve(start, X.dtype).coef_
+            start = self._optimize(start, X.dtype).coef_
             if self._residual_norm() <= bound:
                 low, feasible = (low + high) / 2.0, (self.l1, self._c.clone())
             else:
                 high = (low + high) / 2.0
         if feasible is None:
             self.l1 = math.exp(low)
-            self._solve(start, X.dtype)
+            self._optimize(start, X.dtype)
             if self._residual_norm() > bound:
                 raise ValueError(
                     f"no lasso fit with l1 >= {self.l1:.3e} has a residual "
@@ -173,19 +171,19 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
                 )
             return self
         self.l1 = feasible[0]
-        return self._solve(feasible[1], X.dtype)
+        return self._optimize(feasible[1], X.dtype)
 
     def _set_data(self, X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name
-        """Center the data in float64 when fitting an intercept, and size L."""
+        """Center the data when fitting an intercept, and size L."""
         n = X.size(0)
         if X.dim() != 2 or y.shape != (n,):
             raise ValueError(
                 f"expected X shaped (n, p) and y shaped (n,); got "
                 f"{tuple(X.shape)} and {tuple(y.shape)}."
             )
-        features = X.to(ch.float64)
-        targets = y.to(device=features.device, dtype=ch.float64)
-        self._x_mean = ch.zeros(X.size(1), dtype=ch.float64)
+        features = X.to(self.dtype)
+        targets = y.to(device=features.device, dtype=self.dtype)
+        self._x_mean = ch.zeros(X.size(1), dtype=self.dtype)
         self._y_mean = 0.0
         if self.fit_intercept:
             self._x_mean = features.mean(0)
@@ -199,21 +197,13 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         """Return ``||y - X c - b||_2`` at the iterate."""
         return float((self._y - self._X @ self._c).norm())
 
-    @property
-    def converged_(self) -> bool:
-        """Whether the fit stopped on its tolerance rather than its budget."""
-        return (
-            self.procedure is not None
-            and self.procedure.final.stop_reason == constants.StopReason.MODEL_STOP
-        )
-
     def pre_phase_hook(self) -> None:
         """Start the iterate at the given start, or at zero."""
         p = self._X.size(1)
         start = self._start
-        self._c = ch.zeros(p, dtype=ch.float64) if start is None else start.clone()
+        self._c = ch.zeros(p, dtype=self.dtype) if start is None else start.clone()
         self._z = self._c.clone()
-        self._momentum = 1.0
+        self._fista_t = 1.0
         self._measure()
 
     def _shrink(self, point: ch.Tensor) -> ch.Tensor:
@@ -238,7 +228,7 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         self.gap_ = max(self.objective_ - dual, 0.0)
 
     def train_batch(self, batch: object) -> dict:
-        """Take one FISTA step, restarting the momentum when it points uphill.
+        """Take one FISTA step, restarting its extrapolation when it goes uphill.
 
         Args:
             batch: Unused; the solver holds its own data.
@@ -250,13 +240,13 @@ class Lasso(  # pylint: disable=too-many-instance-attributes
         previous = self._c
         self._c = self._shrink(self._z)
         if float((self._z - self._c) @ (self._c - previous)) > 0.0:
-            self._momentum = 1.0
+            self._fista_t = 1.0
             self._z = self._c
         else:
-            momentum = (1.0 + math.sqrt(1.0 + 4.0 * self._momentum**2)) / 2.0
-            push = (self._momentum - 1.0) / momentum
+            t_next = (1.0 + math.sqrt(1.0 + 4.0 * self._fista_t**2)) / 2.0
+            push = (self._fista_t - 1.0) / t_next
             self._z = self._c + push * (self._c - previous)
-            self._momentum = momentum
+            self._fista_t = t_next
         self._measure()
         return {"loss": ch.tensor(self.objective_)}
 

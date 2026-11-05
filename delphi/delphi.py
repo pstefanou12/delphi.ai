@@ -133,6 +133,21 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         self.model: Optional[ch.nn.Module] = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
         self.optimizers: dict[str, torch.optim.Optimizer] = {}
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
+
+    @property
+    def dtype(self) -> ch.dtype:
+        """The floating dtype the config's ``dtype`` names."""
+        return getattr(ch, self.hyperparameters.dtype)
+
+    @property
+    def converged_(self) -> bool:
+        """Whether the last fit stopped on a criterion rather than its budget."""
+        return self.procedure is not None and self.procedure.final.stop_reason in (
+            constants.StopReason.GRAD_TOL,
+            constants.StopReason.LOSS_TOL,
+            constants.StopReason.MODEL_STOP,
+        )
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.

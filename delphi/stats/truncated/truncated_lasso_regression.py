@@ -19,11 +19,16 @@ from typing import Optional, Union, cast
 import torch as ch
 
 from delphi.configs.stats.truncated import regression
-from delphi.learning import lasso
 import delphi.projection_sets
+from delphi.stats.linear import lasso
 from delphi.stats.truncated import losses
 from delphi.stats.truncated.truncated_linear_model import TruncatedLinearModel
 from delphi.truncated import sampling
+
+# Scales the default step, the lr used unless the config sets one. At 1,
+# their 1 / sqrt(p N) for standard normal rows, the average of 20000 steps
+# still carried the start.
+STEP_SCALE = 3.0
 
 
 class TruncatedLassoRegression(
@@ -64,7 +69,7 @@ class TruncatedLassoRegression(
             phi: Truncation oracle over responses shaped (n, m, 1).
             alpha: Survival probability in (0, 1], or None if unknown.
             l1: The penalty on the coefficients of ``y / sqrt(noise_var)``;
-                ``l1_constant sqrt(log(d) / n)`` if None.
+                ``sqrt(log(d) / n)`` if None.
             noise_var: The known noise variance.
             sampler: Estimates the loss's conditional moments; rejection
                 sampling at ``num_samples`` and ``min_accepted`` by default.
@@ -115,13 +120,13 @@ class TruncatedLassoRegression(
         self._check_inputs(X, y)
         n, d = X.shape
         if not self._l1_given:
-            self.l1 = self.hyperparameters.l1_constant * math.sqrt(math.log(d) / n)
+            self.l1 = math.sqrt(math.log(d) / n)
         self.response_scale = math.sqrt(self.noise_var)
         self.intercept_column = float(X.pow(2).sum(1).mean().sqrt())
         return super().fit(X, y / self.response_scale)
 
     def _default_step(self, design: ch.Tensor) -> float:
-        """Return ``step_constant / (mean_i ||x_i||^2 sqrt(N / p))``.
+        """Return ``STEP_SCALE / (mean_i ||x_i||^2 sqrt(N / p))``.
 
         Args:
             design: The design matrix in the descent's coordinates.
@@ -133,7 +138,7 @@ class TruncatedLassoRegression(
             batch = n if hp.batch_size == -1 else hp.batch_size
             steps = cast(int, hp.epochs) * math.ceil(n / batch)
         energy = float(design.pow(2).sum(1).mean())
-        return hp.step_constant / (energy * math.sqrt(steps / design.size(1)))
+        return STEP_SCALE / (energy * math.sqrt(steps / design.size(1)))
 
     @staticmethod
     def _check_inputs(X: ch.Tensor, y: ch.Tensor) -> None:  # pylint: disable=invalid-name

@@ -121,13 +121,6 @@ class TruncatedLassoRegressionConfig(TruncatedLinearModelConfig):
     the unscaled design matrix. The iterates after the first half are
     averaged, since the descent starts at the smallest-L1 point of E_r,
     which is often zero.
-
-    Attributes:
-        l1_constant: The c of the default penalty ``c sqrt(log(d) / n)``.
-        step_constant: The c of the default step
-            ``c / (mean_i ||x_i||^2 sqrt(N / p))``, for N steps over p
-            columns, which is their ``1 / sqrt(p N)`` at c = 1 for standard
-            normal rows; at 1 the average still carries the start.
     """
 
     batch_size: int = 1
@@ -135,5 +128,3 @@ class TruncatedLassoRegressionConfig(TruncatedLinearModelConfig):
     val: float = pydantic.Field(default=0.0, ge=0.0, le=1.0)
     constant: bool = True
     scale_covariates: bool = False
-    l1_constant: float = pydantic.Field(default=1.0, gt=0.0)
-    step_constant: float = pydantic.Field(default=3.0, gt=0.0)

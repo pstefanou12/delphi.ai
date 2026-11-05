@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Configuration for the least-absolute-deviations solver."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 import pydantic
 
@@ -21,4 +21,5 @@ class L1RegressionConfig(base.DelphiConfig):
     """
 
     iterations: Optional[int] = pydantic.Field(default=100, ge=1)
+    dtype: Literal["float32", "float64"] = "float64"
     tolerance: float = pydantic.Field(default=1e-8, gt=0.0)

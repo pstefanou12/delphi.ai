@@ -367,13 +367,13 @@ model.coef_.abs().topk(5).indices
 ```
 
 - **`l1`** penalizes the coefficients of `y / sqrt(noise_var)`;
-  `l1_constant sqrt(log(d) / n)` by default.
+  `sqrt(log(d) / n)` by default.
 - **`alpha`** sets the radius `r = 1 + 2 / sqrt(alpha)` of `E_r`, unless the
   `radius` hyperparameter is given; `None` grows it by `rate` each phase
   until the projection stops binding.
-- **The step** is `step_constant / (mean_i ||x_i||^2 sqrt(N / p))` for `N`
-  `iterations` over `p` columns, unless `lr` is given.
-- **`delphi.learning.lasso.Lasso`** is the untruncated lasso the start
+- **The step** is `3 / (mean_i ||x_i||^2 sqrt(N / p))` for `N` `iterations`
+  over `p` columns, unless `lr` is given.
+- **`delphi.stats.linear.lasso.Lasso`** is the untruncated lasso the start
   comes from, and `fit_constrained` its constrained form.
 
 ### Classification

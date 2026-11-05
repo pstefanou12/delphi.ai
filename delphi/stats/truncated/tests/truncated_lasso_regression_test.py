@@ -1,120 +1,191 @@
 # Author: pstefanou12@
 """Tests for truncated lasso regression.
 
-The fits are high dimensional, d = 1000 against n = 400 samples with five
-nonzero coefficients, so they are slow. Each checks every estimate against
-the truth, the averaged iterate's support, and that the averaged iterate
-beats the lasso fit to the same truncated sample at the same penalty. The
-sets attenuate that naive fit, as a set selecting on large |y| would not.
-Each tolerance is about twice the worst error over seeds 0 to 2, recorded
-beside it. The fast tests cover E_r's projection and the start.
+The recovery cases are sparse and high dimensional: d from 100 to 2000
+against fewer samples than dimensions, with five or ten nonzero
+coefficients, through intervals, half lines and unions. Each runs on the
+shared harness: every estimate against the truth, the averaged iterate's
+support, and the averaged iterate against the lasso fit to the same
+truncated sample at the same penalty, where the set biases that fit. Each
+tolerance is about twice the worst error over seeds 0 to 2, recorded
+beside it, unless that would pass the all-zero estimate. The fast tests
+cover E_r's projection, the start and the inputs.
 """
 
+from collections.abc import Callable, Sequence
 import math
 
 import pytest
 import torch as ch
 
-from delphi.learning import lasso
+from delphi.stats.linear import lasso
 from delphi.stats.truncated import truncated_lasso_regression
 from delphi.stats.truncated.tests import regression
 from delphi.utils import constants
 
 INF = math.inf
 
-# A fit's largest dimension, and the samples it sees.
-_D = 1000
-_N = 400
+
+def _sparse(value: float, d: int, k: int = 5) -> list[float]:
+    """Return k coefficients of value followed by zeros, d in all."""
+    return [value] * k + [0.0] * (d - k)
 
 
-def _sparse(value: float, d: int = _D) -> list[float]:
-    """Return five coefficients of value followed by zeros, d in all."""
-    return [value] * 5 + [0.0] * (d - 5)
+def _case(
+    coef: Sequence[float],
+    intercept: float,
+    phi: Callable[[ch.Tensor], ch.Tensor],
+    n: int,
+    **options,
+) -> Callable[[int], regression.Simulation]:
+    """Return a map from a seed to a sample, as ``regression.simulate``'s."""
+
+    def simulate(seed: int) -> regression.Simulation:
+        return regression.simulate(coef, intercept, phi, n, seed=seed, **options)
+
+    return simulate
 
 
-def _fit(simulation, *, fit_intercept, alpha_known=True):
-    """Fit the model and the naive lasso at its penalty to a simulation."""
+_INTERVAL = regression.intervals((-4.0, 4.0))
+_LEFT = regression.intervals((0.0, INF))
+_UNION = regression.intervals((-INF, -2.0), (0.0, 1.0), (2.5, INF))
+_CASES: dict[str, Callable[[int], regression.Simulation]] = {
+    "100d_interval": _case(_sparse(1.0, 100), 0.0, _INTERVAL, 80),
+    "500d_interval": _case(_sparse(1.0, 500), 0.0, _INTERVAL, 250),
+    "500d_union_of_intervals": _case(_sparse(1.0, 500), 0.5, _UNION, 250),
+    "1000d_interval": _case(_sparse(1.0, 1000), 0.0, _INTERVAL, 400),
+    "1000d_left_truncation": _case(_sparse(0.5, 1000), 0.5, _LEFT, 400),
+    "1000d_interval_noise_var_4": _case(
+        _sparse(1.0, 1000), 0.0, _INTERVAL, 400, noise_var=4.0
+    ),
+    "1000d_interval_10_sparse": _case(_sparse(1.0, 1000, 10), 0.0, _INTERVAL, 400),
+    "2000d_interval": _case(_sparse(1.0, 2000), 0.0, _INTERVAL, 500),
+}
+
+
+def _simulate(case: str, seed: int = 0) -> regression.Simulation:
+    """Return one of ``_CASES``' samples."""
+    return _CASES[case](seed)
+
+
+def _fit(
+    simulation: regression.Simulation,
+    tolerance: float,
+    *,
+    fit_intercept: bool = True,
+    alpha_known: bool = True,
+    beats_naive: bool = True,
+) -> truncated_lasso_regression.TruncatedLassoRegression:
+    """Fit the model to a simulation and check its estimates and support.
+
+    Args:
+        simulation: The sample and its truth.
+        tolerance: Largest error of any estimate.
+        fit_intercept: Whether to fit an intercept.
+        alpha_known: Whether the model is given the survival mass.
+        beats_naive: Whether coef_ must beat the naive lasso; False where
+            the set's selection offsets the naive fit's shrinkage.
+
+    Returns:
+        The fitted model.
+    """
     model = truncated_lasso_regression.TruncatedLassoRegression(
         simulation.phi,
         simulation.alpha if alpha_known else None,
         noise_var=simulation.noise_var,
         fit_intercept=fit_intercept,
     )
-    model.fit(simulation.X, simulation.y)
+    regression.assert_recovers(model, simulation, tolerance, ols_margin=None)
+    assert model.coef_ is not None and model.l1 is not None
+    support = simulation.coef.flatten() != 0
+    coef = model.coef_.flatten().abs()
+    assert float(coef[support].min()) > float(coef[~support].max())
+    if not beats_naive:
+        return model
     # The model's l1 penalizes the coefficients of y / sigma.
     penalty = model.l1 * math.sqrt(simulation.noise_var)
     naive = lasso.Lasso(penalty, fit_intercept=fit_intercept)
     naive.fit(simulation.X, simulation.y[:, 0])
-    return model, naive
-
-
-def _assert_recovers(simulation, model, naive, tolerance):
-    """Check each estimate's error, coef_'s support, and coef_ against naive.
-
-    Args:
-        simulation: The sample and its truth.
-        model: The fitted model.
-        naive: The lasso fit to the same sample.
-        tolerance: Largest error of any estimate.
-    """
-    for name in [*constants.Estimator, ""]:
-        prefix = f"{name}_" if name else ""
-        coef = getattr(model, f"{prefix}coef_")
-        error = simulation.error(coef, getattr(model, f"{prefix}intercept_"))
-        assert error <= tolerance, f"{prefix}coef_: error {error:.4f} > {tolerance}"
-    support = simulation.coef.flatten() != 0
-    coef = model.coef_.flatten().abs()
-    assert float(coef[support].min()) > float(coef[~support].max())
+    assert naive.coef_ is not None
     error = simulation.error(model.coef_, model.intercept_)
     naive_error = simulation.error(naive.coef_[None], naive.intercept_)
     assert error < naive_error, f"coef_ {error:.4f}, naive {naive_error:.4f}"
+    return model
 
 
-def _interval(seed: int = 0, **options) -> regression.Simulation:
-    """Return the sample kept where |y| < 4, without an intercept."""
-    phi = regression.intervals((-4.0, 4.0))
-    return regression.simulate(_sparse(1.0), 0.0, phi, _N, seed=seed, **options)
+# The recovery tests. A left-truncated case below 1000 dimensions is absent:
+# at 500 dimensions and 250 samples, as at 100 and 80, the estimates were
+# no closer than the zero estimate and missed the support.
 
 
-@pytest.mark.slow
-def test_1000d_interval_truncation():
-    simulation = _interval()
-    model, naive = _fit(simulation, fit_intercept=False)
-    # Over seeds 0 to 2 every estimate's error lies in 0.48 to 0.61, against
-    # the naive fit's 0.57 to 0.66.
-    _assert_recovers(simulation, model, naive, 1.2)
+def test_100d_interval():
+    # Errors 0.82 to 1.15, against the naive fit's 0.88 to 1.18. Twice the
+    # worst would pass the zero estimate, at 2.24.
+    _fit(_simulate("100d_interval"), 2.0, fit_intercept=False)
 
 
 @pytest.mark.slow
-def test_1000d_interval_truncation_alpha_unknown():
-    simulation = _interval()
-    model, naive = _fit(simulation, fit_intercept=False, alpha_known=False)
+def test_500d_interval():
+    # Errors 0.50 to 0.88, against the naive fit's 0.57 to 0.91.
+    _fit(_simulate("500d_interval"), 1.75, fit_intercept=False)
+
+
+@pytest.mark.slow
+def test_500d_union_of_intervals():
+    # Errors 0.26 to 0.35. The naive fit's 0.17 to 0.22 is closer: the set
+    # keeps large |y|, whose selection inflates the slopes the penalty
+    # shrinks.
+    _fit(_simulate("500d_union_of_intervals"), 0.7, beats_naive=False)
+
+
+@pytest.mark.slow
+def test_1000d_interval():
+    # Errors 0.53 to 0.61, against the naive fit's 0.57 to 0.66.
+    _fit(_simulate("1000d_interval"), 1.2, fit_intercept=False)
+
+
+@pytest.mark.slow
+def test_1000d_interval_alpha_unknown():
+    model = _fit(
+        _simulate("1000d_interval"), 1.2, fit_intercept=False, alpha_known=False
+    )
     # E_r never binds, so one phase runs, as with alpha known.
     assert model.procedure.stop_reason == "radius_not_binding"
-    _assert_recovers(simulation, model, naive, 1.2)
 
 
 @pytest.mark.slow
-def test_1000d_left_truncation_with_intercept():
-    simulation = regression.simulate(
-        _sparse(0.5), 0.5, regression.intervals((0.0, INF)), _N, seed=0
+def test_1000d_left_truncation():
+    # Errors 0.80 to 1.03, against the naive fit's 1.07 to 1.22: the penalty
+    # shrinks the coefficients and the intercept absorbs it. Twice the worst
+    # would pass the zero estimate, at 1.22.
+    _fit(_simulate("1000d_left_truncation"), 1.15)
+
+
+@pytest.mark.slow
+def test_1000d_interval_noise_var_4():
+    # Errors 1.08 to 1.45, against the naive fit's 1.32 to 1.57; the
+    # shrinkage scales with sigma. Twice the worst would pass the zero
+    # estimate, at 2.24.
+    _fit(_simulate("1000d_interval_noise_var_4"), 1.8, fit_intercept=False)
+
+
+@pytest.mark.slow
+def test_1000d_interval_10_sparse():
+    # Errors 1.34 to 1.55, level with the naive fit's 1.34 to 1.48: ten
+    # coefficients double the shrinkage at 400 samples. Twice the worst
+    # would pass the zero estimate, at 3.16.
+    _fit(
+        _simulate("1000d_interval_10_sparse"),
+        2.5,
+        fit_intercept=False,
+        beats_naive=False,
     )
-    model, naive = _fit(simulation, fit_intercept=True)
-    # Over seeds 0 to 2 the errors lie in 0.67 to 1.03, against the naive
-    # fit's 1.07 to 1.22: the penalty shrinks the coefficients to about 0.1
-    # and the intercept absorbs it. Twice the worst would pass the zero
-    # estimate, at 1.22, so the bound sits just below that.
-    _assert_recovers(simulation, model, naive, 1.15)
 
 
 @pytest.mark.slow
-def test_1000d_interval_truncation_noise_var_4():
-    simulation = _interval(noise_var=4.0)
-    model, naive = _fit(simulation, fit_intercept=False)
-    # Over seeds 0 to 2 the errors lie in 0.98 to 1.45, against the naive
-    # fit's 1.32 to 1.57; the shrinkage scales with sigma. Twice the worst
-    # would pass the zero estimate, at 2.24.
-    _assert_recovers(simulation, model, naive, 1.8)
+def test_2000d_interval():
+    # Errors 0.59 to 0.68, against the naive fit's 0.61 to 0.69.
+    _fit(_simulate("2000d_interval"), 1.35, fit_intercept=False)
 
 
 def _ball(seed: int = 0):
