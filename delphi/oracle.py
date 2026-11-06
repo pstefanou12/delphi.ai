@@ -21,7 +21,7 @@ import delphi.torchnomials.polynomial
 import delphi.transformations.transformation
 
 
-class oracle(abc.ABC):  # pylint: disable=invalid-name,too-few-public-methods
+class Oracle(abc.ABC):  # pylint: disable=too-few-public-methods
     """Base class for stateful truncation sets."""
 
     @abc.abstractmethod
@@ -33,7 +33,7 @@ class oracle(abc.ABC):  # pylint: disable=invalid-name,too-few-public-methods
         """
 
 
-class Identity(oracle):  # pylint: disable=too-few-public-methods
+class Identity(Oracle):  # pylint: disable=too-few-public-methods
     """Oracle admitting every sample: nothing is truncated.
 
     Survival mass is 1, so a procedure given this set has nothing to correct
@@ -52,7 +52,7 @@ class Identity(oracle):  # pylint: disable=too-few-public-methods
         return ch.ones(x.shape[:-1], dtype=ch.bool)
 
 
-class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
+class RecoveredSet(Oracle):  # pylint: disable=too-few-public-methods
     """A truncation set recovered from samples drawn inside it.
 
     Kontonis et al. (2019), Theorem 6. Fit to samples from a law ``D``
@@ -116,8 +116,9 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
             self.
         """
         z = self.transform(samples)
-        self.polynomial = hermite.Hermite(self.degree, z.size(1), prob=True, norm=True)
-        self.polynomial.fit(z)
+        self.polynomial = hermite.Hermite(
+            self.degree, z.size(1), prob=True, norm=True
+        ).fit(z)
         self._samples = z
         return self
 
@@ -200,7 +201,7 @@ class RecoveredSet(oracle):  # pylint: disable=too-few-public-methods
         return self.ratio(self.transform(x)) > self.threshold
 
 
-class PolynomialThreshold(oracle):  # pylint: disable=too-few-public-methods
+class PolynomialThreshold(Oracle):  # pylint: disable=too-few-public-methods
     """The set ``{x : p(x) >= tau}`` of a polynomial fit to 0/1 labels.
 
     Kalai, Klivans, Mansour and Servedio (2008): fit p over a polynomial

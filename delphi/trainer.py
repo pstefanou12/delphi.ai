@@ -169,8 +169,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
     def _reset_run_state(self) -> None:
         """Clear the state of one run, so the trainer can run again.
 
-        A run stacks its histories into tensors when it finishes, so a warm
-        start or a further phase needs this first.
+        A finished run keeps its histories, so a warm start or a further
+        phase needs this first.
         """
         self.epoch: int = 0
         self.iterations: int = 0
@@ -183,6 +183,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         self.param_history: list[ch.Tensor] = []
         self.val_param_history_indices: list[int] = []
         self.grad_norms: list[float] = []
+        # The histories above as tensors, set when a run finishes.
+        self.stacked_train_losses: ch.Tensor = ch.tensor([])
+        self.stacked_val_losses: ch.Tensor = ch.tensor([])
+        self.stacked_param_history: ch.Tensor = ch.empty(0)
+        self.stacked_grad_norms: ch.Tensor = ch.tensor([])
         # Zero-initialized and bias-corrected on read, so the starting
         # point carries no more weight than any other step.
         self._ema_sum: Optional[ch.Tensor] = None
@@ -1107,33 +1112,23 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
 
     def _finish_run(self, stage: Stage) -> RunResult:
         """Stack the run's histories and return its record."""
-        # Accumulated as lists while training, replaced here by the stacked
-        # tensors callers read afterwards.
-        # TODO: pstefanou12@ - give the stacked results their own attributes so
-        # the declared types stop changing shape, and drop these suppressions.
-        self.train_losses = (
-            ch.stack(self.train_losses)  # type: ignore[assignment]
-            if self.train_losses
-            else ch.tensor([])
+        self.stacked_train_losses = (
+            ch.stack(self.train_losses) if self.train_losses else ch.tensor([])
         )
-        self.val_losses = (
-            ch.stack(self.val_losses)  # type: ignore[assignment]
-            if self.val_losses
-            else ch.tensor([])
+        self.stacked_val_losses = (
+            ch.stack(self.val_losses) if self.val_losses else ch.tensor([])
         )
-        self.param_history = (
-            ch.stack(self.param_history)  # type: ignore[assignment]
-            if self.param_history
-            else ch.empty(0)
+        self.stacked_param_history = (
+            ch.stack(self.param_history) if self.param_history else ch.empty(0)
         )
-        self.grad_norms = ch.tensor(self.grad_norms)  # type: ignore[assignment]
+        self.stacked_grad_norms = ch.tensor(self.grad_norms)
         return RunResult(
             stage=stage.name,
             config=stage.config,
-            param_history=cast(ch.Tensor, self.param_history),
-            train_losses=cast(ch.Tensor, self.train_losses),
-            val_losses=cast(ch.Tensor, self.val_losses),
-            grad_norms=cast(ch.Tensor, self.grad_norms),
+            param_history=self.stacked_param_history,
+            train_losses=self.stacked_train_losses,
+            val_losses=self.stacked_val_losses,
+            grad_norms=self.stacked_grad_norms,
             best_loss_index=self._best_loss_index,
             best_param_index=self._best_param_index,
             ema_sum=self._ema_sum,
@@ -1187,11 +1182,11 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         return log_info
 
     @property
-    def val_param_history(self):
+    def val_param_history(self) -> Optional[ch.Tensor]:
         """Return parameter history at validation steps, or None if not recorded."""
-        if self.param_history.numel() == 0:
+        if self.stacked_param_history.numel() == 0:
             return None
-        return self.param_history[self.val_param_history_indices]
+        return self.stacked_param_history[self.val_param_history_indices]
 
     @property
     def best_model_state(self):
