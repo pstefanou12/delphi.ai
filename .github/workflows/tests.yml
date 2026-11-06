@@ -35,5 +35,6 @@ jobs:
       - name: Static checks
         run: just check
 
+      # Fits over a minute are marked slow and run only locally.
       - name: Run tests
-        run: just test
+        run: just test -m "not slow"
