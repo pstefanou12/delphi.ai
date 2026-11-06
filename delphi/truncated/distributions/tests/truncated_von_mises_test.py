@@ -121,7 +121,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -134,7 +134,7 @@ def test_one_dimension_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     loc, concentration = ch.linspace(-1.0, 1.0, 10), ch.linspace(0.5, 3.0, 10)
     _recovers(

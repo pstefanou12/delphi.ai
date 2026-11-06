@@ -115,7 +115,7 @@ def test_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_identity(known):
     _recovers(
         df=ch.tensor([8.0]),
@@ -127,7 +127,7 @@ def test_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_three_by_three_identity(known):
     _recovers(
         df=ch.tensor([9.0]),
@@ -141,7 +141,7 @@ def test_three_by_three_identity(known):
 
 # Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.236 to
 # 0.306 (ema), 0.235 to 0.307 (avg); the set error 0.105 to 0.125.
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_three_by_three_sum_threshold(known):
     df = ch.tensor([9.0])
     scale = 5.0 * ch.tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]])

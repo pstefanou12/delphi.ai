@@ -11,7 +11,7 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     ch.manual_seed(0)
     covariance_matrix = ch.eye(1)

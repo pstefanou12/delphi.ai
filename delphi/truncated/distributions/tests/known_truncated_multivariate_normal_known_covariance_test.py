@@ -145,7 +145,7 @@ def test_two_dimensions_random_half_space(known):
 
 # Unknown truncation, degree 2 and rho 0.5: over seeds 0,1,2 the estimate's KL
 # measured 0.158 to 0.285 (ema), 0.158 to 0.284 (avg).
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions_crescent(known):
     _recovers(
         helpers.correlated_normal(2),
@@ -196,7 +196,7 @@ def test_ten_dimensions_sum_threshold(known):
 
 # Unknown truncation needs degree 3 here; over seeds 0,1,2 it meets the shared
 # bounds.
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_norm_threshold(known):
     target = helpers.correlated_normal(10)
     # Couples every coordinate like the sum does, and also excludes the mode.
@@ -242,7 +242,7 @@ def test_one_dimension_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
         helpers.correlated_normal(10),

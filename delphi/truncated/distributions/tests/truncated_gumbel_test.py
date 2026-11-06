@@ -99,7 +99,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -147,7 +147,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     loc, scale = ch.linspace(-2.0, 2.0, 10), ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(

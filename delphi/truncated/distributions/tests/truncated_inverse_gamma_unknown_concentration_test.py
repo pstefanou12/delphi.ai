@@ -103,7 +103,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -131,7 +131,7 @@ def test_ten_dimensions_identity(known):
 
 # Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
 # 0.040 to 1.291 (ema), 0.037 to 1.304 (avg).
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     concentration, rate = ch.tensor([3.0]), ch.tensor([2.0])
     calibrated = truncation_sets.calibrate(

@@ -111,12 +111,20 @@ class LearnedSetModel(TruncatedModel, Protocol):
     truncation_set_: Oracle
 
 
-def known_and_unknown(*marks: pytest.MarkDecorator) -> pytest.MarkDecorator:
+def known_and_unknown(
+    *marks: pytest.MarkDecorator, ci: bool = False
+) -> pytest.MarkDecorator:
     """Return a parametrize over ``known``: phi given, then phi=None.
 
+    The unknown variant is marked slow, which CI skips to bound its time;
+    ``ci=True`` keeps one such case per family in CI.
+
     Args:
-        *marks: Marks for the unknown variant alone, such as slow or xfail.
+        *marks: Marks for the unknown variant alone, such as xfail.
+        ci: Leave the unknown variant unmarked so CI runs it.
     """
+    if not ci and not any(mark.name == "slow" for mark in marks):
+        marks = (*marks, pytest.mark.slow)
     return pytest.mark.parametrize(
         "known",
         [True, pytest.param(False, marks=marks)],
@@ -125,6 +133,7 @@ def known_and_unknown(*marks: pytest.MarkDecorator) -> pytest.MarkDecorator:
 
 
 KNOWN_AND_UNKNOWN = known_and_unknown()
+KNOWN_AND_UNKNOWN_CI = known_and_unknown(ci=True)
 
 # Population mass on which a learned set may disagree with the true one.
 SET_TOLERANCE = 0.1

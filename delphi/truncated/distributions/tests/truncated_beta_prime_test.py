@@ -55,7 +55,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
         dims=1,

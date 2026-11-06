@@ -163,7 +163,7 @@ def test_two_dimensions_crescent(known):
 
 # Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.136 to
 # 0.200 (ema), 0.135 to 0.199 (avg); the set error 0.117 to 0.147.
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions_random_disc_union(known):
     target = helpers.correlated_normal(2)
     phi = _calibrated(
@@ -199,7 +199,7 @@ def test_ten_dimensions(known):
 
 # Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
 # 0.284 to 0.451 (ema), 0.256 to 0.453 (avg).
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     target = helpers.correlated_normal(10)
     # One scalar condition that biases every coordinate, not just one.
@@ -269,7 +269,7 @@ def test_one_dimension_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
         helpers.correlated_normal(10),

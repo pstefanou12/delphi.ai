@@ -40,7 +40,7 @@ def _recovers(
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -67,7 +67,7 @@ def test_two_dimensions(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions(known):
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
@@ -189,7 +189,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation needs rho 0.5 here; over seeds 0,1,2 it meets the shared
 # bounds.
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_norm_threshold(known):
     rate = ch.linspace(1.0, 2.0, 10)
     # Couples every coordinate like the sum does, and also excludes the mode.

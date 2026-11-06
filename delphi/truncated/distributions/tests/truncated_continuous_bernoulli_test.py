@@ -54,7 +54,7 @@ def test_one_dimension(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.036 to 0.145 (ema), 0.043 to 0.152 (avg).
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     probs = ch.tensor([0.8, 0.3])
     calibrated = truncation_sets.calibrate(
@@ -105,7 +105,7 @@ def test_one_dimension_identity(known):
 
 
 # Unknown truncation: over seeds 0,1,2 the set error 0.149 to 0.154.
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     probs = ch.linspace(0.2, 0.8, 10)
     _recovers(

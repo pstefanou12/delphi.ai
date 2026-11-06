@@ -100,7 +100,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -184,7 +184,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
 # 0.213 to 0.242 (ema), 0.214 to 0.243 (avg); the set error 0.101 to 0.112.
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     loc, scale = ch.linspace(-0.5, 0.5, 10), ch.linspace(0.5, 1.0, 10)
     calibrated = truncation_sets.calibrate(

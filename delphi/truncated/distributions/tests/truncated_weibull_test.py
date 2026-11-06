@@ -108,7 +108,7 @@ def test_one_dimension(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     _recovers(
         dims=2,
@@ -131,7 +131,7 @@ def test_two_dimensions_differing_shapes(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions_differing_shapes(known):
     _recovers(
         dims=20,
@@ -212,7 +212,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     scale, concentration = ch.tensor([1.0]), ch.tensor([2.0])
     # The regime both papers state their guarantees in; nothing else in the

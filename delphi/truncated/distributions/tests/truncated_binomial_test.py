@@ -45,7 +45,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 # Unknown truncation needs degree 2 and rho 0.5 here; over seeds 0,1,2 it
 # meets the shared bounds.
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -129,7 +129,6 @@ def test_ten_dimensions_identity(known):
 # to 4 at degree 6, three recover, one reaches KL 0.64, and one CI run hit a
 # flat Hessian; degree 4 or 8 and rho 0.3 or 0.5 do no better.
 @helpers.known_and_unknown(
-    pytest.mark.slow,
     pytest.mark.xfail(
         strict=False,
         raises=(AssertionError, ValueError),
@@ -154,7 +153,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     total_count, probs = 10.0 * ch.ones(10), ch.linspace(0.2, 0.6, 10)
     calibrated = truncation_sets.calibrate(

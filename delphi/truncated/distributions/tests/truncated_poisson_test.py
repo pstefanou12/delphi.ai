@@ -73,7 +73,7 @@ def test_two_dimensions(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions(known):
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
@@ -101,7 +101,7 @@ def test_two_dimensions_triangle(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions_random_half_space(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
@@ -166,7 +166,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
-@helpers.known_and_unknown(pytest.mark.slow)
+@helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     rate = ch.linspace(1.0, 3.0, 10)
     # One scalar condition, so sampling stays cheap, but it biases every

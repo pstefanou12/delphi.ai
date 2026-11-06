@@ -47,7 +47,7 @@ def _recovers(
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories(known):
     _recovers(
         concentration=ch.tensor([2.0, 3.0, 4.0]),
@@ -56,7 +56,7 @@ def test_three_categories(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_random_half_space(known):
     concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
@@ -68,7 +68,7 @@ def test_three_categories_random_half_space(known):
     _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_triangle(known):
     _recovers(
         concentration=ch.tensor([2.0, 3.0, 4.0]),
@@ -77,7 +77,7 @@ def test_three_categories_triangle(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_identity(known):
     _recovers(
         concentration=ch.tensor([2.0, 3.0, 4.0]),
@@ -88,7 +88,7 @@ def test_three_categories_identity(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_categories_identity(known):
     _recovers(
         concentration=ch.linspace(1.0, 5.0, 10),
@@ -100,7 +100,7 @@ def test_ten_categories_identity(known):
 
 
 @pytest.mark.slow
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_small_mass(known):
     concentration = ch.tensor([2.0, 3.0, 4.0])
     calibrated = truncation_sets.calibrate(
@@ -118,7 +118,7 @@ def test_three_categories_small_mass(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_categories_norm_threshold(known):
     concentration = ch.linspace(1.0, 5.0, 10)
     calibrated = truncation_sets.calibrate(
@@ -130,7 +130,7 @@ def test_ten_categories_norm_threshold(known):
     _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_indistinguishable_pair(known):
     # Given x0, the other categories' shares are Dirichlet in the rest of the
     # concentration, so a pair differing only in the first is told apart by

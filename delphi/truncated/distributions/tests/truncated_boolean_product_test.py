@@ -53,7 +53,7 @@ def _not_both_set(z):
     return ~((z[:, 0] == 1) * (z[:, 1] == 1))
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     _recovers(
         dims=2,
@@ -64,7 +64,7 @@ def test_two_dimensions(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_twenty_dimensions(known):
     _recovers(
         dims=20,
@@ -75,7 +75,7 @@ def test_twenty_dimensions(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_five_dimensions_random_polytope(known):
     # Two dimensions would leave four atoms, too few for a set carrying
     # survival mass near a third to keep every coordinate identifiable.
@@ -94,7 +94,7 @@ def test_five_dimensions_random_polytope(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -107,7 +107,7 @@ def test_one_dimension_identity(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
@@ -120,7 +120,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_dimensions_sum_threshold(known):
     probability = ch.linspace(0.3, 0.7, 10)
     # One scalar condition, so sampling stays cheap, but it biases every
@@ -140,7 +140,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.KNOWN_AND_UNKNOWN_CI
 def test_indistinguishable_pair(known):
     # Conditioning on an exact count would make the pair identical rather
     # than alike: scaling every odds ratio leaves p(x | sum(x) = k) unchanged.
