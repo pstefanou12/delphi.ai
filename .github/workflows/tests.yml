@@ -31,7 +31,7 @@ jobs:
         run: just install
 
       # Static gate: ruff format, ruff check, pylint --errors-only, mypy.
-      # Identical to the pre-push hooks and to `just check` locally.
+      # The pre-push hooks run the same recipes on the pushed files only.
       - name: Static checks
         run: just check
 

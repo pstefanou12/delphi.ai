@@ -47,17 +47,6 @@ ruff = "*"
 pytest-testmon = "^2.2"
 pytest-xdist = "^3"
 
-# Only the notebooks import these: `poetry install --with notebooks`.
-[tool.poetry.group.notebooks]
-optional = true
-
-[tool.poetry.group.notebooks.dependencies]
-matplotlib = "*"
-scikit-learn = "*"
-scipy = "*"
-seaborn = "*"
-statsmodels = "*"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -29,29 +29,30 @@ sync:
 fmt:
     poetry run ruff format delphi/
 
-# Check formatting without modifying files.
-fmt-check:
-    poetry run ruff format --check delphi/
+# Check formatting without modifying files, of the given paths or delphi/.
+fmt-check *PATHS:
+    poetry run ruff format --check "${@:-delphi/}"
 
 # Lint and apply safe fixes.
 lint:
     poetry run ruff check --fix delphi/
 
-# Lint without modifying files. ch.Tensor(...) is the legacy constructor:
-# it ignores the data's dtype, takes no dtype argument, and ch.Tensor(3) is
-# an uninitialized length-3 tensor. Build tensors with ch.tensor(...);
-# ch.Tensor stays for annotations and isinstance, which the grep skips.
-lint-check:
-    poetry run ruff check delphi/
-    ! grep -rnE --include='*.py' '\b(ch|torch)\.Tensor\(' delphi/
+# Lint the given paths or delphi/ without modifying files. ch.Tensor(...)
+# is the legacy constructor: it ignores the data's dtype, takes no dtype
+# argument, and ch.Tensor(3) is an uninitialized length-3 tensor. Build
+# tensors with ch.tensor(...); ch.Tensor stays for annotations and
+# isinstance, which the grep skips.
+lint-check *PATHS:
+    poetry run ruff check "${@:-delphi/}"
+    ! grep -rnE --include='*.py' '\b(ch|torch)\.Tensor\(' "${@:-delphi/}"
 
-# Detect logical errors with pylint.
-pylint:
-    poetry run pylint --errors-only delphi/
+# Detect logical errors with pylint, in the given paths or delphi/.
+pylint *PATHS:
+    poetry run pylint --errors-only "${@:-delphi/}"
 
-# Type-check with mypy.
-typecheck:
-    poetry run mypy delphi/
+# Type-check the given paths or delphi/ with mypy.
+typecheck *PATHS:
+    poetry run mypy "${@:-delphi/}"
 
 # Run the tests affected by local changes, one per core. pytest-testmon
 # records the code each test executes and reruns only tests whose code changed
