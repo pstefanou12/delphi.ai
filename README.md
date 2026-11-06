@@ -593,7 +593,7 @@ poly = empirical.EmpiricalOrthonormal(laguerre.Laguerre(degree=6, dims=2), refer
 
 ```bash
 just check                 # ruff format, ruff check, pylint --errors-only, mypy
-just test                  # tests affected by your changes; all of them in CI
+just test                  # tests affected by your changes; CI runs all but slow
 just test --testmon-noselect   # the full suite
 just test -m "not slow"    # skip fits over a minute
 just test <path> -n 0 --log-cli-level=INFO   # show training logs, serially
