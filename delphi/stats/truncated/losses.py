@@ -1,7 +1,8 @@
 # Author: pstefanou12@
 """Autograd loss functions for truncated regression and classification models."""
 
-from typing import cast
+from collections.abc import Callable
+from typing import Any, Optional, Union, cast
 
 import torch as ch
 import torch.distributions
@@ -23,14 +24,14 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
-        noise_var,
+        ctx: Any,
+        pred: ch.Tensor,
+        targ: ch.Tensor,
+        phi: Callable,
+        noise_var: Union[float, ch.Tensor],
         sampler: sampling.GaussianSampler,
-        eps=1e-5,
-    ):
+        eps: float = 1e-5,
+    ) -> ch.Tensor:
         """Compute each sample's truncated NLL, summed over its outputs.
 
         Args:
@@ -63,7 +64,9 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
         return nll.sum(-1)
 
     @staticmethod
-    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+    def backward(  # pylint: disable=arguments-differ
+        ctx: Any, grad_output: ch.Tensor
+    ) -> tuple[Optional[ch.Tensor], ...]:
         """Return the gradients in pred and, when learned, noise_var."""
         pred_grad, var_grad, noise_var = ctx.saved_tensors
         weights = grad_output[:, None]
@@ -73,13 +76,13 @@ class TruncatedGaussianNLL(ch.autograd.Function):  # pylint: disable=abstract-me
 
     @staticmethod
     def hessian(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
-        pred,
-        X,  # pylint: disable=invalid-name
-        phi,
-        noise_var,
+        pred: ch.Tensor,
+        X: ch.Tensor,  # pylint: disable=invalid-name
+        phi: Callable,
+        noise_var: Union[float, ch.Tensor],
         sampler: sampling.GaussianSampler,
         natural: bool = False,
-    ):
+    ) -> ch.Tensor:
         """Return the batch-mean Hessian of the NLL, per output.
 
         In the weight w it is ``mean_i Var[z_i | S] / sigma^4 x_i x_i^T``.
@@ -146,13 +149,13 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
-        gamma,
+        ctx: Any,
+        pred: ch.Tensor,
+        targ: ch.Tensor,
+        phi: Callable,
+        gamma: float,
         sampler: sampling.GaussianSampler,
-    ):
+    ) -> tuple[ch.Tensor, ch.Tensor]:
         """Compute each sample's loss and its switched gradient.
 
         Args:
@@ -179,7 +182,9 @@ class SwitchGrad(ch.autograd.Function):  # pylint: disable=abstract-method
         return loss, aware[:, 0]
 
     @staticmethod
-    def backward(ctx, grad_output, _grad_aware):  # pylint: disable=arguments-differ
+    def backward(  # pylint: disable=arguments-differ
+        ctx: Any, grad_output: ch.Tensor, _grad_aware: Optional[ch.Tensor]
+    ) -> tuple[Optional[ch.Tensor], ...]:
         """Return the switched gradient in pred."""
         (grad,) = ctx.saved_tensors
         return grad_output[:, None] * grad, None, None, None, None
@@ -226,7 +231,9 @@ class _TruncatedLabelNLL(ch.autograd.Function):  # pylint: disable=abstract-meth
     """
 
     @staticmethod
-    def backward(ctx, grad_output):  # pylint: disable=arguments-differ
+    def backward(  # pylint: disable=arguments-differ
+        ctx: Any, grad_output: ch.Tensor
+    ) -> tuple[Optional[ch.Tensor], ...]:
         """Return the gradient in pred."""
         (grad,) = ctx.saved_tensors
         return (grad_output[:, None] * grad,) + (None,) * 4
@@ -237,13 +244,13 @@ class TruncatedProbitNLL(_TruncatedLabelNLL):  # pylint: disable=abstract-method
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
+        ctx: Any,
+        pred: ch.Tensor,
+        targ: ch.Tensor,
+        phi: Callable,
         sampler: sampling.LatentSampler,
-        eps=1e-5,
-    ):
+        eps: float = 1e-5,
+    ) -> ch.Tensor:
         """Compute each sample's truncated NLL.
 
         Args:
@@ -263,7 +270,9 @@ class TruncatedProbitNLL(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         return loss
 
     @staticmethod
-    def hessian(pred, X, phi, sampler: sampling.LatentSampler):  # pylint: disable=invalid-name
+    def hessian(  # pylint: disable=invalid-name
+        pred: ch.Tensor, X: ch.Tensor, phi: Callable, sampler: sampling.LatentSampler
+    ) -> ch.Tensor:
         """Return the batch-mean Fisher information in the weight.
 
         The expected Hessian over the label, which unlike the observed one
@@ -288,13 +297,13 @@ class TruncatedBCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
+        ctx: Any,
+        pred: ch.Tensor,
+        targ: ch.Tensor,
+        phi: Callable,
         sampler: sampling.LatentSampler,
-        eps=1e-5,
-    ):
+        eps: float = 1e-5,
+    ) -> ch.Tensor:
         """Compute each sample's truncated NLL; as ``TruncatedProbitNLL``."""
         moments = sampler.label_moments(pred, sampling.LOGISTIC_NOISE, phi)
         loss, grad = _label_nll(moments, pred, targ, eps)
@@ -302,7 +311,9 @@ class TruncatedBCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         return loss
 
     @staticmethod
-    def hessian(pred, X, phi, sampler: sampling.LatentSampler):  # pylint: disable=invalid-name
+    def hessian(  # pylint: disable=invalid-name
+        pred: ch.Tensor, X: ch.Tensor, phi: Callable, sampler: sampling.LatentSampler
+    ) -> ch.Tensor:
         """Return the Fisher information; as ``TruncatedProbitNLL.hessian``."""
         with ch.no_grad():
             moments = sampler.label_moments(pred, sampling.LOGISTIC_NOISE, phi)
@@ -320,13 +331,13 @@ class TruncatedCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
 
     @staticmethod
     def forward(  # pylint: disable=too-many-arguments,too-many-positional-arguments,arguments-differ
-        ctx,
-        pred,
-        targ,
-        phi,
+        ctx: Any,
+        pred: ch.Tensor,
+        targ: ch.Tensor,
+        phi: Callable,
         sampler: sampling.GumbelSampler,
-        eps=1e-5,
-    ):
+        eps: float = 1e-5,
+    ) -> ch.Tensor:
         """Compute each sample's truncated NLL.
 
         Args:
@@ -345,7 +356,9 @@ class TruncatedCE(_TruncatedLabelNLL):  # pylint: disable=abstract-method
         return loss
 
     @staticmethod
-    def hessian(pred, X, phi, sampler: sampling.GumbelSampler):  # pylint: disable=invalid-name
+    def hessian(  # pylint: disable=invalid-name
+        pred: ch.Tensor, X: ch.Tensor, phi: Callable, sampler: sampling.GumbelSampler
+    ) -> ch.Tensor:
         """Return the batch-mean Fisher information in the weight.
 
         Args:
