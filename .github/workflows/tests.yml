@@ -41,6 +41,32 @@ jobs:
       - name: Static checks
         run: just check
 
-      # Fits over a minute are marked slow and run only locally.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: just install
+
+      # Fits over a minute are marked slow and run only locally. pytest-split
+      # balances the groups by .test_durations, which `just durations` renews.
       - name: Run tests
-        run: just test -m "not slow"
+        run: just test -m "not slow" --splits 4 --group ${{ matrix.group }}

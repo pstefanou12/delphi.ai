@@ -46,6 +46,7 @@ pytest-cov = "*"
 ruff = "*"
 pytest-testmon = "^2.2"
 pytest-xdist = "^3"
+pytest-split = "^0.11"
 
 [build-system]
 requires = ["poetry-core"]
