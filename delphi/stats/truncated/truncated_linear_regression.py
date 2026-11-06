@@ -561,12 +561,13 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
             raise NotImplementedError(f"{self} has no hessian().")
         sampler = sampler or self.sampler
         if self.noise_var is None:
-            return losses.TruncatedGaussianNLL.natural_hessian(
+            return losses.TruncatedGaussianNLL.hessian(
                 X @ weight[:-1] / weight[-1],
                 X,
                 self.latent_phi,
                 1.0 / weight[-1],
                 sampler,
+                natural=True,
             )
         return losses.TruncatedGaussianNLL.hessian(
             X @ weight, X, self.latent_phi, self.noise_var, sampler
