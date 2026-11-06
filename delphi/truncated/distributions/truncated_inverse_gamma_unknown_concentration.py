@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
+import torch.distributions.transforms
 import torch.nn
 
 from delphi.configs.distributions.truncated import gamma_unknown_concentration
@@ -28,7 +29,7 @@ class TruncatedInverseGammaUnknownConcentration(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         alpha: Optional[float] = None,
         *,
@@ -37,12 +38,16 @@ class TruncatedInverseGammaUnknownConcentration(
         """Initialize TruncatedInverseGammaUnknownConcentration.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
         super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+
+    def _truncation_set_transform(self) -> torch.distributions.transforms.Transform:
+        """Learn the set in log x, where the heavy right tail is tame."""
+        return torch.distributions.transforms.ExpTransform().inv
 
     def _calc_emp_model(self):
         """Start at the Gamma moment estimate of ``1 / x``, then warm start.

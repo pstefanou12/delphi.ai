@@ -2,8 +2,9 @@
 """Tests for the truncated half-normal distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -21,6 +22,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_half_normal.TruncatedHalfNormal,
@@ -32,14 +35,18 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
-    _recovers(dims=1, scale=ch.tensor([1.5]), phi=lambda z: z[:, 0] > 2.0)
+@helpers.KNOWN_AND_UNKNOWN_CI
+def test_one_dimension(known):
+    _recovers(dims=1, scale=ch.tensor([1.5]), phi=lambda z: z[:, 0] > 2.0, known=known)
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     scale = ch.tensor([1.5, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -47,10 +54,11 @@ def test_two_dimensions():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 50.0),
     )
-    _recovers(dims=2, scale=scale, phi=calibrated.phi)
+    _recovers(dims=2, scale=scale, phi=calibrated.phi, known=known)
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     scale = ch.tensor([1.5, 0.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -58,20 +66,23 @@ def test_two_dimensions_random_half_space():
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, scale=scale, phi=calibrated.phi)
+    _recovers(dims=2, scale=scale, phi=calibrated.phi, known=known)
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         scale=ch.tensor([1.5]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     scale = ch.linspace(0.5, 2.0, 10)
     _recovers(
         dims=10,
@@ -79,10 +90,12 @@ def test_ten_dimensions_identity():
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     scale = ch.tensor([1.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -90,10 +103,11 @@ def test_one_dimension_small_mass():
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
-    _recovers(dims=1, scale=scale, phi=calibrated.phi)
+    _recovers(dims=1, scale=scale, phi=calibrated.phi, known=known)
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_sum_threshold(known):
     scale = ch.linspace(0.5, 2.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -101,10 +115,16 @@ def test_ten_dimensions_sum_threshold():
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
-    _recovers(dims=10, scale=scale, phi=calibrated.phi)
+    _recovers(dims=10, scale=scale, phi=calibrated.phi, known=known)
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_half_normal.TruncatedHalfNormal,
         targets=(
@@ -115,4 +135,5 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="scale_",
         empirical=lambda s: ch.sqrt((s**2).mean(0)),
+        known=known,
     )

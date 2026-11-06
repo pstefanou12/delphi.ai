@@ -7,14 +7,17 @@ knows:
 - ``phi`` given: the set is a membership oracle, and
   ``KnownTruncationMultivariateNormal`` fits by projected SGD on the
   truncated NLL.
-- ``phi=None``: the set is unknown, and ``UnknownTruncationMultivariateNormal``
-  fits from the sample's Hermite expansion, which also recovers the set.
+- ``phi=None``: the set is unknown. With ``method="hermite"``, the default,
+  ``UnknownTruncationMultivariateNormal`` fits from the sample's Hermite
+  expansion, which also recovers the set. With ``method="l1"``,
+  ``KnownTruncationMultivariateNormal`` first learns the set by L1 polynomial
+  regression, then fits as if it were known.
 - ``covariance_matrix`` given: either one with the covariance fixed, learning
   only the mean.
 """
 
 from collections.abc import Callable
-from typing import Optional, Union, cast
+from typing import Literal, Optional, Union, cast
 
 import torch as ch
 
@@ -38,6 +41,8 @@ Estimator = Union[
     unknown_mvn_known_cov.UnknownTruncationMultivariateNormalKnownCovariance,
 ]
 
+Method = Literal["hermite", "l1"]
+
 
 class TruncatedMultivariateNormal:
     """Estimates a multivariate normal from samples truncated to a set.
@@ -51,6 +56,7 @@ class TruncatedMultivariateNormal:
         dims: Number of dimensions.
         phi: The truncation set's membership oracle, or None when unknown.
         covariance_matrix: The known covariance, or None when learned.
+        method: How an unknown set is handled: ``"hermite"`` or ``"l1"``.
         estimator_: The estimator the arguments select, which fits the
             sample and holds every diagnostic.
     """
@@ -62,6 +68,7 @@ class TruncatedMultivariateNormal:
         phi: Optional[Callable] = None,
         alpha: Optional[float] = None,
         covariance_matrix: Optional[ch.Tensor] = None,
+        method: Method = "hermite",
         hyperparameters: Optional[dict] = None,
     ):
         """Initialize TruncatedMultivariateNormal.
@@ -73,11 +80,18 @@ class TruncatedMultivariateNormal:
             alpha: Survival mass of the set, if known.
             covariance_matrix: The known covariance, shaped (dims, dims);
                 None learns it.
+            method: The estimator for an unknown set: ``"hermite"`` fits the
+                sample's Hermite expansion; ``"l1"`` learns the set by L1
+                polynomial regression, then fits as if it were known.
+                Ignored when phi is given.
             hyperparameters: Overrides of the selected estimator's config.
 
         Raises:
-            ValueError: If covariance_matrix is not shaped (dims, dims).
+            ValueError: If covariance_matrix is not shaped (dims, dims), or
+                method is not one of the two.
         """
+        if method not in ("hermite", "l1"):
+            raise ValueError(f"method must be 'hermite' or 'l1'; got {method!r}.")
         if covariance_matrix is not None and covariance_matrix.shape != (dims, dims):
             raise ValueError(
                 f"covariance_matrix must be shaped ({dims}, {dims}); got "
@@ -86,6 +100,7 @@ class TruncatedMultivariateNormal:
         self.dims = dims
         self.phi = phi
         self.covariance_matrix = covariance_matrix
+        self.method = method
         self.estimator_: Estimator = self._select(alpha, hyperparameters)
 
     def _select(
@@ -93,11 +108,11 @@ class TruncatedMultivariateNormal:
     ) -> Estimator:
         """Return the estimator for what the caller knows."""
         phi, dims, covariance = self.phi, self.dims, self.covariance_matrix
-        if phi is not None and covariance is not None:
+        if (phi is not None or self.method == "l1") and covariance is not None:
             return known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance(
                 phi, dims, covariance, alpha, hyperparameters=hyperparameters
             )
-        if phi is not None:
+        if phi is not None or self.method == "l1":
             return known_mvn.KnownTruncationMultivariateNormal(
                 phi, dims, alpha, hyperparameters=hyperparameters
             )
@@ -129,7 +144,12 @@ class TruncatedMultivariateNormal:
         """
         if self.phi is not None:
             return self.phi
-        # Without phi, _select built one of the unknown-truncation estimators.
+        if self.method == "l1":
+            known = cast(known_mvn.KnownTruncationMultivariateNormal, self.estimator_)
+            if known.truncation_set_ is None:
+                raise RuntimeError("the truncation set is learned by fit.")
+            return known.truncation_set_
+        # Without phi or "l1", _select built an unknown-truncation estimator.
         unknown = cast(
             unknown_mvn.UnknownTruncationMultivariateNormalBase, self.estimator_
         )

@@ -6,7 +6,7 @@ Samples are vech rows, so a set reads ``X_00, X_10, X_11, ...`` and
 """
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -34,6 +34,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_wishart.TruncatedWishart,
@@ -48,6 +50,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
         rebuild=_wishart,
+        known=known,
+        **unknown,
     )
 
 
@@ -57,7 +61,10 @@ def _calibrated(set_family, df: ch.Tensor, scale: ch.Tensor, bounds, **kwargs):
     ).phi
 
 
-def test_first_diagonal_threshold():
+# Unknown truncation needs rho 0.3 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_first_diagonal_threshold(known):
     df = ch.tensor([5.0])
     _recovers(
         df=df,
@@ -69,17 +76,28 @@ def test_first_diagonal_threshold():
             bounds=(0.0, 200.0),
             target_alpha=(0.15, 0.25),
         ),
+        known=known,
+        hyperparameters={"truncation_set_rho": 0.3},
     )
 
 
-def test_determinant_threshold():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 0.78 is over half the naive fit's 1.44",
+    )
+)
+def test_determinant_threshold(known):
     def phi(z):
         return ch.linalg.det(helpers_lib.unvech(z, 2)) > 60.0  # pylint: disable=not-callable
 
-    _recovers(df=ch.tensor([5.0]), scale=_SCALE, phi=phi)
+    _recovers(df=ch.tensor([5.0]), scale=_SCALE, phi=phi, known=known)
 
 
-def test_random_half_space():
+# Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.193 to
+# 0.220 (ema), 0.192 to 0.220 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_random_half_space(known):
     df = ch.tensor([5.0])
     _recovers(
         df=df,
@@ -91,30 +109,37 @@ def test_random_half_space():
             bounds=(-200.0, 200.0),
             target_alpha=(0.15, 0.25),
         ),
+        known=known,
+        unknown_tolerances={"ema": 0.45, "avg": 0.45},
     )
 
 
-def test_identity():
+@helpers.KNOWN_AND_UNKNOWN_CI
+def test_identity(known):
     _recovers(
         df=ch.tensor([5.0]),
         scale=_SCALE,
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_three_by_three_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_by_three_identity(known):
     _recovers(
         df=ch.tensor([6.0]),
         scale=ch.tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_three_by_three_sum_threshold():
+@helpers.KNOWN_AND_UNKNOWN
+def test_three_by_three_sum_threshold(known):
     df = ch.tensor([6.0])
     scale = ch.tensor([[2.0, 0.5, 0.0], [0.5, 1.0, 0.3], [0.0, 0.3, 1.5]])
     _recovers(
@@ -127,11 +152,18 @@ def test_three_by_three_sum_threshold():
             bounds=(0.0, 500.0),
             target_alpha=(0.15, 0.25),
         ),
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_small_mass():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL reaches 2.37 against the naive fit's 5.18",
+    )
+)
+def test_small_mass(known):
     df = ch.tensor([5.0])
     _recovers(
         df=df,
@@ -143,11 +175,18 @@ def test_small_mass():
             bounds=(0.0, 200.0),
             target_alpha=(0.008, 0.02),
         ),
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     # Shifting theta by s (1, -vech(X*^-1)) keeps grad log p at X*, so a
     # small box around X* hides df 5 from df 9.
     first = _wishart(ch.tensor([5.0]), _SCALE)
@@ -177,11 +216,18 @@ def test_indistinguishable_pair():
         parameter=("df_", "covariance_matrix_"),
         empirical=helpers.untruncated_mle(truncated_wishart.TruncatedWishart, 2),
         rebuild=_wishart,
+        known=known,
     )
 
 
 @pytest.mark.slow
-def test_six_by_six_small_mass():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the estimate's KL 2.98 is over half the naive fit's 3.23",
+    )
+)
+def test_six_by_six_small_mass(known):
     # Twenty-one vech entries, so a sample lives in twenty-one dimensions.
     df = ch.tensor([10.0])
     off_diagonal = ch.full((5,), 0.3)
@@ -196,4 +242,5 @@ def test_six_by_six_small_mass():
             bounds=(0.0, 2000.0),
             target_alpha=(0.008, 0.02),
         ),
+        known=known,
     )

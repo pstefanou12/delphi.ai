@@ -20,7 +20,7 @@ class TruncatedNormalKnownVariance(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -29,7 +29,7 @@ class TruncatedNormalKnownVariance(
         """Initialize TruncatedNormalKnownVariance.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
             covariance_matrix: Known variance as a 1×1 matrix.
             hyperparameters: Hyperparameter dict.

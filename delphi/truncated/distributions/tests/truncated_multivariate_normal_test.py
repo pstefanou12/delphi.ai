@@ -132,3 +132,43 @@ def test_covariance_of_the_wrong_shape_raises():
         truncated_multivariate_normal.TruncatedMultivariateNormal(
             3, covariance_matrix=_COVARIANCE
         )
+
+
+@pytest.mark.parametrize(
+    ("covariance_matrix", "estimator"),
+    [
+        (None, known_mvn.KnownTruncationMultivariateNormal),
+        (
+            _COVARIANCE,
+            known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance,
+        ),
+    ],
+    ids=["unknown", "unknown_covariance"],
+)
+def test_l1_method_selects_the_known_estimator_without_phi(
+    covariance_matrix, estimator
+):
+    model = truncated_multivariate_normal.TruncatedMultivariateNormal(
+        2, covariance_matrix=covariance_matrix, method="l1"
+    )
+    assert type(model.estimator_) is estimator
+    assert model.estimator_.phi is None
+
+
+def test_l1_truncation_set_is_learned():
+    model = truncated_multivariate_normal.TruncatedMultivariateNormal(
+        2, method="l1", hyperparameters=_KNOWN_HYPERPARAMETERS
+    )
+    with pytest.raises(RuntimeError, match="learned by fit"):
+        model.truncation_set()
+    model.fit(_sample(_half_plane))
+    assert isinstance(model.truncation_set(), delphi.oracle.PolynomialThreshold)
+    assert model.truncation_set() is model.estimator_.phi
+
+
+def test_unknown_method_raises():
+    with pytest.raises(ValueError, match="method"):
+        truncated_multivariate_normal.TruncatedMultivariateNormal(
+            2,
+            method="lasso",  # type: ignore[arg-type]
+        )

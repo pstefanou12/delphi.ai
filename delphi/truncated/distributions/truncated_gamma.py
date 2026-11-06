@@ -30,7 +30,7 @@ class TruncatedGamma(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         concentration: ch.Tensor,
         alpha: Optional[float] = None,
@@ -40,7 +40,7 @@ class TruncatedGamma(
         """Initialize TruncatedGamma.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             concentration: Known shape, one per coordinate.
             alpha: Survival probability lower bound.
