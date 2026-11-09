@@ -28,7 +28,7 @@ class TruncatedNormal(
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, 1, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
 
     @property
     def best_scale_(self):

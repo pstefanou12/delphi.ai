@@ -53,7 +53,6 @@ class TruncatedMultivariateNormal:
     covariance, every ``covariance_matrix_`` is the one given.
 
     Attributes:
-        dims: Number of dimensions.
         phi: The truncation set's membership oracle, or None when unknown.
         covariance_matrix: The known covariance, or None when learned.
         method: How an unknown set is handled: ``"hermite"`` or ``"l1"``.
@@ -63,7 +62,6 @@ class TruncatedMultivariateNormal:
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
-        dims: int,
         *,
         phi: Optional[Callable] = None,
         alpha: Optional[float] = None,
@@ -74,7 +72,6 @@ class TruncatedMultivariateNormal:
         """Initialize TruncatedMultivariateNormal.
 
         Args:
-            dims: Number of dimensions.
             phi: Membership oracle of the truncation set; None when the set
                 is unknown.
             alpha: Survival mass of the set, if known.
@@ -87,17 +84,19 @@ class TruncatedMultivariateNormal:
             hyperparameters: Overrides of the selected estimator's config.
 
         Raises:
-            ValueError: If covariance_matrix is not shaped (dims, dims), or
-                method is not one of the two.
+            ValueError: If covariance_matrix is not square, or method is not
+                one of the two.
         """
         if method not in ("hermite", "l1"):
             raise ValueError(f"method must be 'hermite' or 'l1'; got {method!r}.")
-        if covariance_matrix is not None and covariance_matrix.shape != (dims, dims):
+        if covariance_matrix is not None and (
+            covariance_matrix.dim() != 2
+            or covariance_matrix.size(0) != covariance_matrix.size(1)
+        ):
             raise ValueError(
-                f"covariance_matrix must be shaped ({dims}, {dims}); got "
+                "covariance_matrix must be square; got "
                 f"{tuple(covariance_matrix.shape)}."
             )
-        self.dims = dims
         self.phi = phi
         self.covariance_matrix = covariance_matrix
         self.method = method
@@ -107,21 +106,21 @@ class TruncatedMultivariateNormal:
         self, alpha: Optional[float], hyperparameters: Optional[dict]
     ) -> Estimator:
         """Return the estimator for what the caller knows."""
-        phi, dims, covariance = self.phi, self.dims, self.covariance_matrix
+        phi, covariance = self.phi, self.covariance_matrix
         if (phi is not None or self.method == "l1") and covariance is not None:
             return known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance(
-                phi, dims, covariance, alpha, hyperparameters=hyperparameters
+                phi, covariance, alpha, hyperparameters=hyperparameters
             )
         if phi is not None or self.method == "l1":
             return known_mvn.KnownTruncationMultivariateNormal(
-                phi, dims, alpha, hyperparameters=hyperparameters
+                phi, alpha, hyperparameters=hyperparameters
             )
         if covariance is not None:
             return unknown_mvn_known_cov.UnknownTruncationMultivariateNormalKnownCovariance(
-                dims, covariance, alpha, hyperparameters=hyperparameters
+                covariance, alpha, hyperparameters=hyperparameters
             )
         return unknown_mvn.UnknownTruncationMultivariateNormal(
-            dims, alpha, hyperparameters=hyperparameters
+            alpha, hyperparameters=hyperparameters
         )
 
     def fit(self, S: ch.Tensor) -> "TruncatedMultivariateNormal":  # pylint: disable=invalid-name
@@ -132,7 +131,21 @@ class TruncatedMultivariateNormal:
 
         Returns:
             The fitted model.
+
+        Raises:
+            ValueError: If S's width is not the known covariance's side.
         """
+        covariance = self.covariance_matrix
+        if (
+            covariance is not None
+            and isinstance(S, ch.Tensor)
+            and S.dim() == 2
+            and S.size(1) != covariance.size(0)
+        ):
+            raise ValueError(
+                f"covariance_matrix is {covariance.size(0)} by "
+                f"{covariance.size(0)}, but the samples have {S.size(1)} columns."
+            )
         self.estimator_.fit(S)
         return self
 

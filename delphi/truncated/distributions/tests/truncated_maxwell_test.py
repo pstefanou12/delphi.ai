@@ -20,7 +20,6 @@ def _maxwell(scale: ch.Tensor) -> maxwell.Maxwell:
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     scale: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: Optional[dict] = None,
@@ -33,9 +32,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_maxwell.TruncatedMaxwell,
         target=_maxwell(scale),
         phi=phi,
-        dims=dims,
         parameter="scale_",
-        empirical=helpers.untruncated_mle(truncated_maxwell.TruncatedMaxwell, dims),
+        empirical=helpers.untruncated_mle(truncated_maxwell.TruncatedMaxwell),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
@@ -47,7 +45,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
-    _recovers(dims=1, scale=ch.tensor([1.5]), phi=lambda z: z[:, 0] > 3.0, known=known)
+    _recovers(scale=ch.tensor([1.5]), phi=lambda z: z[:, 0] > 3.0, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -59,7 +57,7 @@ def test_two_dimensions(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 50.0),
     )
-    _recovers(dims=2, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -71,13 +69,12 @@ def test_two_dimensions_random_half_space(known):
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         scale=ch.tensor([1.5]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -89,7 +86,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         scale=ch.linspace(0.5, 2.0, 10),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -110,7 +106,6 @@ def test_one_dimension_small_mass(known):
         bounds=(0.0, 50.0),
     )
     _recovers(
-        dims=1,
         scale=scale,
         phi=calibrated.phi,
         known=known,
@@ -127,7 +122,7 @@ def test_ten_dimensions_sum_threshold(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 200.0),
     )
-    _recovers(dims=10, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -141,9 +136,8 @@ def test_indistinguishable_pair(known):
         model_class=truncated_maxwell.TruncatedMaxwell,
         targets=(_maxwell(ch.tensor([0.5])), _maxwell(ch.tensor([1.5]))),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.2),
-        dims=1,
         parameter="scale_",
-        empirical=helpers.untruncated_mle(truncated_maxwell.TruncatedMaxwell, 1),
+        empirical=helpers.untruncated_mle(truncated_maxwell.TruncatedMaxwell),
         rebuild=_maxwell,
         known=known,
     )
@@ -162,7 +156,6 @@ def test_twenty_dimensions_small_mass(known):
         bounds=(0.0, 400.0),
     )
     _recovers(
-        dims=20,
         scale=scale,
         phi=calibrated.phi,
         known=known,

@@ -33,7 +33,6 @@ class UnknownTruncationMultivariateNormalKnownCovariance(
 
     def __init__(
         self,
-        dims: int,
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -42,22 +41,38 @@ class UnknownTruncationMultivariateNormalKnownCovariance(
         """Initialize the estimator.
 
         Args:
-            dims: Number of dimensions.
             covariance_matrix: Known covariance, shaped (dims, dims).
             alpha: Survival mass of the set in (0, 1), if known.
             hyperparameters: Hyperparameter dict.
 
         Raises:
             ValueError: As the base class, or if covariance_matrix is not
-                shaped (dims, dims).
+                square.
         """
-        super().__init__(dims, alpha, hyperparameters=hyperparameters)
-        if covariance_matrix.shape != (dims, dims):
+        super().__init__(alpha, hyperparameters=hyperparameters)
+        if covariance_matrix.dim() != 2 or (
+            covariance_matrix.size(0) != covariance_matrix.size(1)
+        ):
             raise ValueError(
-                f"covariance_matrix must be shaped ({dims}, {dims}); got "
+                "covariance_matrix must be square; got "
                 f"{tuple(covariance_matrix.shape)}."
             )
         self.covariance_matrix = covariance_matrix
+
+    def fit(self, S: ch.Tensor):  # pylint: disable=invalid-name
+        """Fit as the base class does, to samples as wide as the covariance.
+
+        Raises:
+            ValueError: As the base class, or if S's width is not the
+                covariance's side.
+        """
+        side = self.covariance_matrix.size(0)
+        if isinstance(S, ch.Tensor) and S.dim() == 2 and S.size(1) != side:
+            raise ValueError(
+                f"covariance_matrix is {side} by {side}, but the samples have "
+                f"{S.size(1)} columns."
+            )
+        return super().fit(S)
 
     def _num_params(self) -> int:
         return self.dims

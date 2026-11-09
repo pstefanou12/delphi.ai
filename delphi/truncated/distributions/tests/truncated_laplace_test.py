@@ -16,7 +16,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     loc: ch.Tensor,
     scale: ch.Tensor,
     phi: helpers.Oracle,
@@ -30,7 +29,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_laplace.TruncatedLaplace,
         target=torch.distributions.Laplace(loc, scale),
         phi=phi,
-        dims=dims,
         parameter="scale_",
         empirical=lambda s: (s - loc).abs().mean(0),
         hyperparameters=hyperparameters,
@@ -46,7 +44,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([0.0]),
         scale=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 1.0,
@@ -63,7 +60,7 @@ def test_two_dimensions(known):
         target_alpha=(0.15, 0.25),
         bounds=(-20.0, 20.0),
     )
-    _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -75,13 +72,12 @@ def test_two_dimensions_random_half_space(known):
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([0.0]),
         scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
@@ -95,7 +91,6 @@ def test_one_dimension_identity(known):
 def test_ten_dimensions_identity(known):
     loc, scale = ch.zeros(10), ch.linspace(0.5, 2.0, 10)
     _recovers(
-        dims=10,
         loc=loc,
         scale=scale,
         phi=delphi.oracle.Identity(),
@@ -114,7 +109,7 @@ def test_one_dimension_small_mass(known):
         target_alpha=(0.008, 0.02),
         bounds=(-20.0, 20.0),
     )
-    _recovers(dims=1, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -133,7 +128,7 @@ def test_ten_dimensions_norm_threshold(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=10, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -151,7 +146,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.Laplace(loc, ch.tensor([2.0])),
         ),
         phi=lambda z: (z[:, 0] > 1.0) & (z[:, 0] < 1.3),
-        dims=1,
         parameter="scale_",
         empirical=lambda s: (s - loc).abs().mean(0),
         model_args=(loc,),

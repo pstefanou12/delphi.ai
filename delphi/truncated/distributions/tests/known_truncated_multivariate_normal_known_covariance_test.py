@@ -44,7 +44,6 @@ def _fit(
         known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance,
         phi,
         known,
-        target.loc.numel(),
         covariance,
         *args,
         hyperparameters=hyperparameters,
@@ -279,7 +278,7 @@ def test_one_dimension_small_mass(known):
 def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         known_mvn_known_cov.KnownTruncationMultivariateNormalKnownCovariance(
-            delphi.oracle.Identity(), 2, ch.eye(2), alpha=1.0
+            delphi.oracle.Identity(), ch.eye(2), alpha=1.0
         )
 
 

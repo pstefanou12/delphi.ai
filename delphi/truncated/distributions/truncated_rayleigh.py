@@ -26,7 +26,6 @@ class TruncatedRayleigh(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -35,11 +34,10 @@ class TruncatedRayleigh(
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of dimensions.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE scale ``sqrt(mean(x^2) / 2)``."""

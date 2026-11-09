@@ -47,7 +47,6 @@ def _fit(
         known_truncated_multivariate_normal.KnownTruncationMultivariateNormal,
         phi_standardised,
         known,
-        target.loc.numel(),
         *args,
         hyperparameters=hyperparameters,
     )
@@ -297,7 +296,7 @@ def test_one_dimension_small_mass(known):
 def test_unit_alpha_is_rejected():
     with pytest.raises(ValueError, match="nothing was truncated"):
         known_truncated_multivariate_normal.KnownTruncationMultivariateNormal(
-            delphi.oracle.Identity(), 2, alpha=1.0
+            delphi.oracle.Identity(), alpha=1.0
         )
 
 

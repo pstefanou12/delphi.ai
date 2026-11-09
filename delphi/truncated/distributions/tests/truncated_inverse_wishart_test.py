@@ -44,10 +44,9 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_inverse_wishart.TruncatedInverseWishart,
         target=_inverse_wishart(df, scale),
         phi=phi,
-        dims=scale.size(0),
         parameter=("df_", "scale_"),
         empirical=helpers.untruncated_mle(
-            truncated_inverse_wishart.TruncatedInverseWishart, scale.size(0)
+            truncated_inverse_wishart.TruncatedInverseWishart
         ),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -210,10 +209,9 @@ def test_indistinguishable_pair(known):
         model_class=truncated_inverse_wishart.TruncatedInverseWishart,
         targets=(first, second),
         phi=phi,
-        dims=2,
         parameter=("df_", "scale_"),
         empirical=helpers.untruncated_mle(
-            truncated_inverse_wishart.TruncatedInverseWishart, 2
+            truncated_inverse_wishart.TruncatedInverseWishart
         ),
         rebuild=_inverse_wishart,
         known=known,

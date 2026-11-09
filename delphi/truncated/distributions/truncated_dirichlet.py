@@ -28,7 +28,6 @@ class TruncatedDirichlet(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -37,11 +36,10 @@ class TruncatedDirichlet(
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of categories.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Start at the moment estimate, refined by the warm start."""

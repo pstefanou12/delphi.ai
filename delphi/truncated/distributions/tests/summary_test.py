@@ -20,7 +20,6 @@ def _fitted():
     sample = helpers.generate_truncated_distribution_dataset(target, phi, 2000)
     model = truncated_exponential.TruncatedExponential(
         phi,
-        2,
         sample.alpha,
         hyperparameters={"iterations": 200, "num_samples": 500},
     )
@@ -43,7 +42,7 @@ def test_reports_every_section():
 
 def test_raises_before_fit():
     model = truncated_exponential.TruncatedExponential(
-        lambda z: z[:, 0] > 0.5, 2, hyperparameters={"iterations": 10}
+        lambda z: z[:, 0] > 0.5, hyperparameters={"iterations": 10}
     )
     with pytest.raises(RuntimeError, match="has not been fit"):
         model.summary()

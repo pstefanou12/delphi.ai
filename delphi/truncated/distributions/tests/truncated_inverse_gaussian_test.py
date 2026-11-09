@@ -23,7 +23,6 @@ def _wald(loc: ch.Tensor, concentration: ch.Tensor) -> inverse_gaussian.InverseG
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     loc: ch.Tensor,
     concentration: ch.Tensor,
     phi: helpers.Oracle,
@@ -37,10 +36,9 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_inverse_gaussian.TruncatedInverseGaussian,
         target=_wald(loc, concentration),
         phi=phi,
-        dims=dims,
         parameter=("loc_", "concentration_"),
         empirical=helpers.untruncated_mle(
-            truncated_inverse_gaussian.TruncatedInverseGaussian, dims
+            truncated_inverse_gaussian.TruncatedInverseGaussian
         ),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -54,7 +52,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([1.0]),
         concentration=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 1.5,
@@ -74,7 +71,6 @@ def test_two_dimensions(known):
         bounds=(0.0, 50.0),
     )
     _recovers(
-        dims=2,
         loc=loc,
         concentration=concentration,
         phi=calibrated.phi,
@@ -98,15 +94,12 @@ def test_two_dimensions_random_half_space(known):
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(
-        dims=2, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
-    )
+    _recovers(loc=loc, concentration=concentration, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([1.0]),
         concentration=ch.tensor([2.0]),
         phi=delphi.oracle.Identity(),
@@ -119,7 +112,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         loc=ch.linspace(0.5, 2.0, 10),
         concentration=ch.linspace(1.0, 5.0, 10),
         phi=delphi.oracle.Identity(),
@@ -138,9 +130,7 @@ def test_one_dimension_small_mass(known):
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 50.0),
     )
-    _recovers(
-        dims=1, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
-    )
+    _recovers(loc=loc, concentration=concentration, phi=calibrated.phi, known=known)
 
 
 # Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
@@ -155,7 +145,6 @@ def test_ten_dimensions_sum_threshold(known):
         bounds=(0.0, 200.0),
     )
     _recovers(
-        dims=10,
         loc=loc,
         concentration=concentration,
         phi=calibrated.phi,
@@ -174,10 +163,9 @@ def test_indistinguishable_pair(known):
             _wald(ch.tensor([3.0]), ch.tensor([1.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.5) & (z[:, 0] < 1.5),
-        dims=1,
         parameter=("loc_", "concentration_"),
         empirical=helpers.untruncated_mle(
-            truncated_inverse_gaussian.TruncatedInverseGaussian, 1
+            truncated_inverse_gaussian.TruncatedInverseGaussian
         ),
         rebuild=_wald,
         known=known,
@@ -199,6 +187,4 @@ def test_twenty_dimensions_small_mass(known):
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 400.0),
     )
-    _recovers(
-        dims=20, loc=loc, concentration=concentration, phi=calibrated.phi, known=known
-    )
+    _recovers(loc=loc, concentration=concentration, phi=calibrated.phi, known=known)

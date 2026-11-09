@@ -19,7 +19,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     target: torch.distributions.LogNormal,
     phi: helpers.Oracle,
-    dims: int,
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     known: bool = True,
@@ -33,7 +32,6 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     Args:
         target: Untruncated distribution the data is drawn from.
         phi: Truncation set oracle, in the original coordinates.
-        dims: Number of dimensions.
         pass_alpha: Supply the measured survival mass to the model.
         hyperparameters: Hyperparameter dict for the procedure.
         known: Give the model phi; else it learns the set, scored against phi.
@@ -52,7 +50,6 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         truncated_log_normal.TruncatedLogNormal,
         lambda z: phi(ch.exp(ch.log(z) * std + mean)),
         known,
-        dims,
         *args,
         hyperparameters=hyperparameters,
     )
@@ -76,7 +73,6 @@ def _fit(  # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     loc: ch.Tensor,
     scale: ch.Tensor,
     phi: helpers.Oracle,
@@ -88,9 +84,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
     target = torch.distributions.LogNormal(loc, scale)
-    naive, fits = _fit(
-        target, phi, dims, hyperparameters, pass_alpha, known, set_tolerance
-    )
+    naive, fits = _fit(target, phi, hyperparameters, pass_alpha, known, set_tolerance)
     helpers.assert_recovers(
         estimate=lambda name: fits[name],
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
@@ -103,7 +97,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([0.0]),
         scale=ch.tensor([1.0]),
         phi=lambda z: z[:, 0] > 2.0,
@@ -120,7 +113,7 @@ def test_two_dimensions(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -131,13 +124,12 @@ def test_two_dimensions_random_half_space(known):
         torch.distributions.LogNormal(loc, scale),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
+    _recovers(loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         loc=ch.tensor([0.0]),
         scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
@@ -150,7 +142,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         loc=ch.linspace(-0.5, 0.5, 10),
         scale=ch.linspace(0.5, 1.0, 10),
         phi=delphi.oracle.Identity(),
@@ -172,7 +163,6 @@ def test_one_dimension_small_mass(known):
         bounds=(0.0, 100.0),
     )
     _recovers(
-        dims=1,
         loc=loc,
         scale=scale,
         phi=calibrated.phi,
@@ -194,7 +184,6 @@ def test_ten_dimensions_sum_threshold(known):
         bounds=(0.0, 500.0),
     )
     _recovers(
-        dims=10,
         loc=loc,
         scale=scale,
         phi=calibrated.phi,
@@ -222,7 +211,7 @@ def test_indistinguishable_pair(known):
     def phi(z):
         return (z[:, 0] > 1.0) & (z[:, 0] < 2.0)
 
-    results = [_fit(target, phi, 1, known=known) for target in targets]
+    results = [_fit(target, phi, known=known) for target in targets]
     for name in helpers.TOLERANCES:
         helpers.assert_distinguishes(
             targets=targets,

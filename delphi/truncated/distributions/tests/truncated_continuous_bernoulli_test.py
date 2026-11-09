@@ -21,7 +21,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     probs: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: Optional[dict] = None,
@@ -34,10 +33,9 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_continuous_bernoulli.TruncatedContinuousBernoulli,
         target=torch.distributions.ContinuousBernoulli(probs),
         phi=phi,
-        dims=dims,
         parameter="probs_",
         empirical=helpers.untruncated_mle(
-            truncated_continuous_bernoulli.TruncatedContinuousBernoulli, dims
+            truncated_continuous_bernoulli.TruncatedContinuousBernoulli
         ),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
@@ -49,7 +47,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
-    _recovers(dims=1, probs=ch.tensor([0.8]), phi=lambda z: z[:, 0] < 0.5, known=known)
+    _recovers(probs=ch.tensor([0.8]), phi=lambda z: z[:, 0] < 0.5, known=known)
 
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
@@ -64,7 +62,6 @@ def test_two_dimensions(known):
         bounds=(0.0, 1.0),
     )
     _recovers(
-        dims=2,
         probs=probs,
         phi=calibrated.phi,
         known=known,
@@ -84,7 +81,6 @@ def test_two_dimensions_random_half_space(known):
         bounds=(-50.0, 50.0),
     )
     _recovers(
-        dims=2,
         probs=probs,
         phi=calibrated.phi,
         known=known,
@@ -95,7 +91,6 @@ def test_two_dimensions_random_half_space(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         probs=ch.tensor([0.8]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -109,7 +104,6 @@ def test_one_dimension_identity(known):
 def test_ten_dimensions_identity(known):
     probs = ch.linspace(0.2, 0.8, 10)
     _recovers(
-        dims=10,
         probs=probs,
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -133,7 +127,7 @@ def test_ten_dimensions_sum_threshold(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 10.0),
     )
-    _recovers(dims=10, probs=probs, phi=calibrated.phi, known=known)
+    _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -150,10 +144,9 @@ def test_indistinguishable_pair(known):
             torch.distributions.ContinuousBernoulli(ch.tensor([0.8])),
         ),
         phi=lambda z: (z[:, 0] > 0.3) & (z[:, 0] < 0.7),
-        dims=1,
         parameter="probs_",
         empirical=helpers.untruncated_mle(
-            truncated_continuous_bernoulli.TruncatedContinuousBernoulli, 1
+            truncated_continuous_bernoulli.TruncatedContinuousBernoulli
         ),
         known=known,
     )

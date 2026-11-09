@@ -25,7 +25,6 @@ class TruncatedBooleanProduct(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -35,10 +34,9 @@ class TruncatedBooleanProduct(
         Args:
             phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
-            dims: Number of dimensions.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
 
     def _calc_emp_model(self):
         """Initialize theta at the log-odds of the empirical success rate."""

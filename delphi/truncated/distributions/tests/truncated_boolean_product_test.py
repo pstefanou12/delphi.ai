@@ -16,7 +16,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(
-    dims: int,
     probability: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: Optional[dict] = None,
@@ -29,7 +28,6 @@ def _recovers(
         model_class=truncated_boolean_product.TruncatedBooleanProduct,
         target=torch.distributions.Bernoulli(probability),
         phi=phi,
-        dims=dims,
         parameter="probs_",
         empirical=lambda s: s.mean(0),
         hyperparameters=hyperparameters,
@@ -56,7 +54,6 @@ def _not_both_set(z):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     _recovers(
-        dims=2,
         probability=ch.tensor([0.5, 0.75]),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
@@ -67,7 +64,6 @@ def test_two_dimensions(known):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_twenty_dimensions(known):
     _recovers(
-        dims=20,
         probability=ch.tensor([0.5, 0.75, 0.3, 0.4, 0.8]).repeat(4),
         phi=_not_both_set,
         hyperparameters={"batch_size": 1, "lr": 1e-1},
@@ -86,7 +82,6 @@ def test_five_dimensions_random_polytope(known):
         bounds=(-25.0, 25.0),
     )
     _recovers(
-        dims=5,
         probability=probability,
         phi=calibrated.phi,
         hyperparameters={"batch_size": 1, "lr": 1e-1, "project": False},
@@ -97,7 +92,6 @@ def test_five_dimensions_random_polytope(known):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         probability=ch.tensor([0.4]),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
@@ -110,7 +104,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         probability=ch.linspace(0.3, 0.7, 10),
         phi=delphi.oracle.Identity(),
         hyperparameters={"iterations": 1500},
@@ -132,7 +125,6 @@ def test_ten_dimensions_sum_threshold(known):
         bounds=(0.0, 200.0),
     )
     _recovers(
-        dims=10,
         probability=probability,
         phi=calibrated.phi,
         hyperparameters={"lr": 1e-1},
@@ -152,7 +144,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.Bernoulli(ch.full((5,), 0.6)),
         ),
         phi=lambda z: (z.sum(-1) >= 2) & (z.sum(-1) <= 3),
-        dims=5,
         parameter="probs_",
         empirical=lambda s: s.mean(0).clamp(1e-4, 1 - 1e-4),
         known=known,
@@ -164,6 +155,6 @@ def test_unknown_truncation_raises():
     # On {0, 1} every power of a coordinate equals the coordinate.
     ch.manual_seed(0)
     sample = torch.distributions.Bernoulli(ch.tensor([0.3, 0.6])).sample([500])
-    model = truncated_boolean_product.TruncatedBooleanProduct(None, 2)
+    model = truncated_boolean_product.TruncatedBooleanProduct(None)
     with pytest.raises(ValueError, match="truncation_set_degree"):
         model.fit(sample[_not_both_set(sample)])

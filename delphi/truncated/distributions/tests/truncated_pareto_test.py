@@ -35,7 +35,6 @@ def pareto_kl_divergence(
 
 
 def _recovers(
-    dims: int,
     scale: ch.Tensor,
     tail: ch.Tensor,
     phi: helpers.Oracle,
@@ -49,7 +48,6 @@ def _recovers(
         model_class=truncated_pareto.TruncatedPareto,
         target=torch.distributions.Pareto(scale, tail),
         phi=phi,
-        dims=dims,
         parameter="alpha_",
         empirical=lambda s: 1.0 / (ch.log(s) - ch.log(scale)).mean(0),
         hyperparameters=hyperparameters,
@@ -66,7 +64,6 @@ def _recovers(
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         scale=ch.tensor([1.0]),
         tail=ch.tensor([2.5]),
         phi=lambda z: z[:, 0] > 2.0,
@@ -84,7 +81,6 @@ def test_two_dimensions(known):
         bounds=(1.0, 500.0),
     )
     _recovers(
-        dims=2,
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
@@ -103,7 +99,6 @@ def test_two_dimensions_random_half_space(known):
         bounds=(-25.0, 25.0),
     )
     _recovers(
-        dims=2,
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
@@ -117,7 +112,6 @@ def test_two_dimensions_random_half_space(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         scale=ch.tensor([1.0]),
         tail=ch.tensor([2.5]),
         phi=delphi.oracle.Identity(),
@@ -131,7 +125,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         scale=ch.ones(10),
         tail=ch.linspace(1.5, 4.0, 10),
         phi=delphi.oracle.Identity(),
@@ -152,7 +145,6 @@ def test_one_dimension_small_mass(known):
         bounds=(1.0, 500.0),
     )
     _recovers(
-        dims=1,
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
@@ -172,7 +164,6 @@ def test_ten_dimensions_sum_threshold(known):
         bounds=(10.0, 500.0),
     )
     _recovers(
-        dims=10,
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
@@ -195,7 +186,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.Pareto(ch.tensor([1.0]), ch.tensor([4.0])),
         ),
         phi=lambda z: (z[:, 0] > 1.2) & (z[:, 0] < 1.4),
-        dims=1,
         parameter="alpha_",
         empirical=lambda s: 1.0 / ch.log(s).mean(0),
         model_args=(ch.tensor([1.0]),),

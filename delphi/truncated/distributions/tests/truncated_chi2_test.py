@@ -16,7 +16,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     df: ch.Tensor,
     phi: helpers.Oracle,
     hyperparameters: Optional[dict] = None,
@@ -29,9 +28,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_chi2.TruncatedChi2,
         target=torch.distributions.Chi2(df),
         phi=phi,
-        dims=dims,
         parameter="df_",
-        empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2, dims),
+        empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
@@ -42,7 +40,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
-    _recovers(dims=1, df=ch.tensor([4.0]), phi=lambda z: z[:, 0] > 5.0, known=known)
+    _recovers(df=ch.tensor([4.0]), phi=lambda z: z[:, 0] > 5.0, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -54,7 +52,7 @@ def test_two_dimensions(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=2, df=df, phi=calibrated.phi, known=known)
+    _recovers(df=df, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -66,13 +64,12 @@ def test_two_dimensions_random_half_space(known):
         target_alpha=(0.15, 0.25),
         bounds=(-50.0, 50.0),
     )
-    _recovers(dims=2, df=df, phi=calibrated.phi, known=known)
+    _recovers(df=df, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         df=ch.tensor([4.0]),
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -85,7 +82,6 @@ def test_one_dimension_identity(known):
 def test_ten_dimensions_identity(known):
     df = ch.linspace(2.0, 10.0, 10)
     _recovers(
-        dims=10,
         df=df,
         phi=delphi.oracle.Identity(),
         pass_alpha=False,
@@ -103,7 +99,7 @@ def test_one_dimension_small_mass(known):
         target_alpha=(0.008, 0.02),
         bounds=(0.0, 100.0),
     )
-    _recovers(dims=1, df=df, phi=calibrated.phi, known=known)
+    _recovers(df=df, phi=calibrated.phi, known=known)
 
 
 @helpers.KNOWN_AND_UNKNOWN
@@ -115,7 +111,7 @@ def test_ten_dimensions_sum_threshold(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 500.0),
     )
-    _recovers(dims=10, df=df, phi=calibrated.phi, known=known)
+    _recovers(df=df, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -132,8 +128,7 @@ def test_indistinguishable_pair(known):
             torch.distributions.Chi2(ch.tensor([6.0])),
         ),
         phi=lambda z: (z[:, 0] > 2.0) & (z[:, 0] < 3.0),
-        dims=1,
         parameter="df_",
-        empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2, 1),
+        empirical=helpers.untruncated_mle(truncated_chi2.TruncatedChi2),
         known=known,
     )

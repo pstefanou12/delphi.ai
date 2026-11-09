@@ -32,7 +32,6 @@ class TruncatedPareto(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         scale: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -42,13 +41,12 @@ class TruncatedPareto(
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of dimensions.
             scale: Known scale, one per coordinate.
             alpha: Survival probability lower bound. Unrelated to the tail
                 index, which the estimates call ``alpha_``.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
         self.scale = scale
 
     def _build_distribution(self):

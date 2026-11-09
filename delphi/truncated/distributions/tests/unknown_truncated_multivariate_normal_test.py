@@ -30,10 +30,10 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _model(
-    dims: int, alpha: Optional[float] = None, hyperparameters: Optional[dict] = None
+    alpha: Optional[float] = None, hyperparameters: Optional[dict] = None
 ) -> unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal:
     return unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        dims, alpha, hyperparameters=hyperparameters
+        alpha, hyperparameters=hyperparameters
     )
 
 
@@ -44,7 +44,7 @@ def _recovers(
     dataset_size: int = 20000,
 ) -> None:
     target = torch.distributions.MultivariateNormal(loc, covariance_matrix)
-    model = _model(loc.numel())
+    model = _model()
     unknown_truncation.assert_recovers(
         model,
         target,
@@ -127,14 +127,13 @@ def test_terms_are_the_papers_objective(known_covariance: bool) -> None:
     model: unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormalBase
     if known_covariance:
         model = unknown_truncated_multivariate_normal_known_covariance.UnknownTruncationMultivariateNormalKnownCovariance(
-            2,
             unknown_truncation.CORRELATED,
             hyperparameters={"iterations": 1, "degree": 4},
         )
     else:
         model = (
             unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-                2, hyperparameters={"iterations": 1, "degree": 4}
+                hyperparameters={"iterations": 1, "degree": 4}
             )
         )
     model.fit(sample.S)
@@ -184,7 +183,7 @@ def test_exact_psi_puts_the_minimizer_at_the_truth():
         target, unknown_truncation.two_half_spaces, 20000
     )
     model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        2, sample.alpha, hyperparameters={"iterations": 1, "degree": 2}
+        sample.alpha, hyperparameters={"iterations": 1, "degree": 2}
     )
     model.fit(sample.S)
     z = model.standardization_.transform(sample.S.double())
@@ -233,7 +232,7 @@ def _descent_rows() -> tuple[ch.Tensor, ch.Tensor]:
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 2000
     )
-    model = _model(2, hyperparameters={"iterations": 1, "degree": 4})
+    model = _model(hyperparameters={"iterations": 1, "degree": 4})
     model.fit(sample.S)
     assert model.train_loader_ is not None and model.emp_theta is not None
     dataset = model.train_loader_.dataset
@@ -271,7 +270,6 @@ def test_hessian_matches_autograd():
 
 def test_projection_bounds_the_precision_and_the_mean():
     model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-        3,
         hyperparameters={"min_precision": 0.5, "max_precision": 2.0, "loc_radius": 1.0},
     )
     target = torch.distributions.MultivariateNormal(ch.zeros(3), ch.eye(3))
@@ -295,19 +293,17 @@ def test_projection_bounds_the_precision_and_the_mean():
 
 def test_rejects_an_alpha_outside_the_unit_interval():
     with pytest.raises(ValueError, match="alpha"):
-        unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(
-            2, 1.0
-        )
+        unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(1.0)
 
 
 def test_rejects_samples_of_the_wrong_shape():
-    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(2)
+    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal()
     with pytest.raises(ValueError, match="shape"):
-        model.fit(ch.randn(100, 3))
+        model.fit(ch.randn(3, 3))
 
 
 def test_estimates_need_a_fit():
-    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal(2)
+    model = unknown_truncated_multivariate_normal.UnknownTruncationMultivariateNormal()
     with pytest.raises(RuntimeError, match="fit"):
         _ = model.avg_loc_
 
@@ -318,7 +314,7 @@ def test_default_degree_follows_the_sample():
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 4000
     )
-    model = _model(2, hyperparameters={"iterations": 1})
+    model = _model(hyperparameters={"iterations": 1})
     model.fit(sample.S)
     assert model.recovered_set_ is not None
     assert model.recovered_set_.polynomial is not None
@@ -336,6 +332,6 @@ def test_an_explicit_degree_beyond_the_sample_warns():
     sample = helpers.generate_truncated_distribution_dataset(
         target, unknown_truncation.two_half_spaces, 400
     )
-    model = _model(2, hyperparameters={"iterations": 1, "degree": 40})
+    model = _model(hyperparameters={"iterations": 1, "degree": 40})
     with pytest.warns(UserWarning, match="more than"):
         model.fit(sample.S)

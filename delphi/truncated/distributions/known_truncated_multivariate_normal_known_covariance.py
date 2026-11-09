@@ -28,7 +28,6 @@ class KnownTruncationMultivariateNormalKnownCovariance(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         covariance_matrix: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -39,11 +38,10 @@ class KnownTruncationMultivariateNormalKnownCovariance(
         Args:
             phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
-            dims: Number of dimensions.
             covariance_matrix: Known covariance matrix.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
         self.covariance_matrix = covariance_matrix
 
     def _build_distribution(self):

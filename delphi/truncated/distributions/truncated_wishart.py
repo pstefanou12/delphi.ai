@@ -46,11 +46,8 @@ class TruncatedWishart(
     """Model for truncated Wishart distributions with unknown df and scale.
 
     Samples are rows of ``vech(X)``, the lower triangle of each matrix, so
-    ``dims`` here is the matrix side while the base class's ``dims`` is the
-    row width ``size * (size + 1) / 2``.
-
-    Attributes:
-        size: Side of the sampled matrices.
+    ``dims`` is the row width ``size * (size + 1) / 2`` for matrices of side
+    ``size``.
     """
 
     dist = wishart.Wishart
@@ -64,7 +61,6 @@ class TruncatedWishart(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -74,14 +70,15 @@ class TruncatedWishart(
         Args:
             phi: Truncation set oracle, over vech rows; None learns it from
                 the sample.
-            dims: Side of the sampled matrices.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(
-            phi, helpers.vech_size(dims), alpha, hyperparameters=hyperparameters
-        )
-        self.size = dims
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
+
+    @property
+    def size(self) -> int:
+        """Side of the sampled matrices, read from the vech rows' width."""
+        return helpers.vech_side(self.dims)
 
     def _calc_emp_model(self):
         """Start from ``rough_start``, refined by the warm start."""
