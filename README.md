@@ -560,20 +560,22 @@ The truncated distributions add two layers on top of this:
   `to_canonical` and `log_prob`.
 - **`delphi/truncated/distributions/truncated_<family>.py`** is the model. It
   subclasses `TruncatedExponentialFamilyDistribution`, which supplies the
-  truncated NLL, its Hessian, the sublevel-set projection and the phases
-  that widen its budget. The family adds its starting point
+  truncated NLL, its Hessian and the NLL's sublevel set
+  (`projection_sets.SublevelSet`) as its projection set. The family adds its starting point
   (`_calc_emp_model`), the domain of its parameters (`_constraints`) and its
   estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
 
 The truncated linear models follow the same pattern.
 `delphi/statistical_model.py`'s `StatisticalModel` sits under them: once
 the trainer has fit a model, `refine()` takes `refine_steps` Newton steps
-with its `hessian()`. `delphi/stats/linear_model.py`'s `LinearModel` owns
+with its `hessian()`. Its `PSGDModel` runs projected SGD for both the
+truncated linear models and the exponential families: it builds the
+projection set on the first phase, projects in `step_post_hook`, counts the
+projections, and widens the radius phase by phase while alpha is unknown. `delphi/stats/linear_model.py`'s `LinearModel` owns
 the prediction `h_W(x) = x W`, the design matrix and the `avg_`, `ema_`, `final_` and
 `best_` estimates of `coef_` and `intercept_`.
 `delphi/stats/truncated/truncated_linear_model.py`'s `TruncatedLinearModel`
-adds the oracle, the radius phases, the projection in `step_post_hook` and
-`summary()`. A model supplies its criterion from
+adds the oracle, the start inside the projection set and `summary()`. A model supplies its criterion from
 `delphi/stats/truncated/losses.py` (`TruncatedGaussianNLL` for known-variance
 regression), its Hessian as `_hessian` and its projection set from
 `delphi/projection_sets.py`.

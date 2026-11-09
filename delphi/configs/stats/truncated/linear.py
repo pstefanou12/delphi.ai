@@ -9,10 +9,11 @@ from typing import Literal, Optional
 
 import pydantic
 
+from delphi.configs.base import PSGDModelConfig
 from delphi.configs.stats.linear import LinearModelConfig
 
 
-class TruncatedLinearModelConfig(LinearModelConfig):
+class TruncatedLinearModelConfig(LinearModelConfig, PSGDModelConfig):
     """Shared configuration for the truncated delphi.stats linear models.
 
     Separate from LinearModelConfig because alpha describes a truncation set,
