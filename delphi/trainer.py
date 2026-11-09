@@ -417,9 +417,8 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.dataset_size = None  # IterableDataset has no len().
 
         if not self.model.owns_updates:
-            self.model.make_optimizer_and_schedule(
-                checkpoint, self._stage.hessian if self._stage else None
-            )
+            self.model.stage_hessian = self._stage.hessian if self._stage else None
+            self.model.make_optimizer_and_schedule(checkpoint)
         self.logger.info(f"training: {self.model}\n{self.hyperparameters}")
 
         if (

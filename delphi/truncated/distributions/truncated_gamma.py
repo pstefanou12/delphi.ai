@@ -63,25 +63,9 @@ class TruncatedGamma(
         """Clamp theta to be strictly negative, so the rate is positive."""
         return ch.clamp(theta, max=-1e-6)
 
-    @property
-    def best_rate_(self):
-        """Return the best rate estimate."""
-        return gamma.Gamma.to_canonical(self.best_params)
-
-    @property
-    def final_rate_(self):
-        """Return the final rate estimate."""
-        return gamma.Gamma.to_canonical(self.final_params)
-
-    @property
-    def ema_rate_(self):
-        """Return the EMA rate estimate."""
-        return gamma.Gamma.to_canonical(self.ema_params)
-
-    @property
-    def avg_rate_(self):
-        """Return the averaged rate estimate."""
-        return gamma.Gamma.to_canonical(self.avg_params)
+    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
+        """Return the canonical estimate theta encodes."""
+        return (gamma.Gamma.to_canonical(theta),)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

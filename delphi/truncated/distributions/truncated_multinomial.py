@@ -5,6 +5,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import Optional
 
+import torch as ch
 import torch.nn
 
 from delphi.configs.distributions.truncated import (
@@ -63,25 +64,9 @@ class TruncatedMultinomial(
         self.emp_theta = multinomial.Multinomial.to_natural(probs / probs.sum())
         self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
-    @property
-    def best_probs_(self):
-        """Return the best probs estimate."""
-        return multinomial.Multinomial.to_canonical(self.best_params)
-
-    @property
-    def final_probs_(self):
-        """Return the final probs estimate."""
-        return multinomial.Multinomial.to_canonical(self.final_params)
-
-    @property
-    def ema_probs_(self):
-        """Return the EMA probs estimate."""
-        return multinomial.Multinomial.to_canonical(self.ema_params)
-
-    @property
-    def avg_probs_(self):
-        """Return the averaged probs estimate."""
-        return multinomial.Multinomial.to_canonical(self.avg_params)
+    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
+        """Return the canonical estimate theta encodes."""
+        return (multinomial.Multinomial.to_canonical(theta),)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

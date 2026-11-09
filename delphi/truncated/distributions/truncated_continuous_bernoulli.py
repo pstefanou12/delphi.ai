@@ -49,26 +49,6 @@ class TruncatedContinuousBernoulli(
         self.emp_theta = continuous_bernoulli.ContinuousBernoulli.to_natural(mean)
         self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
-    @property
-    def best_probs_(self):
-        """Return the best probs estimate."""
-        return continuous_bernoulli.ContinuousBernoulli.to_canonical(self.best_params)
-
-    @property
-    def final_probs_(self):
-        """Return the final probs estimate."""
-        return continuous_bernoulli.ContinuousBernoulli.to_canonical(self.final_params)
-
-    @property
-    def ema_probs_(self):
-        """Return the EMA probs estimate."""
-        return continuous_bernoulli.ContinuousBernoulli.to_canonical(self.ema_params)
-
-    @property
-    def avg_probs_(self):
-        """Return the averaged probs estimate."""
-        return continuous_bernoulli.ContinuousBernoulli.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated continuous bernoulli distribution"

@@ -128,69 +128,15 @@ class KnownTruncationMultivariateNormal(
         """Return the current natural parameters as a flat tensor."""
         return ch.cat([self.T, self.v])
 
-    @property
-    def best_loc_(self):
-        """Best mean vector estimate based on lowest training loss."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.best_params, self.dims
+    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
+        """Split theta's canonical form into the mean and the covariance."""
+        canonical = multivariate_normal.MultivariateNormal.to_canonical(
+            theta, self.dims
         )
-        return canon[self.dims**2 :]
-
-    @property
-    def best_covariance_matrix_(self):
-        """Best covariance matrix estimate based on lowest training loss."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.best_params, self.dims
+        return (
+            canonical[self.dims**2 :],
+            canonical[: self.dims**2].view(self.dims, self.dims),
         )
-        return canon[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def final_loc_(self):
-        """Final mean vector estimate at the end of training."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.final_params, self.dims
-        )
-        return canon[self.dims**2 :]
-
-    @property
-    def final_covariance_matrix_(self):
-        """Final covariance matrix estimate at the end of training."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.final_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def ema_loc_(self):
-        """Exponential moving-average mean vector estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.ema_params, self.dims
-        )
-        return canon[self.dims**2 :]
-
-    @property
-    def ema_covariance_matrix_(self):
-        """Exponential moving-average covariance matrix estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.ema_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
-
-    @property
-    def avg_loc_(self):
-        """Running-average mean vector estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.avg_params, self.dims
-        )
-        return canon[self.dims**2 :]
-
-    @property
-    def avg_covariance_matrix_(self):
-        """Running-average covariance matrix estimate."""
-        canon = multivariate_normal.MultivariateNormal.to_canonical(
-            self.avg_params, self.dims
-        )
-        return canon[: self.dims**2].view(self.dims, self.dims)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

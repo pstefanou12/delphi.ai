@@ -63,25 +63,9 @@ class TruncatedGumbel(
         """Clamp theta to be strictly negative, so the loc is real."""
         return ch.clamp(theta, max=-1e-6)
 
-    @property
-    def best_loc_(self):
-        """Return the best loc estimate."""
-        return gumbel.Gumbel.to_canonical(self.scale, self.best_params)
-
-    @property
-    def final_loc_(self):
-        """Return the final loc estimate."""
-        return gumbel.Gumbel.to_canonical(self.scale, self.final_params)
-
-    @property
-    def ema_loc_(self):
-        """Return the EMA loc estimate."""
-        return gumbel.Gumbel.to_canonical(self.scale, self.ema_params)
-
-    @property
-    def avg_loc_(self):
-        """Return the averaged loc estimate."""
-        return gumbel.Gumbel.to_canonical(self.scale, self.avg_params)
+    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
+        """Return the loc, which the known scale enters."""
+        return (gumbel.Gumbel.to_canonical(self.scale, theta),)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

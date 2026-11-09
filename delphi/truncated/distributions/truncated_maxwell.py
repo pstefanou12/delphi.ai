@@ -53,26 +53,6 @@ class TruncatedMaxwell(
         """Clamp theta to be strictly negative, so the scale is real."""
         return ch.clamp(theta, max=-1e-6)
 
-    @property
-    def best_scale_(self):
-        """Return the best scale estimate."""
-        return maxwell.Maxwell.to_canonical(self.best_params)
-
-    @property
-    def final_scale_(self):
-        """Return the final scale estimate."""
-        return maxwell.Maxwell.to_canonical(self.final_params)
-
-    @property
-    def ema_scale_(self):
-        """Return the EMA scale estimate."""
-        return maxwell.Maxwell.to_canonical(self.ema_params)
-
-    @property
-    def avg_scale_(self):
-        """Return the averaged scale estimate."""
-        return maxwell.Maxwell.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated maxwell distribution"

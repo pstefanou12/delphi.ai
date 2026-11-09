@@ -70,25 +70,9 @@ class TruncatedPareto(
         """Clamp theta below -1, so the tail index is positive."""
         return ch.clamp(theta, max=-1.0 - 1e-6)
 
-    @property
-    def best_alpha_(self):
-        """Return the best tail index estimate."""
-        return pareto.Pareto.to_canonical(self.best_params)
-
-    @property
-    def final_alpha_(self):
-        """Return the final tail index estimate."""
-        return pareto.Pareto.to_canonical(self.final_params)
-
-    @property
-    def ema_alpha_(self):
-        """Return the EMA tail index estimate."""
-        return pareto.Pareto.to_canonical(self.ema_params)
-
-    @property
-    def avg_alpha_(self):
-        """Return the averaged tail index estimate."""
-        return pareto.Pareto.to_canonical(self.avg_params)
+    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
+        """Return the canonical estimate theta encodes."""
+        return (pareto.Pareto.to_canonical(theta),)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

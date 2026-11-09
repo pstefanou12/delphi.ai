@@ -155,6 +155,10 @@ class TruncatedMultivariateNormal:
         )
         return unknown.truncation_set()
 
+    def _loc(self, name: str) -> ch.Tensor:
+        """Return an estimate's mean."""
+        return getattr(self.estimator_, f"{name}_loc_")
+
     def _covariance(self, name: str) -> ch.Tensor:
         """Return an estimate's covariance, or the known one."""
         if self.covariance_matrix is not None:
@@ -164,22 +168,22 @@ class TruncatedMultivariateNormal:
     @property
     def avg_loc_(self) -> ch.Tensor:
         """Mean at the averaged iterate."""
-        return self.estimator_.avg_loc_
+        return self._loc("avg")
 
     @property
     def ema_loc_(self) -> ch.Tensor:
         """Mean at the moving average of the iterates."""
-        return self.estimator_.ema_loc_
+        return self._loc("ema")
 
     @property
     def final_loc_(self) -> ch.Tensor:
         """Mean at the last iterate."""
-        return self.estimator_.final_loc_
+        return self._loc("final")
 
     @property
     def best_loc_(self) -> ch.Tensor:
         """Mean at the iterate with the lowest validation loss."""
-        return self.estimator_.best_loc_
+        return self._loc("best")
 
     @property
     def loc_(self) -> ch.Tensor:

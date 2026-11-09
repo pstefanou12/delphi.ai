@@ -92,12 +92,3 @@ force-sort-within-sections = true
 
 [tool.mypy]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# TODO: pstefanou12@ - revisit the generic/config typing of
-# TruncatedExponentialFamilyDistribution, then drop this. configs._ConfigT is
-# bound to TrainerConfig while this module reads fields declared only on
-# TruncatedExponentialFamilyDistributionConfig (num_samples, eps, batch_size,
-# min_radius, max_phases, rate, max_radius, project).
-module = "delphi.truncated.distributions.truncated_exponential_family_distributions"
-ignore_errors = true

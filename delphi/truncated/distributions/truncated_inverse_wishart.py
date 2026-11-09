@@ -79,46 +79,6 @@ class TruncatedInverseWishart(
         canonical = inverse_wishart.InverseWishart.to_canonical(theta)
         return canonical[0], helpers.unvech(canonical[1:], self.size)
 
-    @property
-    def best_df_(self):
-        """Return the best degrees-of-freedom estimate."""
-        return self._canonical(self.best_params)[0]
-
-    @property
-    def final_df_(self):
-        """Return the final degrees-of-freedom estimate."""
-        return self._canonical(self.final_params)[0]
-
-    @property
-    def ema_df_(self):
-        """Return the EMA degrees-of-freedom estimate."""
-        return self._canonical(self.ema_params)[0]
-
-    @property
-    def avg_df_(self):
-        """Return the averaged degrees-of-freedom estimate."""
-        return self._canonical(self.avg_params)[0]
-
-    @property
-    def best_scale_(self):
-        """Return the best scale-matrix estimate."""
-        return self._canonical(self.best_params)[1]
-
-    @property
-    def final_scale_(self):
-        """Return the final scale-matrix estimate."""
-        return self._canonical(self.final_params)[1]
-
-    @property
-    def ema_scale_(self):
-        """Return the EMA scale-matrix estimate."""
-        return self._canonical(self.ema_params)[1]
-
-    @property
-    def avg_scale_(self):
-        """Return the averaged scale-matrix estimate."""
-        return self._canonical(self.avg_params)[1]
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated inverse wishart distribution"
