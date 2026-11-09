@@ -643,9 +643,10 @@ poly = transformed.Transformed(hermite.Hermite(4, prob=True, norm=True), log)
 
 ```bash
 just check                 # ruff format, ruff check, pylint --errors-only, mypy
-just test                  # tests affected by your changes; CI runs all but slow
+just test                  # tests affected by your changes
 just test --testmon-noselect   # the full suite
-just test -m "not slow"    # skip fits over a minute
+just test -m "not slow"    # skip fits over a minute, as the merge queue does
+just test -m "not slow and not long"   # skip fits over ten seconds, as a PR does
 just test <path> -n 0 --log-cli-level=INFO   # show training logs, serially
 just cov                   # branch coverage of delphi/
 ```

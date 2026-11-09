@@ -76,11 +76,13 @@ def _recovers(
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories(known):
     _recovers(probs=ch.tensor([0.2, 0.3, 0.5]), phi=lambda z: z[:, 0] >= 4, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_random_half_space(known):
     probs = ch.tensor([0.2, 0.3, 0.5])
@@ -104,6 +106,7 @@ def test_three_categories_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_categories_identity(known):
     probs = ch.linspace(1.0, 2.0, 10)
@@ -142,6 +145,7 @@ def test_ten_categories_random_half_space(known):
     _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_indistinguishable_pair(known):
     # Given x0, the other counts split in proportion to the other probs, so a

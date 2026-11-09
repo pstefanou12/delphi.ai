@@ -40,7 +40,7 @@ def _recovers(
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -102,6 +102,7 @@ def test_two_dimensions_random_half_space(known):
 
 # Unknown truncation, rho 0.25: over seeds 0,1,2 the estimate's KL measured
 # 0.143 to 0.175 (ema), 0.143 to 0.173 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_ellipsoid(known):
     rate = ch.tensor([1.0, 2.0])
@@ -168,6 +169,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     rate = ch.tensor([1.0])
@@ -189,6 +191,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation needs rho 0.5 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_norm_threshold(known):
     rate = ch.linspace(1.0, 2.0, 10)

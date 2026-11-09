@@ -108,6 +108,7 @@ def test_one_dimension(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     _recovers(
@@ -119,6 +120,7 @@ def test_two_dimensions(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_differing_shapes(known):
     _recovers(
@@ -131,6 +133,7 @@ def test_two_dimensions_differing_shapes(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions_differing_shapes(known):
     _recovers(
@@ -144,6 +147,7 @@ def test_twenty_dimensions_differing_shapes(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.264 to 0.289 (ema), 0.265 to 0.290 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
@@ -165,6 +169,7 @@ def test_two_dimensions_random_half_space(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.097 to 0.157 (ema), 0.100 to 0.156 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_disc_union(known):
     concentration, scale = ch.tensor([2.0, 2.0]), ch.tensor([1.0, 2.0])
@@ -212,6 +217,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     scale, concentration = ch.tensor([1.0]), ch.tensor([2.0])
@@ -232,6 +238,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

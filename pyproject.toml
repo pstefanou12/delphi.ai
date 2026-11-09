@@ -58,13 +58,14 @@ filterwarnings = ["ignore::DeprecationWarning"]
 # the discovery pattern and the search root differ from the defaults.
 python_files = ["*_test.py"]
 testpaths = ["delphi"]
-# Fits over a minute. CI skips them; locally they run by default, and
-# `just test -m "not slow"` drops them. The bar is deliberately high: a
-# high-dimensional fit taking half a minute is worth running every time.
+# Fits over a minute are slow: CI skips them; locally they run by default,
+# and `just test -m "not slow"` drops them. Fits of ten seconds to a minute
+# are long: a PR runs neither, and the merge queue runs the long ones.
 # coverage_sweep tests, which repeat fits hundreds of times per case, run
 # only with `--coverage-sweep`.
 markers = [
     "slow: a fit over a minute, skipped in CI",
+    "long: a fit of ten seconds to a minute, skipped on a PR",
     "coverage_sweep: deselected unless --coverage-sweep is given",
 ]
 

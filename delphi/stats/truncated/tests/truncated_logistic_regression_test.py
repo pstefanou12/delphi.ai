@@ -91,14 +91,17 @@ def test_2d_complex_truncation():
     _fit(_simulate([1.0, -1.0], phi, 2000, covariance=covariance), 0.11)
 
 
+@pytest.mark.long
 def test_10d_simple_truncation():
     _fit(_simulate(_COEF_10D, _SIMPLE, 5000), 0.38)
 
 
+@pytest.mark.long
 def test_10d_complex_truncation():
     _fit(_simulate(_COEF_10D, _COMPLEX, 5000), 0.31)
 
 
+@pytest.mark.long
 def test_10d_no_truncation():
     _fit(_simulate(_COEF_10D, _NONE, 5000), 0.25, alpha_known=False, naive_margin=None)
 
@@ -109,15 +112,18 @@ def test_100d_complex_truncation():
     _fit(simulation, 0.38)
 
 
+@pytest.mark.long
 def test_10d_randomized_truncation():
     phi = classification.PiecewiseSurvival((-2.0, 0.0, 0.3), (0.0, INF, 1.0))
     _fit(_simulate(_COEF_10D, phi, 5000), 0.5)
 
 
+@pytest.mark.long
 def test_10d_alpha_unknown():
     _fit(_simulate(_COEF_10D, _SIMPLE, 5000), 0.38, alpha_known=False)
 
 
+@pytest.mark.long
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_10d_seeds(seed):
     _fit(_simulate(_COEF_10D, _SIMPLE, 5000, seed=seed), 0.39)

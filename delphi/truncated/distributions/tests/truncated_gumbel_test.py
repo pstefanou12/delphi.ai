@@ -45,6 +45,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
     _recovers(
@@ -79,7 +80,7 @@ def test_two_dimensions(known):
 
 # Unknown truncation, rho 0.5: over seeds 0,1,2 the estimate's KL measured
 # 0.022 to 0.380 (ema), 0.019 to 0.381 (avg).
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_two_dimensions_random_half_space(known):
     loc, scale = ch.tensor([1.0, -1.0]), ch.tensor([2.0, 0.5])
     calibrated = truncation_sets.calibrate(
@@ -99,7 +100,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -159,6 +160,7 @@ def test_ten_dimensions_sum_threshold(known):
     _recovers(dims=10, loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

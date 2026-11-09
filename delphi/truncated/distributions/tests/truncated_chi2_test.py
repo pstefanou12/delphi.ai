@@ -40,11 +40,12 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(dims=1, df=ch.tensor([4.0]), phi=lambda z: z[:, 0] > 5.0, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     df = ch.tensor([4.0, 8.0])
@@ -57,6 +58,7 @@ def test_two_dimensions(known):
     _recovers(dims=2, df=df, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     df = ch.tensor([4.0, 8.0])
@@ -69,7 +71,8 @@ def test_two_dimensions_random_half_space(known):
     _recovers(dims=2, df=df, phi=calibrated.phi, known=known)
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@pytest.mark.long
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,
@@ -81,6 +84,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     df = ch.linspace(2.0, 10.0, 10)
@@ -94,6 +98,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     df = ch.tensor([4.0])
@@ -106,6 +111,7 @@ def test_one_dimension_small_mass(known):
     _recovers(dims=1, df=df, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     df = ch.linspace(2.0, 10.0, 10)
@@ -118,6 +124,7 @@ def test_ten_dimensions_sum_threshold(known):
     _recovers(dims=10, df=df, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

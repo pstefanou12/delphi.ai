@@ -100,7 +100,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -111,6 +111,7 @@ def test_one_dimension(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
@@ -123,6 +124,7 @@ def test_two_dimensions(known):
     _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     loc, scale = ch.tensor([0.0, 0.5]), ch.tensor([1.0, 0.5])
@@ -134,6 +136,7 @@ def test_two_dimensions_random_half_space(known):
     _recovers(dims=2, loc=loc, scale=scale, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
@@ -147,6 +150,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
@@ -162,6 +166,7 @@ def test_ten_dimensions_identity(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.003 to 0.164 (ema), 0.009 to 0.206 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     loc, scale = ch.tensor([0.0]), ch.tensor([1.0])
@@ -184,6 +189,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
 # 0.213 to 0.242 (ema), 0.214 to 0.243 (avg); the set error 0.101 to 0.112.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     loc, scale = ch.linspace(-0.5, 0.5, 10), ch.linspace(0.5, 1.0, 10)
@@ -205,6 +211,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

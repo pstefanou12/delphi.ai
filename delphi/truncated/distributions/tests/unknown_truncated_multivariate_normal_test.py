@@ -60,6 +60,7 @@ def _recovers(
     )
 
 
+@pytest.mark.long
 def test_half_space():
     _recovers(
         ch.tensor([0.5, -0.5]),
@@ -68,6 +69,7 @@ def test_half_space():
     )
 
 
+@pytest.mark.long
 def test_intersection_of_half_spaces():
     _recovers(
         ch.tensor([0.3, 0.2]),
@@ -84,6 +86,7 @@ def test_ball_off_the_mean():
     )
 
 
+@pytest.mark.long
 def test_three_dimensional_polytope():
     _recovers(
         ch.tensor([0.5, -0.3, 0.2]),
@@ -92,6 +95,7 @@ def test_three_dimensional_polytope():
     )
 
 
+@pytest.mark.long
 @pytest.mark.parametrize("dims", [4, 5])
 def test_higher_dimensional_half_space(dims: int):
     _recovers(

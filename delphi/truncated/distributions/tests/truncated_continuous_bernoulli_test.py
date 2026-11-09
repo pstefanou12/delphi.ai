@@ -54,6 +54,7 @@ def test_one_dimension(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.036 to 0.145 (ema), 0.043 to 0.152 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     probs = ch.tensor([0.8, 0.3])
@@ -74,6 +75,7 @@ def test_two_dimensions(known):
 
 
 # Unknown truncation: 0.027 to 0.083 over seeds 0 to 4 here, and 0.103 in CI.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     probs = ch.tensor([0.8, 0.3])
@@ -92,6 +94,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
@@ -105,6 +108,7 @@ def test_one_dimension_identity(known):
 
 
 # Unknown truncation: over seeds 0,1,2 the set error 0.149 to 0.154.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     probs = ch.linspace(0.2, 0.8, 10)
@@ -119,6 +123,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
@@ -136,6 +141,7 @@ def test_ten_dimensions_sum_threshold(known):
     _recovers(dims=10, probs=probs, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
