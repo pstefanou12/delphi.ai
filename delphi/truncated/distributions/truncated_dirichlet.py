@@ -27,7 +27,7 @@ class TruncatedDirichlet(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         alpha: Optional[float] = None,
         *,
@@ -36,7 +36,7 @@ class TruncatedDirichlet(
         """Initialize TruncatedDirichlet.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of categories.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.

@@ -11,7 +11,8 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN_CI
+def test_one_dimension(known):
     ch.manual_seed(0)
     target = torch.distributions.MultivariateNormal(ch.zeros(1), ch.eye(1))
     left = ch.tensor([0.0])
@@ -37,10 +38,18 @@ def test_one_dimension():
         "tol": 1e-3,
         "val_interval": 100,
     }
-    truncated = truncated_normal.TruncatedNormal(
-        phi_standardised, alpha, hyperparameters=hyperparameters
+    truncated = helpers.build(
+        truncated_normal.TruncatedNormal,
+        phi_standardised,
+        known,
+        alpha,
+        hyperparameters=hyperparameters,
     )
     truncated.fit((S - emp_loc) / emp_scale)
+    if not known:
+        helpers.assert_learned_set(
+            truncated, phi, target, to_model=lambda x: (x - emp_loc) / emp_scale
+        )
 
     helpers.assert_recovers(
         estimate=lambda name: torch.distributions.MultivariateNormal(

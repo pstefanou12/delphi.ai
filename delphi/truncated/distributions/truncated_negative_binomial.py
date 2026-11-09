@@ -29,7 +29,7 @@ class TruncatedNegativeBinomial(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         total_count: ch.Tensor,
         alpha: Optional[float] = None,
@@ -39,7 +39,7 @@ class TruncatedNegativeBinomial(
         """Initialize TruncatedNegativeBinomial.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             total_count: Known number of failures, one per coordinate.
             alpha: Survival probability lower bound.

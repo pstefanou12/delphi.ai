@@ -2,8 +2,9 @@
 """Tests for the truncated Pareto (known scale) distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -41,6 +42,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_pareto.TruncatedPareto,
@@ -55,19 +58,24 @@ def _recovers(
         model_args=(scale,),
         rebuild=functools.partial(torch.distributions.Pareto, scale),
         divergence=pareto_kl_divergence,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN_CI
+def test_one_dimension(known):
     _recovers(
         dims=1,
         scale=ch.tensor([1.0]),
         tail=ch.tensor([2.5]),
         phi=lambda z: z[:, 0] > 2.0,
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     scale, tail = ch.tensor([1.0, 2.0]), ch.tensor([2.5, 1.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -80,10 +88,14 @@ def test_two_dimensions():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+# Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
+# 0.032 to 0.074 (ema), 0.032 to 0.074 (avg); the set error 0.076 to 0.102.
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     scale, tail = ch.tensor([1.0, 2.0]), ch.tensor([2.5, 1.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 0, 2),
@@ -95,10 +107,15 @@ def test_two_dimensions_random_half_space():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
+        known=known,
+        unknown_tolerances={"ema": 0.15, "avg": 0.15},
+        set_tolerance=0.21,
+        hyperparameters={"truncation_set_rho": 0.3},
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         scale=ch.tensor([1.0]),
@@ -107,10 +124,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         scale=ch.ones(10),
@@ -119,10 +138,12 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     scale, tail = ch.tensor([1.0]), ch.tensor([2.5])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -135,10 +156,14 @@ def test_one_dimension_small_mass():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_ten_dimensions_sum_threshold():
+# Unknown truncation needs rho 0.5 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_sum_threshold(known):
     scale, tail = ch.ones(10), ch.linspace(1.5, 4.0, 10)
     calibrated = truncation_sets.calibrate(
         truncation_sets.sum_threshold,
@@ -151,10 +176,18 @@ def test_ten_dimensions_sum_threshold():
         scale=scale,
         tail=tail,
         phi=calibrated.phi,
+        known=known,
+        hyperparameters={"truncation_set_rho": 0.5},
     )
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(
         model_class=truncated_pareto.TruncatedPareto,
         targets=(
@@ -168,4 +201,5 @@ def test_indistinguishable_pair():
         model_args=(ch.tensor([1.0]),),
         rebuild=functools.partial(torch.distributions.Pareto, ch.tensor([1.0])),
         divergence=pareto_kl_divergence,
+        known=known,
     )

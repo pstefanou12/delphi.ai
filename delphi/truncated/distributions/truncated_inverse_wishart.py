@@ -37,7 +37,7 @@ class TruncatedInverseWishart(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         alpha: Optional[float] = None,
         *,
@@ -46,7 +46,8 @@ class TruncatedInverseWishart(
         """Initialize TruncatedInverseWishart.
 
         Args:
-            phi: Truncation set oracle, over vech rows.
+            phi: Truncation set oracle, over vech rows; None learns it from
+                the sample.
             dims: Side of the sampled matrices.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.

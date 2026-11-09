@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
+import torch.distributions.transforms
 import torch.nn
 
 from delphi.configs.distributions.truncated import (
@@ -28,7 +29,7 @@ class TruncatedLogNormal(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         alpha: Optional[float] = None,
         *,
@@ -37,12 +38,16 @@ class TruncatedLogNormal(
         """Initialize TruncatedLogNormal.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
         super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+
+    def _truncation_set_transform(self) -> torch.distributions.transforms.Transform:
+        """Learn the set in log x, where the family is normal."""
+        return torch.distributions.transforms.ExpTransform().inv
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE: the mean and deviation of ``log x``."""

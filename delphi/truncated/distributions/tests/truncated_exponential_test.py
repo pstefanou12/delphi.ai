@@ -2,7 +2,7 @@
 """Tests for the truncated exponential distribution."""
 
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 import torch as ch
@@ -22,6 +22,8 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
+    known: bool = True,
+    **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
         model_class=truncated_exponential.TruncatedExponential,
@@ -33,19 +35,24 @@ def _recovers(
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
+        known=known,
+        **unknown,
     )
 
 
-def test_one_dimension():
+@helpers.KNOWN_AND_UNKNOWN_CI
+def test_one_dimension(known):
     _recovers(
         dims=1,
         rate=ch.tensor([1.0]),
         phi=lambda z: z > 1,
         hyperparameters={"batch_size": 1},
+        known=known,
     )
 
 
-def test_two_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -56,10 +63,12 @@ def test_two_dimensions():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_twenty_dimensions():
+@helpers.KNOWN_AND_UNKNOWN
+def test_twenty_dimensions(known):
     rate = 2 * ch.ones(20)
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.coordinate_threshold, 0),
@@ -71,10 +80,12 @@ def test_twenty_dimensions():
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={"iterations": 1500, "lr": 1e-1},
+        known=known,
     )
 
 
-def test_two_dimensions_random_half_space():
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_half_space(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_half_space, 1, 2),
@@ -85,10 +96,14 @@ def test_two_dimensions_random_half_space():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_two_dimensions_random_ellipsoid():
+# Unknown truncation, rho 0.25: over seeds 0,1,2 the estimate's KL measured
+# 0.143 to 0.175 (ema), 0.143 to 0.173 (avg).
+@helpers.KNOWN_AND_UNKNOWN
+def test_two_dimensions_random_ellipsoid(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
         functools.partial(truncation_sets.random_ellipsoid, 0, 2),
@@ -101,11 +116,14 @@ def test_two_dimensions_random_ellipsoid():
         dims=2,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={"iterations": 5000, "lr": 1e-1},
+        hyperparameters={"iterations": 5000, "lr": 1e-1, "truncation_set_rho": 0.25},
+        known=known,
+        unknown_tolerances={"ema": 0.35, "avg": 0.35},
     )
 
 
-def test_one_dimension_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_identity(known):
     _recovers(
         dims=1,
         rate=ch.tensor([1.0]),
@@ -113,10 +131,12 @@ def test_one_dimension_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_identity():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_identity(known):
     _recovers(
         dims=10,
         rate=ch.linspace(1.0, 2.0, 10),
@@ -124,10 +144,12 @@ def test_ten_dimensions_identity():
         hyperparameters={"iterations": 1500},
         pass_alpha=False,
         baseline_must_fail=False,
+        known=known,
     )
 
 
-def test_ten_dimensions_sum_threshold():
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_sum_threshold(known):
     rate = ch.linspace(1.0, 2.0, 10)
     # One scalar condition, so sampling stays cheap, but it biases every
     # coordinate instead of one.
@@ -142,10 +164,12 @@ def test_ten_dimensions_sum_threshold():
         rate=rate,
         phi=calibrated.phi,
         hyperparameters={"lr": 1e-1},
+        known=known,
     )
 
 
-def test_one_dimension_small_mass():
+@helpers.KNOWN_AND_UNKNOWN
+def test_one_dimension_small_mass(known):
     rate = ch.tensor([1.0])
     # The regime both papers state their guarantees in; nothing else in the
     # suite goes near it.
@@ -159,10 +183,14 @@ def test_one_dimension_small_mass():
         dims=1,
         rate=rate,
         phi=calibrated.phi,
+        known=known,
     )
 
 
-def test_ten_dimensions_norm_threshold():
+# Unknown truncation needs rho 0.5 here; over seeds 0,1,2 it meets the shared
+# bounds.
+@helpers.KNOWN_AND_UNKNOWN
+def test_ten_dimensions_norm_threshold(known):
     rate = ch.linspace(1.0, 2.0, 10)
     # Couples every coordinate like the sum does, and also excludes the mode.
     calibrated = truncation_sets.calibrate(
@@ -175,7 +203,8 @@ def test_ten_dimensions_norm_threshold():
         dims=10,
         rate=rate,
         phi=calibrated.phi,
-        hyperparameters={"lr": 1e-1},
+        hyperparameters={"lr": 1e-1, "truncation_set_rho": 0.5},
+        known=known,
     )
 
 
@@ -189,7 +218,13 @@ def test_unit_alpha_is_rejected():
         )
 
 
-def test_indistinguishable_pair():
+@helpers.known_and_unknown(
+    pytest.mark.xfail(
+        strict=True,
+        reason="unknown truncation: the learned window is too coarse to separate the pair",
+    )
+)
+def test_indistinguishable_pair(known):
     # Truncated to a narrow window the two samples agree to within sampling
     # error, so only an estimator that knows the window can tell them apart.
     helpers.assert_family_distinguishes(
@@ -202,6 +237,7 @@ def test_indistinguishable_pair():
         dims=1,
         parameter="rate_",
         empirical=lambda s: 1.0 / s.mean(0),
+        known=known,
     )
 
 
@@ -220,3 +256,25 @@ def test_hessian_refuses_a_theta_with_no_mass_on_the_set():
     # Rate 100 puts exp(-50) of its mass above 0.5.
     with pytest.raises(ValueError, match="almost no mass on the truncation set"):
         model.hessian(ch.tensor([-100.0]))
+
+
+def test_unknown_truncation_adopts_the_learned_set():
+    ch.manual_seed(0)
+    target = torch.distributions.Exponential(ch.tensor([1.0]))
+    sample = helpers.generate_truncated_distribution_dataset(
+        target, lambda z: z[:, 0] > 1.0, 2000
+    )
+    model = truncated_exponential.TruncatedExponential(
+        None,
+        1,
+        hyperparameters={
+            "iterations": 1,
+            "max_phases": 1,
+            "truncation_set_degree": 3,
+        },
+    ).fit(sample.S)
+    assert isinstance(model.truncation_set_, delphi.oracle.PolynomialThreshold)
+    assert model.phi is model.truncation_set_
+    assert model.truncation_set_.polynomial.degree == 3
+    fitted = model.train_loader_.dataset.S.size(0) + model.val_loader_.dataset.S.size(0)
+    assert fitted == int(model.truncation_set_(sample.S).sum())

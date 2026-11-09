@@ -4,6 +4,7 @@
 from collections.abc import Callable
 from typing import Any, NamedTuple, Optional, Protocol, TypeVar, Union, cast
 
+import pytest
 import torch as ch
 import torch.distributions
 import torch.distributions.kl
@@ -104,6 +105,39 @@ class TruncatedModel(Protocol):
         """Fit the model to truncated data."""
 
 
+class LearnedSetModel(TruncatedModel, Protocol):
+    """A truncated model that learns its truncation set during fit."""
+
+    truncation_set_: Oracle
+
+
+def known_and_unknown(
+    *marks: pytest.MarkDecorator, ci: bool = False
+) -> pytest.MarkDecorator:
+    """Return a parametrize over ``known``: phi given, then phi=None.
+
+    The unknown variant is marked slow, which CI skips to bound its time;
+    ``ci=True`` keeps one such case per family in CI.
+
+    Args:
+        *marks: Marks for the unknown variant alone, such as xfail.
+        ci: Leave the unknown variant unmarked so CI runs it.
+    """
+    if not ci and not any(mark.name == "slow" for mark in marks):
+        marks = (*marks, pytest.mark.slow)
+    return pytest.mark.parametrize(
+        "known",
+        [True, pytest.param(False, marks=marks)],
+        ids=["known_truncation", "unknown_truncation"],
+    )
+
+
+KNOWN_AND_UNKNOWN = known_and_unknown()
+KNOWN_AND_UNKNOWN_CI = known_and_unknown(ci=True)
+
+# Population mass on which a learned set may disagree with the true one.
+SET_TOLERANCE = 0.1
+
 TOLERANCES = {"ema": 1e-1, "avg": 0.15}
 
 # With nothing truncated the procedure starts at the MLE and should stay
@@ -113,6 +147,67 @@ UNTRUNCATED_TOLERANCES = {"ema": 0.02, "avg": 0.02}
 # A summed bound lets one coordinate absorb the whole budget while the rest
 # are perfect. Measured worst coordinate across the suite is 0.0809.
 MAX_COORDINATE = 0.1
+
+
+def unknown_bounds(
+    known: bool, unknown_tolerances: Optional[dict[str, float]]
+) -> dict[str, Any]:
+    """Return ``assert_recovers`` bounds: shared, or the unknown variant's own.
+
+    A per-case bound on the sum also caps each coordinate, which the shared
+    ``MAX_COORDINATE`` would otherwise hold to the known variant's level.
+    """
+    if known or unknown_tolerances is None:
+        return {}
+    return {
+        "tolerances": unknown_tolerances,
+        "max_coordinate": max(unknown_tolerances.values()),
+    }
+
+
+def build(
+    model_class: Callable[..., Any], phi: Oracle, known: bool, *args, **kwargs
+) -> Any:
+    """Construct a model given phi, or with phi=None to learn the set."""
+    return model_class(phi if known else None, *args, **kwargs)
+
+
+def set_error(
+    learned: Oracle, phi: Oracle, target: torch.distributions.Distribution
+) -> float:
+    """Return the target's mass on which a learned set and phi disagree."""
+    population = target.sample([100000])
+    population = population.view(population.size(0), -1)
+    learned_mask = learned(population).reshape(-1).bool()
+    true_mask = phi(population).reshape(-1).bool()
+    return float((learned_mask != true_mask).double().mean())
+
+
+def assert_learned_set(
+    model: LearnedSetModel,
+    phi: Oracle,
+    target: torch.distributions.Distribution,
+    set_tolerance: float = SET_TOLERANCE,
+    to_model: Optional[Callable[[ch.Tensor], ch.Tensor]] = None,
+) -> None:
+    """Assert the set a model learned agrees with phi on most of the target.
+
+    Args:
+        model: A model fit with phi=None.
+        phi: The true truncation set.
+        target: The untruncated distribution, which weighs the disagreement.
+        set_tolerance: Bound on the mass where the two sets disagree.
+        to_model: Maps the target's coordinates to the model's, for a fit on
+            transformed data; the identity when None.
+
+    Raises:
+        AssertionError: If the sets disagree on more than ``set_tolerance``.
+    """
+    learned = model.truncation_set_
+    to_model = to_model or (lambda z: z)
+    error = set_error(lambda z: learned(to_model(z)), phi, target)
+    print(f"set error: {error:.4f}")
+    assert error <= set_tolerance, f"set error {error:.4f} exceeds {set_tolerance}"
 
 
 def assert_recovers(  # pylint: disable=too-many-arguments
@@ -264,6 +359,10 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     divergence: Callable[
         [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
     ] = kl_divergence,
+    known: bool = True,
+    unknown_tolerances: Optional[dict[str, float]] = None,
+    set_tolerance: float = SET_TOLERANCE,
+    unlearnable: bool = False,
 ) -> None:
     """Fit a family on truncated data and assert it recovers the target.
 
@@ -292,17 +391,37 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
             default.
         divergence: Scores a fitted distribution against the target.
         hyperparameters: Hyperparameter dict for the procedure.
+        known: Give the model phi; else it learns the set from the sample,
+            which is then scored against phi too.
+        unknown_tolerances: Bounds for the unknown variant where it misses
+            the shared ones.
+        set_tolerance: Bound on the learned set's error.
+        unlearnable: The family's samples admit no polynomial basis, so the
+            unknown variant asserts the fit raises instead.
 
     Raises:
-        AssertionError: If any estimator exceeds its bound.
+        AssertionError: If any estimator, or the learned set, exceeds its
+            bound.
     """
     ch.manual_seed(0)
     sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
     args = (sample.alpha,) if pass_alpha else ()
-    truncated = model_class(
-        phi, dims, *model_args, *args, hyperparameters=hyperparameters
+    truncated = build(
+        model_class,
+        phi,
+        known,
+        dims,
+        *model_args,
+        *args,
+        hyperparameters=hyperparameters,
     )
+    if not known and unlearnable:
+        with pytest.raises(ValueError, match="truncation_set_degree"):
+            truncated.fit(sample.S)
+        return
     truncated.fit(sample.S)
+    if not known:
+        assert_learned_set(truncated, phi, target, set_tolerance)
 
     family = _family(target, parameter, rebuild)
     assert_recovers(
@@ -310,6 +429,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         divergence=lambda fitted: divergence(fitted, target),
         baseline=family.naive(empirical(sample.S)),
         baseline_must_fail=baseline_must_fail,
+        **unknown_bounds(known, unknown_tolerances),
     )
 
 
@@ -386,6 +506,10 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     divergence: Callable[
         [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
     ] = kl_divergence,
+    known: bool = True,
+    unknown_recovery_bound: Optional[float] = None,
+    set_tolerance: float = SET_TOLERANCE,
+    unlearnable: bool = False,
 ) -> None:
     """Fit two families truncated to one set and assert they come apart.
 
@@ -406,22 +530,43 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
         rebuild: As ``assert_family_recovers``.
         divergence: As ``assert_family_recovers``.
         hyperparameters: Hyperparameter dict for the procedure.
+        known: As ``assert_family_recovers``.
+        unknown_recovery_bound: ``recovery_bound`` for the unknown variant,
+            where it misses the shared one.
+        set_tolerance: As ``assert_family_recovers``.
+        unlearnable: As ``assert_family_recovers``.
 
     Raises:
-        AssertionError: As ``assert_distinguishes``.
+        AssertionError: As ``assert_distinguishes``, or if a learned set
+            exceeds its bound.
     """
     family = _family(targets[0], parameter, rebuild)
     fits, naive = [], []
     for target in targets:
         ch.manual_seed(0)
         sample = generate_truncated_distribution_dataset(target, phi, dataset_size)
-        truncated = model_class(
-            phi, dims, *model_args, sample.alpha, hyperparameters=hyperparameters
+        truncated = build(
+            model_class,
+            phi,
+            known,
+            dims,
+            *model_args,
+            sample.alpha,
+            hyperparameters=hyperparameters,
         )
+        if not known and unlearnable:
+            with pytest.raises(ValueError, match="truncation_set_degree"):
+                truncated.fit(sample.S)
+            return
         truncated.fit(sample.S)
+        if not known:
+            assert_learned_set(truncated, phi, target, set_tolerance)
         fits.append(truncated)
         naive.append(family.naive(empirical(sample.S)))
 
+    bound = {}
+    if not known and unknown_recovery_bound is not None:
+        bound = {"recovery_bound": unknown_recovery_bound}
     for name in TOLERANCES:
         print(f"-- {name}")
         assert_distinguishes(
@@ -429,4 +574,5 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
             recovered=(family.fitted(fits[0], name), family.fitted(fits[1], name)),
             naive=(naive[0], naive[1]),
             divergence=divergence,
+            **bound,
         )

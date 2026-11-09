@@ -6,6 +6,7 @@ from functools import partial
 from typing import Optional
 
 import torch as ch
+import torch.distributions.transforms
 import torch.nn
 
 from delphi.configs.distributions.truncated import (
@@ -29,7 +30,7 @@ class TruncatedInverseGamma(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         concentration: ch.Tensor,
         alpha: Optional[float] = None,
@@ -39,7 +40,7 @@ class TruncatedInverseGamma(
         """Initialize TruncatedInverseGamma.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             concentration: Known shape, one per coordinate.
             alpha: Survival probability lower bound.
@@ -54,6 +55,10 @@ class TruncatedInverseGamma(
             partial(inverse_gamma.InverseGamma, self.concentration),
             inverse_gamma.InverseGamma.calc_suff_stat,
         )
+
+    def _truncation_set_transform(self) -> torch.distributions.transforms.Transform:
+        """Learn the set in log x, where the heavy right tail is tame."""
+        return torch.distributions.transforms.ExpTransform().inv
 
     def _calc_emp_model(self):
         """Initialize theta at the MLE rate ``concentration / mean(1 / x)``."""

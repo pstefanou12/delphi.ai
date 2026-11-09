@@ -27,7 +27,7 @@ class TruncatedGumbel(
 
     def __init__(
         self,
-        phi: Callable,
+        phi: Optional[Callable],
         dims: int,
         scale: ch.Tensor,
         alpha: Optional[float] = None,
@@ -37,7 +37,7 @@ class TruncatedGumbel(
         """Initialize TruncatedGumbel.
 
         Args:
-            phi: Truncation set oracle.
+            phi: Truncation set oracle; None learns it from the sample.
             dims: Number of dimensions.
             scale: Known scale, one per coordinate.
             alpha: Survival probability lower bound.

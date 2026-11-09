@@ -12,6 +12,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
+  - [Learning the truncation set](#learning-the-truncation-set)
 - [Truncated Regression](#truncated-regression)
   - [Sparse regression](#sparse-regression)
   - [Classification](#classification)
@@ -264,6 +265,43 @@ explicitly, with a warning when its basis outgrows the sample.
 whitens the sample by the truth and only the mean is learned, which leaves less to estimate. Both
 estimators degrade as the survival mass falls, which `alpha` does not change:
 here it only sizes the region the descent is kept in.
+
+### Learning the truncation set
+
+Every family above also accepts `phi=None`. It then learns the set first,
+following Lee, Mehrotra and Zampetakis (2024), "Efficient Statistics With
+Unknown Truncation, Beyond Gaussians": the sample, labeled 1, is mixed with draws from the family's
+untruncated fit to it, labeled 0 at weight `truncation_set_rho`, and a
+polynomial threshold of degree `truncation_set_degree` is fit to the labels
+by L1 regression. The family then fits the samples inside the learned set by
+the same procedure as with a known `phi`. Heavy-tailed families learn the set
+in `log x`. The basis has `C(degree + d, d)` terms, so unless set the
+degree is the largest up to 4 whose basis has at most 250 terms: 4 up to 6
+dimensions, 3 up to 9, 2 up to 20, and 1 beyond. A family whose samples satisfy a polynomial identity,
+such as the Dirichlet's coordinates summing to one or a Bernoulli's `x² = x`,
+raises a `ValueError` naming the degree. For the normal,
+`TruncatedMultivariateNormal(dims, method="l1")` selects this route instead of
+the Hermite expansion.
+
+```python
+import torch as ch
+import torch.distributions
+
+from delphi.truncated.distributions import truncated_exponential
+
+ch.manual_seed(0)
+
+# Observed only above 1; the fit is never told so.
+population = torch.distributions.Exponential(ch.tensor([1.0])).sample([20000])
+S = population[population[:, 0] > 1.0][:5000]
+
+model = truncated_exponential.TruncatedExponential(None, 1)
+model.fit(S)
+
+rate = model.avg_rate_
+# The learned set, as a membership oracle.
+inside = model.truncation_set_(ch.tensor([[0.5], [2.0]]))
+```
 
 ## Truncated Regression
 
@@ -574,6 +612,18 @@ from delphi.torchnomials import empirical, laguerre
 
 reference = torch.distributions.Independent(torch.distributions.Gamma(conc, rate), 1)
 poly = empirical.EmpiricalOrthonormal(laguerre.Laguerre(degree=6, dims=2), reference)
+```
+
+`Transformed` evaluates a family in new coordinates, such as polynomials in
+`log x` for a heavy-tailed sample:
+
+```python
+import torch.distributions.transforms
+
+from delphi.torchnomials import hermite, transformed
+
+log = torch.distributions.transforms.ExpTransform().inv
+poly = transformed.Transformed(hermite.Hermite(4, prob=True, norm=True), log)
 ```
 
 ### Adding a distribution
