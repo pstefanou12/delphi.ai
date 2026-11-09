@@ -25,7 +25,7 @@ def _fit(
     dataset_size: int,
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
-    known: bool = True,
+    known: helpers.Known = True,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ):
     """Fit the mean on an unstandardized truncated sample, phi as stated.
@@ -50,7 +50,7 @@ def _fit(
         hyperparameters=hyperparameters,
     )
     model.fit(S)
-    if not known:
+    if helpers.learns_set(known):
         helpers.assert_learned_set(model, phi, target, set_tolerance)
 
     def estimate(name: str) -> torch.distributions.MultivariateNormal:
@@ -70,7 +70,7 @@ def _recovers(  # pylint: disable=too-many-arguments
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     tolerances: Optional[dict[str, float]] = None,
-    known: bool = True,
+    known: helpers.Known = True,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
@@ -82,7 +82,11 @@ def _recovers(  # pylint: disable=too-many-arguments
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=naive,
         baseline_must_fail=baseline_must_fail,
-        tolerances=tolerances if known else unknown_tolerances or tolerances,
+        tolerances=(
+            unknown_tolerances or tolerances
+            if helpers.learns_set(known)
+            else tolerances
+        ),
     )
 
 
@@ -145,7 +149,18 @@ def test_two_dimensions_random_half_space(known):
 
 # Unknown truncation, degree 2 and rho 0.5: over seeds 0,1,2 the estimate's KL
 # measured 0.158 to 0.285 (ema), 0.158 to 0.284 (avg).
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(
+    ci=True,
+    constrained_ci=False,
+    constrained_marks=(
+        pytest.mark.xfail(
+            reason=(
+                "constrained learner: at degree 2 a set holding every positive "
+                "is an ellipse, wrong on 0.42 of the population"
+            )
+        ),
+    ),
+)
 def test_two_dimensions_crescent(known):
     _recovers(
         helpers.correlated_normal(2),
@@ -230,7 +245,7 @@ def test_twenty_dimensions(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.known_and_unknown(constrained_ci=True)
 def test_one_dimension_identity(known):
     _recovers(
         helpers.correlated_normal(1),

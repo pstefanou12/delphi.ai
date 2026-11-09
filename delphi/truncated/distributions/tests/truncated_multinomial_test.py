@@ -54,7 +54,7 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
-    known: bool = True,
+    known: helpers.Known = True,
     **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(

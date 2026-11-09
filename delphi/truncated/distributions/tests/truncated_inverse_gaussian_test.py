@@ -30,7 +30,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
-    known: bool = True,
+    known: helpers.Known = True,
     **unknown: Any,
 ) -> None:
     helpers.assert_family_recovers(
@@ -51,7 +51,18 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(
+    ci=True,
+    constrained_ci=False,
+    constrained_marks=(
+        pytest.mark.xfail(
+            reason=(
+                "constrained learner: the set errs on 0.01, but the tail "
+                "positives it leaves out send the estimate's KL to 0.43"
+            )
+        ),
+    ),
+)
 def test_one_dimension(known):
     _recovers(
         dims=1,
@@ -103,7 +114,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.known_and_unknown(constrained_ci=True)
 def test_one_dimension_identity(known):
     _recovers(
         dims=1,

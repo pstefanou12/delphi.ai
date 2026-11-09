@@ -1,6 +1,7 @@
 # Author: pstefanou12@
 """Tests for the truncated normal."""
 
+import pytest
 import torch as ch
 import torch.distributions
 import torch.distributions.kl
@@ -11,7 +12,20 @@ from delphi.truncated.distributions.tests import helpers
 ch.set_printoptions(precision=4, sci_mode=False)
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(
+    ci=True,
+    constrained_ci=False,
+    constrained_marks=(
+        pytest.mark.xfail(
+            reason=(
+                "constrained learner: the reference, fit to the halved "
+                "sample, puts 9% of its mass off the set where the truth "
+                "puts 50%, so the program holds p near 1 everywhere; the "
+                "set errs on 0.32"
+            )
+        ),
+    ),
+)
 def test_one_dimension(known):
     ch.manual_seed(0)
     target = torch.distributions.MultivariateNormal(ch.zeros(1), ch.eye(1))
@@ -46,7 +60,7 @@ def test_one_dimension(known):
         hyperparameters=hyperparameters,
     )
     truncated.fit((S - emp_loc) / emp_scale)
-    if not known:
+    if helpers.learns_set(known):
         helpers.assert_learned_set(
             truncated, phi, target, to_model=lambda x: (x - emp_loc) / emp_scale
         )

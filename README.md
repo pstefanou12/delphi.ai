@@ -304,6 +304,20 @@ rate = model.avg_rate_
 inside = model.truncation_set_(ch.tensor([[0.5], [2.0]]))
 ```
 
+`truncation_set_learner="constrained"` learns the set instead with the
+constrained regression of their 2026 paper (next section), against the same
+untruncated fit; `truncation_set_tolerance` sets its `rho`. It needs that fit
+only to be smooth with respect to the truth rather than close to it, but it
+gains little when the fit puts almost no mass outside the set. The default
+stays `"pu"`.
+
+```python
+model = truncated_exponential.TruncatedExponential(
+    None, 1, hyperparameters={"truncation_set_learner": "constrained"}
+)
+model.fit(S)
+```
+
 ### Learning from positive samples
 
 `delphi.learning.positive_only.PositiveOnlyLearner` learns a set from samples
@@ -326,6 +340,7 @@ each restricting the positives and the reference to the intersection of the
 sets so far, and returns the intersection. Given a list of references, at
 least one of them close to the positives' distribution, it learns against
 each, keeps those whose set holds held-out positives, and intersects them.
+`learn_truncation_set(..., learner="constrained")` wraps it.
 
 ```python
 import torch as ch

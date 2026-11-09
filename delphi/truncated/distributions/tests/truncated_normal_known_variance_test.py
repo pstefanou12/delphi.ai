@@ -47,7 +47,7 @@ def test_one_dimension(known):
         hyperparameters=hyperparameters,
     )
     truncated.fit(S - emp_loc)
-    if not known:
+    if helpers.learns_set(known):
         helpers.assert_learned_set(
             truncated, phi, target, to_model=lambda x: x - emp_loc
         )
