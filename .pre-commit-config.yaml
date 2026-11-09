@@ -1,7 +1,7 @@
 # Author: pstefanou12@
-# Every hook delegates to a just recipe, which in turn goes through poetry.
-# This keeps the pre-push gate byte-identical to `just check` and to CI, and
-# avoids a second, separately-pinned copy of the linters.
+# Every hook delegates to a just recipe, which in turn goes through poetry,
+# so there is no second, separately-pinned copy of the linters. Each checks
+# only the pushed Python files under delphi/; CI runs `just check` on all.
 
 default_stages: [pre-push]
 
@@ -12,26 +12,26 @@ repos:
         name: just fmt-check
         entry: just fmt-check
         language: system
-        pass_filenames: false
-        always_run: true
+        types: [python]
+        files: ^delphi/
 
       - id: lint-check
         name: just lint-check
         entry: just lint-check
         language: system
-        pass_filenames: false
-        always_run: true
+        types: [python]
+        files: ^delphi/
 
       - id: pylint
         name: just pylint
         entry: just pylint
         language: system
-        pass_filenames: false
-        always_run: true
+        types: [python]
+        files: ^delphi/
 
       - id: typecheck
         name: just typecheck
         entry: just typecheck
         language: system
-        pass_filenames: false
-        always_run: true
+        types: [python]
+        files: ^delphi/

@@ -5,6 +5,7 @@ from collections.abc import Callable
 import inspect
 import random
 from typing import TYPE_CHECKING, ClassVar, Generic, Optional, cast
+import warnings
 
 import numpy as np
 import pydantic
@@ -118,6 +119,16 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
                 f"hyperparameters is type {type(hyperparameters).__name__}; expected a dict."
             )
         self.hyperparameters: base.ConfigT = self.defaults(**hyperparameters)
+        if (
+            self.defaults.model_fields["dtype"].default == "float64"
+            and self.hyperparameters.dtype == "float32"
+        ):
+            warnings.warn(
+                f"{type(self).__name__} runs in float64 by default; in float32 "
+                "it may stop at its iteration budget short of its tolerance, "
+                "so check converged_.",
+                stacklevel=2,
+            )
 
         self.optimizer: Optional[torch.optim.Optimizer] = None
         self.schedule: Optional[torch.optim.lr_scheduler.LRScheduler] = None
@@ -133,6 +144,21 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         self.model: Optional[ch.nn.Module] = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
         self.optimizers: dict[str, torch.optim.Optimizer] = {}
+        self.procedure: Optional[delphi.trainer.ProcedureResult] = None
+
+    @property
+    def dtype(self) -> ch.dtype:
+        """The floating dtype the config's ``dtype`` names."""
+        return getattr(ch, self.hyperparameters.dtype)
+
+    @property
+    def converged_(self) -> bool:
+        """Whether the last fit stopped on a criterion rather than its budget."""
+        return self.procedure is not None and self.procedure.final.stop_reason in (
+            constants.StopReason.GRAD_TOL,
+            constants.StopReason.LOSS_TOL,
+            constants.StopReason.MODEL_STOP,
+        )
 
     def parameter_groups(self) -> list[dict]:
         """Return optimizer parameter groups.

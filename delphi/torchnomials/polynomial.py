@@ -19,6 +19,7 @@ from typing import Optional
 
 import torch as ch
 import torch.distributions
+from typing_extensions import Self
 
 # Rows times terms evaluated at once, which bounds the working memory of an
 # evaluation to tens of megabytes whatever the sample size.
@@ -141,7 +142,7 @@ class Polynomial(abc.ABC):
         """Number of polynomials in the basis."""
         return self.multi_indices.size(0)
 
-    def fit(self, x: ch.Tensor) -> "Polynomial":
+    def fit(self, x: ch.Tensor) -> Self:
         """Set the coefficients from samples, ``c_V = mean(P_V) / ||P_V||^2``.
 
         For samples from a law ``D``, these are unbiased estimates of the

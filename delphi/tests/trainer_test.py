@@ -238,3 +238,13 @@ def test_a_model_owning_its_updates_trains_without_an_optimizer():
     assert procedure.final.stop_reason == constants.StopReason.MODEL_STOP
     assert procedure.iterations < 10
     assert abs(procedure.series("root")[-1] - 2.0**0.5) < 1e-12
+
+
+@pytest.mark.parametrize("iterations, converged", [(50, True), (2, False)])
+def test_converged_reads_how_the_last_fit_stopped(iterations, converged):
+    model = NewtonSquareRoot({"iterations": iterations})
+    assert not model.converged_
+    model.procedure = delphi.trainer.Trainer(model, model.hyperparameters).train_model(
+        None, None
+    )
+    assert model.converged_ is converged
