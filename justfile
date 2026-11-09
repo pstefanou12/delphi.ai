@@ -65,6 +65,11 @@ test *ARGS:
     # first test that runs it, so testmon would miss most dependencies.
     if [ -n "${CI:-}" ]; then poetry run pytest -n auto --dist worksteal "$@"; else COVERAGE_CORE=ctrace poetry run pytest --testmon -n auto --dist worksteal "$@"; fi
 
+# Record each test's duration in .test_durations, by which CI splits the
+# suite into balanced groups. Rerun when tests are added or slowed.
+durations:
+    poetry run pytest -p no:testmon -n auto -m "not slow" --store-durations
+
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:
     poetry run pytest --cov=delphi --cov-branch \
