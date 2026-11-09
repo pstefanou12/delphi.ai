@@ -203,3 +203,23 @@ def test_indistinguishable_pair(known):
         divergence=pareto_kl_divergence,
         known=known,
     )
+
+
+# Seeds 0-2: KL at most 0.0010 (ema), 0.0009 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    scale, tail = ch.ones(20), ch.linspace(1.5, 4.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.Pareto(scale, tail),
+        target_alpha=(0.15, 0.25),
+        bounds=(20.0, 1000.0),
+    )
+    _recovers(
+        dims=20,
+        scale=scale,
+        tail=tail,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.002, "avg": 0.0019},
+        max_coordinate=0.00058,
+    )

@@ -157,3 +157,20 @@ def test_unknown_truncation_raises():
     model = truncated_dirichlet.TruncatedDirichlet(None, 3)
     with pytest.raises(ValueError, match="truncation_set_degree"):
         model.fit(sample[sample[:, 0] > 0.3])
+
+
+# Seeds 0-2: KL at most 0.0017 (ema), 0.0019 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_categories_norm_threshold():
+    concentration = ch.linspace(1.0, 5.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.norm_threshold,
+        torch.distributions.Dirichlet(concentration),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 1.0),
+    )
+    _recovers(
+        concentration=concentration,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0034, "avg": 0.0038},
+    )

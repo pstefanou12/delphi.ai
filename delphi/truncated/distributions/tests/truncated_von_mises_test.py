@@ -202,3 +202,23 @@ def test_indistinguishable_pair(known):
         known=known,
         hyperparameters={"truncation_set_rho": 0.3},
     )
+
+
+# Seeds 0-2: KL at most 0.0032 (ema), 0.0032 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    loc, concentration = ch.linspace(-1.0, 1.0, 20), ch.linspace(0.5, 3.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.VonMises(loc, concentration),
+        target_alpha=(0.15, 0.25),
+        bounds=(-20 * math.pi, 20 * math.pi),
+    )
+    _recovers(
+        dims=20,
+        loc=loc,
+        concentration=concentration,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0064, "avg": 0.0064},
+        max_coordinate=0.0014,
+    )

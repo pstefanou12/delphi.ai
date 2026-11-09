@@ -174,3 +174,21 @@ def test_unknown_truncation_raises():
     model = truncated_multinomial.TruncatedMultinomial(None, 3, _TRIALS)
     with pytest.raises(ValueError, match="truncation_set_degree"):
         model.fit(sample[sample[:, 0] >= 4])
+
+
+# Seeds 0-2: KL at most 0.0027 (ema), 0.0028 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_categories_random_half_space():
+    probs = ch.linspace(1.0, 2.0, 20)
+    probs = probs / probs.sum()
+    calibrated = truncation_sets.calibrate(
+        functools.partial(truncation_sets.random_half_space, 0, 20),
+        torch.distributions.Multinomial(_TRIALS, probs),
+        target_alpha=(0.10, 0.40),
+        bounds=(-40.0, 40.0),
+    )
+    _recovers(
+        probs=probs,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0054, "avg": 0.0057},
+    )

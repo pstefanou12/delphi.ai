@@ -158,3 +158,23 @@ def test_indistinguishable_pair(known):
         rebuild=functools.partial(torch.distributions.Laplace, loc),
         known=known,
     )
+
+
+# Seeds 0-2: KL at most 0.0013 (ema), 0.0012 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_norm_threshold():
+    loc, scale = ch.zeros(20), ch.linspace(0.5, 2.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.norm_threshold,
+        torch.distributions.Laplace(loc, scale),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 200.0),
+    )
+    _recovers(
+        dims=20,
+        loc=loc,
+        scale=scale,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0026, "avg": 0.0025},
+        max_coordinate=0.00066,
+    )

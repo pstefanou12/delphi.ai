@@ -137,3 +137,22 @@ def test_indistinguishable_pair(known):
         empirical=lambda s: ch.sqrt((s**2).mean(0)),
         known=known,
     )
+
+
+# Seeds 0-2: KL at most 0.0023 (ema), 0.0013 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    scale = ch.linspace(0.5, 2.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.HalfNormal(scale),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 400.0),
+    )
+    _recovers(
+        dims=20,
+        scale=scale,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0047, "avg": 0.0026},
+        max_coordinate=0.0013,
+    )
