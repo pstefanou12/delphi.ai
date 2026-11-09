@@ -119,7 +119,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self.logger = logging.getLogger(type(self).__module__)
         self.phi = phi
         self.learns_truncation_set = phi is None
-        self.truncation_set_: Optional[delphi.oracle.PolynomialThreshold] = None
+        self.truncation_set_: Optional[delphi.oracle.Oracle] = None
         if alpha is not None and not 0.0 < alpha < 1.0:
             raise ValueError(
                 "alpha is the survival probability and must lie in (0, 1); got "
@@ -246,7 +246,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         """
         hp = self.hyperparameters
         degree = self._truncation_set_degree(S.size(1))
-        rho = hp.truncation_set_rho or DEFAULT_TRUNCATION_SET_RHO
         self.train_loader_, self.val_loader_ = datasets.make_train_and_val_distr(
             hp,
             S,
@@ -256,8 +255,6 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         self._calc_emp_model()
         with ch.no_grad():
             reference = self.dist(self.emp_theta.detach(), self.dims)
-            draws = hp.truncation_set_num_samples or S.size(0)
-            unlabeled = reference.sample([draws]).view(draws, -1)
         try:
             basis = self._truncation_set_basis(reference, S.size(1), degree)
         except ValueError as e:
@@ -266,9 +263,27 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 f"truncation_set_degree={degree}: {e} Lower "
                 "the degree, or pass phi."
             ) from e
-        self.truncation_set_ = delphi.truncation_set.learn_truncation_set(
-            S, unlabeled, basis, rho=rho
-        )
+
+        def sample(count: int) -> ch.Tensor:
+            with ch.no_grad():
+                return reference.sample([count]).view(count, -1)
+
+        if hp.truncation_set_learner == "constrained":
+            self.truncation_set_ = delphi.truncation_set.learn_truncation_set(
+                S,
+                sample,
+                basis,
+                learner="constrained",
+                rho=hp.truncation_set_tolerance,
+                hyperparameters={"reference_samples": hp.truncation_set_num_samples},
+            )
+        else:
+            self.truncation_set_ = delphi.truncation_set.learn_truncation_set(
+                S,
+                sample(hp.truncation_set_num_samples or S.size(0)),
+                basis,
+                rho=hp.truncation_set_rho or DEFAULT_TRUNCATION_SET_RHO,
+            )
         self.phi = self.truncation_set_
         # The fit compares the sample's moments with those of E(theta, phi),
         # so a sample the learned set excludes would bias it.

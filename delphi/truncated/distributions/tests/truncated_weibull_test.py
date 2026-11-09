@@ -44,7 +44,7 @@ def _recovers(
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
-    known: bool = True,
+    known: helpers.Known = True,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
@@ -83,7 +83,7 @@ def _recovers(
         hyperparameters=hyperparameters,
     )
     truncated.fit(S)
-    if not known:
+    if helpers.learns_set(known):
         helpers.assert_learned_set(truncated, phi, target, set_tolerance)
 
     mle = parent.pow(concentration).mean(0).pow(1.0 / concentration)
@@ -263,7 +263,7 @@ def test_indistinguishable_pair(known):
             sample.alpha,
         )
         truncated.fit(sample.S)
-        if not known:
+        if helpers.learns_set(known):
             helpers.assert_learned_set(truncated, phi, target)
         fits.append(truncated)
         naive.append(sample.S.pow(concentration).mean(0).pow(1.0 / concentration))

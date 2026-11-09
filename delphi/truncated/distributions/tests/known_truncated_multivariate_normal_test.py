@@ -23,7 +23,7 @@ def _fit(
     dataset_size: int,
     hyperparameters: Optional[dict] = None,
     pass_alpha: bool = True,
-    known: bool = True,
+    known: helpers.Known = True,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ):
     """Fit on a standardized truncated sample and map the estimates back.
@@ -52,7 +52,7 @@ def _fit(
         hyperparameters=hyperparameters,
     )
     model.fit((S - loc) / scale)
-    if not known:
+    if helpers.learns_set(known):
         helpers.assert_learned_set(
             model, phi, target, set_tolerance, to_model=lambda x: (x - loc) / scale
         )
@@ -78,7 +78,7 @@ def _recovers(  # pylint: disable=too-many-arguments
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     tolerances: Optional[dict[str, float]] = None,
-    known: bool = True,
+    known: helpers.Known = True,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
@@ -90,7 +90,11 @@ def _recovers(  # pylint: disable=too-many-arguments
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=naive,
         baseline_must_fail=baseline_must_fail,
-        tolerances=tolerances if known else unknown_tolerances or tolerances,
+        tolerances=(
+            unknown_tolerances or tolerances
+            if helpers.learns_set(known)
+            else tolerances
+        ),
     )
 
 

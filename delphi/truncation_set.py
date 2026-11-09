@@ -12,12 +12,19 @@ labels outside it are all 0, and a polynomial threshold fit by L1 regression
 
 How close the reference is matters: where it outweighs the truncated
 density inside the set, the mixture labels that region 0 too.
+
+The constrained learner (``learner="constrained"``) instead follows Lee,
+Mehrotra and Zampetakis (2026): the polynomial with the least L1 mass under
+the reference that still holds the positives, refit in rounds inside the
+intersection so far (``delphi.learning.positive_only``). It needs the
+reference only smooth with respect to the truth, not close to it.
 """
 
-from typing import Optional
+from typing import Literal, Optional, Union
 
 import torch as ch
 
+from delphi.learning import positive_only
 import delphi.oracle
 import delphi.torchnomials.polynomial
 
@@ -66,29 +73,57 @@ def positive_unlabeled_sample(
 
 def learn_truncation_set(
     positive: ch.Tensor,
-    unlabeled: ch.Tensor,
+    unlabeled: Union[ch.Tensor, positive_only.Sampler],
     polynomial: delphi.torchnomials.polynomial.Polynomial,
     *,
-    rho: float = DEFAULT_RHO,
+    learner: Literal["pu", "constrained"] = "pu",
+    rho: Optional[float] = None,
     hyperparameters: Optional[dict] = None,
-) -> delphi.oracle.PolynomialThreshold:
-    """Learn the truncation set as a polynomial threshold.
+) -> delphi.oracle.Oracle:
+    """Learn the truncation set as a polynomial threshold, or an intersection.
 
     Args:
         positive: Samples from the truncated distribution, shaped (n, d).
-        unlabeled: Draws from the reference distribution, shaped (m, d).
+        unlabeled: Draws from the reference distribution, shaped (m, d), or
+            a sampler of it, ``m -> (m, d)``. The positive-unlabeled learner
+            draws n from a sampler; the constrained one resamples a tensor.
         polynomial: The basis to regress over, in the samples' coordinates;
             best conditioned when orthonormal under the reference.
-        rho: The unlabeled draws' weight in the mixture, in (0, 1).
-        hyperparameters: Overrides of the L1 regression's config.
+        learner: ``"pu"``, the positive-unlabeled reduction, or
+            ``"constrained"``, ``positive_only.PositiveOnlyLearner``.
+        rho: The positive-unlabeled mixture's reference weight, in (0, 1),
+            ``DEFAULT_RHO`` when None; or the constrained learner's
+            tolerance, its config's default when None.
+        hyperparameters: Overrides of the L1 regression's config for
+            ``"pu"``, or of ``PositiveOnlyLearnerConfig`` for
+            ``"constrained"``.
 
     Returns:
         The learned set, as a membership oracle.
 
     Raises:
-        ValueError: As ``positive_unlabeled_sample``.
+        ValueError: As ``positive_unlabeled_sample``, or if learner is
+            neither ``"pu"`` nor ``"constrained"``.
     """
-    X, y, weights = positive_unlabeled_sample(positive, unlabeled, rho)  # pylint: disable=invalid-name
+    if learner == "constrained":
+        sampler = (
+            positive_only.pool_sampler(unlabeled)
+            if isinstance(unlabeled, ch.Tensor)
+            else unlabeled
+        )
+        overrides = dict(hyperparameters or {})
+        if rho is not None:
+            overrides["rho"] = rho
+        return positive_only.PositiveOnlyLearner(
+            polynomial, hyperparameters=overrides
+        ).fit(positive, sampler)
+    if learner != "pu":
+        raise ValueError(f"learner must be 'pu' or 'constrained'; got {learner!r}.")
+    if not isinstance(unlabeled, ch.Tensor):
+        unlabeled = unlabeled(positive.size(0))
+    X, y, weights = positive_unlabeled_sample(  # pylint: disable=invalid-name
+        positive, unlabeled, DEFAULT_RHO if rho is None else rho
+    )
     return delphi.oracle.PolynomialThreshold(
         polynomial, hyperparameters=hyperparameters
     ).fit(X, y, weights)

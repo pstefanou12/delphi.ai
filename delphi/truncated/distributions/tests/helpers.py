@@ -111,24 +111,63 @@ class LearnedSetModel(TruncatedModel, Protocol):
     truncation_set_: Oracle
 
 
-def known_and_unknown(
-    *marks: pytest.MarkDecorator, ci: bool = False
-) -> pytest.MarkDecorator:
-    """Return a parametrize over ``known``: phi given, then phi=None.
+# The value of ``known`` that learns the set with the constrained learner;
+# True gives phi, and False learns it by the positive-unlabeled reduction.
+CONSTRAINED = "constrained"
 
-    The unknown variant is marked slow, which CI skips to bound its time;
-    ``ci=True`` keeps one such case per family in CI.
+# True, False or CONSTRAINED.
+Known = Union[bool, str]
+
+
+def learns_set(known: Known) -> bool:
+    """Return whether the variant learns the set, as every one but True does."""
+    return known is not True
+
+
+def known_and_unknown(
+    *marks: pytest.MarkDecorator,
+    ci: bool = False,
+    constrained_ci: Optional[bool] = None,
+    constrained_marks: tuple[pytest.MarkDecorator, ...] = (),
+) -> pytest.MarkDecorator:
+    """Return a parametrize over ``known``: phi given, then each set learner.
+
+    The learned variants, positive-unlabeled and then constrained, are
+    marked slow, which CI skips to bound its time; ``ci=True`` keeps one
+    such case per family in CI. The constrained variant carries the
+    positive-unlabeled one's marks, measured on that learner alone, then
+    its own.
 
     Args:
-        *marks: Marks for the unknown variant alone, such as xfail.
-        ci: Leave the unknown variant unmarked so CI runs it.
+        *marks: Marks for the learned variants, such as xfail.
+        ci: Leave the learned variants unmarked so CI runs them.
+        constrained_ci: Whether CI runs the constrained variant; as ci when
+            None.
+        constrained_marks: Marks for the constrained variant alone.
     """
-    if not ci and not any(mark.name == "slow" for mark in marks):
-        marks = (*marks, pytest.mark.slow)
+
+    def with_slow(
+        variant_marks: tuple[pytest.MarkDecorator, ...], in_ci: bool
+    ) -> tuple[pytest.MarkDecorator, ...]:
+        if in_ci or any(mark.name == "slow" for mark in variant_marks):
+            return variant_marks
+        return (*variant_marks, pytest.mark.slow)
+
+    in_ci = ci if constrained_ci is None else constrained_ci
     return pytest.mark.parametrize(
         "known",
-        [True, pytest.param(False, marks=marks)],
-        ids=["known_truncation", "unknown_truncation"],
+        [
+            True,
+            pytest.param(False, marks=with_slow(marks, ci)),
+            pytest.param(
+                CONSTRAINED, marks=with_slow((*marks, *constrained_marks), in_ci)
+            ),
+        ],
+        ids=[
+            "known_truncation",
+            "unknown_truncation",
+            "unknown_truncation_constrained",
+        ],
     )
 
 
@@ -150,14 +189,14 @@ MAX_COORDINATE = 0.1
 
 
 def unknown_bounds(
-    known: bool, unknown_tolerances: Optional[dict[str, float]]
+    known: Known, unknown_tolerances: Optional[dict[str, float]]
 ) -> dict[str, Any]:
     """Return ``assert_recovers`` bounds: shared, or the unknown variant's own.
 
     A per-case bound on the sum also caps each coordinate, which the shared
     ``MAX_COORDINATE`` would otherwise hold to the known variant's level.
     """
-    if known or unknown_tolerances is None:
+    if not learns_set(known) or unknown_tolerances is None:
         return {}
     return {
         "tolerances": unknown_tolerances,
@@ -166,10 +205,15 @@ def unknown_bounds(
 
 
 def build(
-    model_class: Callable[..., Any], phi: Oracle, known: bool, *args, **kwargs
+    model_class: Callable[..., Any], phi: Oracle, known: Known, *args, **kwargs
 ) -> Any:
     """Construct a model given phi, or with phi=None to learn the set."""
-    return model_class(phi if known else None, *args, **kwargs)
+    if known == CONSTRAINED:
+        kwargs["hyperparameters"] = {
+            **(kwargs.get("hyperparameters") or {}),
+            "truncation_set_learner": "constrained",
+        }
+    return model_class(None if learns_set(known) else phi, *args, **kwargs)
 
 
 def set_error(
@@ -359,7 +403,7 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
     divergence: Callable[
         [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
     ] = kl_divergence,
-    known: bool = True,
+    known: Known = True,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = SET_TOLERANCE,
     unlearnable: bool = False,
@@ -391,8 +435,9 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
             default.
         divergence: Scores a fitted distribution against the target.
         hyperparameters: Hyperparameter dict for the procedure.
-        known: Give the model phi; else it learns the set from the sample,
-            which is then scored against phi too.
+        known: True gives the model phi; False or ``CONSTRAINED`` has it
+            learn the set from the sample by that learner, and the set is
+            then scored against phi too.
         unknown_tolerances: Bounds for the unknown variant where it misses
             the shared ones.
         set_tolerance: Bound on the learned set's error.
@@ -415,12 +460,12 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         *args,
         hyperparameters=hyperparameters,
     )
-    if not known and unlearnable:
+    if learns_set(known) and unlearnable:
         with pytest.raises(ValueError, match="truncation_set_degree"):
             truncated.fit(sample.S)
         return
     truncated.fit(sample.S)
-    if not known:
+    if learns_set(known):
         assert_learned_set(truncated, phi, target, set_tolerance)
 
     family = _family(target, parameter, rebuild)
@@ -506,7 +551,7 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
     divergence: Callable[
         [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
     ] = kl_divergence,
-    known: bool = True,
+    known: Known = True,
     unknown_recovery_bound: Optional[float] = None,
     set_tolerance: float = SET_TOLERANCE,
     unlearnable: bool = False,
@@ -554,18 +599,18 @@ def assert_family_distinguishes(  # pylint: disable=too-many-arguments
             sample.alpha,
             hyperparameters=hyperparameters,
         )
-        if not known and unlearnable:
+        if learns_set(known) and unlearnable:
             with pytest.raises(ValueError, match="truncation_set_degree"):
                 truncated.fit(sample.S)
             return
         truncated.fit(sample.S)
-        if not known:
+        if learns_set(known):
             assert_learned_set(truncated, phi, target, set_tolerance)
         fits.append(truncated)
         naive.append(family.naive(empirical(sample.S)))
 
     bound = {}
-    if not known and unknown_recovery_bound is not None:
+    if learns_set(known) and unknown_recovery_bound is not None:
         bound = {"recovery_bound": unknown_recovery_bound}
     for name in TOLERANCES:
         print(f"-- {name}")

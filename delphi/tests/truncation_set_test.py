@@ -48,13 +48,15 @@ def _error(
     reference: torch.distributions.Distribution,
     phi: Callable[[ch.Tensor], ch.Tensor],
     basis: polynomial.Polynomial,
+    samples: int = 20000,
+    **kwargs,
 ) -> float:
-    """Learn the set from 20000 samples each; return its error under the truth."""
+    """Learn the set from samples of each; return its error under the truth."""
     ch.manual_seed(0)
-    population = truth.sample((400000,))
-    positive = population[phi(population)][:20000]
+    population = truth.sample((20 * samples,))
+    positive = population[phi(population)][:samples]
     learned = delphi.truncation_set.learn_truncation_set(
-        positive, reference.sample((20000,)), basis
+        positive, reference.sample((samples,)), basis, **kwargs
     )
     fresh = truth.sample((200000,))
     return float((learned(fresh) != phi(fresh)).double().mean())
@@ -106,6 +108,26 @@ def test_learns_a_gaussian_truncation_set(reference, phi, degree, tolerance):
 def test_learns_an_exponential_truncation_set(reference, phi, degree, tolerance):
     basis = laguerre.Laguerre(degree, 2, norm=True)
     assert _error(_exponential(), reference, phi, basis) <= tolerance
+
+
+# Errors over seeds 0 to 2, from 5000 samples at degree 4: 0.0009 to 0.0014
+# with the reference equal to the truth, 0.0022 to 0.0029 shifted.
+@pytest.mark.parametrize(
+    "reference,tolerance",
+    [(_normal(), 0.003), (_normal(0.2, 1.15), 0.006)],
+    ids=["disc", "disc_shifted"],
+)
+def test_constrained_learner_learns_a_gaussian_truncation_set(reference, tolerance):
+    basis = hermite.Hermite(4, 2, prob=True, norm=True)
+    error = _error(_normal(), reference, _disc, basis, 5000, learner="constrained")
+    assert error <= tolerance
+
+
+def test_an_unknown_learner_raises():
+    with pytest.raises(ValueError, match="learner"):
+        delphi.truncation_set.learn_truncation_set(
+            ch.ones(3, 2), ch.zeros(3, 2), hermite.Hermite(1, 2), learner="svm"
+        )
 
 
 def test_mixture_weights_split_rho_between_the_samples():

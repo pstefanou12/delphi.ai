@@ -1,7 +1,7 @@
 # Author: pstefanou12@
 """Configuration models for truncated distribution algorithms."""
 
-from typing import Optional
+from typing import Literal, Optional
 
 import pydantic
 
@@ -35,10 +35,17 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
             basis has ``C(degree + dims, dims)`` terms, so when None it is
             the largest degree up to 4 whose basis has at most 250 terms: 4
             up to 6 dims, 3 up to 9, 2 up to 20, and 1 beyond.
-        truncation_set_rho: Weight of the reference draws in the set
-            learner's positive-unlabeled mixture; 0.4 when None.
-        truncation_set_num_samples: Reference draws for the set learner;
-            as many as the sample has when None.
+        truncation_set_learner: How the set is learned: ``"pu"``, the
+            positive-unlabeled reduction of Lee, Mehrotra and Zampetakis
+            (2024), or ``"constrained"``, the constrained regression of
+            their 2026 paper (``delphi.learning.positive_only``).
+        truncation_set_rho: Weight of the reference draws in the
+            positive-unlabeled mixture, for ``"pu"``; 0.4 when None.
+        truncation_set_tolerance: Program 18's tolerance rho, for
+            ``"constrained"``; the learner's default when None.
+        truncation_set_num_samples: Reference draws for the set learner,
+            per fit for ``"constrained"``; as many as the sample has when
+            None.
 
     The training defaults are the values the test suite settled on across
     families: 2500 iterations at a learning rate of 1e-2 under the Fisher
@@ -66,7 +73,11 @@ class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
     phase_loss_increase_tol: Optional[float] = pydantic.Field(default=None, ge=0.0)
     precondition: bool = False
     truncation_set_degree: Optional[int] = pydantic.Field(default=None, ge=1)
+    truncation_set_learner: Literal["pu", "constrained"] = "pu"
     truncation_set_rho: Optional[float] = pydantic.Field(default=None, gt=0.0, lt=1.0)
+    truncation_set_tolerance: Optional[float] = pydantic.Field(
+        default=None, gt=0.0, lt=1.0
+    )
     truncation_set_num_samples: Optional[int] = pydantic.Field(default=None, ge=1)
 
     @pydantic.model_validator(mode="after")
