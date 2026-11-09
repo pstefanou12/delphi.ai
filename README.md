@@ -8,6 +8,7 @@ set, delphi recovers the distribution as it was before truncation.
 ## Table of Contents
 
 - [Install](#install)
+  - [Python through asdf](#python-through-asdf)
 - [Truncated Distributions](#truncated-distributions)
   - [Quickstart](#quickstart)
   - [Usage notes](#usage-notes)
@@ -28,8 +29,8 @@ set, delphi recovers the distribution as it was before truncation.
 ## Install
 
 delphi needs Python 3.10 to 3.14, [Poetry](https://python-poetry.org) and
-[`just`](https://github.com/casey/just). Neither needs a version manager such
-as asdf.
+[`just`](https://github.com/casey/just). None of the three needs a version
+manager, but [asdf](#python-through-asdf) can supply them.
 
 ```bash
 # Poetry
@@ -48,6 +49,26 @@ just install    # poetry install --with dev
 just hooks      # pre-push hooks running just check
 ```
 
+### Python through asdf
+
+[asdf](https://asdf-vm.com/guide/getting-started.html) can install the
+Python version the repository pins in `.python-version`. Let asdf read that
+file by adding this line to `~/.asdfrc`:
+
+```
+legacy_version_file = yes
+```
+
+Then, in the clone:
+
+```bash
+asdf plugin add python
+asdf install
+```
+
+asdf has plugins for Poetry and just as well (`asdf plugin add poetry`,
+`asdf plugin add just`), if you would rather it manage those too.
+
 ## Truncated Distributions
 
 Each model is fit by projected stochastic gradient descent on the truncated
@@ -61,10 +82,10 @@ truth.
 
 | Model | Module | Example |
 |---|---|---|
-| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | [Quickstart](#quickstart) |
+| `TruncatedMultivariateNormal` | [`truncated_multivariate_normal`](delphi/truncated/distributions/truncated_multivariate_normal.py) | [Quickstart](#quickstart), [Unknown truncation](#unknown-truncation) |
 | `TruncatedNormal` | [`truncated_normal`](delphi/truncated/distributions/truncated_normal.py) | |
 | `TruncatedNormalKnownVariance` | [`truncated_normal_known_variance`](delphi/truncated/distributions/truncated_normal_known_variance.py) | |
-| `TruncatedExponential` | [`truncated_exponential`](delphi/truncated/distributions/truncated_exponential.py) | |
+| `TruncatedExponential` | [`truncated_exponential`](delphi/truncated/distributions/truncated_exponential.py) | [Learning the truncation set](#learning-the-truncation-set) |
 | `TruncatedPoisson` | [`truncated_poisson`](delphi/truncated/distributions/truncated_poisson.py) | |
 | `TruncatedWeibull` | [`truncated_weibull`](delphi/truncated/distributions/truncated_weibull.py) | |
 | `TruncatedBooleanProduct` | [`truncated_boolean_product`](delphi/truncated/distributions/truncated_boolean_product.py) | |
@@ -311,12 +332,12 @@ toward the set. All models live in `delphi.stats`.
 
 | Model | Module | Example |
 |---|---|---|
-| `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
+| `TruncatedLinearRegression`, `noise_var` given | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | [Truncated Regression](#truncated-regression) |
 | `TruncatedLinearRegression`, `noise_var=None` | [`truncated_linear_regression`](delphi/stats/truncated/truncated_linear_regression.py) | |
 | `TruncatedLassoRegression` | [`truncated_lasso_regression`](delphi/stats/truncated/truncated_lasso_regression.py) | [Sparse regression](#sparse-regression) |
-| `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | |
+| `TruncatedProbitRegression` | [`truncated_probit_regression`](delphi/stats/truncated/truncated_probit_regression.py) | [Classification](#classification) |
 | `TruncatedLogisticRegression` | [`truncated_logistic_regression`](delphi/stats/truncated/truncated_logistic_regression.py) | |
-| `TruncatedMultinomialLogisticRegression` | [`truncated_multinomial_logistic_regression`](delphi/stats/truncated/truncated_multinomial_logistic_regression.py) | |
+| `TruncatedMultinomialLogisticRegression` | [`truncated_multinomial_logistic_regression`](delphi/stats/truncated/truncated_multinomial_logistic_regression.py) | [Classification](#classification) |
 
 ```python
 import torch as ch
@@ -587,10 +608,23 @@ in `delphi/torchnomials/`.
 
 `delphi/torchnomials/` holds polynomial families in torch, built on an
 abstract `Polynomial` over total-degree multi-indices, and `ProductPolynomial`
-for families built from univariate polynomials. `Hermite` gives the
-physicist (default) or probabilist (`prob=True`) Hermite polynomials,
-normalized under their weight measure with `norm=True`. Fitting to samples
-expands their density ratio to that weight:
+for families built from univariate polynomials. Each family is orthogonal
+under a weight measure, and `norm=True` makes it orthonormal there.
+
+| Class | Module | Orthogonal under, or what it does | Example |
+|---|---|---|---|
+| `Polynomial` | [`polynomial`](delphi/torchnomials/polynomial.py) | Abstract: a basis of total degree at most `degree` in `dims` variables, its squared norms and weight, `fit` and evaluation | |
+| `ProductPolynomial` | [`polynomial`](delphi/torchnomials/polynomial.py) | Abstract: a basis of products `P_V(x) = prod_i P_{V_i}(x_i)` of univariate polynomials | |
+| `Hermite` | [`hermite`](delphi/torchnomials/hermite.py) | Physicist `H_n`, the default: `N(0, 1/2)` in each coordinate | [Hermite expansion](#hermite-expansion) |
+| `Hermite(prob=True)` | [`hermite`](delphi/torchnomials/hermite.py) | Probabilist `He_n`: `N(0, 1)` in each coordinate | [Hermite expansion](#hermite-expansion) |
+| `Laguerre` | [`laguerre`](delphi/torchnomials/laguerre.py) | Generalized `L_n^(a)`: `Gamma(alpha + 1, 1)` in each coordinate, `Exp(1)` at the default `alpha=0` | [Orthonormal under any distribution](#orthonormal-under-any-distribution) |
+| `EmpiricalOrthonormal` | [`empirical`](delphi/torchnomials/empirical.py) | A base family's span, orthonormalized under draws from any `reference` distribution | [Orthonormal under any distribution](#orthonormal-under-any-distribution) |
+| `Transformed` | [`transformed`](delphi/torchnomials/transformed.py) | A base family evaluated in coordinates `t(x)`: orthogonal under the base's weight pulled back through `t` | [Polynomials in new coordinates](#polynomials-in-new-coordinates) |
+
+#### Hermite expansion
+
+`Hermite` gives the physicist (default) or probabilist (`prob=True`) Hermite
+polynomials. Fitting to samples expands their density ratio to the weight:
 
 ```python
 from delphi.torchnomials import hermite
@@ -599,6 +633,8 @@ poly = hermite.Hermite(degree=10, dims=2, prob=True, norm=True)
 poly.fit(samples)       # c_V = mean(P_V) / ||P_V||^2
 values = poly(points)   # sum_V c_V P_V(points)
 ```
+
+#### Orthonormal under any distribution
 
 `Laguerre` gives the generalized Laguerre polynomials `L_n^(a)`, orthogonal
 under `Gamma(alpha + 1, 1)`: `alpha=0` (the default) is `Exp(1)`. For any
@@ -613,6 +649,8 @@ from delphi.torchnomials import empirical, laguerre
 reference = torch.distributions.Independent(torch.distributions.Gamma(conc, rate), 1)
 poly = empirical.EmpiricalOrthonormal(laguerre.Laguerre(degree=6, dims=2), reference)
 ```
+
+#### Polynomials in new coordinates
 
 `Transformed` evaluates a family in new coordinates, such as polynomials in
 `log x` for a heavy-tailed sample:
