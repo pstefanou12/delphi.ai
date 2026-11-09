@@ -3,11 +3,13 @@
 
 A known truncation set is a predicate the caller supplies as a plain
 callable. The sets here carry state: ``Identity`` admits everything,
-``RecoveredSet`` is estimated from samples drawn inside it, and
-``PolynomialThreshold`` is learned from labeled samples.
+``Intersection`` combines sets, ``RecoveredSet`` is estimated from samples
+drawn inside it, and ``PolynomialThreshold`` is learned from labeled
+samples.
 """
 
 import abc
+from collections.abc import Callable, Sequence
 import copy
 from typing import Optional, cast
 import warnings
@@ -50,6 +52,36 @@ class Identity(Oracle):  # pylint: disable=too-few-public-methods
             Mask over the batch dims, all true.
         """
         return ch.ones(x.shape[:-1], dtype=ch.bool)
+
+
+class Intersection(Oracle):  # pylint: disable=too-few-public-methods
+    """The intersection of sets; of none, all of space.
+
+    Attributes:
+        oracles: The sets intersected.
+    """
+
+    def __init__(self, oracles: Sequence[Callable[[ch.Tensor], ch.Tensor]]):
+        """Initialize the intersection.
+
+        Args:
+            oracles: Membership predicates, each returning a mask shaped (n,).
+        """
+        self.oracles = list(oracles)
+
+    def __call__(self, x: ch.Tensor) -> ch.Tensor:
+        """Return membership in every set.
+
+        Args:
+            x: Samples of shape (n, dims).
+
+        Returns:
+            Boolean mask over the batch.
+        """
+        inside = ch.ones(x.size(0), dtype=ch.bool, device=x.device)
+        for oracle in self.oracles:
+            inside &= oracle(x).reshape(-1)
+        return inside
 
 
 class RecoveredSet(Oracle):  # pylint: disable=too-few-public-methods

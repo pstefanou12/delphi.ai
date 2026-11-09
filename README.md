@@ -13,6 +13,7 @@ set, delphi recovers the distribution as it was before truncation.
   - [Usage notes](#usage-notes)
   - [Unknown truncation](#unknown-truncation)
   - [Learning the truncation set](#learning-the-truncation-set)
+  - [Learning from positive samples](#learning-from-positive-samples)
 - [Truncated Regression](#truncated-regression)
   - [Sparse regression](#sparse-regression)
   - [Classification](#classification)
@@ -301,6 +302,56 @@ model.fit(S)
 rate = model.avg_rate_
 # The learned set, as a membership oracle.
 inside = model.truncation_set_(ch.tensor([[0.5], [2.0]]))
+```
+
+### Learning from positive samples
+
+`delphi.learning.positive_only.PositiveOnlyLearner` learns a set from samples
+inside it and a reference distribution that can only be sampled, following
+Lee, Mehrotra and Zampetakis (2026), "Smoothed Analysis of Learning from
+Positive Samples". The reference need only be smooth with respect to the
+positives' distribution, and its support may be larger. Each fit solves
+their constrained regression over polynomials of degree at most k,
+
+```
+min_p  mean_U |p(u)|   s.t.  mean_P min(p(x), 1) >= 1 - rho,
+```
+
+for positives P and reference draws U, and keeps `{p >= 1 - sqrt(rho)}`,
+which holds at least `1 - sqrt(rho)` of the positives. The program's
+Lagrangian is a weighted quantile regression, at level 1/2 on U and 1 on P,
+which the same interior point solver as the L1 regression solves; a search
+on the multiplier meets the constraint. The learner runs this in rounds,
+each restricting the positives and the reference to the intersection of the
+sets so far, and returns the intersection. Given a list of references, at
+least one of them close to the positives' distribution, it learns against
+each, keeps those whose set holds held-out positives, and intersects them.
+
+```python
+import torch as ch
+import torch.distributions
+
+from delphi.learning import positive_only
+from delphi.torchnomials import hermite
+
+ch.manual_seed(0)
+
+truth = torch.distributions.MultivariateNormal(ch.zeros(2), ch.eye(2))
+population = truth.sample([50000])
+# Observed only inside a disc.
+positive = population[(population - ch.tensor([0.5, 0.0])).norm(dim=1) <= 1.0]
+
+# The reference: a sampler, here of a Gaussian close to the truth.
+reference = torch.distributions.MultivariateNormal(
+    ch.full((2,), 0.2), 1.3 * ch.eye(2)
+)
+learner = positive_only.PositiveOnlyLearner(
+    hermite.Hermite(4, 2, prob=True, norm=True)
+).fit(positive, lambda n: reference.sample([n]))
+
+inside = learner(ch.tensor([[0.5, 0.0], [2.0, 2.0]]))
+# The learned set's mass under the reference, from fresh draws.
+mass = learner.reference_mass_
 ```
 
 ## Truncated Regression

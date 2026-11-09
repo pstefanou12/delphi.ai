@@ -137,3 +137,59 @@ def test_an_exhausted_budget_is_not_converged():
 def test_float32_is_rejected():
     with pytest.raises(ValueError, match="float64"):
         l1_regression.L1Regression(hyperparameters={"dtype": "float32"})
+
+
+def _check_loss(X, y, coefficients, quantiles):
+    residual = y - X @ coefficients
+    return float((quantiles * residual - (residual < 0).double() * residual).sum())
+
+
+def test_explicit_half_quantiles_match_the_default():
+    X, y, _ = _outlier_problem(seed=13)
+    half = ch.full((5000,), 0.5, dtype=ch.float64)
+    fit = l1_regression.L1Regression().fit(X, y, quantiles=half)
+    ch.testing.assert_close(fit.coef_, _fit(X, y).coef_)
+
+
+@pytest.mark.parametrize("level", [0.1, 0.25, 0.9])
+def test_intercept_only_fit_is_the_quantile(level):
+    y = ch.randn(1001, dtype=ch.float64, generator=ch.Generator().manual_seed(14))
+    quantiles = ch.full((1001,), level, dtype=ch.float64)
+    fit = l1_regression.L1Regression().fit(
+        ch.ones(1001, 1, dtype=ch.float64), y, quantiles=quantiles
+    )
+    assert fit.converged_
+    assert abs(float(fit.coef_[0] - y.sort().values[int(level * 1001)])) < 1e-8
+
+
+@pytest.mark.parametrize("penalty,expected", [(0.5, 0.0), (2.0, 1.0)])
+def test_unit_level_is_the_hinge(penalty, expected):
+    # min_c |c| + penalty max(1 - c, 0) is solved by c = 0 below a penalty of
+    # 1 and by c = 1 above it.
+    X = ch.ones(2, 1, dtype=ch.float64)
+    y = ch.tensor([0.0, 1.0], dtype=ch.float64)
+    weights = ch.tensor([1.0, penalty / 2], dtype=ch.float64)
+    quantiles = ch.tensor([0.5, 1.0], dtype=ch.float64)
+    fit = l1_regression.L1Regression().fit(X, y, weights, quantiles)
+    assert abs(float(fit.coef_[0]) - expected) < 1e-8
+    assert abs(fit.objective_ - min(penalty, 1.0)) < 1e-8
+
+
+def test_no_perturbation_lowers_a_mixed_level_objective():
+    X, y, _ = _outlier_problem(seed=15)
+    generator = ch.Generator().manual_seed(16)
+    quantiles = ch.where(ch.rand(5000, generator=generator) < 0.5, 0.5, 1.0).double()
+    fit = l1_regression.L1Regression().fit(X, y, quantiles=quantiles)
+    assert fit.converged_
+    best = _check_loss(X, y, fit.coef_, quantiles)
+    assert abs(2 * best - fit.objective_) <= 1e-9 * fit.objective_
+    for scale in (1e-4, 1e-2, 1.0):
+        for _ in range(20):
+            step = scale * ch.randn(20, dtype=ch.float64, generator=generator)
+            assert _check_loss(X, y, fit.coef_ + step, quantiles) >= best
+
+
+@pytest.mark.parametrize("quantiles", [ch.full((10,), 1.5), ch.full((5,), 0.5)])
+def test_rejects_bad_quantiles(quantiles):
+    with pytest.raises(ValueError, match="quantiles"):
+        l1_regression.L1Regression().fit(ch.ones(10, 2), ch.zeros(10), None, quantiles)
