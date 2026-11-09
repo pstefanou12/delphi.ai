@@ -1,17 +1,24 @@
 # Author: pstefanou12@
-"""Least absolute deviations, ``min_c sum_i w_i |y_i - a_i^T c|``.
+"""Weighted quantile regression, ``min_c sum_i w_i rho_{tau_i}(y_i - a_i^T c)``.
+
+``rho_tau(r) = max(tau r, (tau - 1) r)`` is the check loss, and each row has
+its own level ``tau_i``. At the default ``tau = 1/2`` it is half of ``|r|``,
+so the problem is least absolute deviations; at ``tau = 1`` it is the hinge
+``max(r, 0)``.
 
 Solved as a linear program by the Frisch-Newton interior point method
 (Portnoy and Koenker, 1997), with Mehrotra's predictor-corrector. Weights
-fold into the rows, as ``w |r| = |w r|`` for ``w >= 0``. The method runs on
-the dual,
+fold into the rows, as ``w rho_tau(r) = rho_tau(w r)`` for ``w >= 0``. The
+primal is ``min sum_i tau_i u_i + (1 - tau_i) v_i`` over ``u, v >= 0`` with
+``X c + u - v = y``. Its dual, shifted by ``1 - tau`` into the unit box, is
 
-    max_a  y^T a   s.t.  X^T a = X^T 1 / 2,   0 <= a <= 1,
+    max_a  y^T a   s.t.  X^T a = sum_i (1 - tau_i) x_i,   0 <= a <= 1,
 
-whose equality multiplier is c. Every Newton step solves one p x p system
-``X^T D X``, so the cost is ``O(n p^2)`` per step over a few tens of steps,
-and the duality gap certifies the solution. The trainer runs the steps:
-each is one of ``L1Regression``'s own updates, with no optimizer.
+whose equality multiplier is c; at ``tau = 1/2`` the right-hand side is
+``X^T 1 / 2``. Every Newton step solves one p x p system ``X^T D X``, so the
+cost is ``O(n p^2)`` per step over a few tens of steps, and the duality gap
+certifies the solution. The trainer runs the steps: each is one of
+``L1Regression``'s own updates, with no optimizer.
 """
 
 from typing import Optional
@@ -40,6 +47,8 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
 ):
     """Weighted least absolute deviations, by an interior point method.
 
+    Given per-row quantile levels, it fits weighted quantile regression.
+
     Usage::
 
         regression = L1Regression().fit(X, y, weights)
@@ -47,7 +56,8 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
 
     Attributes:
         coef_: The minimizer c, shaped (p,), set by fit.
-        objective_: ``sum_i w_i |y_i - a_i^T c|`` at the current iterate.
+        objective_: ``sum_i 2 w_i rho_{tau_i}(y_i - a_i^T c)`` at the current
+            iterate, which is ``sum_i w_i |y_i - a_i^T c|`` at ``tau = 1/2``.
         gap_: The duality gap, relative to ``1 + objective_``.
         procedure: The trainer's record of the fit.
     """
@@ -65,10 +75,10 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         self.coef_: Optional[ch.Tensor] = None
         self.objective_ = float("inf")
         self.gap_ = float("inf")
-        # The rows with the weights folded in, the dual's right-hand side,
-        # and the iterate (a, c, z, v): the rows set by fit, the rest by
-        # pre_phase_hook.
-        self._X = self._y = self._b = ch.zeros(0)  # pylint: disable=invalid-name
+        # The rows with the weights folded in and their levels, the dual's
+        # right-hand side, and the iterate (a, c, z, v): the rows set by fit,
+        # the rest by pre_phase_hook.
+        self._X = self._y = self._tau = self._b = ch.zeros(0)  # pylint: disable=invalid-name
         self._a = self._c = self._z = self._v = ch.zeros(0)
 
     def fit(
@@ -76,19 +86,23 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,
         weights: Optional[ch.Tensor] = None,
+        quantiles: Optional[ch.Tensor] = None,
     ) -> "L1Regression":
-        """Fit c to minimize the weighted absolute residuals.
+        """Fit c to minimize the weighted check loss of the residuals.
 
         Args:
             X: Features, shaped (n, p), of full column rank.
             y: Targets, shaped (n,).
             weights: Nonnegative row weights, shaped (n,); ones if None.
+            quantiles: Each row's level tau in [0, 1], shaped (n,); one half,
+                least absolute deviations, if None.
 
         Returns:
             self.
 
         Raises:
-            ValueError: If the shapes disagree or a weight is negative.
+            ValueError: If the shapes disagree, a weight is negative, or a
+                level lies outside [0, 1].
         """
         n = X.size(0)
         if y.shape != (n,):
@@ -98,18 +112,26 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
         w = ch.ones_like(targets) if weights is None else weights.to(targets)
         if w.shape != (n,) or bool((w < 0).any()):
             raise ValueError(f"weights must be nonnegative and shaped ({n},).")
+        tau = ch.full_like(targets, 0.5) if quantiles is None else quantiles.to(targets)
+        if tau.shape != (n,) or bool(((tau < 0) | (tau > 1)).any()):
+            raise ValueError(f"quantiles must lie in [0, 1] and be shaped ({n},).")
         kept = w > 0
         self._X = features[kept] * w[kept, None]  # pylint: disable=invalid-name
         self._y = targets[kept] * w[kept]
+        self._tau = tau[kept]
         trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.procedure = trainer.train_model(None, None)
         self.coef_ = self._c.to(X.dtype)
         return self
 
     def pre_phase_hook(self) -> None:
-        """Start the iterate: a = 1/2, feasible for the dual, c by least squares."""
+        """Start the iterate: a = 1/2, c by least squares.
+
+        The start is dual feasible only at ``tau = 1/2``; elsewhere the
+        Newton steps also close the primal residual.
+        """
         X, y = self._X, self._y  # pylint: disable=invalid-name
-        self._b = 0.5 * X.sum(0)
+        self._b = (1.0 - self._tau) @ X
         self._a = ch.full_like(y, 0.5)
         self._c = ch.linalg.lstsq(X, y).solution  # pylint: disable=not-callable
         residual = y - X @ self._c
@@ -127,7 +149,11 @@ class L1Regression(  # pylint: disable=too-many-instance-attributes
 
     def _measure(self) -> None:
         """Set the objective and the relative duality gap at the iterate."""
-        self.objective_ = float((self._y - self._X @ self._c).abs().sum())
+        residual = self._y - self._X @ self._c
+        self.objective_ = float(
+            (2.0 * self._tau * residual.clamp_min(0.0)).sum()
+            + (2.0 * (1.0 - self._tau) * (-residual).clamp_min(0.0)).sum()
+        )
         complementarity = float(self._a @ self._z + (1.0 - self._a) @ self._v)
         self.gap_ = complementarity / (1.0 + self.objective_)
 
