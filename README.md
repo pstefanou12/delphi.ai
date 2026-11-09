@@ -369,6 +369,25 @@ inside = learner(ch.tensor([[0.5, 0.0], [2.0, 2.0]]))
 mass = learner.reference_mass_
 ```
 
+The same learner detects truncation (their Corollaries 5.2 and 5.3). A sample
+comes either from a distribution Q or from Q truncated to a set of mass at
+most `1 - beta`. `delphi.truncation_detection.detect_truncation` learns the
+sample's support against Q, or a reference close to it, and calls the sample
+truncated unless the learned set holds more than `1 - beta / 2` of the
+reference.
+
+```python
+import delphi.truncation_detection
+
+result = delphi.truncation_detection.detect_truncation(
+    positive,
+    lambda n: truth.sample([n]),
+    hermite.Hermite(4, 2, prob=True, norm=True),
+    beta=0.2,
+)
+result.truncated, result.reference_mass
+```
+
 ## Truncated Regression
 
 A linear model `y = w^T x + b + e`, `e ~ N(0, sigma^2)`, observed only where
