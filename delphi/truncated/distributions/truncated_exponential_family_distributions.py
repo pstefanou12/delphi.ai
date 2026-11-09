@@ -49,7 +49,7 @@ DEFAULT_TRUNCATION_SET_RHO = 0.4
 
 
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
-    distributions.distributions[base.ConfigT], Generic[base.ConfigT], abc.ABC
+    distributions.Distribution[base.ConfigT], Generic[base.ConfigT], abc.ABC
 ):
     """Base class for truncated exponential family distribution models.
 

@@ -55,7 +55,7 @@ DEFAULT_ALPHA = 0.01
 
 
 class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-instance-attributes
-    distributions.distributions[
+    distributions.Distribution[
         unknown_truncation_multivariate_normal.UnknownTruncationMultivariateNormalConfig
     ],
     abc.ABC,
