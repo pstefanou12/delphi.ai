@@ -52,26 +52,6 @@ class TruncatedGeometric(
         """Clamp theta to be strictly negative, so probs lies in (0, 1)."""
         return ch.clamp(theta, max=-1e-6)
 
-    @property
-    def best_probs_(self):
-        """Return the best success probability estimate."""
-        return geometric.Geometric.to_canonical(self.best_params)
-
-    @property
-    def final_probs_(self):
-        """Return the final success probability estimate."""
-        return geometric.Geometric.to_canonical(self.final_params)
-
-    @property
-    def ema_probs_(self):
-        """Return the EMA success probability estimate."""
-        return geometric.Geometric.to_canonical(self.ema_params)
-
-    @property
-    def avg_probs_(self):
-        """Return the averaged success probability estimate."""
-        return geometric.Geometric.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated geometric distribution"

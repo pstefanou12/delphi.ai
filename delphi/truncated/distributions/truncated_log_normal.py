@@ -61,46 +61,6 @@ class TruncatedLogNormal(
         """Keep the second natural parameter negative, so the scale is real."""
         return ch.cat([theta[: self.dims], theta[self.dims :].clamp(max=-1e-6)])
 
-    @property
-    def best_loc_(self):
-        """Return the best loc estimate."""
-        return log_normal.LogNormal.to_canonical(self.best_params)[: self.dims]
-
-    @property
-    def final_loc_(self):
-        """Return the final loc estimate."""
-        return log_normal.LogNormal.to_canonical(self.final_params)[: self.dims]
-
-    @property
-    def ema_loc_(self):
-        """Return the EMA loc estimate."""
-        return log_normal.LogNormal.to_canonical(self.ema_params)[: self.dims]
-
-    @property
-    def avg_loc_(self):
-        """Return the averaged loc estimate."""
-        return log_normal.LogNormal.to_canonical(self.avg_params)[: self.dims]
-
-    @property
-    def best_scale_(self):
-        """Return the best scale estimate."""
-        return log_normal.LogNormal.to_canonical(self.best_params)[self.dims :]
-
-    @property
-    def final_scale_(self):
-        """Return the final scale estimate."""
-        return log_normal.LogNormal.to_canonical(self.final_params)[self.dims :]
-
-    @property
-    def ema_scale_(self):
-        """Return the EMA scale estimate."""
-        return log_normal.LogNormal.to_canonical(self.ema_params)[self.dims :]
-
-    @property
-    def avg_scale_(self):
-        """Return the averaged scale estimate."""
-        return log_normal.LogNormal.to_canonical(self.avg_params)[self.dims :]
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated log-normal distribution"

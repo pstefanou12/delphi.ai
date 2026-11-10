@@ -69,46 +69,6 @@ class TruncatedVonMises(
         )
         self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
-    @property
-    def best_loc_(self):
-        """Return the best location estimate."""
-        return von_mises.VonMises.to_canonical(self.best_params)[: self.dims]
-
-    @property
-    def final_loc_(self):
-        """Return the final location estimate."""
-        return von_mises.VonMises.to_canonical(self.final_params)[: self.dims]
-
-    @property
-    def ema_loc_(self):
-        """Return the EMA location estimate."""
-        return von_mises.VonMises.to_canonical(self.ema_params)[: self.dims]
-
-    @property
-    def avg_loc_(self):
-        """Return the averaged location estimate."""
-        return von_mises.VonMises.to_canonical(self.avg_params)[: self.dims]
-
-    @property
-    def best_concentration_(self):
-        """Return the best concentration estimate."""
-        return von_mises.VonMises.to_canonical(self.best_params)[self.dims :]
-
-    @property
-    def final_concentration_(self):
-        """Return the final concentration estimate."""
-        return von_mises.VonMises.to_canonical(self.final_params)[self.dims :]
-
-    @property
-    def ema_concentration_(self):
-        """Return the EMA concentration estimate."""
-        return von_mises.VonMises.to_canonical(self.ema_params)[self.dims :]
-
-    @property
-    def avg_concentration_(self):
-        """Return the averaged concentration estimate."""
-        return von_mises.VonMises.to_canonical(self.avg_params)[self.dims :]
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated von mises distribution"

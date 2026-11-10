@@ -141,6 +141,9 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         # The warm-start criterion's Hessian, which the fisher scheduler needs
         # during the stage; ``hessian`` belongs to the main criterion.
         self.warm_start_hessian: Optional[Callable[..., ch.Tensor]] = None
+        # The Hessian the scheduler reads in the current stage, which the
+        # trainer sets before each run; None reads ``hessian``.
+        self.stage_hessian: Optional[Callable[..., ch.Tensor]] = None
         self.model: Optional[ch.nn.Module] = None
         # Additional optimizer slots for multi-optimizer algorithms (GANs, etc.).
         self.optimizers: dict[str, torch.optim.Optimizer] = {}
@@ -180,9 +183,7 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         return [{"params": list(self.parameters())}]
 
     def make_optimizer_and_schedule(
-        self,
-        checkpoint: Optional[dict] = None,
-        hessian: Optional[Callable[..., ch.Tensor]] = None,
+        self, checkpoint: Optional[dict] = None
     ) -> tuple[torch.optim.Optimizer, Optional[torch.optim.lr_scheduler.LRScheduler]]:
         """Create and store the optimizer and learning-rate scheduler.
 
@@ -192,8 +193,6 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
 
         Args:
             checkpoint: Optional dict containing optimizer/scheduler state to restore.
-            hessian: The trained criterion's Hessian, for a stage whose
-                criterion is not the model's own; ``self.hessian`` by default.
 
         Returns:
             Tuple of (optimizer, scheduler).
@@ -204,7 +203,7 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         self.optimizer.register_step_pre_hook(self.step_pre_hook)
         self.optimizer.register_step_post_hook(self.step_post_hook)
 
-        self.schedule = self._create_scheduler(hessian)
+        self.schedule = self._create_scheduler(self.stage_hessian)
 
         if checkpoint:
             self._load_checkpoint(checkpoint)
@@ -361,7 +360,7 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         """Create and return the configured learning-rate scheduler, or None.
 
         Args:
-            hessian: As ``make_optimizer_and_schedule``.
+            hessian: The Hessian to read, ``stage_hessian``; ``self.hessian`` when None.
         """
         if self.hyperparameters.constant:
             return None
@@ -385,7 +384,7 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
 
         Args:
             scheduler_type: Key into ``SCHEDULER_SECTIONS``.
-            hessian: As ``make_optimizer_and_schedule``.
+            hessian: The Hessian to read, ``stage_hessian``; ``self.hessian`` when None.
 
         Returns:
             The constructed scheduler.
@@ -447,7 +446,7 @@ class DelphiModel(ch.nn.Module, Generic[base.ConfigT]):  # pylint: disable=too-m
         Args:
             current: Measure at the current iterate rather than at the
                 model's default point, its initialization.
-            hessian: As ``make_optimizer_and_schedule``.
+            hessian: The Hessian to read, ``stage_hessian``; ``self.hessian`` when None.
 
         Returns:
             Tuple of (mu, smoothness) from this model's Hessian.

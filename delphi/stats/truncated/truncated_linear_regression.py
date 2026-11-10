@@ -342,11 +342,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         scale[-1] = hp.variance_lr_scale
         return step * scale
 
-    def make_optimizer_and_schedule(
-        self,
-        checkpoint: Optional[dict] = None,
-        hessian: Optional[Callable[..., ch.Tensor]] = None,
-    ):
+    def make_optimizer_and_schedule(self, checkpoint: Optional[dict] = None):
         """Build the optimizer and schedule, preconditioned for learned variance.
 
         The Fisher schedule then reads the untruncated Hessian in the
@@ -355,11 +351,11 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         shrinks with the mass phi keeps, and steps scaled by it overshoot.
         """
         self._preconditioner = None
-        if self.noise_var is None and hessian is None and not self._refining:
+        if self.noise_var is None and self.stage_hessian is None and not self._refining:
             factor = ch.linalg.cholesky(self._untruncated_hessian())  # pylint: disable=not-callable
             self._preconditioner = ch.cholesky_inverse(factor)
-            hessian = helpers.whitened_hessian(self.hessian, factor)
-        return super().make_optimizer_and_schedule(checkpoint, hessian)
+            self.stage_hessian = helpers.whitened_hessian(self.hessian, factor)
+        return super().make_optimizer_and_schedule(checkpoint)
 
     def _untruncated_hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the NLL's Hessian in ``(v, lambda)`` without truncation."""

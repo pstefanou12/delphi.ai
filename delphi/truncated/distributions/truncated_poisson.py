@@ -48,26 +48,6 @@ class TruncatedPoisson(
         self.emp_theta = poisson.Poisson.to_natural(emp)
         self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
-    @property
-    def best_rate_(self):
-        """Return the best rate parameter estimate."""
-        return poisson.Poisson.to_canonical(self.best_params)
-
-    @property
-    def final_rate_(self):
-        """Return the final rate parameter estimate."""
-        return poisson.Poisson.to_canonical(self.final_params)
-
-    @property
-    def ema_rate_(self):
-        """Return the EMA rate parameter estimate."""
-        return poisson.Poisson.to_canonical(self.ema_params)
-
-    @property
-    def avg_rate_(self):
-        """Return the averaged rate parameter estimate."""
-        return poisson.Poisson.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated poisson distribution"

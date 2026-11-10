@@ -52,26 +52,6 @@ class TruncatedExponential(
         """Clamp theta to be strictly negative."""
         return ch.clamp(theta, max=-1e-6)
 
-    @property
-    def best_rate_(self):
-        """Return the best rate (canonical) parameter estimate."""
-        return exponential.Exponential.to_canonical(self.best_params)
-
-    @property
-    def final_rate_(self):
-        """Return the final rate (canonical) parameter estimate."""
-        return exponential.Exponential.to_canonical(self.final_params)
-
-    @property
-    def ema_rate_(self):
-        """Return the EMA rate (canonical) parameter estimate."""
-        return exponential.Exponential.to_canonical(self.ema_params)
-
-    @property
-    def avg_rate_(self):
-        """Return the averaged rate (canonical) parameter estimate."""
-        return exponential.Exponential.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated exponential distribution"

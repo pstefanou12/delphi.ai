@@ -49,26 +49,6 @@ class TruncatedBooleanProduct(
         self.emp_theta = boolean_product.BooleanProduct.to_natural(emp)
         self.register_parameter("theta", torch.nn.Parameter(self.emp_theta.clone()))
 
-    @property
-    def best_probs_(self):
-        """Return the best probability parameter estimate."""
-        return boolean_product.BooleanProduct.to_canonical(self.best_params)
-
-    @property
-    def final_probs_(self):
-        """Return the final probability parameter estimate."""
-        return boolean_product.BooleanProduct.to_canonical(self.final_params)
-
-    @property
-    def ema_probs_(self):
-        """Return the EMA probability parameter estimate."""
-        return boolean_product.BooleanProduct.to_canonical(self.ema_params)
-
-    @property
-    def avg_probs_(self):
-        """Return the averaged probability parameter estimate."""
-        return boolean_product.BooleanProduct.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated boolean product distribution"

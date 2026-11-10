@@ -63,53 +63,6 @@ class TruncatedInverseGaussian(
         """Clamp theta to be strictly negative, so both parameters are positive."""
         return ch.clamp(theta, max=-1e-6)
 
-    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
-        """Split theta's canonical form into the mean and the shape."""
-        loc, concentration = inverse_gaussian.InverseGaussian.to_canonical(theta).split(
-            self.dims
-        )
-        return loc, concentration
-
-    @property
-    def best_loc_(self):
-        """Return the best mean estimate."""
-        return self._canonical(self.best_params)[0]
-
-    @property
-    def final_loc_(self):
-        """Return the final mean estimate."""
-        return self._canonical(self.final_params)[0]
-
-    @property
-    def ema_loc_(self):
-        """Return the EMA mean estimate."""
-        return self._canonical(self.ema_params)[0]
-
-    @property
-    def avg_loc_(self):
-        """Return the averaged mean estimate."""
-        return self._canonical(self.avg_params)[0]
-
-    @property
-    def best_concentration_(self):
-        """Return the best shape estimate."""
-        return self._canonical(self.best_params)[1]
-
-    @property
-    def final_concentration_(self):
-        """Return the final shape estimate."""
-        return self._canonical(self.final_params)[1]
-
-    @property
-    def ema_concentration_(self):
-        """Return the EMA shape estimate."""
-        return self._canonical(self.ema_params)[1]
-
-    @property
-    def avg_concentration_(self):
-        """Return the averaged shape estimate."""
-        return self._canonical(self.avg_params)[1]
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated inverse gaussian distribution"

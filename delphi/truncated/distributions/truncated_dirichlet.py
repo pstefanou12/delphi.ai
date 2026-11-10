@@ -56,26 +56,6 @@ class TruncatedDirichlet(
         """Clamp theta above -1, so every concentration is positive."""
         return ch.clamp(theta, min=-1.0 + 1e-6)
 
-    @property
-    def best_concentration_(self):
-        """Return the best concentration estimate."""
-        return dirichlet.Dirichlet.to_canonical(self.best_params)
-
-    @property
-    def final_concentration_(self):
-        """Return the final concentration estimate."""
-        return dirichlet.Dirichlet.to_canonical(self.final_params)
-
-    @property
-    def ema_concentration_(self):
-        """Return the EMA concentration estimate."""
-        return dirichlet.Dirichlet.to_canonical(self.ema_params)
-
-    @property
-    def avg_concentration_(self):
-        """Return the averaged concentration estimate."""
-        return dirichlet.Dirichlet.to_canonical(self.avg_params)
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated dirichlet distribution"

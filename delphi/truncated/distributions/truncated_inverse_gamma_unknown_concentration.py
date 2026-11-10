@@ -70,55 +70,6 @@ class TruncatedInverseGammaUnknownConcentration(
             ]
         )
 
-    def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
-        """Split theta's canonical form into the shape and the rate."""
-        concentration, rate = (
-            unknown_shape.InverseGammaUnknownConcentration.to_canonical(theta).split(
-                self.dims
-            )
-        )
-        return concentration, rate
-
-    @property
-    def best_concentration_(self):
-        """Return the best shape estimate."""
-        return self._canonical(self.best_params)[0]
-
-    @property
-    def final_concentration_(self):
-        """Return the final shape estimate."""
-        return self._canonical(self.final_params)[0]
-
-    @property
-    def ema_concentration_(self):
-        """Return the EMA shape estimate."""
-        return self._canonical(self.ema_params)[0]
-
-    @property
-    def avg_concentration_(self):
-        """Return the averaged shape estimate."""
-        return self._canonical(self.avg_params)[0]
-
-    @property
-    def best_rate_(self):
-        """Return the best rate estimate."""
-        return self._canonical(self.best_params)[1]
-
-    @property
-    def final_rate_(self):
-        """Return the final rate estimate."""
-        return self._canonical(self.final_params)[1]
-
-    @property
-    def ema_rate_(self):
-        """Return the EMA rate estimate."""
-        return self._canonical(self.ema_params)[1]
-
-    @property
-    def avg_rate_(self):
-        """Return the averaged rate estimate."""
-        return self._canonical(self.avg_params)[1]
-
     def __str__(self):
         """Return a human-readable name for this distribution."""
         return "truncated inverse gamma distribution with unknown shape"
