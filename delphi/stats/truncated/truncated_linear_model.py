@@ -18,6 +18,7 @@ import torch.utils.data
 
 from delphi.configs.stats.truncated import linear
 import delphi.projection_sets
+import delphi.statistical_model
 from delphi.stats import linear_model
 import delphi.trainer
 from delphi.truncated.distributions import summary
@@ -30,6 +31,7 @@ _TruncatedConfigT = TypeVar(
 
 class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     linear_model.LinearModel[_TruncatedConfigT],
+    delphi.statistical_model.PSGDModel[_TruncatedConfigT],
     Generic[_TruncatedConfigT],
     abc.ABC,
 ):
@@ -39,20 +41,14 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     constrain the descent, ``build_projection_set``; ``refine_steps`` adds
     ``StatisticalModel.refine`` after the descent.
 
-    The descent starts from ``emp_weight``: the caller's, else OLS. With
-    alpha known the projection radius is fixed and one phase runs. Without
-    it the radius starts at the ``radius`` hyperparameter, or where alpha = 1
-    would put it, and grows by ``rate`` each phase, until a phase never
-    projects or it reaches ``max_radius``.
+    The descent starts from ``emp_weight``: the caller's, else OLS. The
+    radius starts at the ``radius`` hyperparameter, or where alpha would put
+    it, alpha = 1 when unknown; ``PSGDModel`` runs the phases from there.
 
     Attributes:
         phi: Truncation oracle over latents shaped (n, m, k), returning a
             mask or a survival probability.
-        alpha: Survival probability lower bound, or None if unknown.
         rand_seed: Seed applied at the start of every run.
-        projection_set: The set the iterates are kept in, built on the
-            first phase.
-        radius: The projection radius of the current phase.
     """
 
     # The covariates are correlated, so the Hessian's off-diagonal entries
@@ -94,11 +90,8 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         self.phi = phi
         self.alpha = alpha
         self.rand_seed = rand_seed
-        self.projection_set: Optional[delphi.projection_sets.ProjectionSet] = None
-        self.radius: Optional[float] = None
         self.trainer: Optional[delphi.trainer.Trainer] = None
         self._data: Optional[tuple[ch.Tensor, ch.Tensor]] = None
-        self._projections = 0
 
     @abc.abstractmethod
     def criterion_parameters(self, X: ch.Tensor, y: ch.Tensor) -> list:  # pylint: disable=invalid-name
@@ -234,56 +227,32 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         )
         return train_loader, None
 
-    def pre_phase_hook(self) -> None:
-        """Build the projection set on the first phase, resize it after."""
-        self._projections = 0
-        if self.projection_set is not None:
-            self.projection_set.radius = self.radius
-            return
+    def build_first_projection_set(self) -> delphi.projection_sets.ProjectionSet:
+        """Return the model's projection set, or the whole space if disabled."""
         hp = self.hyperparameters
         radius = self.default_radius() if hp.radius is None else hp.radius
-        if hp.projection_set == "default":
-            X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-            self.projection_set = self.build_projection_set(X, y, radius)
-        else:
-            self.projection_set = delphi.projection_sets.Unconstrained(
-                self.emp_start, radius
+        if hp.projection_set != "default":
+            return delphi.projection_sets.Unconstrained(self.emp_start, radius)
+        X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
+        return self.build_projection_set(X, y, radius)
+
+    def pre_phase_hook(self) -> None:
+        """Build or resize the projection set, and start the weight inside it."""
+        first = self.projection_set is None
+        super().pre_phase_hook()
+        if first and "weight" in self._parameters:
+            projection_set = linear_model.require_fitted(
+                self.projection_set, "projection_set"
             )
-        self.radius = self.projection_set.radius
-        if "weight" in self._parameters:
             with ch.no_grad():
-                self.weight.copy_(self.projection_set.project(self.weight))
+                self.weight.copy_(projection_set.project(self.weight))
 
     def step_post_hook(self, optimizer, args, kwargs) -> None:
         """Project the weight back onto the projection set."""
-        projection_set = linear_model.require_fitted(
-            self.projection_set, "projection_set"
-        )
         with ch.no_grad():
-            projected = projection_set.project(self.weight)
+            projected = self.project(self.weight)
             if projected is not self.weight:
-                self._projections += 1
                 self.weight.copy_(projected)
-
-    def post_phase_hook(
-        self, result: delphi.trainer.RunResult
-    ) -> tuple[bool, Optional[str]]:
-        """Grow the projection radius when alpha is unknown, or stop."""
-        if self.alpha is not None:
-            return True, "alpha_known"
-        if result.metrics["projections"] == 0:
-            return True, "radius_not_binding"
-        radius = linear_model.require_fitted(self.radius, "radius")
-        if radius >= self.hyperparameters.max_radius:
-            return True, "max_radius"
-        self.radius = min(
-            radius * self.hyperparameters.rate, self.hyperparameters.max_radius
-        )
-        return False, None
-
-    def run_metrics(self) -> dict:
-        """Return the run's projection radius and how often it projected."""
-        return {"radius": self.radius, "projections": self._projections}
 
     def evaluate(self) -> dict:
         """Return the criterion at the current iterate on the training set.

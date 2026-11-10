@@ -9,6 +9,7 @@ gradient has bounded variance.
 """
 
 import abc
+from collections.abc import Callable
 from typing import Optional
 
 import torch as ch
@@ -58,14 +59,18 @@ class ProjectionSet(abc.ABC):
         if self.contains(weight):
             return weight
         inside, outside = 0.0, 1.0
-        direction = weight.detach() - self.anchor
+        weight = weight.detach()
         for _ in range(self.bisection_steps):
             middle = (inside + outside) / 2.0
-            if self.contains(self.anchor + middle * direction):
+            if self.contains(self.along(weight, middle)):
                 inside = middle
             else:
                 outside = middle
-        return self.anchor + inside * direction
+        return self.along(weight, inside)
+
+    def along(self, weight: ch.Tensor, fraction: float) -> ch.Tensor:
+        """Return the point that fraction of the way from the anchor to weight."""
+        return self.anchor + fraction * (weight - self.anchor)
 
 
 class Unconstrained(ProjectionSet):
@@ -76,3 +81,48 @@ class Unconstrained(ProjectionSet):
 
     def project(self, weight: ch.Tensor) -> ch.Tensor:
         return weight
+
+
+class SublevelSet(ProjectionSet):
+    """The weights whose loss is at most ``level + radius``.
+
+    The exponential families keep the untruncated NLL within a budget of its
+    value at the start, per Karatapanis et al. (2025), Algorithm 2.
+
+    Attributes:
+        loss: Maps a weight to the loss the set bounds.
+        level: The loss at the anchor, which the radius is a budget above.
+    """
+
+    def __init__(
+        self,
+        anchor: ch.Tensor,
+        loss: Callable[[ch.Tensor], float],
+        radius: float,
+        bisection_steps: int = 50,
+    ):
+        """Initialize the set.
+
+        Args:
+            anchor: The weight the budget is measured from.
+            loss: Maps a weight to the loss the set bounds.
+            radius: The budget above the anchor's loss.
+            bisection_steps: As the base class; 50 leaves 2^-50 of the
+                segment.
+        """
+        super().__init__(anchor, radius, bisection_steps)
+        self.loss = loss
+        self.level = loss(self.anchor)
+
+    @property
+    def threshold(self) -> float:
+        """The largest loss inside the set."""
+        return self.level + float(self.radius or 0.0)
+
+    def contains(self, weight: ch.Tensor) -> bool:
+        return self.loss(weight) <= self.threshold
+
+    def along(self, weight: ch.Tensor, fraction: float) -> ch.Tensor:
+        # Rounds as the families' projection always has; the base class's
+        # form moved test_one_dimension_small_mass's beta prime fit far off.
+        return (1.0 - fraction) * self.anchor + fraction * weight

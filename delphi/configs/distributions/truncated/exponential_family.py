@@ -5,10 +5,10 @@ from typing import Optional
 
 import pydantic
 
-from delphi.configs.base import DelphiConfig
+from delphi.configs.base import PSGDModelConfig
 
 
-class TruncatedExponentialFamilyDistributionConfig(DelphiConfig):
+class TruncatedExponentialFamilyDistributionConfig(PSGDModelConfig):
     """Configuration for truncated exponential family distribution algorithms.
 
     Attributes:
