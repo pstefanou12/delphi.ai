@@ -59,14 +59,18 @@ class ProjectionSet(abc.ABC):
         if self.contains(weight):
             return weight
         inside, outside = 0.0, 1.0
-        direction = weight.detach() - self.anchor
+        weight = weight.detach()
         for _ in range(self.bisection_steps):
             middle = (inside + outside) / 2.0
-            if self.contains(self.anchor + middle * direction):
+            if self.contains(self.along(weight, middle)):
                 inside = middle
             else:
                 outside = middle
-        return self.anchor + inside * direction
+        return self.along(weight, inside)
+
+    def along(self, weight: ch.Tensor, fraction: float) -> ch.Tensor:
+        """Return the point that fraction of the way from the anchor to weight."""
+        return self.anchor + fraction * (weight - self.anchor)
 
 
 class Unconstrained(ProjectionSet):
@@ -117,3 +121,8 @@ class SublevelSet(ProjectionSet):
 
     def contains(self, weight: ch.Tensor) -> bool:
         return self.loss(weight) <= self.threshold
+
+    def along(self, weight: ch.Tensor, fraction: float) -> ch.Tensor:
+        # Rounds as the families' projection always has; the base class's
+        # form moved test_one_dimension_small_mass's beta prime fit far off.
+        return (1.0 - fraction) * self.anchor + fraction * weight
