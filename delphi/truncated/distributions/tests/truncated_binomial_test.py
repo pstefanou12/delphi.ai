@@ -175,3 +175,23 @@ def test_indistinguishable_pair(known):
         known=known,
         hyperparameters={"truncation_set_degree": 6},
     )
+
+
+# Seeds 0-2: KL at most 0.0042 (ema), 0.0046 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    total_count, probs = 10.0 * ch.ones(20), ch.linspace(0.2, 0.6, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.Binomial(total_count, probs),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 400.0),
+    )
+    _recovers(
+        dims=20,
+        total_count=total_count,
+        probs=probs,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0084, "avg": 0.0092},
+        max_coordinate=0.0015,
+    )

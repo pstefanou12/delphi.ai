@@ -356,6 +356,8 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         [torch.distributions.Distribution, torch.distributions.Distribution], ch.Tensor
     ] = kl_divergence,
     known: bool = True,
+    tolerances: Optional[dict[str, float]] = None,
+    max_coordinate: Optional[float] = None,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = SET_TOLERANCE,
     unlearnable: bool = False,
@@ -388,8 +390,11 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         hyperparameters: Hyperparameter dict for the procedure.
         known: Give the model phi; else it learns the set from the sample,
             which is then scored against phi too.
+        tolerances: Bounds on either variant in place of the shared ones,
+            as ``assert_recovers`` takes them.
+        max_coordinate: Bound on the worst coordinate, with ``tolerances``.
         unknown_tolerances: Bounds for the unknown variant where it misses
-            the shared ones.
+            the shared ones; they override ``tolerances``.
         set_tolerance: Bound on the learned set's error.
         unlearnable: The family's samples admit no polynomial basis, so the
             unknown variant asserts the fit raises instead.
@@ -423,7 +428,10 @@ def assert_family_recovers(  # pylint: disable=too-many-arguments
         divergence=lambda fitted: divergence(fitted, target),
         baseline=family.naive(empirical(sample.S)),
         baseline_must_fail=baseline_must_fail,
-        **unknown_bounds(known, unknown_tolerances),
+        **(
+            unknown_bounds(known, unknown_tolerances)
+            or {"tolerances": tolerances, "max_coordinate": max_coordinate}
+        ),
     )
 
 

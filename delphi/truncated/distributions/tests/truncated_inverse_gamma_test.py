@@ -173,3 +173,23 @@ def test_indistinguishable_pair(known):
         rebuild=functools.partial(torch.distributions.InverseGamma, concentration),
         known=known,
     )
+
+
+# Seeds 0-2: KL at most 0.0021 (ema), 0.0019 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    concentration, rate = 3.0 * ch.ones(20), ch.linspace(0.5, 3.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.InverseGamma(concentration, rate),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 1000.0),
+    )
+    _recovers(
+        dims=20,
+        concentration=concentration,
+        rate=rate,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0042, "avg": 0.0038},
+        max_coordinate=0.0012,
+    )

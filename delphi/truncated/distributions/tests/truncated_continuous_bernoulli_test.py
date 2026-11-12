@@ -150,3 +150,25 @@ def test_indistinguishable_pair(known):
         ),
         known=known,
     )
+
+
+# At 1000 draws per step the Fisher schedule's Hessian estimate turned
+# non-positive on seed 1. Seeds 0-2 at 4000: KL at most 0.0133 (ema),
+# 0.0149 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    probs = ch.linspace(0.2, 0.8, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.ContinuousBernoulli(probs),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 20.0),
+    )
+    _recovers(
+        dims=20,
+        probs=probs,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.027, "avg": 0.03},
+        max_coordinate=0.0044,
+        hyperparameters={"num_samples": 4000},
+    )

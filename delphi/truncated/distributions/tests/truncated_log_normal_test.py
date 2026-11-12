@@ -80,6 +80,8 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     pass_alpha: bool = True,
     baseline_must_fail: bool = True,
     known: bool = True,
+    tolerances: Optional[dict[str, float]] = None,
+    max_coordinate: Optional[float] = None,
     unknown_tolerances: Optional[dict[str, float]] = None,
     set_tolerance: float = helpers.SET_TOLERANCE,
 ) -> None:
@@ -90,7 +92,10 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         divergence=lambda fitted: torch.distributions.kl.kl_divergence(fitted, target),
         baseline=naive,
         baseline_must_fail=baseline_must_fail,
-        **helpers.unknown_bounds(known, unknown_tolerances),
+        **(
+            helpers.unknown_bounds(known, unknown_tolerances)
+            or {"tolerances": tolerances, "max_coordinate": max_coordinate}
+        ),
     )
 
 
@@ -219,3 +224,23 @@ def test_indistinguishable_pair(known):
             naive=(results[0][0], results[1][0]),
             divergence=torch.distributions.kl.kl_divergence,
         )
+
+
+# Seeds 0-2: KL at most 0.0023 (ema), 0.0025 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    loc, scale = ch.linspace(-0.5, 0.5, 20), ch.linspace(0.5, 1.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.LogNormal(loc, scale),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 1000.0),
+    )
+    _recovers(
+        dims=20,
+        loc=loc,
+        scale=scale,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.0046, "avg": 0.0051},
+        max_coordinate=0.0011,
+    )

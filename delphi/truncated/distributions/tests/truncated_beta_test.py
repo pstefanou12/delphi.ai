@@ -4,6 +4,7 @@
 import functools
 from typing import Any, Optional
 
+import pytest
 import torch as ch
 import torch.distributions
 
@@ -131,4 +132,24 @@ def test_indistinguishable_pair(known):
         parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
         known=known,
+    )
+
+
+# Seeds 0-2: KL at most 0.0075 (ema), 0.0048 (avg); bounds are twice that.
+@pytest.mark.slow
+def test_twenty_dimensions_sum_threshold():
+    first, second = ch.linspace(1.5, 3.0, 20), ch.linspace(2.0, 4.0, 20)
+    calibrated = truncation_sets.calibrate(
+        truncation_sets.sum_threshold,
+        torch.distributions.Beta(first, second),
+        target_alpha=(0.15, 0.25),
+        bounds=(0.0, 20.0),
+    )
+    _recovers(
+        dims=20,
+        first=first,
+        second=second,
+        phi=calibrated.phi,
+        tolerances={"ema": 0.016, "avg": 0.0097},
+        max_coordinate=0.0038,
     )
