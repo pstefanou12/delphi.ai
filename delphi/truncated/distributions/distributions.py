@@ -7,11 +7,11 @@ from delphi.configs import base
 from delphi.delphi import DelphiModel
 
 
-class distributions(DelphiModel[base.ConfigT], Generic[base.ConfigT]):  # pylint: disable=invalid-name,abstract-method
+class Distribution(DelphiModel[base.ConfigT], Generic[base.ConfigT]):  # pylint: disable=abstract-method
     """Parent class for distribution models."""
 
     def __init__(self, *, hyperparameters: Optional[dict] = None):
-        """Initialize the distributions model.
+        """Initialize the distribution model.
 
         Args:
             hyperparameters: Hyperparameter dict, validated via the subclass
