@@ -28,16 +28,12 @@ def _recovers(
     known: bool = True,
     **unknown: Any,
 ) -> None:
-    categories = concentration.size(0)
     helpers.assert_family_recovers(
         model_class=truncated_dirichlet.TruncatedDirichlet,
         target=torch.distributions.Dirichlet(concentration),
         phi=phi,
-        dims=categories,
         parameter="concentration_",
-        empirical=helpers.untruncated_mle(
-            truncated_dirichlet.TruncatedDirichlet, categories
-        ),
+        empirical=helpers.untruncated_mle(truncated_dirichlet.TruncatedDirichlet),
         hyperparameters=hyperparameters,
         pass_alpha=pass_alpha,
         baseline_must_fail=baseline_must_fail,
@@ -142,9 +138,8 @@ def test_indistinguishable_pair(known):
             torch.distributions.Dirichlet(ch.tensor([5.0, 3.0, 4.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.35),
-        dims=3,
         parameter="concentration_",
-        empirical=helpers.untruncated_mle(truncated_dirichlet.TruncatedDirichlet, 3),
+        empirical=helpers.untruncated_mle(truncated_dirichlet.TruncatedDirichlet),
         known=known,
         unlearnable=True,
     )
@@ -154,6 +149,6 @@ def test_unknown_truncation_raises():
     # Every sample sums to one, so no polynomial basis is independent on them.
     ch.manual_seed(0)
     sample = torch.distributions.Dirichlet(ch.tensor([2.0, 3.0, 4.0])).sample([500])
-    model = truncated_dirichlet.TruncatedDirichlet(None, 3)
+    model = truncated_dirichlet.TruncatedDirichlet(None)
     with pytest.raises(ValueError, match="truncation_set_degree"):
         model.fit(sample[sample[:, 0] > 0.3])

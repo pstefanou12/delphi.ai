@@ -61,7 +61,6 @@ def _recovers(
         model_class=truncated_multinomial.TruncatedMultinomial,
         target=torch.distributions.Multinomial(_TRIALS, probs),
         phi=phi,
-        dims=probs.size(0),
         parameter="probs_",
         empirical=lambda s: (s.mean(0) / _TRIALS).clamp(min=1e-6),
         hyperparameters=hyperparameters,
@@ -154,7 +153,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.Multinomial(_TRIALS, ch.tensor([0.4, 0.225, 0.375])),
         ),
         phi=lambda z: (z[:, 0] > 2.5) & (z[:, 0] < 4.5),
-        dims=3,
         parameter="probs_",
         empirical=lambda s: (s.mean(0) / _TRIALS).clamp(min=1e-6),
         model_args=(_TRIALS,),
@@ -171,6 +169,6 @@ def test_unknown_truncation_raises():
     ch.manual_seed(0)
     target = torch.distributions.Multinomial(_TRIALS, ch.tensor([0.2, 0.3, 0.5]))
     sample = target.sample([500])
-    model = truncated_multinomial.TruncatedMultinomial(None, 3, _TRIALS)
+    model = truncated_multinomial.TruncatedMultinomial(None, _TRIALS)
     with pytest.raises(ValueError, match="truncation_set_degree"):
         model.fit(sample[sample[:, 0] >= 4])

@@ -27,11 +27,10 @@ def _untruncated_log_likelihood(theta, sample):
 def test_raises_the_untruncated_likelihood():
     sample = _sample()
     cold = truncated_beta.TruncatedBeta(
-        _phi, 1, sample.alpha, hyperparameters={"iterations": 1}
+        _phi, sample.alpha, hyperparameters={"iterations": 1}
     )
     warm = truncated_beta.TruncatedBeta(
         _phi,
-        1,
         sample.alpha,
         hyperparameters={"iterations": 1, "warm_start_iterations": 1000},
     )
@@ -47,7 +46,6 @@ def test_leaves_the_truncation_and_settings_alone():
     sample = _sample()
     model = truncated_beta.TruncatedBeta(
         _phi,
-        1,
         sample.alpha,
         hyperparameters={"iterations": 1, "warm_start_iterations": 1000},
     )
@@ -59,12 +57,11 @@ def test_leaves_the_truncation_and_settings_alone():
 
 
 def test_families_without_a_closed_form_warm_start_by_default():
-    model = truncated_chi2.TruncatedChi2(_phi, 1)
+    model = truncated_chi2.TruncatedChi2(_phi)
     assert model.hyperparameters.warm_start_iterations == 1000
     sample = _sample()
     off = truncated_chi2.TruncatedChi2(
         _phi,
-        1,
         sample.alpha,
         hyperparameters={"iterations": 1, "warm_start_iterations": None},
     )

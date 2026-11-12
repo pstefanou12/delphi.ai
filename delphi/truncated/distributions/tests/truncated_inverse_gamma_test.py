@@ -16,7 +16,6 @@ ch.set_printoptions(precision=4, sci_mode=False)
 
 
 def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    dims: int,
     concentration: ch.Tensor,
     rate: ch.Tensor,
     phi: helpers.Oracle,
@@ -30,7 +29,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
         model_class=truncated_inverse_gamma.TruncatedInverseGamma,
         target=torch.distributions.InverseGamma(concentration, rate),
         phi=phi,
-        dims=dims,
         parameter="rate_",
         empirical=lambda s: concentration / (1.0 / s).mean(0),
         hyperparameters=hyperparameters,
@@ -48,7 +46,6 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         concentration=ch.tensor([3.0]),
         rate=ch.tensor([2.0]),
         phi=lambda z: z[:, 0] > 1.2,
@@ -69,7 +66,6 @@ def test_two_dimensions(known):
         bounds=(0.0, 100.0),
     )
     _recovers(
-        dims=2,
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
@@ -90,7 +86,6 @@ def test_two_dimensions_random_half_space(known):
         bounds=(-50.0, 50.0),
     )
     _recovers(
-        dims=2,
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
@@ -103,7 +98,6 @@ def test_two_dimensions_random_half_space(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         concentration=ch.tensor([3.0]),
         rate=ch.tensor([2.0]),
         phi=delphi.oracle.Identity(),
@@ -117,7 +111,6 @@ def test_one_dimension_identity(known):
 def test_ten_dimensions_identity(known):
     concentration, rate = 3.0 * ch.ones(10), ch.linspace(0.5, 3.0, 10)
     _recovers(
-        dims=10,
         concentration=concentration,
         rate=rate,
         phi=delphi.oracle.Identity(),
@@ -139,7 +132,6 @@ def test_one_dimension_small_mass(known):
         bounds=(0.0, 100.0),
     )
     _recovers(
-        dims=1,
         concentration=concentration,
         rate=rate,
         phi=calibrated.phi,
@@ -157,9 +149,7 @@ def test_ten_dimensions_sum_threshold(known):
         target_alpha=(0.15, 0.25),
         bounds=(0.0, 500.0),
     )
-    _recovers(
-        dims=10, concentration=concentration, rate=rate, phi=calibrated.phi, known=known
-    )
+    _recovers(concentration=concentration, rate=rate, phi=calibrated.phi, known=known)
 
 
 @helpers.known_and_unknown(
@@ -177,7 +167,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.InverseGamma(concentration, ch.tensor([4.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.6) & (z[:, 0] < 0.8),
-        dims=1,
         parameter="rate_",
         empirical=lambda s: concentration / (1.0 / s).mean(0),
         model_args=(concentration,),

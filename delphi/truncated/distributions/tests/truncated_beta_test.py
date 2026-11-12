@@ -21,7 +21,6 @@ def _moments(s: ch.Tensor) -> tuple[ch.Tensor, ch.Tensor]:
 
 
 def _recovers(
-    dims: int,
     first: ch.Tensor,
     second: ch.Tensor,
     phi: helpers.Oracle,
@@ -35,7 +34,6 @@ def _recovers(
         model_class=truncated_beta.TruncatedBeta,
         target=torch.distributions.Beta(first, second),
         phi=phi,
-        dims=dims,
         parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
         hyperparameters=hyperparameters,
@@ -49,7 +47,6 @@ def _recovers(
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         first=ch.tensor([2.0]),
         second=ch.tensor([3.0]),
         phi=lambda z: z[:, 0] > 0.5,
@@ -68,7 +65,6 @@ def test_two_dimensions_random_half_space(known):
         bounds=(-25.0, 25.0),
     )
     _recovers(
-        dims=2,
         first=first,
         second=second,
         phi=calibrated.phi,
@@ -80,7 +76,6 @@ def test_two_dimensions_random_half_space(known):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         first=ch.tensor([2.0]),
         second=ch.tensor([3.0]),
         phi=delphi.oracle.Identity(),
@@ -94,7 +89,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         first=ch.linspace(1.5, 3.0, 10),
         second=ch.linspace(2.0, 4.0, 10),
         phi=delphi.oracle.Identity(),
@@ -115,7 +109,6 @@ def test_ten_dimensions_sum_threshold(known):
         bounds=(0.0, 10.0),
     )
     _recovers(
-        dims=10,
         first=first,
         second=second,
         phi=calibrated.phi,
@@ -135,7 +128,6 @@ def test_indistinguishable_pair(known):
             torch.distributions.Beta(ch.tensor([5.0]), ch.tensor([5.0])),
         ),
         phi=lambda z: (z[:, 0] > 0.25) & (z[:, 0] < 0.75),
-        dims=1,
         parameter=("concentration1_", "concentration0_"),
         empirical=_moments,
         known=known,

@@ -43,7 +43,6 @@ class KnownTruncationMultivariateNormal(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -53,10 +52,9 @@ class KnownTruncationMultivariateNormal(
         Args:
             phi: Truncation set oracle; None learns it from the sample.
             alpha: Survival probability lower bound.
-            dims: Number of dimensions.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
         self.eigenvalue_lower_bound = self.hyperparameters.eigenvalue_lower_bound
 
         # Attributes set during _calc_emp_model.

@@ -29,7 +29,7 @@ class UnknownTruncationNormalKnownVariance(
             alpha: Survival mass of the set in (0, 1), if known.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(1, covariance_matrix, alpha, hyperparameters=hyperparameters)
+        super().__init__(covariance_matrix, alpha, hyperparameters=hyperparameters)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

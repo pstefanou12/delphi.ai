@@ -34,9 +34,7 @@ class TruncatedNormalKnownVariance(
             covariance_matrix: Known variance as a 1×1 matrix.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(
-            phi, 1, covariance_matrix, alpha, hyperparameters=hyperparameters
-        )
+        super().__init__(phi, covariance_matrix, alpha, hyperparameters=hyperparameters)
 
     def __str__(self):
         """Return a human-readable name for this distribution."""

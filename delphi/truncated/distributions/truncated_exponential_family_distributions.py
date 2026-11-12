@@ -64,7 +64,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             does when the model is constructed without phi.
         truncation_set_: The learned set, set by ``fit``.
         alpha (float): Survival probability lower bound.
-        dims (int): Number of dimensions.
+        dims (int): Width of a sample, set by ``fit``.
         dist: Exponential family class or factory, resolved during ``fit``.
         calc_suff_stat (Callable): Sufficient-statistic function for ``dist``,
             resolved alongside it.
@@ -98,16 +98,14 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
-    ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    ):
         """Initialize TruncatedExponentialFamilyDistribution.
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of dimensions.
             alpha: Survival probability in (0, 1]; estimated from phi at the
                 empirical initialization when omitted.
             hyperparameters: Hyperparameter dict.
@@ -128,7 +126,8 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
                 "or omit alpha to fall back on min_radius."
             )
         self.alpha = alpha
-        self.dims = dims
+        # The sample's width, which fit reads.
+        self.dims = 0
         self.criterion = losses.TruncatedExponentialFamilyDistributionNLL.apply
 
         self.best_params: Optional[ch.Tensor] = None
@@ -175,6 +174,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         if not isinstance(S, ch.Tensor):
             raise TypeError(f"S is type: {type(S)}. expected type torch.Tensor.")
         self._check_shape(S)
+        self.dims = S.size(1)
         if self.hyperparameters.batch_size > self.hyperparameters.num_samples:
             raise ValueError(
                 f"batch size ({self.hyperparameters.batch_size}) must be smaller than "

@@ -27,7 +27,7 @@ class UnknownTruncationNormal(
             alpha: Survival mass of the set in (0, 1), if known.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(1, alpha, hyperparameters=hyperparameters)
+        super().__init__(alpha, hyperparameters=hyperparameters)
 
     @property
     def best_scale_(self) -> ch.Tensor:

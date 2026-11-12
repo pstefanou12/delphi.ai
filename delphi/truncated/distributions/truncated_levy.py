@@ -31,7 +31,6 @@ class TruncatedLevy(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         loc: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -41,12 +40,11 @@ class TruncatedLevy(
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of dimensions.
             loc: Known location, one per coordinate.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
         self.loc = loc
 
     def _build_distribution(self):

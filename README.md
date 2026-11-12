@@ -138,7 +138,7 @@ alpha = phi(population).float().mean().item()
 mean, std = S.mean(0), S.std(0)
 # The default hyperparameters: 2500 steps, lr 1e-2, the Fisher schedule.
 model = truncated_multivariate_normal.TruncatedMultivariateNormal(
-    2, phi=lambda z: phi(z * std + mean), alpha=alpha
+    phi=lambda z: phi(z * std + mean), alpha=alpha
 )
 model.fit((S - mean) / std)
 
@@ -161,6 +161,10 @@ entry, and even get the sign of the correlation wrong.
 **The truncation set is a plain callable.** `phi` maps a batch of shape
 `(n, dims)` to a mask over it. Anything that answers "is this point observed?"
 works; there is nothing to subclass.
+
+**The dimension comes from the sample.** No model takes `dims`: `fit(S)`
+reads it from `S.shape[1]`, so known parameters such as a covariance must
+match the sample's width.
 
 **`alpha` is optional.** It is the survival mass, the fraction of the
 population inside the set, and it sizes the region the optimizer is kept in.
@@ -236,7 +240,7 @@ inside = (population[:, 0] > -0.5) & (population[:, 1] > -0.5)
 S = population[inside][:20000]
 
 # The default hyperparameters: here degree 132, sized from the sample.
-model = truncated_multivariate_normal.TruncatedMultivariateNormal(2)
+model = truncated_multivariate_normal.TruncatedMultivariateNormal()
 model.fit(S)
 
 # The set the fit implies, as a membership oracle.
@@ -280,7 +284,7 @@ degree is the largest up to 4 whose basis has at most 250 terms: 4 up to 6
 dimensions, 3 up to 9, 2 up to 20, and 1 beyond. A family whose samples satisfy a polynomial identity,
 such as the Dirichlet's coordinates summing to one or a Bernoulli's `x² = x`,
 raises a `ValueError` naming the degree. For the normal,
-`TruncatedMultivariateNormal(dims, method="l1")` selects this route instead of
+`TruncatedMultivariateNormal(method="l1")` selects this route instead of
 the Hermite expansion.
 
 ```python
@@ -295,7 +299,7 @@ ch.manual_seed(0)
 population = torch.distributions.Exponential(ch.tensor([1.0])).sample([20000])
 S = population[population[:, 0] > 1.0][:5000]
 
-model = truncated_exponential.TruncatedExponential(None, 1)
+model = truncated_exponential.TruncatedExponential(None)
 model.fit(S)
 
 rate = model.avg_rate_

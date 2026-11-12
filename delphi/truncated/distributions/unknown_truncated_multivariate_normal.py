@@ -66,7 +66,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
     ``T``, the offset ``c``, the start point and the projection set.
 
     Attributes:
-        dims: Number of dimensions.
+        dims: Width of a sample, set by fit.
         alpha: Survival mass of the set, if known; it only sizes the
             projection set.
         standardization_: The standardization the expansion and the descent
@@ -88,9 +88,11 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
     # Read by FisherLR.spectrum: the coordinates of (u, B) are correlated.
     independent_coordinates = False
 
+    # Registered by fit, whose sample sets its size.
+    theta: torch.nn.Parameter
+
     def __init__(
         self,
-        dims: int,
         alpha: Optional[float] = None,
         *,
         hyperparameters: Optional[dict] = None,
@@ -98,7 +100,6 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         """Initialize the estimator.
 
         Args:
-            dims: Number of dimensions.
             alpha: Survival mass of the set in (0, 1), if known.
             hyperparameters: Hyperparameter dict.
 
@@ -110,10 +111,9 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
             raise ValueError(
                 f"alpha is the survival mass and must lie in (0, 1); got {alpha}."
             )
-        self.dims = dims
+        self.dims = 0
         self.alpha = alpha
         self.criterion = losses.UnknownTruncationMultivariateNormalNLL.apply
-        self.theta = torch.nn.Parameter(ch.zeros(self._num_params()))
 
         self.standardization_: Optional[standardization.Standardization] = None
         self.recovered_set_: Optional[delphi.oracle.RecoveredSet] = None
@@ -174,11 +174,12 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
         """
         if not isinstance(S, ch.Tensor):
             raise TypeError(f"S is type: {type(S)}. expected type torch.Tensor.")
-        if S.dim() != 2 or S.size(1) != self.dims or S.size(0) <= self.dims:
+        if S.dim() != 2 or S.size(0) <= S.size(1):
             raise ValueError(
-                f"expected samples of shape (num_samples, {self.dims}) with more "
-                f"samples than dimensions; got {tuple(S.shape)}."
+                "expected samples of shape (num_samples, dims) with more samples "
+                f"than dimensions; got {tuple(S.shape)}."
             )
+        self.dims = S.size(1)
         hermite_set, descent_set, val_set = self._split(S)
         self.standardization_ = self._standardization().fit(
             ch.cat([hermite_set, descent_set])
@@ -202,7 +203,7 @@ class UnknownTruncationMultivariateNormalBase(  # pylint: disable=too-many-insta
 
         emp_theta = self._initial_theta().to(S.dtype)
         self.emp_theta = emp_theta
-        self.theta.data = emp_theta.clone()
+        self.theta = torch.nn.Parameter(emp_theta.clone())
         self.trainer = delphi.trainer.Trainer(self, self.hyperparameters)
         self.procedure = self.trainer.train_model(self.train_loader_, self.val_loader_)
         final = self.procedure.final

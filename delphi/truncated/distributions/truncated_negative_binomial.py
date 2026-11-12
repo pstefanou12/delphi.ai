@@ -30,7 +30,6 @@ class TruncatedNegativeBinomial(
     def __init__(
         self,
         phi: Optional[Callable],
-        dims: int,
         total_count: ch.Tensor,
         alpha: Optional[float] = None,
         *,
@@ -40,12 +39,11 @@ class TruncatedNegativeBinomial(
 
         Args:
             phi: Truncation set oracle; None learns it from the sample.
-            dims: Number of dimensions.
             total_count: Known number of failures, one per coordinate.
             alpha: Survival probability lower bound.
             hyperparameters: Hyperparameter dict.
         """
-        super().__init__(phi, dims, alpha, hyperparameters=hyperparameters)
+        super().__init__(phi, alpha, hyperparameters=hyperparameters)
         self.total_count = total_count
 
     def _build_distribution(self):

@@ -37,7 +37,6 @@ def weibull_kl_divergence(
 
 
 def _recovers(
-    dims: int,
     concentration: ch.Tensor,
     scale: ch.Tensor,
     phi: helpers.Oracle,
@@ -55,7 +54,6 @@ def _recovers(
     no estimator can remove.
 
     Args:
-        dims: Number of dimensions.
         concentration: Known shape per dimension.
         scale: True scale per dimension.
         phi: Truncation set oracle.
@@ -77,7 +75,6 @@ def _recovers(
         truncated_weibull.TruncatedWeibull,
         phi,
         known,
-        dims,
         concentration,
         *args,
         hyperparameters=hyperparameters,
@@ -99,7 +96,6 @@ def _recovers(
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension(known):
     _recovers(
-        dims=1,
         concentration=ch.tensor([2.0]),
         scale=ch.tensor([1.0]),
         phi=lambda z: z > 1.5,
@@ -111,7 +107,6 @@ def test_one_dimension(known):
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_two_dimensions(known):
     _recovers(
-        dims=2,
         concentration=ch.tensor([1.0, 1.0]),
         scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
@@ -122,7 +117,6 @@ def test_two_dimensions(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_differing_shapes(known):
     _recovers(
-        dims=2,
         concentration=ch.tensor([2.0, 3.0]),
         scale=ch.tensor([1.0, 2.0]),
         phi=lambda z: z[:, 0] > 1.0,
@@ -134,7 +128,6 @@ def test_two_dimensions_differing_shapes(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions_differing_shapes(known):
     _recovers(
-        dims=20,
         concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(4),
         scale=ch.tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(4),
         phi=lambda z: z[:, 0] > 1.0,
@@ -153,7 +146,6 @@ def test_two_dimensions_random_half_space(known):
         bounds=(-25.0, 25.0),
     )
     _recovers(
-        dims=2,
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
@@ -174,7 +166,6 @@ def test_two_dimensions_random_disc_union(known):
         bounds=(1e-4, 1e3),
     )
     _recovers(
-        dims=2,
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
@@ -187,7 +178,6 @@ def test_two_dimensions_random_disc_union(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
-        dims=1,
         concentration=ch.tensor([2.0]),
         scale=ch.tensor([1.0]),
         phi=delphi.oracle.Identity(),
@@ -201,7 +191,6 @@ def test_one_dimension_identity(known):
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
-        dims=10,
         concentration=ch.tensor([2.0, 3.0, 1.0, 2.0, 1.0]).repeat(2),
         scale=ch.tensor([1.0, 2.0, 3.0, 1.0, 5.0]).repeat(2),
         phi=delphi.oracle.Identity(),
@@ -224,7 +213,6 @@ def test_one_dimension_small_mass(known):
         bounds=(0.0, 50.0),
     )
     _recovers(
-        dims=1,
         concentration=concentration,
         scale=scale,
         phi=calibrated.phi,
@@ -258,7 +246,6 @@ def test_indistinguishable_pair(known):
             truncated_weibull.TruncatedWeibull,
             phi,
             known,
-            1,
             concentration,
             sample.alpha,
         )

@@ -23,7 +23,6 @@ def _sample():
 def _one_step(sample, precondition: bool):
     model = truncated_inverse_gaussian.TruncatedInverseGaussian(
         _phi,
-        1,
         sample.alpha,
         hyperparameters={
             "iterations": 1,
@@ -52,9 +51,9 @@ def test_steps_by_the_inverse_sample_covariance():
 
 def test_off_by_default_outside_the_families_that_need_it():
     model = truncated_inverse_gaussian.TruncatedInverseGaussian(
-        _phi, 1, hyperparameters={"precondition": False}
+        _phi, hyperparameters={"precondition": False}
     )
     assert not model.hyperparameters.precondition
     assert truncated_inverse_gaussian.TruncatedInverseGaussian(
-        _phi, 1
+        _phi
     ).hyperparameters.precondition
