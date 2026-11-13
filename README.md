@@ -299,6 +299,9 @@ model = truncated_exponential.TruncatedExponential(None, 1)
 model.fit(S)
 
 rate = model.avg_rate_
+# The fitted torch distribution, at the averaged iterate.
+fitted = model.avg_
+fitted.rate, fitted.log_prob(S[:5])
 # The learned set, as a membership oracle.
 inside = model.truncation_set_(ch.tensor([[0.5], [2.0]]))
 ```
@@ -562,8 +565,10 @@ The truncated distributions add two layers on top of this:
   subclasses `TruncatedExponentialFamilyDistribution`, which supplies the
   truncated NLL, its Hessian, the sublevel-set projection and the phases
   that widen its budget. The family adds its starting point
-  (`_calc_emp_model`), the domain of its parameters (`_constraints`) and its
-  estimates, named as torch names them (`avg_rate_`, `avg_loc_`, ...).
+  (`_calc_emp_model`), the domain of its parameters (`_constraints`) and the
+  names of its estimates, which torch's names follow (`avg_rate_`,
+  `avg_loc_`, ...). `avg_`, `ema_`, `final_` and `best_` return the fitted
+  torch distribution itself.
 
 The truncated linear models follow the same pattern.
 `delphi/statistical_model.py`'s `StatisticalModel` sits under them: once

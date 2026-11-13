@@ -19,7 +19,7 @@ class TruncatedMaxwell(
 ):
     """Model for truncated Maxwell distributions."""
 
-    dist = maxwell.Maxwell
+    family = maxwell.Maxwell
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("scale_",)
 

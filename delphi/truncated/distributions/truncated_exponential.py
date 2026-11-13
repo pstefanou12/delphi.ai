@@ -19,7 +19,7 @@ class TruncatedExponential(
 ):
     """Model for truncated exponential distributions to be passed into trainer."""
 
-    dist = exponential.Exponential
+    family = exponential.Exponential
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("rate_",)
 

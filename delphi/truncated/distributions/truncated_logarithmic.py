@@ -22,7 +22,7 @@ class TruncatedLogarithmic(
 ):
     """Model for truncated logarithmic distributions."""
 
-    dist = logarithmic.Logarithmic
+    family = logarithmic.Logarithmic
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 

@@ -19,7 +19,7 @@ class TruncatedGeometric(
 ):
     """Model for truncated geometric distributions."""
 
-    dist = geometric.Geometric
+    family = geometric.Geometric
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 

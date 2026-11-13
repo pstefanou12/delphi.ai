@@ -18,7 +18,7 @@ class TruncatedBooleanProduct(
 ):
     """Model for truncated boolean product distributions to be passed into trainer."""
 
-    dist = boolean_product.BooleanProduct
+    family = boolean_product.BooleanProduct
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 

@@ -21,6 +21,7 @@ import torch.distributions.transforms
 import torch.utils.data
 
 from delphi.configs.distributions.truncated import exponential_family
+from delphi.exponential_family import exponential_family_distribution
 import delphi.oracle
 from delphi.torchnomials import empirical, hermite, laguerre, polynomial, transformed
 import delphi.trainer
@@ -59,7 +60,7 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
 ):
     """Base class for truncated exponential family distribution models.
 
-    Concrete subclasses either set the ``dist`` class attribute to their
+    Concrete subclasses either set the ``family`` class attribute to their
     exponential family class, or override ``_build_distribution`` when the
     family takes an argument fixed at construction.
 
@@ -75,7 +76,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         truncation_set_: The learned set, set by ``fit``.
         alpha (float): Survival probability lower bound.
         dims (int): Number of dimensions.
-        dist: Exponential family class or factory, resolved during ``fit``.
+        family: The exponential family class, when it takes no argument
+            fixed at construction.
+        dist: Builds the family's distribution from ``(theta, dims)``; set
+            by ``fit``.
         calc_suff_stat (Callable): Sufficient-statistic function for ``dist``,
             resolved alongside it.
         criterion: NLL loss function applied during training.
@@ -97,10 +101,11 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     # FisherLR.spectrum reads the diagonal rather than eigenvalues.
     independent_coordinates: bool = True
 
-    # The family class, which fit replaces with the factory
-    # _build_distribution returns. Any, since a Callable class attribute
-    # reads to mypy as a method, and a type cannot hold the factory.
-    dist: Any = None
+    family: ClassVar[
+        Optional[type[exponential_family_distribution.ExponentialFamilyDistribution]]
+    ] = None
+
+    dist: DistributionFactory
 
     # Created by register_parameter in _calc_emp_model, which mypy cannot see.
     theta: torch.nn.Parameter
@@ -193,6 +198,32 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     @emp_theta.setter
     def emp_theta(self, value: ch.Tensor) -> None:
         self._emp_theta = value
+
+    @property
+    def best_(self) -> torch.distributions.Distribution:
+        """The fitted distribution at the lowest-loss iterate."""
+        return self._distribution_at(self.best_params, "best_params")
+
+    @property
+    def final_(self) -> torch.distributions.Distribution:
+        """The fitted distribution at the last iterate."""
+        return self._distribution_at(self.final_params, "final_params")
+
+    @property
+    def ema_(self) -> torch.distributions.Distribution:
+        """The fitted distribution at the exponential moving average."""
+        return self._distribution_at(self.ema_params, "ema_params")
+
+    @property
+    def avg_(self) -> torch.distributions.Distribution:
+        """The fitted distribution at the running average."""
+        return self._distribution_at(self.avg_params, "avg_params")
+
+    def _distribution_at(
+        self, theta: Optional[ch.Tensor], name: str
+    ) -> torch.distributions.Distribution:
+        """Return the family's distribution at an iterate that fit sets."""
+        return self.dist(_required(theta, name).detach(), self.dims)
 
     @property
     def _train_dataset(self) -> datasets.TruncatedExponentialDistributionDataset:
@@ -471,14 +502,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             sufficient statistic of the family.
 
         Raises:
-            NotImplementedError: If the subclass declares no ``dist``.
+            NotImplementedError: If the subclass declares no ``family``.
         """
-        if getattr(self, "dist", None) is None:
+        if self.family is None:
             raise NotImplementedError(
-                f"{type(self).__name__} must declare a dist class attribute or "
-                "override _build_distribution."
+                f"{type(self).__name__} must declare a family class attribute "
+                "or override _build_distribution."
             )
-        return self.dist, self.dist.calc_suff_stat
+        # A family's constructor takes (theta, dims), which its abstract
+        # base's signature does not declare.
+        factory = cast(DistributionFactory, self.family)
+        return factory, self.family.calc_suff_stat
 
     def hessian(self, theta: Optional[ch.Tensor] = None) -> ch.Tensor:
         """Return the Hessian of the truncated NLL, for deriving step sizes.
@@ -504,8 +538,10 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
             self.hyperparameters.num_samples,
         )
 
-    def make_optimizer_and_schedule(self, checkpoint: Optional[dict] = None):
-        """Build the optimizer and schedule, preconditioned if configured.
+    def _choose_schedule_hessian(
+        self, warm_start: bool
+    ) -> Optional[Callable[..., ch.Tensor]]:
+        """Precondition the phases if configured; return the whitened Hessian.
 
         With ``precondition`` set, every step of a phase moves by
         ``C^{-1} g`` rather than ``g``, for ``C`` the covariance of ``T(x)``
@@ -513,28 +549,20 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         at the truth without sampling. That is plain SGD after the change of
         variables ``theta = L^{-T} psi`` for ``C = L L^T``, so the Fisher
         schedule reads the spectrum of ``L^{-1} H L^{-T}``, near the identity
-        where ``C`` is accurate, and ``stage_hessian`` becomes that whitened
-        Hessian. A warm start, whose stage sets its own ``stage_hessian``, is
-        not preconditioned: its curvature at a rough start can be far from
-        the optimum's, and a step scaled by it left the Wishart's domain at
-        once.
-
-        Args:
-            checkpoint: As the base class.
-
-        Returns:
-            Tuple of (optimizer, scheduler).
+        where ``C`` is accurate. The warm start is not preconditioned: its
+        curvature at a rough start can be far from the optimum's, and a step
+        scaled by it left the Wishart's domain at once.
         """
         self._preconditioner = None
-        if self.hyperparameters.precondition and self.stage_hessian is None:
-            factor = ch.linalg.cholesky(self._empirical_hessian())  # pylint: disable=not-callable
-            self._preconditioner = ch.cholesky_inverse(factor)
-            self.stage_hessian = helpers.whitened_hessian(self.hessian, factor)
-            # A tensor hook rather than step_pre_hook, which runs before
-            # optimizer.step's closure recomputes the gradient.
-            if self._gradient_hook is None:
-                self._gradient_hook = self.theta.register_hook(self._precondition)
-        return super().make_optimizer_and_schedule(checkpoint)
+        if warm_start or not self.hyperparameters.precondition:
+            return super()._choose_schedule_hessian(warm_start)
+        factor = ch.linalg.cholesky(self._empirical_hessian())  # pylint: disable=not-callable
+        self._preconditioner = ch.cholesky_inverse(factor)
+        # A tensor hook rather than step_pre_hook, which runs before
+        # optimizer.step's closure recomputes the gradient.
+        if self._gradient_hook is None:
+            self._gradient_hook = self.theta.register_hook(self._precondition)
+        return helpers.whitened_hessian(self.hessian, factor)
 
     def _empirical_hessian(self) -> ch.Tensor:
         """Return the covariance of ``T(x)`` over the training sample."""
@@ -676,17 +704,17 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
     def _canonical(self, theta: ch.Tensor) -> tuple[ch.Tensor, ...]:
         """Return the canonical estimates theta encodes, one per suffix.
 
-        By default ``dist.to_canonical(theta)`` cut into equal parts, one per
+        By default ``family.to_canonical(theta)`` cut into equal parts, one per
         name in ``estimate_suffixes``. A family whose canonical form needs a
         known parameter, or splits unevenly, overrides it.
 
         Raises:
-            NotImplementedError: If the class declares no ``dist``.
+            NotImplementedError: If the class declares no ``family``.
         """
-        family = type(self).dist
+        family = self.family
         if family is None:
             raise NotImplementedError(
-                f"{type(self).__name__} declares no dist, so it must override "
+                f"{type(self).__name__} declares no family, so it must override "
                 "_canonical."
             )
         return family.to_canonical(theta).chunk(len(self.estimate_suffixes))

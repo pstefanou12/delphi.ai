@@ -19,7 +19,7 @@ class TruncatedHalfNormal(
 ):
     """Model for truncated half-normal distributions."""
 
-    dist = half_normal.HalfNormal
+    family = half_normal.HalfNormal
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("scale_",)
 

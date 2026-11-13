@@ -20,7 +20,7 @@ class TruncatedInverseGammaUnknownConcentration(
 ):
     """Model for truncated inverse gamma distributions with unknown shape."""
 
-    dist = unknown_shape.InverseGammaUnknownConcentration
+    family = unknown_shape.InverseGammaUnknownConcentration
     # 1 / x is Gamma, so log x and 1 / x couple as the Gamma's log x and x do.
     defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration_", "rate_")

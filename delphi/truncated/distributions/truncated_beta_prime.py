@@ -18,7 +18,7 @@ class TruncatedBetaPrime(
 ):
     """Model for truncated beta prime distributions."""
 
-    dist = beta_prime.BetaPrime
+    family = beta_prime.BetaPrime
     # log x and log(1 + x) are nearly collinear, which preconditioning undoes.
     defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("concentration1_", "concentration0_")

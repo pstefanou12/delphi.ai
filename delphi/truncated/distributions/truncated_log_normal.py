@@ -20,7 +20,7 @@ class TruncatedLogNormal(
 ):
     """Model for truncated log-normal distributions."""
 
-    dist = log_normal.LogNormal
+    family = log_normal.LogNormal
     # Each coordinate's loc and scale are coupled, so the Hessian is
     # block-diagonal and its spectrum needs eigenvalues.
     independent_coordinates = False

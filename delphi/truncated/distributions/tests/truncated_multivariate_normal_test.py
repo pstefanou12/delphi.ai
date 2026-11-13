@@ -111,6 +111,31 @@ def test_estimates_come_from_the_estimator(phi, covariance_matrix):
     assert ch.equal(model.covariance_matrix_, model.avg_covariance_matrix_)
 
 
+def test_estimates_come_back_as_torch_normals():
+    model = _model(_half_plane, None).fit(_sample(_half_plane))
+    for name in _ESTIMATES:
+        normal = getattr(model, f"{name}_")
+        assert isinstance(normal, torch.distributions.MultivariateNormal)
+        assert ch.allclose(normal.loc, getattr(model, f"{name}_loc_"))
+        assert ch.allclose(
+            normal.covariance_matrix, getattr(model, f"{name}_covariance_matrix_")
+        )
+
+
+def test_the_estimator_returns_its_own_family():
+    model = _model(_half_plane, None).fit(_sample(_half_plane))
+    estimator = model.estimator_
+    for name in _ESTIMATES:
+        normal = getattr(estimator, f"{name}_")
+        assert isinstance(normal, torch.distributions.MultivariateNormal)
+        assert ch.allclose(normal.loc, getattr(estimator, f"{name}_loc_"))
+        assert ch.allclose(
+            normal.covariance_matrix,
+            getattr(estimator, f"{name}_covariance_matrix_"),
+            atol=1e-5,
+        )
+
+
 def test_known_truncation_set_is_phi():
     assert _model(_half_plane, None).truncation_set() is _half_plane
 

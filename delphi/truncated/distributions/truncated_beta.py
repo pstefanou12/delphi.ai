@@ -19,7 +19,7 @@ class TruncatedBeta(
 ):
     """Model for truncated Beta distributions."""
 
-    dist = beta.Beta
+    family = beta.Beta
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("concentration1_", "concentration0_")
     # Each coordinate's a and b are coupled, so the Hessian is block-diagonal

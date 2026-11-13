@@ -32,7 +32,7 @@ class KnownTruncationMultivariateNormal(
     T: torch.nn.Parameter
     v: torch.nn.Parameter
 
-    dist = multivariate_normal.MultivariateNormal
+    family = multivariate_normal.MultivariateNormal
     # T(x) mixes coordinates through xx^T, so the Hessian is dense and its
     # spectrum needs eigenvalues rather than the diagonal.
     independent_coordinates = False

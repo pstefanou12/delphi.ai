@@ -19,7 +19,7 @@ class TruncatedRayleigh(
 ):
     """Model for truncated Rayleigh distributions."""
 
-    dist = rayleigh.Rayleigh
+    family = rayleigh.Rayleigh
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("scale_",)
 

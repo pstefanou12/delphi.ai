@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Literal, Optional, Union, cast
 
 import torch as ch
+import torch.distributions
 
 from delphi.truncated.distributions import (
     known_truncated_multivariate_normal as known_mvn,
@@ -49,8 +50,10 @@ class TruncatedMultivariateNormal:
 
     Every mode reports the same estimates: ``loc_`` and
     ``covariance_matrix_`` at the averaged iterate, and the ``avg_``,
-    ``ema_``, ``final_`` and ``best_`` variants of each. With a known
-    covariance, every ``covariance_matrix_`` is the one given.
+    ``ema_``, ``final_`` and ``best_`` variants of each. ``avg_``,
+    ``ema_``, ``final_`` and ``best_`` alone return the fitted
+    ``torch.distributions.MultivariateNormal``. With a known covariance,
+    every ``covariance_matrix_`` is the one given.
 
     Attributes:
         dims: Number of dimensions.
@@ -164,6 +167,32 @@ class TruncatedMultivariateNormal:
         if self.covariance_matrix is not None:
             return self.covariance_matrix
         return getattr(self.estimator_, f"{name}_covariance_matrix_")
+
+    def _distribution(self, name: str) -> torch.distributions.MultivariateNormal:
+        """Return the normal an estimate's mean and covariance define."""
+        return torch.distributions.MultivariateNormal(
+            self._loc(name), covariance_matrix=self._covariance(name)
+        )
+
+    @property
+    def avg_(self) -> torch.distributions.MultivariateNormal:
+        """The fitted normal at the averaged iterate."""
+        return self._distribution("avg")
+
+    @property
+    def ema_(self) -> torch.distributions.MultivariateNormal:
+        """The fitted normal at the moving average of the iterates."""
+        return self._distribution("ema")
+
+    @property
+    def final_(self) -> torch.distributions.MultivariateNormal:
+        """The fitted normal at the last iterate."""
+        return self._distribution("final")
+
+    @property
+    def best_(self) -> torch.distributions.MultivariateNormal:
+        """The fitted normal at the iterate with the lowest validation loss."""
+        return self._distribution("best")
 
     @property
     def avg_loc_(self) -> ch.Tensor:

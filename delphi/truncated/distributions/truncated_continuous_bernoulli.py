@@ -18,7 +18,7 @@ class TruncatedContinuousBernoulli(
 ):
     """Model for truncated continuous Bernoulli distributions."""
 
-    dist = continuous_bernoulli.ContinuousBernoulli
+    family = continuous_bernoulli.ContinuousBernoulli
     defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("probs_",)
 

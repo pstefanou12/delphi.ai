@@ -53,7 +53,7 @@ class TruncatedWishart(
         size: Side of the sampled matrices.
     """
 
-    dist = wishart.Wishart
+    family = wishart.Wishart
     # A one-by-one Wishart is the two-parameter Gamma, whose log x and x couple
     # as log det X and X do.
     defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig

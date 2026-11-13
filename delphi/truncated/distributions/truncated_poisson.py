@@ -18,7 +18,7 @@ class TruncatedPoisson(
 ):
     """Model for truncated Poisson distributions to be passed into trainer."""
 
-    dist = poisson.Poisson
+    family = poisson.Poisson
     defaults = exponential_family_configs.TruncatedExponentialFamilyDistributionConfig
     estimate_suffixes = ("rate_",)
 

@@ -28,7 +28,7 @@ class TruncatedInverseWishart(
         size: Side of the sampled matrices.
     """
 
-    dist = inverse_wishart.InverseWishart
+    family = inverse_wishart.InverseWishart
     # The Wishart's statistic of X^{-1}, so it couples as the Wishart's does.
     defaults = gamma_unknown_concentration.TruncatedGammaUnknownConcentrationConfig
     estimate_suffixes = ("df_", "scale_")

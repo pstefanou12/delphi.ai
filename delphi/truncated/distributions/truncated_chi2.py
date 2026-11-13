@@ -19,7 +19,7 @@ class TruncatedChi2(
 ):
     """Model for truncated chi-squared distributions."""
 
-    dist = chi2.Chi2
+    family = chi2.Chi2
     defaults = exponential_family_configs.WarmStartedExponentialFamilyDistributionConfig
     estimate_suffixes = ("df_",)
 

@@ -175,7 +175,7 @@ class CurvedMean(PhasedMean):
         self.curvature_calls.append("main")
         return 2.0 * ch.eye(1)
 
-    def warm_start_curvature(self, theta=None):  # pylint: disable=unused-argument
+    def untruncated_hessian(self, theta=None):  # pylint: disable=unused-argument
         self.curvature_calls.append("warm start")
         return 2.0 * ch.eye(1)
 
@@ -200,7 +200,7 @@ def test_a_fisher_warm_start_without_its_own_hessian_raises():
 
 def test_the_warm_start_takes_its_step_sizes_from_its_own_hessian():
     model = _curved()
-    model.warm_start_hessian = model.warm_start_curvature
+    model.warm_start_hessian = model.untruncated_hessian
     _fit(model)
     assert model.curvature_calls[0] == "warm start"
     first_main = model.curvature_calls.index("main")

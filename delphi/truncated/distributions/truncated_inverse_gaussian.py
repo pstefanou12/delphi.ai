@@ -20,7 +20,7 @@ class TruncatedInverseGaussian(
 ):
     """Model for truncated inverse Gaussian distributions."""
 
-    dist = inverse_gaussian.InverseGaussian
+    family = inverse_gaussian.InverseGaussian
     defaults = inverse_gaussian_configs.TruncatedInverseGaussianConfig
     estimate_suffixes = ("loc_", "concentration_")
     # Each coordinate's x and 1 / x are correlated, so the Hessian is

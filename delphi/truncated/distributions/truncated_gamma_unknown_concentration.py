@@ -19,7 +19,7 @@ class TruncatedGammaUnknownConcentration(
 ):
     """Model for truncated Gamma distributions with unknown shape and rate."""
 
-    dist = gamma_unknown_concentration.GammaUnknownConcentration
+    family = gamma_unknown_concentration.GammaUnknownConcentration
     defaults = (
         gamma_unknown_concentration_configs.TruncatedGammaUnknownConcentrationConfig
     )

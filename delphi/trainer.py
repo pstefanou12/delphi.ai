@@ -124,17 +124,17 @@ class ProcedureResult:
 
 @dataclasses.dataclass(frozen=True)
 class Stage:
-    """What one run trains: its config, criterion and the criterion's Hessian.
+    """What one run trains: its config and criterion.
 
-    A criterion of None is the model's own, with its own ``hessian``; any
-    other has its parameters bound. ``pre_hook`` runs once the run is seeded,
-    before it builds its optimizer.
+    A criterion of None is the model's own; any other has its parameters
+    bound. ``pre_hook`` runs once the run is seeded, before it builds its
+    optimizer.
     """
 
     name: str
     config: base.TrainerConfig
     criterion: Optional[Callable] = None
-    hessian: Optional[Callable[..., ch.Tensor]] = None
+    warm_start: bool = False
     pre_hook: Optional[Callable[[], None]] = None
 
 
@@ -293,28 +293,17 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
         """Return the warm start: the model's warm-start criterion and config.
 
         Raises:
-            ValueError: If the model defines no warm-start criterion, or it
-                warm-starts under the fisher scheduler without that
-                criterion's Hessian.
+            ValueError: If the model defines no warm-start criterion.
         """
         if self.model.warm_start_criterion is None:
             raise ValueError(
                 f"{self.model} has a warm-start budget but no warm_start_criterion."
             )
-        config = self.hyperparameters.warm_start_overlay()
-        if (
-            self.model.warm_start_hessian is None
-            and getattr(config, "scheduler", None) == "fisher"
-        ):
-            raise ValueError(
-                f"{self.model} warm-starts under the fisher scheduler but has "
-                "no warm_start_hessian; its hessian belongs to the main criterion."
-            )
         return Stage(
             name="warm start",
-            config=config,
+            config=self.hyperparameters.warm_start_overlay(),
             criterion=self.model.warm_start_criterion,
-            hessian=self.model.warm_start_hessian,
+            warm_start=True,
         )
 
     def _train_phases(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -417,8 +406,10 @@ class Trainer:  # pylint: disable=too-many-instance-attributes
                 self.dataset_size = None  # IterableDataset has no len().
 
         if not self.model.owns_updates:
-            self.model.stage_hessian = self._stage.hessian if self._stage else None
-            self.model.make_optimizer_and_schedule(checkpoint)
+            self.model.make_optimizer_and_schedule(
+                checkpoint,
+                warm_start=self._stage is not None and self._stage.warm_start,
+            )
         self.logger.info(f"training: {self.model}\n{self.hyperparameters}")
 
         if (
