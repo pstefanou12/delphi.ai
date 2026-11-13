@@ -61,6 +61,7 @@ def test_two_dimensions(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_twenty_dimensions(known):
     _recovers(
@@ -101,6 +102,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_dimensions_identity(known):
     _recovers(
@@ -113,6 +115,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_dimensions_sum_threshold(known):
     probability = ch.linspace(0.3, 0.7, 10)
@@ -132,6 +135,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_indistinguishable_pair(known):
     # Conditioning on an exact count would make the pair identical rather

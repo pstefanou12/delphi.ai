@@ -49,7 +49,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(
         loc=ch.tensor([1.0]),
@@ -61,6 +61,7 @@ def test_one_dimension(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.061 to 0.378 (ema), 0.064 to 0.369 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     loc, concentration = ch.tensor([1.0, 2.0]), ch.tensor([2.0, 4.0])
@@ -121,6 +122,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     loc, concentration = ch.tensor([1.0]), ch.tensor([2.0])
@@ -135,6 +137,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation, degree 3: over seeds 0,1,2 the estimate's KL measured
 # 0.167 to 0.192 (ema), 0.167 to 0.191 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     loc, concentration = ch.linspace(0.5, 2.0, 10), ch.linspace(1.0, 5.0, 10)
@@ -154,6 +157,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(

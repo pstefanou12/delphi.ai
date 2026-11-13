@@ -53,6 +53,7 @@ def test_half_space():
     )
 
 
+@pytest.mark.long
 def test_ball_off_the_mean():
     _recovers(
         ch.tensor([1.0, -0.5]),
@@ -61,6 +62,7 @@ def test_ball_off_the_mean():
     )
 
 
+@pytest.mark.long
 def test_three_dimensional_polytope():
     _recovers(
         ch.tensor([0.5, -0.3, 0.2]),
@@ -69,6 +71,7 @@ def test_three_dimensional_polytope():
     )
 
 
+@pytest.mark.long
 def test_ten_dimensional_ball():
     _recovers(
         ch.linspace(-0.5, 0.5, 10),
@@ -82,6 +85,7 @@ def test_ten_dimensional_ball():
 _FIGURE_ONE_MEANS = ((0.1, 0.78), (0.0, 0.0))
 
 
+@pytest.mark.long
 @pytest.mark.parametrize("loc", _FIGURE_ONE_MEANS)
 def test_sierpinski_triangle(loc):
     # The naive estimates score 0.15 to 0.18, at the suite's loosest bound,
@@ -94,6 +98,7 @@ def test_sierpinski_triangle(loc):
     )
 
 
+@pytest.mark.long
 def test_sierpinski_pair_is_told_apart():
     """Figure 1's two Gaussians leave samples whose means nearly coincide."""
     phi = truncation_sets.sierpinski(3)

@@ -90,6 +90,7 @@ def test_two_dimensions(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.032 to 0.074 (ema), 0.032 to 0.074 (avg); the set error 0.076 to 0.102.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     scale, tail = ch.tensor([1.0, 2.0]), ch.tensor([2.5, 1.5])
@@ -154,6 +155,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation needs rho 0.5 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     scale, tail = ch.ones(10), ch.linspace(1.5, 4.0, 10)
@@ -172,6 +174,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

@@ -45,7 +45,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
-@helpers.KNOWN_AND_UNKNOWN
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(
         concentration=ch.tensor([3.0]),
@@ -98,7 +98,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
         concentration=ch.tensor([3.0]),
@@ -124,6 +124,7 @@ def test_ten_dimensions_identity(known):
 
 # Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
 # 0.040 to 1.291 (ema), 0.037 to 1.304 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     concentration, rate = ch.tensor([3.0]), ch.tensor([2.0])
@@ -145,6 +146,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation, rho 0.5: over seeds 0,1,2 the estimate's KL measured
 # 0.181 to 0.253 (ema), 0.181 to 0.254 (avg); the set error 0.118 to 0.133.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     concentration, rate = ch.linspace(1.5, 5.0, 10), ch.linspace(0.5, 2.0, 10)

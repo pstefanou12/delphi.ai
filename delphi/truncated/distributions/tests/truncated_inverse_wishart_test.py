@@ -63,6 +63,7 @@ def _calibrated(set_family, df: ch.Tensor, scale: ch.Tensor, bounds, **kwargs):
     ).phi
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_first_diagonal_threshold(known):
     df = ch.tensor([8.0])
@@ -80,6 +81,7 @@ def test_first_diagonal_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
@@ -95,7 +97,8 @@ def test_determinant_threshold(known):
 
 # Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
 # 0.278 to 0.365 (ema), 0.279 to 0.365 (avg).
-@helpers.KNOWN_AND_UNKNOWN
+@pytest.mark.long
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_random_half_space(known):
     df = ch.tensor([8.0])
     _recovers(
@@ -114,7 +117,8 @@ def test_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@pytest.mark.long
+@helpers.KNOWN_AND_UNKNOWN
 def test_identity(known):
     _recovers(
         df=ch.tensor([8.0]),
@@ -126,6 +130,7 @@ def test_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_three_by_three_identity(known):
     _recovers(

@@ -114,6 +114,7 @@ def test_10d_randomized_truncation():
     _fit(_simulate(_COEF_10D, phi, 5000), 0.19)
 
 
+@pytest.mark.long
 def test_10d_alpha_unknown():
     _fit(_simulate(_COEF_10D, _SIMPLE, 5000), 0.28, alpha_known=False)
 

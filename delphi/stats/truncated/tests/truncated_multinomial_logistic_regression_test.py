@@ -123,10 +123,12 @@ def _simulate_10d(
     )
 
 
+@pytest.mark.long
 def test_1d_no_truncation():
     _fit(_simulate_1d(_NONE), 0.13, alpha_known=False, naive_margin=None)
 
 
+@pytest.mark.long
 def test_1d_label_prior_shift():
     # Class 0's latent is pure noise, so a set on it alone moves the label
     # prior, which the naive fit absorbs into the intercepts.
@@ -136,10 +138,12 @@ def test_1d_label_prior_shift():
     _assert_beats_naive(_fit(simulation, 0.06), simulation, 0.03)
 
 
+@pytest.mark.long
 def test_1d_class_one_truncation():
     _fit(_simulate_1d(_CLASS_ONE_DROPS_0_TO_2), 0.13)
 
 
+@pytest.mark.long
 def test_1d_class_one_two_bands():
     _fit(_simulate_1d(_CLASS_ONE_DROPS_TWO_BANDS), 0.09)
 
@@ -155,10 +159,12 @@ def test_2d_class_one_two_bands():
     _fit(simulation, 0.25)
 
 
+@pytest.mark.long
 def test_10d_hard_margin():
     _fit(_simulate_10d(_HARD_3), 0.62)
 
 
+@pytest.mark.long
 def test_10d_easy_margin():
     _fit(_simulate_10d(_EASY_3), 0.41)
 
@@ -199,6 +205,7 @@ def test_10d_unequal_classes_hard_margin():
     _fit(simulation, 0.67)
 
 
+@pytest.mark.long
 def test_10d_undersampled_class():
     # Class 1 kept at 10%: label shift, which the naive intercepts absorb.
     simulation = _simulate_10d(classification.LabelSurvival(1.0, 0.1, 1.0))
@@ -217,12 +224,14 @@ def test_10d_five_classes_undersampled_class():
     _assert_beats_naive(_fit(simulation, 0.8), simulation, 0.1)
 
 
+@pytest.mark.long
 def test_10d_class_margin():
     # Class 1 seen only when clear-cut, as a disease diagnosed when severe.
     simulation = _simulate_10d(classification.LabelMarginSurvival(1, (2.5, INF, 1.0)))
     _assert_beats_naive(_fit(simulation, 0.36), simulation, 0.04)
 
 
+@pytest.mark.long
 def test_10d_capped_class():
     # A high class 1 latent is rarely seen, whatever the label: a clinic
     # that misses the obvious cases. Kept at 2%, not 0, so alpha is positive.

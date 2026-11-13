@@ -45,11 +45,13 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN
+@pytest.mark.long
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(probs=ch.tensor([0.9]), phi=lambda z: z[:, 0] > 5, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     probs = ch.tensor([0.9, 0.7])
@@ -62,6 +64,7 @@ def test_two_dimensions(known):
     _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     probs = ch.tensor([0.9, 0.7])
@@ -74,7 +77,7 @@ def test_two_dimensions_random_half_space(known):
     _recovers(probs=probs, phi=calibrated.phi, known=known)
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
         probs=ch.tensor([0.9]),
@@ -85,6 +88,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
@@ -110,6 +114,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation, rho 0.5: over seeds 0,1,2 the estimate's KL measured
 # 0.057 to 0.066 (ema), 0.058 to 0.063 (avg); the set error 0.108 to 0.117.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     probs = ch.linspace(0.5, 0.95, 10)
@@ -129,6 +134,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(

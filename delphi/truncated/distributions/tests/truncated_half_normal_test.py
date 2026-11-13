@@ -67,6 +67,7 @@ def test_two_dimensions_random_half_space(known):
     _recovers(scale=scale, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
@@ -78,6 +79,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     scale = ch.linspace(0.5, 2.0, 10)
@@ -114,6 +116,7 @@ def test_ten_dimensions_sum_threshold(known):
     _recovers(scale=scale, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,

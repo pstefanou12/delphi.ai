@@ -51,6 +51,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_one_dimension(known):
     _recovers(
@@ -64,6 +65,7 @@ def test_one_dimension(known):
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     concentration1, concentration0 = ch.tensor([3.0, 2.0]), ch.tensor([4.0, 6.0])
@@ -84,6 +86,7 @@ def test_two_dimensions(known):
 
 # Unknown truncation, degree 6: over seeds 0,1,2 the estimate's KL measured
 # 0.101 to 0.234 (ema), 0.100 to 0.238 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     concentration1, concentration0 = ch.tensor([3.0, 2.0]), ch.tensor([4.0, 6.0])
@@ -148,6 +151,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
@@ -174,6 +178,7 @@ def test_ten_dimensions_sum_threshold(known):
 # Unknown truncation is flaky here: over seeds 0 to 14 at rho 0.3, six fits
 # stay too close to tell apart and one learned set misses by 0.36, as CI hit.
 # Rho 0.4, 0.5 and degree 2 or 6 fail as often or more.
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=False,

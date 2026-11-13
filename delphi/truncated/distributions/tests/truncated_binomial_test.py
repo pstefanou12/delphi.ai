@@ -43,7 +43,7 @@ def _recovers(  # pylint: disable=too-many-arguments,too-many-positional-argumen
 
 # Unknown truncation needs degree 2 and rho 0.5 here; over seeds 0,1,2 it
 # meets the shared bounds.
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_one_dimension(known):
     _recovers(
         total_count=ch.tensor([10.0]),
@@ -54,6 +54,7 @@ def test_one_dimension(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
@@ -73,6 +74,7 @@ def test_two_dimensions(known):
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     total_count, probs = ch.tensor([10.0, 20.0]), ch.tensor([0.3, 0.5])
@@ -91,6 +93,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
@@ -103,6 +106,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     total_count, probs = 10.0 * ch.ones(10), ch.linspace(0.2, 0.6, 10)
@@ -120,6 +124,7 @@ def test_ten_dimensions_identity(known):
 # learned set that keeps one point leaves the objective flat. Over seeds 0
 # to 4 at degree 6, three recover, one reaches KL 0.64, and one CI run hit a
 # flat Hessian; degree 4 or 8 and rho 0.3 or 0.5 do no better.
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=False,
@@ -144,6 +149,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     total_count, probs = 10.0 * ch.ones(10), ch.linspace(0.2, 0.6, 10)
@@ -158,6 +164,7 @@ def test_ten_dimensions_sum_threshold(known):
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_indistinguishable_pair(known):
     total_count = ch.tensor([20.0])

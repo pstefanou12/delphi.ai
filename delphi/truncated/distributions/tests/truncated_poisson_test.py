@@ -50,6 +50,7 @@ def test_one_dimension(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     rate = ch.tensor([1.0, 2.0])
@@ -69,6 +70,7 @@ def test_two_dimensions(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_twenty_dimensions(known):
     rate = 2 * ch.ones(20)
@@ -95,7 +97,7 @@ def test_two_dimensions_triangle(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_two_dimensions_random_half_space(known):
     rate = ch.tensor([1.0, 2.0])
     calibrated = truncation_sets.calibrate(
@@ -111,6 +113,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
@@ -156,6 +159,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     rate = ch.linspace(1.0, 3.0, 10)
@@ -175,6 +179,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     rate = ch.tensor([1.0])
@@ -195,6 +200,7 @@ def test_one_dimension_small_mass(known):
 
 # Unknown truncation needs degree 6 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_indistinguishable_pair(known):
     # Truncated to a narrow window the two samples agree to within sampling
@@ -213,6 +219,7 @@ def test_indistinguishable_pair(known):
     )
 
 
+@pytest.mark.long
 def test_phases_widen_a_budget_too_small_for_the_fit():
     target = torch.distributions.Poisson(ch.tensor([3.0]))
 

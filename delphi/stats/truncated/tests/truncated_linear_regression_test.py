@@ -41,6 +41,13 @@ _VARIANTS = pytest.mark.parametrize(
     "variance_known", [True, False], ids=["known_variance", "unknown_variance"]
 )
 
+# Learning the variance takes these cases past ten seconds.
+_VARIANTS_UNKNOWN_LONG = pytest.mark.parametrize(
+    "variance_known",
+    [True, pytest.param(False, marks=pytest.mark.long)],
+    ids=["known_variance", "unknown_variance"],
+)
+
 
 def _fit(  # pylint: disable=too-many-arguments
     simulation: regression.Simulation,
@@ -191,6 +198,7 @@ def _simulate(case: str, seed: int = 0) -> regression.Simulation:
     return _CASES[case](seed)
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_1d_no_truncation(variance_known):
     _fit(
@@ -203,32 +211,35 @@ def test_1d_no_truncation(variance_known):
     )
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_1d_left_truncation(variance_known):
     _fit(_simulate("1d_left_truncation"), variance_known, 0.18, (0.31, 0.10))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_1d_left_truncation_no_intercept(variance_known):
     simulation = _simulate("1d_left_truncation_no_intercept")
     _fit(simulation, variance_known, 0.005, (0.02, 0.14), fit_intercept=False)
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_1d_right_truncation(variance_known):
     _fit(_simulate("1d_right_truncation"), variance_known, 0.06, (0.05, 0.11))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_1d_interval(variance_known):
     _fit(_simulate("1d_interval"), variance_known, 0.35, (0.54, 0.10))
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_1d_union_of_intervals(variance_known):
     _fit(_simulate("1d_union_of_intervals"), variance_known, 0.02, (0.02, 0.05))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_1d_small_mass(variance_known):
     # The sampled loss picking best_ cannot resolve this flat valley (Hessian
@@ -237,27 +248,30 @@ def test_1d_small_mass(variance_known):
     _fit(_simulate("1d_small_mass"), variance_known, 0.15, (0.45, 0.09))
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_2d_union_of_intervals(variance_known):
     _fit(_simulate("2d_union_of_intervals"), variance_known, 0.09, (0.08, 0.03))
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_2d_two_sided_tails(variance_known):
     _fit(_simulate("2d_two_sided_tails"), variance_known, 0.08, (0.07, 0.05))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_left_truncation(variance_known):
     # Daskalakis et al. (2020), Section 6: w = 1, kept only where y > 4.
     _fit(_simulate("10d_left_truncation"), variance_known, 0.16, (0.12, 0.04))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_union_of_intervals(variance_known):
     _fit(_simulate("10d_union_of_intervals"), variance_known, 0.11, (0.11, 0.01))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_no_truncation(variance_known):
     _fit(
@@ -276,18 +290,21 @@ def test_100d_union_of_intervals(variance_known):
     _fit(_simulate("100d_union_of_intervals"), variance_known, 0.15, (0.15, 0.01))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_randomized_truncation(variance_known):
     simulation = _simulate("10d_randomized_truncation")
     _fit(simulation, variance_known, 0.13, (0.15, 0.02))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_alpha_unknown(variance_known):
     simulation = _simulate("10d_left_truncation")
     _fit(simulation, variance_known, 0.16, (0.12, 0.04), alpha_known=False)
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_ill_conditioned_covariates(variance_known):
     simulation = _simulate("10d_ill_conditioned_covariates")
@@ -295,11 +312,13 @@ def test_10d_ill_conditioned_covariates(variance_known):
     _fit(simulation, variance_known, 1.3, (1.3, 0.09), ols_margin=0.8)
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_rescaled_covariates(variance_known):
     _fit(_simulate("10d_rescaled_covariates"), variance_known, 0.12, (0.05, 0.04))
 
 
+@pytest.mark.long
 @_VARIANTS
 @pytest.mark.parametrize(
     "seed, unknown", [(1, (0.15, 0.02)), (2, (0.12, 0.02)), (3, (0.29, 0.13))]
@@ -308,24 +327,26 @@ def test_10d_seeds(variance_known, seed, unknown):
     _fit(_simulate("10d_left_truncation", seed), variance_known, 0.13, unknown)
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_1d_left_truncation_noise_var_5(variance_known):
     simulation = _simulate("1d_left_truncation_noise_var_5")
     _fit(simulation, variance_known, 0.07, (0.91, 1.49))
 
 
-@_VARIANTS
+@_VARIANTS_UNKNOWN_LONG
 def test_1d_left_truncation_noise_var_10(variance_known):
     simulation = _simulate("1d_left_truncation_noise_var_10")
     _fit(simulation, variance_known, 0.33, (0.37, 1.47))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_left_truncation_noise_var_5(variance_known):
     simulation = _simulate("10d_left_truncation_noise_var_5")
     _fit(simulation, variance_known, 0.26, (0.26, 0.12))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_left_truncation_noise_var_10(variance_known):
     simulation = _simulate("10d_left_truncation_noise_var_10")
@@ -333,6 +354,7 @@ def test_10d_left_truncation_noise_var_10(variance_known):
     _fit(simulation, variance_known, 0.47, (0.55, 0.8))
 
 
+@pytest.mark.long
 @_VARIANTS
 def test_10d_union_of_intervals_noise_var_10(variance_known):
     simulation = _simulate("10d_union_of_intervals_noise_var_10")
@@ -561,6 +583,7 @@ def test_lds_1d_half_line_loose_alpha():
     _fit_dynamics(_DYNAMICS["1d_half_line"](), 0.15, 0.15, alpha=0.1)
 
 
+@pytest.mark.long
 def test_lds_1d_union_of_intervals():
     _fit_dynamics(_DYNAMICS["1d_union_of_intervals"](), 0.025, 0.12)
 
@@ -569,37 +592,45 @@ def test_lds_1d_interval():
     _fit_dynamics(_DYNAMICS["1d_interval"](), 0.33, 0.4)
 
 
+@pytest.mark.long
 def test_lds_1d_small_mass():
     _fit_dynamics(_DYNAMICS["1d_small_mass"](), 0.39, 0.9, oblivious=0.005)
 
 
+@pytest.mark.long
 def test_lds_2d_half_plane():
     _fit_dynamics(_DYNAMICS["2d_half_plane"](), 0.16, 0.17)
 
 
 # The drift moves the stationary mean (I - A)^-1 b against the set.
+@pytest.mark.long
 def test_lds_2d_half_plane_drift():
     _fit_dynamics(_DYNAMICS["2d_half_plane_drift"](), 0.09, 0.14)
 
 
+@pytest.mark.long
 def test_lds_2d_half_plane_correlated_noise():
     _fit_dynamics(_DYNAMICS["2d_half_plane_correlated_noise"](), 0.22, 0.15)
 
 
+@pytest.mark.long
 def test_lds_2d_figure_1b():
     _fit_dynamics(_DYNAMICS["2d_figure_1b"](), 0.3, 0.3)
 
 
+@pytest.mark.long
 def test_lds_2d_union_of_discs():
     _fit_dynamics(_DYNAMICS["2d_union_of_discs"](), 0.11, 0.46)
 
 
+@pytest.mark.long
 def test_lds_2d_ball_removed():
     _fit_dynamics(_DYNAMICS["2d_ball_removed"](), 0.09, 0.88, oblivious=0.005)
 
 
 # Without truncation least squares on every pair is the MLE, while the
 # descent steps on three quarters of them at a step above 1.
+@pytest.mark.long
 def test_lds_2d_no_truncation():
     simulation = regression.simulate_dynamics(
         _TRANSITION_2D, delphi.oracle.Identity(), 5000
@@ -607,6 +638,7 @@ def test_lds_2d_no_truncation():
     _fit_dynamics(simulation, 0.065, 2.7)
 
 
+@pytest.mark.long
 def test_lds_5d_random_half_space():
     _fit_dynamics(_DYNAMICS["5d_random_half_space"](), 0.31, 0.32)
 
@@ -799,6 +831,7 @@ def _design_and_responses(
     return design, simulation.y.double().flatten()
 
 
+@pytest.mark.long
 def test_unknown_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
     model = truncated_linear_regression.TruncatedLinearRegression(
@@ -821,6 +854,7 @@ def test_unknown_variance_covariance_inverts_the_exact_information():
     assert error <= 0.02, (model.covariance(), expected)
 
 
+@pytest.mark.long
 def test_known_variance_covariance_inverts_the_exact_information():
     simulation = _simulate("2d_union_of_intervals")
     model = truncated_linear_regression.TruncatedLinearRegression(

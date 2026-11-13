@@ -57,7 +57,8 @@ def test_one_dimension(known):
 
 # Unknown truncation: over seeds 0,1,2 the estimate's KL measured 0.206 to
 # 0.257 (ema), 0.235 to 0.279 (avg).
-@helpers.KNOWN_AND_UNKNOWN
+@pytest.mark.long
+@helpers.known_and_unknown(pytest.mark.long, ci=True)
 def test_two_dimensions_random_half_space(known):
     first, second = ch.tensor([2.0, 4.0]), ch.tensor([3.0, 2.0])
     calibrated = truncation_sets.calibrate(
@@ -74,7 +75,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
-@helpers.KNOWN_AND_UNKNOWN_CI
+@helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
         first=ch.tensor([2.0]),
@@ -87,6 +88,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     _recovers(
@@ -100,6 +102,7 @@ def test_ten_dimensions_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     first, second = ch.linspace(1.5, 3.0, 10), ch.linspace(2.0, 4.0, 10)
@@ -117,6 +120,7 @@ def test_ten_dimensions_sum_threshold(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_indistinguishable_pair(known):
     helpers.assert_family_distinguishes(

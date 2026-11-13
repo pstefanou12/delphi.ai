@@ -57,18 +57,21 @@ typecheck *PATHS:
 # Run the tests affected by local changes, one per core. pytest-testmon
 # records the code each test executes and reruns only tests whose code changed
 # since the last run; the first run, and every run in CI, runs the whole suite.
-# `--testmon-noselect` forces a full local run, `-m "not slow"` skips the long
-# fits, and `-n 0` runs serially, which `-s` needs. Extra arguments are
-# forwarded to pytest.
+# `--testmon-noselect` forces a full local run, `-m "not slow"` skips the fits
+# over a minute, `-m "not slow and not long"` runs only what a PR runs, and
+# `-n 0` runs serially, which `-s` needs. Extra arguments are forwarded to
+# pytest.
 test *ARGS:
     # Python 3.14's default sys.monitoring core credits a line only to the
     # first test that runs it, so testmon would miss most dependencies.
     if [ -n "${CI:-}" ]; then poetry run pytest -n auto --dist worksteal "$@"; else COVERAGE_CORE=ctrace poetry run pytest --testmon -n auto --dist worksteal "$@"; fi
 
 # Record each test's duration in .test_durations, by which CI splits the
-# suite into balanced groups. Rerun when tests are added or slowed.
+# suite into balanced groups. Rerun when tests are added or slowed. Four
+# workers match a CI runner's cores; more would time the tests contending
+# for cores and inflate the slow ones.
 durations:
-    poetry run pytest -p no:testmon -n auto -m "not slow" --store-durations
+    poetry run pytest -p no:testmon -n 4 -m "not slow" --store-durations
 
 # Branch coverage of delphi/. Extra arguments are forwarded to pytest.
 cov *ARGS:

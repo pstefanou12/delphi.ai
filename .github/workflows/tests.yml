@@ -1,6 +1,8 @@
 name: Tests
 
-# Pushes to a PR's branch run through pull_request alone, not twice.
+# A PR runs the static checks and the quick tier. The merge queue, and any
+# push to master, run everything but the slow fits across four shards. Pushes
+# to a PR's branch run through pull_request alone, not twice.
 on:
   push:
     branches:
@@ -8,6 +10,7 @@ on:
   pull_request:
     branches:
       - master
+  merge_group:
 
 # A new push cancels the branch's run still in progress.
 concurrency:
@@ -41,7 +44,34 @@ jobs:
       - name: Static checks
         run: just check
 
-  test:
+  quick:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: just install
+
+      # Fits over ten seconds are marked long and wait for the merge queue.
+      - name: Run quick tests
+        run: just test -m "not slow and not long"
+
+  shard:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
@@ -70,3 +100,17 @@ jobs:
       # balances the groups by .test_durations, which `just durations` renews.
       - name: Run tests
         run: just test -m "not slow" --splits 4 --group ${{ matrix.group }}
+
+  # The one required test check. A skipped matrix job reports under its
+  # unexpanded name, so the shards cannot be required by name on a PR.
+  tests:
+    if: ${{ !cancelled() }}
+    needs: [quick, shard]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require that no test job failed or was cancelled
+        run: |
+          echo "quick: ${{ needs.quick.result }}, shard: ${{ needs.shard.result }}"
+          [[ "${{ needs.quick.result }}" =~ ^(success|skipped)$ ]]
+          [[ "${{ needs.shard.result }}" =~ ^(success|skipped)$ ]]

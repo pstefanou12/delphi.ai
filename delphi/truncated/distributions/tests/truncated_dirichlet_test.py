@@ -52,6 +52,7 @@ def test_three_categories(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_random_half_space(known):
     concentration = ch.tensor([2.0, 3.0, 4.0])
@@ -64,6 +65,7 @@ def test_three_categories_random_half_space(known):
     _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_three_categories_triangle(known):
     _recovers(
@@ -84,6 +86,7 @@ def test_three_categories_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_categories_identity(known):
     _recovers(
@@ -114,6 +117,7 @@ def test_three_categories_small_mass(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_ten_categories_norm_threshold(known):
     concentration = ch.linspace(1.0, 5.0, 10)
@@ -126,6 +130,7 @@ def test_ten_categories_norm_threshold(known):
     _recovers(concentration=concentration, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN_CI
 def test_indistinguishable_pair(known):
     # Given x0, the other categories' shares are Dirichlet in the rest of the

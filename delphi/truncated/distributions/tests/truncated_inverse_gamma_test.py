@@ -56,6 +56,7 @@ def test_one_dimension(known):
 
 # Unknown truncation needs rho 0.3 here; over seeds 0,1,2 it meets the shared
 # bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions(known):
     concentration, rate = ch.tensor([3.0, 4.0]), ch.tensor([2.0, 1.0])
@@ -76,6 +77,7 @@ def test_two_dimensions(known):
 
 # Unknown truncation, rho 0.3: over seeds 0,1,2 the estimate's KL measured
 # 0.043 to 0.129 (ema), 0.055 to 0.142 (avg).
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_two_dimensions_random_half_space(known):
     concentration, rate = ch.tensor([3.0, 4.0]), ch.tensor([2.0, 1.0])
@@ -95,6 +97,7 @@ def test_two_dimensions_random_half_space(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_identity(known):
     _recovers(
@@ -107,6 +110,7 @@ def test_one_dimension_identity(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_identity(known):
     concentration, rate = 3.0 * ch.ones(10), ch.linspace(0.5, 3.0, 10)
@@ -122,6 +126,7 @@ def test_ten_dimensions_identity(known):
 
 # Unknown truncation needs degree 2 and rho 0.5 here; over seeds 0,1,2 it
 # meets the shared bounds.
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_one_dimension_small_mass(known):
     concentration, rate = ch.tensor([3.0]), ch.tensor([2.0])
@@ -140,6 +145,7 @@ def test_one_dimension_small_mass(known):
     )
 
 
+@pytest.mark.long
 @helpers.KNOWN_AND_UNKNOWN
 def test_ten_dimensions_sum_threshold(known):
     concentration, rate = 3.0 * ch.ones(10), ch.linspace(0.5, 3.0, 10)
@@ -152,6 +158,7 @@ def test_ten_dimensions_sum_threshold(known):
     _recovers(concentration=concentration, rate=rate, phi=calibrated.phi, known=known)
 
 
+@pytest.mark.long
 @helpers.known_and_unknown(
     pytest.mark.xfail(
         strict=True,
