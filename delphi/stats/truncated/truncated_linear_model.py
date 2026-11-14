@@ -17,8 +17,8 @@ import torch.nn
 import torch.utils.data
 
 from delphi.configs.stats.truncated import linear
+from delphi.models.psgd import PSGDModel
 import delphi.projection_sets
-import delphi.statistical_model
 from delphi.stats import linear_model
 import delphi.trainer
 from delphi.truncated.distributions import summary
@@ -31,15 +31,15 @@ _TruncatedConfigT = TypeVar(
 
 class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
     linear_model.LinearModel[_TruncatedConfigT],
-    delphi.statistical_model.PSGDModel[_TruncatedConfigT],
+    PSGDModel[_TruncatedConfigT],
     Generic[_TruncatedConfigT],
     abc.ABC,
 ):
     """Projected SGD on the truncated NLL of a linear model.
 
     Subclasses supply ``criterion_parameters``, ``_hessian`` and, to
-    constrain the descent, ``build_projection_set``; ``refine_steps`` adds
-    ``StatisticalModel.refine`` after the descent.
+    constrain the descent, ``_constrained_projection_set``; ``refine_steps``
+    adds ``StatisticalModel.refine`` after the descent.
 
     The descent starts from ``emp_weight``: the caller's, else OLS. The
     radius starts at the ``radius`` hyperparameter, or where alpha would put
@@ -131,7 +131,7 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         """
         self.register_parameter("weight", torch.nn.Parameter(weight.clone()))
 
-    def build_projection_set(
+    def _constrained_projection_set(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,
@@ -227,14 +227,14 @@ class TruncatedLinearModel(  # pylint: disable=too-many-instance-attributes
         )
         return train_loader, None
 
-    def build_first_projection_set(self) -> delphi.projection_sets.ProjectionSet:
-        """Return the model's projection set, or the whole space if disabled."""
+    def default_projection_set(self) -> delphi.projection_sets.ProjectionSet:
+        """Return ``_constrained_projection_set``, or the whole space if disabled."""
         hp = self.hyperparameters
         radius = self.default_radius() if hp.radius is None else hp.radius
         if hp.projection_set != "default":
             return delphi.projection_sets.Unconstrained(self.emp_start, radius)
         X, y = linear_model.require_fitted(self._data, "data")  # pylint: disable=invalid-name
-        return self.build_projection_set(X, y, radius)
+        return self._constrained_projection_set(X, y, radius)
 
     def pre_phase_hook(self) -> None:
         """Build or resize the projection set, and start the weight inside it."""

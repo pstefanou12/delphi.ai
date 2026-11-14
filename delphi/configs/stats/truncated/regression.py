@@ -19,7 +19,8 @@ class TruncatedRegressionConfig(TruncatedLinearModelConfig):
         weight_bound: The B of the projection set, on the weight in the
             normalized coordinates the descent runs in; None drops the ball.
         refine_steps: Newton steps after the descent, as
-            ``delphi.configs.base.RefinementConfig``; on by default here.
+            ``delphi.configs.models.statistical.RefinementConfig``; on by
+            default here.
         information_samples: Kept draws per sample for the conditional
             moments behind ``covariance``'s information matrix; a sample's
             moments from m draws shrink its variances by about 1 / m.

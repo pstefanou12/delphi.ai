@@ -88,7 +88,7 @@ class TruncatedBinaryRegression(
             min(float(grid[feasible.max()]) + step, reach),
         )
 
-    def _projection_set(
+    def _r_alpha(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         anchor: ch.Tensor,

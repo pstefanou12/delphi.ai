@@ -487,7 +487,7 @@ class TruncatedLinearRegression(  # pylint: disable=too-many-instance-attributes
         alpha = 1.0 if self.alpha is None else self.alpha
         return 4.0 * math.log(2.0 / alpha) + 7.0
 
-    def build_projection_set(
+    def _constrained_projection_set(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,

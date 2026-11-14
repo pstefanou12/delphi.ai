@@ -21,9 +21,9 @@ import torch.distributions.transforms
 import torch.utils.data
 
 from delphi.configs.distributions.truncated import exponential_family
+from delphi.models.psgd import PSGDModel
 import delphi.oracle
 import delphi.projection_sets
-import delphi.statistical_model
 from delphi.torchnomials import empirical, hermite, laguerre, polynomial, transformed
 import delphi.trainer
 from delphi.truncated.distributions import distributions, losses, summary
@@ -54,8 +54,53 @@ _ConfigT = TypeVar(
 )
 
 
+class SublevelSet(delphi.projection_sets.ProjectionSet):
+    """The weights whose loss is at most ``level + radius``.
+
+    The exponential families keep the untruncated NLL within a budget of its
+    value at the start, per Karatapanis et al. (2025), Algorithm 2.
+
+    Attributes:
+        loss: Maps a weight to the loss the set bounds.
+        level: The loss at the anchor, which the radius is a budget above.
+    """
+
+    def __init__(
+        self,
+        anchor: ch.Tensor,
+        loss: Callable[[ch.Tensor], float],
+        radius: float,
+        bisection_steps: int = 50,
+    ):
+        """Initialize the set.
+
+        Args:
+            anchor: The weight the budget is measured from.
+            loss: Maps a weight to the loss the set bounds.
+            radius: The budget above the anchor's loss.
+            bisection_steps: As the base class; 50 leaves 2^-50 of the
+                segment.
+        """
+        super().__init__(anchor, radius, bisection_steps)
+        self.loss = loss
+        self.level = loss(self.anchor)
+
+    @property
+    def threshold(self) -> float:
+        """The largest loss inside the set."""
+        return self.level + float(self.radius or 0.0)
+
+    def contains(self, weight: ch.Tensor) -> bool:
+        return self.loss(weight) <= self.threshold
+
+    def along(self, weight: ch.Tensor, fraction: float) -> ch.Tensor:
+        # Rounds as the families' projection always has; the base class's
+        # form moved test_one_dimension_small_mass's beta prime fit far off.
+        return (1.0 - fraction) * self.anchor + fraction * weight
+
+
 class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instance-attributes
-    delphi.statistical_model.PSGDModel[_ConfigT],
+    PSGDModel[_ConfigT],
     distributions.distributions[_ConfigT],
     Generic[_ConfigT],
     abc.ABC,
@@ -89,14 +134,12 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         val_loader_: Validation data loader, set during fit.
         nll_init: Non-truncated NLL at the empirical initialization theta_0,
             the level the sublevel-set projection's budget, ``radius``, is
-            above (Karatapanis et al., Algorithm 2).
+            above.
     """
 
     # Cov[T(z)] is diagonal up to sampling noise for a product family, so
     # FisherLR.spectrum reads the diagonal rather than eigenvalues.
     independent_coordinates: bool = True
-
-    not_binding_reason = "budget_not_binding"
 
     # A type, not a Callable: mypy reads a callable class attribute as a
     # method and drops the first argument.
@@ -338,9 +381,9 @@ class TruncatedExponentialFamilyDistribution(  # pylint: disable=too-many-instan
         with ch.no_grad():
             self._write_theta(self.emp_theta)
 
-    def build_first_projection_set(self) -> delphi.projection_sets.SublevelSet:
+    def default_projection_set(self) -> SublevelSet:
         """Anchor the NLL's sublevel set at the start point, at its first budget."""
-        projection_set = delphi.projection_sets.SublevelSet(
+        projection_set = SublevelSet(
             self.emp_theta, self._compute_nll, self._initial_radius()
         )
         self.nll_init = projection_set.level

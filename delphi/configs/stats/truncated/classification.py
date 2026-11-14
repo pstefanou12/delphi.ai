@@ -21,7 +21,7 @@ class TruncatedClassificationConfig(TruncatedLinearModelConfig):
             R_alpha' admits; None takes alpha' = alpha^2, or starts from
             the descent's start when alpha is unknown.
         refine_steps: Fisher scoring steps after the descent, as
-            ``delphi.configs.base.RefinementConfig``.
+            ``delphi.configs.models.statistical.RefinementConfig``.
     """
 
     batch_size: int = 10

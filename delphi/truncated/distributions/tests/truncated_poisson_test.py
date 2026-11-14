@@ -253,4 +253,4 @@ def test_phases_widen_a_budget_too_small_for_the_fit():
     assert divergence(fits["phases"]) < 0.01
     assert len(fits["phases"].procedure.phases) > 1
     # It ends on its own, once a budget no longer binds.
-    assert fits["phases"].procedure.stop_reason == "budget_not_binding"
+    assert fits["phases"].procedure.stop_reason == "radius_not_binding"

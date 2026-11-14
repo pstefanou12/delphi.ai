@@ -5,7 +5,8 @@ from typing import Literal, Optional
 
 import pydantic
 
-from delphi.configs.base import DelphiConfig, StatisticalModelConfig
+from delphi.configs.base import DelphiConfig
+from delphi.configs.models.statistical import StatisticalModelConfig
 
 
 class LinearModelConfig(StatisticalModelConfig):

@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 import pydantic
 
-from delphi.configs.base import PSGDModelConfig
+from delphi.configs.models.psgd import PSGDModelConfig
 from delphi.configs.stats.linear import LinearModelConfig
 
 

@@ -130,7 +130,7 @@ class TruncatedClassification(
         """
 
     @abc.abstractmethod
-    def _projection_set(
+    def _r_alpha(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         anchor: ch.Tensor,
@@ -190,7 +190,7 @@ class TruncatedClassification(
         mass = self._label_mass(X @ self.emp_start).min()
         return min(-math.log(max(float(mass), 1e-300)), _MAX_START_RADIUS)
 
-    def build_projection_set(
+    def _constrained_projection_set(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,
@@ -204,7 +204,7 @@ class TruncatedClassification(
         """
         del y
         anchor = self.emp_start
-        projection = self._projection_set(X, anchor, radius)
+        projection = self._r_alpha(X, anchor, radius)
         while not projection.contains(anchor):
             if radius >= _MAX_START_RADIUS:
                 raise ValueError(

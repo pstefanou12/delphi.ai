@@ -89,7 +89,7 @@ class TruncatedMultinomialLogisticRegression(
         """Return each sample's untruncated label probabilities."""
         return ch.softmax(self._latent_mean(linear).double(), dim=1)
 
-    def _projection_set(
+    def _r_alpha(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         anchor: ch.Tensor,

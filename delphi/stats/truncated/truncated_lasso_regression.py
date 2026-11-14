@@ -212,7 +212,7 @@ class TruncatedLassoRegression(
         alpha = 1.0 if self.alpha is None else self.alpha
         return 1.0 + 2.0 / math.sqrt(alpha)
 
-    def build_projection_set(
+    def _constrained_projection_set(
         self,
         X: ch.Tensor,  # pylint: disable=invalid-name
         y: ch.Tensor,

@@ -13,7 +13,7 @@ import torch as ch
 import torch.nn
 
 from delphi.configs.stats import linear
-from delphi.statistical_model import StatisticalModel
+from delphi.models.statistical import StatisticalModel
 from delphi.utils import constants
 
 _LinearConfigT = TypeVar("_LinearConfigT", bound=linear.LinearModelConfig)
